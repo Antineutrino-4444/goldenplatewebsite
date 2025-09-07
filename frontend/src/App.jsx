@@ -531,6 +531,50 @@ function App() {
     }
   }
 
+  // Super admin functions
+  const changeUserRole = async (username, newRole) => {
+    try {
+      const response = await fetch(`${API_BASE}/superadmin/change-role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, role: newRole })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        loadAllUsers() // Refresh users list
+      } else {
+        const error = await response.json()
+        showMessage(error.error, 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to change user role', 'error')
+    }
+  }
+
+  const deleteUserAccount = async (username) => {
+    try {
+      const response = await fetch(`${API_BASE}/superadmin/delete-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        loadAllUsers() // Refresh users list
+        loadAdminData() // Refresh admin data
+      } else {
+        const error = await response.json()
+        showMessage(error.error, 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to delete user account', 'error')
+    }
+  }
+
   // Login Screen
   if (!isAuthenticated) {
     return (
@@ -1160,11 +1204,37 @@ function App() {
                         <div className="font-medium">{adminUser.name}</div>
                         <div className="text-sm text-gray-500">@{adminUser.username} • {adminUser.role}</div>
                       </div>
-                      <Badge 
-                        variant={adminUser.role === 'superadmin' ? 'destructive' : adminUser.role === 'admin' ? 'default' : 'secondary'}
-                      >
-                        {adminUser.role}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={adminUser.role === 'superadmin' ? 'destructive' : adminUser.role === 'admin' ? 'default' : 'secondary'}
+                        >
+                          {adminUser.role}
+                        </Badge>
+                        {user.role === 'superadmin' && adminUser.username !== user.username && (
+                          <div className="flex gap-1">
+                            <select 
+                              className="text-xs border rounded px-2 py-1"
+                              value={adminUser.role}
+                              onChange={(e) => changeUserRole(adminUser.username, e.target.value)}
+                            >
+                              <option value="user">User</option>
+                              <option value="admin">Admin</option>
+                              <option value="superadmin">Super Admin</option>
+                            </select>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                if (confirm(`Are you sure you want to delete account "${adminUser.username}"? This action cannot be undone.`)) {
+                                  deleteUserAccount(adminUser.username)
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
