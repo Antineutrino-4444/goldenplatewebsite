@@ -8,10 +8,12 @@ import json
 
 recorder_bp = Blueprint('recorder', __name__)
 
-# Data storage directory
-DATA_DIR = "persistent_data"
+# Data storage directory - use absolute path
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(BASE_DIR, "persistent_data")
 if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    print(f"Created persistent data directory: {DATA_DIR}")
 
 # File paths for persistent storage
 SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
@@ -19,12 +21,18 @@ USERS_FILE = os.path.join(DATA_DIR, "users.json")
 DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
 GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv.json")
 
+print(f"Persistent storage directory: {DATA_DIR}")
+
 def load_data_from_file(file_path, default_data):
     """Load data from file or return default if file doesn't exist"""
     try:
         if os.path.exists(file_path):
             with open(file_path, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+                print(f"Successfully loaded data from {file_path}")
+                return data
+        else:
+            print(f"File {file_path} doesn't exist, using default data")
     except Exception as e:
         print(f"Error loading {file_path}: {e}")
     return default_data
@@ -32,12 +40,30 @@ def load_data_from_file(file_path, default_data):
 def save_data_to_file(file_path, data):
     """Save data to file"""
     try:
-        with open(file_path, 'w') as f:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        # Write to temporary file first, then rename for atomic operation
+        temp_file = file_path + '.tmp'
+        with open(temp_file, 'w') as f:
             json.dump(data, f, indent=2)
+        
+        # Atomic rename
+        os.rename(temp_file, file_path)
+        print(f"Successfully saved data to {file_path}")
+        return True
     except Exception as e:
         print(f"Error saving {file_path}: {e}")
+        # Clean up temp file if it exists
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except:
+                pass
+        return False
 
 # Initialize persistent storage
+print("Initializing persistent storage...")
 session_data = load_data_from_file(SESSIONS_FILE, {})
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, None)
 delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
@@ -51,21 +77,47 @@ default_users = {
 }
 users_db = load_data_from_file(USERS_FILE, default_users)
 
+# Save initial data to ensure files are created
+print("Saving initial data...")
+save_data_to_file(SESSIONS_FILE, session_data)
+save_data_to_file(USERS_FILE, users_db)
+save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+if global_csv_data is not None:
+    save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
+
+print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(users_db)}")
+
+def save_all_data():
+    """Save all data to files"""
+    try:
+        save_data_to_file(SESSIONS_FILE, session_data)
+        save_data_to_file(USERS_FILE, users_db)
+        save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+        if global_csv_data is not None:
+            save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
+        print("All data saved successfully")
+        return True
+    except Exception as e:
+        print(f"Error saving all data: {e}")
+        return False
+
 def save_session_data():
     """Save session data to file"""
-    save_data_to_file(SESSIONS_FILE, session_data)
+    return save_data_to_file(SESSIONS_FILE, session_data)
 
 def save_users_db():
     """Save users database to file"""
-    save_data_to_file(USERS_FILE, users_db)
+    return save_data_to_file(USERS_FILE, users_db)
 
 def save_delete_requests():
     """Save delete requests to file"""
-    save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+    return save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
 
 def save_global_csv():
     """Save global CSV data to file"""
-    save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
+    if global_csv_data is not None:
+        return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
+    return True
 
 def get_current_user():
     """Get current logged in user"""
