@@ -779,3 +779,83 @@ def get_scan_history():
         'scan_history': formatted_history
     }), 200
 
+
+@recorder_bp.route('/superadmin/change-role', methods=['POST'])
+def change_user_role():
+    """Change user role (super admin only)"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    current_user = users_db.get(session['user_id'])
+    if not current_user or current_user['role'] != 'superadmin':
+        return jsonify({'error': 'Super admin access required'}), 403
+    
+    data = request.get_json()
+    target_username = data.get('username')
+    new_role = data.get('role')
+    
+    if not target_username or not new_role:
+        return jsonify({'error': 'Username and role are required'}), 400
+    
+    if new_role not in ['user', 'admin', 'superadmin']:
+        return jsonify({'error': 'Invalid role'}), 400
+    
+    # Cannot change own role
+    if target_username == session['user_id']:
+        return jsonify({'error': 'Cannot change your own role'}), 400
+    
+    if target_username not in users_db:
+        return jsonify({'error': 'User not found'}), 404
+    
+    users_db[target_username]['role'] = new_role
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'User role changed to {new_role} successfully'
+    }), 200
+
+@recorder_bp.route('/superadmin/delete-account', methods=['POST'])
+def delete_user_account():
+    """Delete user account (super admin only)"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    current_user = users_db.get(session['user_id'])
+    if not current_user or current_user['role'] != 'superadmin':
+        return jsonify({'error': 'Super admin access required'}), 403
+    
+    data = request.get_json()
+    target_username = data.get('username')
+    
+    if not target_username:
+        return jsonify({'error': 'Username is required'}), 400
+    
+    # Cannot delete own account
+    if target_username == session['user_id']:
+        return jsonify({'error': 'Cannot delete your own account'}), 400
+    
+    if target_username not in users_db:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Delete user account
+    del users_db[target_username]
+    
+    # Clean up user's CSV data file
+    user_csv_file = f"user_csv_{target_username}.json"
+    if os.path.exists(user_csv_file):
+        os.remove(user_csv_file)
+    
+    # Remove user's sessions
+    sessions_to_remove = []
+    for session_id, session_info in session_data.items():
+        if session_info.get('owner') == target_username:
+            sessions_to_remove.append(session_id)
+    
+    for session_id in sessions_to_remove:
+        del session_data[session_id]
+    
+    return jsonify({
+        'status': 'success',
+        'message': 'User account deleted successfully'
+    }), 200
+
