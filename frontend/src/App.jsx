@@ -581,11 +581,11 @@ function App() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-              WASTE Analytics
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
+              WAFFLE
             </CardTitle>
             <CardDescription className="text-gray-600 mt-2">
-              Waste Analytics for Student Tracking & Education
+              Wasted Food Footprint Logging & Evaluation
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -613,7 +613,7 @@ function App() {
             </div>
             <Button 
               onClick={login} 
-              className="w-full bg-green-600 hover:bg-green-700"
+              className="w-full bg-amber-600 hover:bg-amber-700"
               disabled={isLoading}
             >
               {isLoading ? 'Logging in...' : 'Login'}
@@ -623,7 +623,7 @@ function App() {
               <Button 
                 variant="link" 
                 onClick={() => setShowSignupDialog(true)}
-                className="text-green-600 hover:text-green-700"
+                className="text-amber-600 hover:text-amber-700"
               >
                 Don't have an account? Sign up
               </Button>
@@ -686,7 +686,7 @@ function App() {
                 </Button>
                 <Button 
                   onClick={signup} 
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  className="flex-1 bg-amber-600 hover:bg-amber-700"
                   disabled={isLoading}
                 >
                   {isLoading ? 'Creating...' : 'Create Account'}
@@ -707,13 +707,13 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                WASTE Analytics
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
+                WAFFLE
               </h1>
-              <p className="text-sm text-gray-600">Waste Analytics for Student Tracking & Education</p>
+              <p className="text-sm text-gray-600">Wasted Food Footprint Logging & Evaluation</p>
             </div>
             <div className="flex items-center gap-4">
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
                 {user.name} ({user.username})
               </Badge>
               <Button 
@@ -790,7 +790,7 @@ function App() {
                 Student Database
               </CardTitle>
               <CardDescription>
-                Upload CSV with student data for waste tracking (Last, First, Student ID)
+                Upload CSV with student data for food waste tracking (Last, First, Student ID)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -813,16 +813,16 @@ function App() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Download className="h-5 w-5" />
-                Export Waste Data
+                Export Food Waste Data
               </CardTitle>
               <CardDescription>
-                Download waste tracking records by category (Recyclable, General, Hazardous)
+                Download plate cleanliness records by category (Clean, Dirty, Very Dirty)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button onClick={exportCSV} className="w-full bg-green-600 hover:bg-green-700">
+              <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
                 <Download className="h-4 w-4 mr-2" />
-                Export Waste Data
+                Export Food Waste Data
               </Button>
             </CardContent>
           </Card>
@@ -832,20 +832,20 @@ function App() {
         <div className="mt-8 space-y-4">
           <Button
             onClick={() => handleCategoryClick('clean')}
-            className="w-full h-20 text-xl font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg"
+            className="w-full h-20 text-xl font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg"
             disabled={isLoading}
           >
-            ♻️ RECYCLABLE
+            🥇 CLEAN PLATE
             <br />
             <span className="text-sm opacity-90">({sessionStats.clean_count} recorded)</span>
           </Button>
 
           <Button
             onClick={() => handleCategoryClick('dirty')}
-            className="w-full h-20 text-xl font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-lg"
+            className="w-full h-20 text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg"
             disabled={isLoading}
           >
-            🗑️ GENERAL WASTE
+            🍽️ DIRTY PLATE
             <br />
             <span className="text-sm opacity-90">({sessionStats.dirty_count} recorded)</span>
           </Button>
@@ -855,7 +855,7 @@ function App() {
             className="w-full h-20 text-xl font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg"
             disabled={isLoading}
           >
-            ⚠️ HAZARDOUS
+            🍝 VERY DIRTY PLATE
             <br />
             <span className="text-sm opacity-90">({sessionStats.red_count} recorded)</span>
           </Button>
@@ -867,10 +867,10 @@ function App() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
-                Waste Tracking History
+                Plate Tracking History
               </CardTitle>
               <CardDescription>
-                Recent waste categorization entries for this session
+                Recent plate cleanliness entries for this session
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -890,20 +890,20 @@ function App() {
                         </div>
                       </div>
                       <div className={`px-2 py-1 rounded text-xs font-medium ${
-                        record.category === 'CLEAN' ? 'bg-emerald-100 text-emerald-800' :
-                        record.category === 'DIRTY' ? 'bg-amber-100 text-amber-800' :
+                        record.category === 'CLEAN' ? 'bg-yellow-100 text-yellow-800' :
+                        record.category === 'DIRTY' ? 'bg-orange-100 text-orange-800' :
                         'bg-red-100 text-red-800'
                       }`}>
-                        {record.category === 'CLEAN' ? '♻️ RECYCLABLE' : 
-                         record.category === 'DIRTY' ? '🗑️ GENERAL' : 
-                         '⚠️ HAZARDOUS'}
+                        {record.category === 'CLEAN' ? '🥇 CLEAN' : 
+                         record.category === 'DIRTY' ? '🍽️ DIRTY' : 
+                         '🍝 VERY DIRTY'}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="text-center text-gray-500 py-4">
-                  No waste entries recorded yet
+                  No plate entries recorded yet
                 </div>
               )}
             </CardContent>
@@ -914,9 +914,9 @@ function App() {
         <Dialog open={showCleanDialog} onOpenChange={setShowCleanDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle className="text-emerald-600">♻️ Record as RECYCLABLE</DialogTitle>
+              <DialogTitle className="text-yellow-600">🥇 Record as CLEAN PLATE</DialogTitle>
               <DialogDescription>
-                Enter Student ID or Name for recyclable waste tracking
+                Enter Student ID or Name for clean plate tracking
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -934,10 +934,10 @@ function App() {
                 </Button>
                 <Button 
                   onClick={() => handlePopupSubmit('clean')} 
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-600"
+                  className="flex-1 bg-yellow-500 hover:bg-yellow-600"
                   disabled={isLoading}
                 >
-                  Record as RECYCLABLE
+                  Record as CLEAN PLATE
                 </Button>
               </div>
             </div>
@@ -947,9 +947,9 @@ function App() {
         <Dialog open={showDirtyDialog} onOpenChange={setShowDirtyDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle className="text-amber-600">🗑️ Record as GENERAL WASTE</DialogTitle>
+              <DialogTitle className="text-orange-600">🍽️ Record as DIRTY PLATE</DialogTitle>
               <DialogDescription>
-                Enter Student ID or Name for general waste tracking
+                Enter Student ID or Name for dirty plate tracking
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -967,10 +967,10 @@ function App() {
                 </Button>
                 <Button 
                   onClick={() => handlePopupSubmit('dirty')} 
-                  className="flex-1 bg-amber-500 hover:bg-amber-600"
+                  className="flex-1 bg-orange-500 hover:bg-orange-600"
                   disabled={isLoading}
                 >
-                  Record as GENERAL WASTE
+                  Record as DIRTY PLATE
                 </Button>
               </div>
             </div>
@@ -980,9 +980,9 @@ function App() {
         <Dialog open={showRedDialog} onOpenChange={setShowRedDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle className="text-red-600">⚠️ Record as HAZARDOUS</DialogTitle>
+              <DialogTitle className="text-red-600">🍝 Record as VERY DIRTY PLATE</DialogTitle>
               <DialogDescription>
-                Enter Student ID or Name for hazardous waste tracking
+                Enter Student ID or Name for very dirty plate tracking
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -1003,7 +1003,7 @@ function App() {
                   className="flex-1 bg-red-500 hover:bg-red-600"
                   disabled={isLoading}
                 >
-                  Record as HAZARDOUS
+                  Record as VERY DIRTY PLATE
                 </Button>
               </div>
             </div>
@@ -1140,17 +1140,17 @@ function App() {
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-emerald-50 rounded-lg">
-                  <div className="text-2xl font-bold text-emerald-600">{sessionStats.clean_count}</div>
-                  <div className="text-sm text-emerald-700">♻️ Recyclable</div>
+                <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                  <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
+                  <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
                 </div>
-                <div className="text-center p-4 bg-amber-50 rounded-lg">
-                  <div className="text-2xl font-bold text-amber-600">{sessionStats.dirty_count}</div>
-                  <div className="text-sm text-amber-700">🗑️ General Waste</div>
+                <div className="text-center p-4 bg-orange-50 rounded-lg">
+                  <div className="text-2xl font-bold text-orange-600">{sessionStats.dirty_count}</div>
+                  <div className="text-sm text-orange-700">🍽️ Dirty Plates</div>
                 </div>
                 <div className="text-center p-4 bg-red-50 rounded-lg">
                   <div className="text-2xl font-bold text-red-600">{sessionStats.red_count}</div>
-                  <div className="text-sm text-red-700">⚠️ Hazardous</div>
+                  <div className="text-sm text-red-700">🍝 Very Dirty Plates</div>
                 </div>
               </div>
               <div className="text-center p-4 bg-blue-50 rounded-lg">
