@@ -1,0 +1,630 @@
+from flask import Blueprint, request, jsonify, session, render_template
+from datetime import datetime
+import uuid
+import csv
+import io
+import os
+
+recorder_bp = Blueprint('recorder', __name__)
+
+# Global storage for sessions and users
+session_data = {}
+global_csv_data = None
+users_db = {
+    'antineutrino': {'password': 'b-decay', 'role': 'superadmin', 'name': 'Super Administrator'},
+    'admin': {'password': 'admin123', 'role': 'admin', 'name': 'Administrator'},
+    'user1': {'password': 'user123', 'role': 'user', 'name': 'Regular User'},
+    'demo': {'password': 'demo', 'role': 'user', 'name': 'Demo User'}
+}
+
+def get_current_user():
+    """Get current logged in user"""
+    if 'user_id' in session:
+        return users_db.get(session['user_id'])
+    return None
+
+def require_auth():
+    """Check if user is authenticated"""
+    return 'user_id' in session and session['user_id'] in users_db
+
+def require_admin():
+    """Check if user is admin or super admin"""
+    user = get_current_user()
+    return user and user['role'] in ['admin', 'superadmin']
+
+def require_superadmin():
+    """Check if user is super admin"""
+    user = get_current_user()
+    return user and user['role'] == 'superadmin'
+
+@recorder_bp.route('/auth/login', methods=['POST'])
+def login():
+    """User login"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    
+    if username in users_db and users_db[username]['password'] == password:
+        session['user_id'] = username
+        user = users_db[username]
+        return jsonify({
+            'status': 'success',
+            'user': {
+                'username': username,
+                'name': user['name'],
+                'role': user['role']
+            }
+        }), 200
+    else:
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+@recorder_bp.route('/auth/logout', methods=['POST'])
+def logout():
+    """User logout"""
+    session.pop('user_id', None)
+    session.pop('session_id', None)
+    return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
+
+@recorder_bp.route('/auth/signup', methods=['POST'])
+def signup():
+    """User signup"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    name = data.get('name', '').strip()
+    
+    # Validation
+    if not username or not password or not name:
+        return jsonify({'error': 'Username, password, and name are required'}), 400
+    
+    if len(username) < 3:
+        return jsonify({'error': 'Username must be at least 3 characters long'}), 400
+    
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters long'}), 400
+    
+    if username in users_db:
+        return jsonify({'error': 'Username already exists'}), 409
+    
+    # Create new user
+    users_db[username] = {
+        'password': password,
+        'role': 'user',
+        'name': name
+    }
+    
+    return jsonify({
+        'status': 'success',
+        'message': 'Account created successfully'
+    }), 201
+
+@recorder_bp.route('/auth/status', methods=['GET'])
+def auth_status():
+    """Check authentication status"""
+    if require_auth():
+        user = get_current_user()
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'username': session['user_id'],
+                'name': user['name'],
+                'role': user['role']
+            }
+        }), 200
+    else:
+        return jsonify({'authenticated': False}), 200
+
+@recorder_bp.route('/admin/users', methods=['GET'])
+def admin_get_users():
+    """Admin: Get all users"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    users_list = []
+    for username, user_data in users_db.items():
+        users_list.append({
+            'username': username,
+            'name': user_data['name'],
+            'role': user_data['role']
+        })
+    
+    return jsonify({'users': users_list}), 200
+
+@recorder_bp.route('/admin/sessions', methods=['GET'])
+def admin_get_all_sessions():
+    """Admin: Get all sessions from all users"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    all_sessions = []
+    for session_id, data in session_data.items():
+        total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
+        all_sessions.append({
+            'session_id': session_id,
+            'session_name': data['session_name'],
+            'owner': data.get('owner', 'unknown'),
+            'created_at': data.get('created_at', 'unknown'),
+            'total_records': total_records,
+            'clean_count': len(data['clean_records']),
+            'dirty_count': len(data['dirty_records']),
+            'red_count': len(data['red_records'])
+        })
+    
+    return jsonify({'sessions': all_sessions}), 200
+
+@recorder_bp.route('/admin/sessions/<session_id>', methods=['DELETE'])
+def admin_delete_session(session_id):
+    """Admin: Delete any session"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    session_name = session_data[session_id]['session_name']
+    del session_data[session_id]
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'Session "{session_name}" deleted successfully by admin',
+        'deleted_session_id': session_id
+    }), 200
+
+@recorder_bp.route('/session/create', methods=['POST'])
+def create_session():
+    """Create a new session"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    data = request.get_json() or {}
+    custom_name = data.get('session_name', '').strip()
+    
+    # Generate session ID
+    session_id = str(uuid.uuid4())
+    
+    # Generate session name
+    if custom_name:
+        session_name = custom_name
+    else:
+        now = datetime.now()
+        session_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
+    
+    # Create session data with owner information
+    session_data[session_id] = {
+        'session_name': session_name,
+        'owner': session['user_id'],
+        'created_at': datetime.now().isoformat(),
+        'clean_records': [],
+        'dirty_records': [],
+        'red_records': [],
+        'scan_history': []
+    }
+    
+    # Set as current session
+    session['session_id'] = session_id
+    
+    return jsonify({
+        'session_id': session_id,
+        'session_name': session_name,
+        'owner': session['user_id']
+    }), 200
+
+@recorder_bp.route('/session/list', methods=['GET'])
+def list_sessions():
+    """List sessions for current user"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    user = get_current_user()
+    current_user_id = session['user_id']
+    
+    user_sessions = []
+    for session_id, data in session_data.items():
+        # Users see only their own sessions, admins see all
+        if user['role'] == 'admin' or data.get('owner') == current_user_id:
+            total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
+            user_sessions.append({
+                'session_id': session_id,
+                'session_name': data['session_name'],
+                'owner': data.get('owner', 'unknown'),
+                'total_records': total_records
+            })
+    
+    return jsonify({
+        'sessions': user_sessions,
+        'has_global_csv': global_csv_data is not None
+    }), 200
+
+@recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
+def switch_session(session_id):
+    """Switch to a different session"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    user = get_current_user()
+    session_owner = session_data[session_id].get('owner')
+    
+    # Check if user can access this session
+    if user['role'] != 'admin' and session_owner != session['user_id']:
+        return jsonify({'error': 'Access denied to this session'}), 403
+    
+    session['session_id'] = session_id
+    
+    return jsonify({
+        'session_id': session_id,
+        'session_name': session_data[session_id]['session_name'],
+        'owner': session_owner
+    }), 200
+
+@recorder_bp.route('/session/delete/<session_id>', methods=['DELETE'])
+def delete_session(session_id):
+    """Delete a session (fixed version)"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    user = get_current_user()
+    session_owner = session_data[session_id].get('owner')
+    
+    # Check if user can delete this session
+    if user['role'] != 'admin' and session_owner != session['user_id']:
+        return jsonify({'error': 'Access denied to delete this session'}), 403
+    
+    # Check if trying to delete the current active session
+    current_session_id = session.get('session_id')
+    if session_id == current_session_id:
+        return jsonify({'error': 'Cannot delete the currently active session. Switch to another session first.'}), 400
+    
+    # Get session name before deletion for response
+    session_name = session_data[session_id]['session_name']
+    
+    # Delete the session
+    del session_data[session_id]
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'Session "{session_name}" deleted successfully',
+        'deleted_session_id': session_id
+    }), 200
+
+# Global CSV data storage
+global_csv_data = None
+
+@recorder_bp.route('/csv/upload', methods=['POST'])
+def upload_csv():
+    """Upload CSV file (requires authentication)"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    global global_csv_data
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not file.filename.lower().endswith('.csv'):
+        return jsonify({'error': 'File must be a CSV'}), 400
+    
+    try:
+        # Read CSV content
+        content = file.read().decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(content))
+        
+        # Convert to list and validate structure
+        rows = list(csv_reader)
+        if not rows:
+            return jsonify({'error': 'CSV file is empty'}), 400
+        
+        # Check for required columns
+        required_columns = ['Last', 'First', 'Student ID']
+        if not all(col in csv_reader.fieldnames for col in required_columns):
+            return jsonify({'error': f'CSV must contain columns: {", ".join(required_columns)}'}), 400
+        
+        # Store globally (applies to all sessions)
+        global_csv_data = {
+            'data': rows,
+            'columns': csv_reader.fieldnames,
+            'uploaded_by': session['user_id'],
+            'uploaded_at': datetime.now().isoformat()
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'rows_count': len(rows),
+            'columns': csv_reader.fieldnames,
+            'uploaded_by': session['user_id']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Error processing CSV: {str(e)}'}), 400
+
+@recorder_bp.route('/record/<category>', methods=['POST'])
+def record_student(category):
+    """Record a student in a category"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if 'session_id' not in session or session['session_id'] not in session_data:
+        return jsonify({'error': 'No active session'}), 400
+    
+    if category not in ['clean', 'dirty', 'red']:
+        return jsonify({'error': 'Invalid category'}), 400
+    
+    data = request.get_json()
+    input_value = data.get('input_value', '').strip()
+    
+    if not input_value:
+        return jsonify({'error': 'Student ID or Name is required'}), 400
+    
+    session_id = session['session_id']
+    session_info = session_data[session_id]
+    
+    # Determine if input is ID or name
+    student_record = None
+    is_manual_entry = False
+    student_id = None
+    first_name = ""
+    last_name = ""
+    
+    # First, try to find by Student ID in CSV
+    if global_csv_data and global_csv_data['data']:
+        for row in global_csv_data['data']:
+            if str(row.get('Student ID', '')).strip() == input_value:
+                student_record = row
+                student_id = input_value
+                first_name = row.get('First', '')
+                last_name = row.get('Last', '')
+                break
+    
+    # If not found by ID, try to find by name
+    if not student_record and global_csv_data and global_csv_data['data']:
+        # Parse input as "First Last"
+        name_parts = input_value.split()
+        if len(name_parts) >= 2:
+            input_first = name_parts[0].lower()
+            input_last = ' '.join(name_parts[1:]).lower()
+            
+            for row in global_csv_data['data']:
+                csv_first = str(row.get('First', '')).strip().lower()
+                csv_last = str(row.get('Last', '')).strip().lower()
+                
+                if csv_first == input_first and csv_last == input_last:
+                    student_record = row
+                    student_id = str(row.get('Student ID', ''))
+                    first_name = row.get('First', '')
+                    last_name = row.get('Last', '')
+                    break
+    
+    # If still not found, create manual entry
+    if not student_record:
+        is_manual_entry = True
+        student_id = "Manual Input"
+        
+        # Parse name from input
+        name_parts = input_value.split()
+        if len(name_parts) >= 2:
+            first_name = name_parts[0].capitalize()
+            last_name = ' '.join(name_parts[1:]).capitalize()
+        elif len(name_parts) == 1:
+            first_name = name_parts[0].capitalize()
+            last_name = ""
+        else:
+            first_name = input_value.capitalize()
+            last_name = ""
+    
+    # Check for duplicate entries in current session
+    all_records = session_info['clean_records'] + session_info['dirty_records'] + session_info['red_records']
+    
+    # For manual entries, check by name; for CSV entries, check by student_id
+    if is_manual_entry:
+        duplicate_check = any(
+            record.get('first_name', '').lower() == first_name.lower() and 
+            record.get('last_name', '').lower() == last_name.lower() and
+            record.get('student_id') == "Manual Input"
+            for record in all_records
+        )
+    else:
+        duplicate_check = any(record.get('student_id') == student_id for record in all_records)
+    
+    if duplicate_check:
+        existing_category = None
+        for cat in ['clean', 'dirty', 'red']:
+            if is_manual_entry:
+                if any(
+                    record.get('first_name', '').lower() == first_name.lower() and 
+                    record.get('last_name', '').lower() == last_name.lower() and
+                    record.get('student_id') == "Manual Input"
+                    for record in session_info[f'{cat}_records']
+                ):
+                    existing_category = cat
+                    break
+            else:
+                if any(record.get('student_id') == student_id for record in session_info[f'{cat}_records']):
+                    existing_category = cat
+                    break
+        
+        return jsonify({
+            'error': 'duplicate',
+            'message': f'Student already recorded as {existing_category.upper()} in this session'
+        }), 409
+    
+    # Create record
+    record = {
+        'student_id': student_id,
+        'first_name': first_name,
+        'last_name': last_name,
+        'category': category,
+        'timestamp': datetime.now().isoformat(),
+        'recorded_by': session['user_id'],
+        'is_manual_entry': is_manual_entry
+    }
+    
+    # Add to appropriate category
+    session_info[f'{category}_records'].append(record)
+    session_info['scan_history'].append(record)
+    
+    return jsonify({
+        'status': 'success',
+        'first_name': first_name,
+        'last_name': last_name,
+        'student_id': student_id,
+        'category': category,
+        'is_manual_entry': is_manual_entry,
+        'recorded_by': session['user_id']
+    }), 200
+
+@recorder_bp.route('/session/status', methods=['GET'])
+def get_session_status():
+    """Get current session status"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if 'session_id' not in session or session['session_id'] not in session_data:
+        return jsonify({'error': 'No active session'}), 400
+    
+    session_id = session['session_id']
+    data = session_data[session_id]
+    
+    return jsonify({
+        'session_id': session_id,
+        'session_name': data['session_name'],
+        'owner': data.get('owner'),
+        'clean_count': len(data['clean_records']),
+        'dirty_count': len(data['dirty_records']),
+        'red_count': len(data['red_records']),
+        'total_recorded': len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records']),
+        'scan_history_count': len(data['scan_history'])
+    }), 200
+
+@recorder_bp.route('/session/history', methods=['GET'])
+def get_session_history():
+    """Get scan history for current session"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if 'session_id' not in session or session['session_id'] not in session_data:
+        return jsonify({'error': 'No active session'}), 400
+    
+    session_id = session['session_id']
+    data = session_data[session_id]
+    
+    return jsonify({
+        'scan_history': data['scan_history']
+    }), 200
+
+@recorder_bp.route('/export/csv', methods=['GET'])
+def export_csv():
+    """Export session records as CSV"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if 'session_id' not in session or session['session_id'] not in session_data:
+        return jsonify({'error': 'No active session'}), 400
+    
+    session_id = session['session_id']
+    data = session_data[session_id]
+    
+    # Create CSV content with three columns
+    output = io.StringIO()
+    
+    # Write header
+    output.write("CLEAN,DIRTY,RED\n")
+    
+    # Get all records for each category
+    clean_names = [f"{record['first_name']} {record['last_name']}" for record in data['clean_records']]
+    dirty_names = [f"{record['first_name']} {record['last_name']}" for record in data['dirty_records']]
+    red_names = [f"{record['first_name']} {record['last_name']}" for record in data['red_records']]
+    
+    # Find the maximum number of records to determine how many rows we need
+    max_records = max(len(clean_names), len(dirty_names), len(red_names))
+    
+    # Write data rows
+    for i in range(max_records):
+        clean_name = clean_names[i] if i < len(clean_names) else ""
+        dirty_name = dirty_names[i] if i < len(dirty_names) else ""
+        red_name = red_names[i] if i < len(red_names) else ""
+        
+        output.write(f'"{clean_name}","{dirty_name}","{red_name}"\n')
+    
+    csv_content = output.getvalue()
+    output.close()
+    
+    from flask import Response
+    return Response(
+        csv_content,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{data["session_name"]}_records.csv"'}
+    )
+
+
+@recorder_bp.route('/admin/overview', methods=['GET'])
+def admin_overview():
+    """Get admin overview data"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    # Get all users
+    users = []
+    for username, user_data in users_db.items():
+        users.append({
+            'username': username,
+            'name': user_data['name'],
+            'role': user_data['role']
+        })
+    
+    # Get all sessions
+    sessions = []
+    for session_id, session_info in session_data.items():
+        total_records = len(session_info['clean_records']) + len(session_info['dirty_records']) + len(session_info['red_records'])
+        sessions.append({
+            'session_id': session_id,
+            'session_name': session_info['session_name'],
+            'owner': session_info['owner'],
+            'total_records': total_records,
+            'created_at': session_info['created_at']
+        })
+    
+    return jsonify({
+        'users': users,
+        'sessions': sessions
+    }), 200
+
+
+@recorder_bp.route('/session/scan-history', methods=['GET'])
+def get_scan_history():
+    """Get scan history for current session"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if 'session_id' not in session or session['session_id'] not in session_data:
+        return jsonify({'error': 'No active session'}), 400
+    
+    session_id = session['session_id']
+    data = session_data[session_id]
+    
+    # Format scan history for display
+    formatted_history = []
+    for record in data['scan_history']:
+        formatted_history.append({
+            'timestamp': record['timestamp'],
+            'name': f"{record['first_name']} {record['last_name']}".strip(),
+            'student_id': record['student_id'],
+            'category': record['category'].upper(),
+            'is_manual_entry': record.get('is_manual_entry', False)
+        })
+    
+    # Sort by timestamp (most recent first)
+    formatted_history.sort(key=lambda x: x['timestamp'], reverse=True)
+    
+    return jsonify({
+        'scan_history': formatted_history
+    }), 200
+
