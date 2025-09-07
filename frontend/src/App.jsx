@@ -43,6 +43,12 @@ function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [sessionToDelete, setSessionToDelete] = useState(null)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [showAccountManagement, setShowAccountManagement] = useState(false)
+  const [showDeleteRequests, setShowDeleteRequests] = useState(false)
+  
+  // Account management state
+  const [allUsers, setAllUsers] = useState([])
+  const [deleteRequests, setDeleteRequests] = useState([])
   
   // Popup states for each category
   const [showCleanDialog, setShowCleanDialog] = useState(false)
@@ -263,21 +269,12 @@ function App() {
   const deleteSession = async (sessionId) => {
     setIsLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/session/delete/${sessionId}`, {
-        method: 'DELETE'
-      })
-
-      const data = await response.json()
-      if (response.ok) {
-        showMessage(data.message, 'success')
-        await loadSessions()
-        setShowDeleteConfirm(false)
-        setSessionToDelete(null)
-      } else {
-        showMessage(data.error || 'Failed to delete session', 'error')
-      }
+      // Use the new request system instead of direct deletion
+      await requestDeleteSession(sessionId)
+      setShowDeleteConfirm(false)
+      setSessionToDelete(null)
     } catch (error) {
-      showMessage('Failed to delete session', 'error')
+      showMessage('Failed to process delete request', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -440,6 +437,100 @@ function App() {
     }
   }
 
+  // Account management functions
+  const loadAllUsers = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users`)
+      if (response.ok) {
+        const data = await response.json()
+        setAllUsers(data.users || [])
+      }
+    } catch (error) {
+      console.error('Failed to load users:', error)
+    }
+  }
+
+  const toggleAccountStatus = async (username, currentStatus) => {
+    try {
+      const newStatus = currentStatus === 'active' ? 'disabled' : 'active'
+      const response = await fetch(`${API_BASE}/admin/manage-account-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, status: newStatus })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        loadAllUsers() // Refresh the user list
+      } else {
+        const error = await response.json()
+        showMessage(error.error, 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to update account status', 'error')
+    }
+  }
+
+  // Delete request functions
+  const requestDeleteSession = async (sessionId) => {
+    try {
+      const response = await fetch(`${API_BASE}/session/request-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        if (user.role === 'user') {
+          // For normal users, refresh sessions list to remove deleted session
+          loadSessions()
+        }
+      } else {
+        const error = await response.json()
+        showMessage(error.error, 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to process delete request', 'error')
+    }
+  }
+
+  const loadDeleteRequests = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/admin/delete-requests`)
+      if (response.ok) {
+        const data = await response.json()
+        setDeleteRequests(data.requests || [])
+      }
+    } catch (error) {
+      console.error('Failed to load delete requests:', error)
+    }
+  }
+
+  const approveDeleteRequest = async (requestId) => {
+    try {
+      const response = await fetch(`${API_BASE}/admin/approve-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: requestId })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        loadDeleteRequests() // Refresh delete requests
+        loadSessions() // Refresh sessions list
+      } else {
+        const error = await response.json()
+        showMessage(error.error, 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to approve delete request', 'error')
+    }
+  }
+
   // Login Screen
   if (!isAuthenticated) {
     return (
@@ -575,6 +666,17 @@ function App() {
               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                 {user.name} ({user.username})
               </Badge>
+              <Button 
+                onClick={() => window.open('https://github.com/Antineutrino-4444/goldenplatewebsite', '_blank')}
+                variant="outline" 
+                size="sm"
+                className="text-gray-600 hover:text-gray-900"
+              >
+                <svg className="h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                GitHub
+              </Button>
               <Button onClick={logout} variant="outline" size="sm">
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
@@ -1022,6 +1124,33 @@ function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
+              <div className="flex gap-4">
+                <Button 
+                  onClick={() => {
+                    setShowAccountManagement(true)
+                    loadAllUsers()
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Account Management
+                </Button>
+                {user.role === 'admin' || user.role === 'superadmin' ? (
+                  <Button 
+                    onClick={() => {
+                      setShowDeleteRequests(true)
+                      loadDeleteRequests()
+                    }}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Requests ({deleteRequests.length})
+                  </Button>
+                ) : null}
+              </div>
+
               <div>
                 <h3 className="text-lg font-semibold mb-3">Users</h3>
                 <div className="space-y-2">
@@ -1058,6 +1187,94 @@ function App() {
               </div>
             </div>
             <Button onClick={() => setShowAdminPanel(false)} className="w-full">
+              Close
+            </Button>
+          </DialogContent>
+        </Dialog>
+
+        {/* Account Management Dialog */}
+        <Dialog open={showAccountManagement} onOpenChange={setShowAccountManagement}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Account Management</DialogTitle>
+              <DialogDescription>
+                Manage user account status (enable/disable accounts)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {allUsers.map((userAccount) => (
+                <div key={userAccount.username} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <div className="font-medium">{userAccount.name}</div>
+                    <div className="text-sm text-gray-500">
+                      @{userAccount.username} • {userAccount.role}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge 
+                      variant={userAccount.status === 'active' ? 'default' : 'destructive'}
+                    >
+                      {userAccount.status}
+                    </Badge>
+                    {((user.role === 'superadmin' && userAccount.username !== user.username) ||
+                      (user.role === 'admin' && !['superadmin', 'admin'].includes(userAccount.role))) && (
+                      <Button
+                        onClick={() => toggleAccountStatus(userAccount.username, userAccount.status)}
+                        variant={userAccount.status === 'active' ? 'destructive' : 'default'}
+                        size="sm"
+                      >
+                        {userAccount.status === 'active' ? 'Disable' : 'Enable'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button onClick={() => setShowAccountManagement(false)} className="w-full">
+              Close
+            </Button>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Requests Dialog */}
+        <Dialog open={showDeleteRequests} onOpenChange={setShowDeleteRequests}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Delete Requests</DialogTitle>
+              <DialogDescription>
+                Pending session deletion requests from users
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {deleteRequests.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No pending delete requests
+                </div>
+              ) : (
+                deleteRequests.map((request) => (
+                  <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div>
+                      <div className="font-medium">{request.session_name}</div>
+                      <div className="text-sm text-gray-500">
+                        Requested by: {request.requester_name} (@{request.requester})
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {new Date(request.requested_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => approveDeleteRequest(request.id)}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Approve Delete
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+            <Button onClick={() => setShowDeleteRequests(false)} className="w-full">
               Close
             </Button>
           </DialogContent>

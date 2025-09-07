@@ -7,14 +7,15 @@ import os
 
 recorder_bp = Blueprint('recorder', __name__)
 
-# Global storage for sessions and users
+# Global storage for sessions, users, and delete requests
 session_data = {}
 global_csv_data = None
+delete_requests = []  # Store delete requests from normal users
 users_db = {
-    'antineutrino': {'password': 'b-decay', 'role': 'superadmin', 'name': 'Super Administrator'},
-    'admin': {'password': 'admin123', 'role': 'admin', 'name': 'Administrator'},
-    'user1': {'password': 'user123', 'role': 'user', 'name': 'Regular User'},
-    'demo': {'password': 'demo', 'role': 'user', 'name': 'Demo User'}
+    'antineutrino': {'password': 'b-decay', 'role': 'superadmin', 'name': 'Super Administrator', 'status': 'active'},
+    'admin': {'password': 'admin123', 'role': 'admin', 'name': 'Administrator', 'status': 'active'},
+    'user1': {'password': 'user123', 'role': 'user', 'name': 'Regular User', 'status': 'active'},
+    'demo': {'password': 'demo', 'role': 'user', 'name': 'Demo User', 'status': 'active'}
 }
 
 def get_current_user():
@@ -45,8 +46,22 @@ def login():
     password = data.get('password', '').strip()
     
     if username in users_db and users_db[username]['password'] == password:
-        session['user_id'] = username
         user = users_db[username]
+        
+        # Check account status
+        if user.get('status', 'active') != 'active':
+            return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
+        
+        session['user_id'] = username
+        
+        # Load user's CSV data if exists
+        user_csv_file = f"user_csv_{username}.json"
+        if os.path.exists(user_csv_file):
+            import json
+            with open(user_csv_file, 'r') as f:
+                global global_csv_data
+                global_csv_data = json.load(f)
+        
         return jsonify({
             'status': 'success',
             'user': {
@@ -61,6 +76,13 @@ def login():
 @recorder_bp.route('/auth/logout', methods=['POST'])
 def logout():
     """User logout"""
+    # Save user's CSV data before logout
+    if 'user_id' in session and global_csv_data:
+        user_csv_file = f"user_csv_{session['user_id']}.json"
+        import json
+        with open(user_csv_file, 'w') as f:
+            json.dump(global_csv_data, f)
+    
     session.pop('user_id', None)
     session.pop('session_id', None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
@@ -90,7 +112,8 @@ def signup():
     users_db[username] = {
         'password': password,
         'role': 'user',
-        'name': name
+        'name': name,
+        'status': 'active'
     }
     
     return jsonify({
@@ -113,6 +136,134 @@ def auth_status():
         }), 200
     else:
         return jsonify({'authenticated': False}), 200
+
+@recorder_bp.route('/admin/manage-account-status', methods=['POST'])
+def manage_account_status():
+    """Manage account status (enable/disable users)"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    current_user = get_current_user()
+    data = request.get_json()
+    target_username = data.get('username')
+    new_status = data.get('status')  # 'active' or 'disabled'
+    
+    if not target_username or not new_status:
+        return jsonify({'error': 'Username and status are required'}), 400
+    
+    if target_username not in users_db:
+        return jsonify({'error': 'User not found'}), 404
+    
+    target_user = users_db[target_username]
+    
+    # Permission checks
+    if current_user['role'] == 'superadmin':
+        # Super admin can manage everyone except themselves
+        if target_username == session['user_id']:
+            return jsonify({'error': 'Cannot modify your own account status'}), 403
+    elif current_user['role'] == 'admin':
+        # Admin can manage users but not super admins or other admins
+        if target_user['role'] in ['superadmin', 'admin']:
+            return jsonify({'error': 'Insufficient permissions to modify this account'}), 403
+    else:
+        return jsonify({'error': 'Insufficient permissions'}), 403
+    
+    # Update status
+    users_db[target_username]['status'] = new_status
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'Account {target_username} has been {new_status}'
+    }), 200
+
+@recorder_bp.route('/session/request-delete', methods=['POST'])
+def request_delete_session():
+    """Request session deletion (for normal users)"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    current_user = get_current_user()
+    data = request.get_json()
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return jsonify({'error': 'Session ID is required'}), 400
+    
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    # Check if user owns the session
+    if session_data[session_id]['owner'] != session['user_id']:
+        return jsonify({'error': 'You can only request deletion of your own sessions'}), 403
+    
+    # If user is admin or super admin, delete immediately
+    if current_user['role'] in ['admin', 'superadmin']:
+        del session_data[session_id]
+        return jsonify({
+            'status': 'success',
+            'message': 'Session deleted successfully'
+        }), 200
+    
+    # For normal users, add to delete requests
+    delete_request = {
+        'id': str(uuid.uuid4()),
+        'session_id': session_id,
+        'session_name': session_data[session_id]['name'],
+        'requester': session['user_id'],
+        'requester_name': current_user['name'],
+        'requested_at': datetime.now().isoformat()
+    }
+    
+    delete_requests.append(delete_request)
+    
+    return jsonify({
+        'status': 'success',
+        'message': 'Delete request submitted. An administrator will review your request.'
+    }), 200
+
+@recorder_bp.route('/admin/delete-requests', methods=['GET'])
+def get_delete_requests():
+    """Get pending delete requests (admin/super admin only)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    return jsonify({
+        'status': 'success',
+        'requests': delete_requests
+    }), 200
+
+@recorder_bp.route('/admin/approve-delete', methods=['POST'])
+def approve_delete_request():
+    """Approve and execute session deletion (admin/super admin only)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.get_json()
+    request_id = data.get('request_id')
+    
+    if not request_id:
+        return jsonify({'error': 'Request ID is required'}), 400
+    
+    # Find the request
+    request_to_approve = None
+    for i, req in enumerate(delete_requests):
+        if req['id'] == request_id:
+            request_to_approve = req
+            del delete_requests[i]
+            break
+    
+    if not request_to_approve:
+        return jsonify({'error': 'Delete request not found'}), 404
+    
+    # Delete the session if it still exists
+    session_id = request_to_approve['session_id']
+    if session_id in session_data:
+        del session_data[session_id]
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'Session "{request_to_approve["session_name"]}" has been deleted'
+    }), 200
 
 @recorder_bp.route('/admin/users', methods=['GET'])
 def admin_get_users():
