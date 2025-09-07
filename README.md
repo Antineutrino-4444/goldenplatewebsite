@@ -46,24 +46,14 @@ A comprehensive student attendance tracking system with barcode scanner support,
 
 ## 🚀 Live Demo
 
-**Website**: [https://58hpi8cpdgl0.manus.space](https://58hpi8cpdgl0.manus.space)
+**Website**: [https://g8h3ilc38pe1.manus.space](https://g8h3ilc38pe1.manus.space)
 
-### Demo Accounts
+The application includes multiple user roles with different access levels:
+- **Super Administrator**: Complete system control and user management
+- **Administrator**: Admin panel access and session oversight  
+- **Regular Users**: Standard attendance tracking features
 
-#### Super Administrator
-- **Username**: `antineutrino`
-- **Password**: `b-decay`
-- **Access**: Full system control, user management, admin panel
-
-#### Administrator
-- **Username**: `admin`
-- **Password**: `admin123`
-- **Access**: Admin panel, dashboard, session oversight
-
-#### Regular User
-- **Username**: `user1`
-- **Password**: `user123`
-- **Access**: Standard features, own sessions only
+Create your own account using the signup feature, or contact your system administrator for access credentials.
 
 ## 🛠️ Technology Stack
 
