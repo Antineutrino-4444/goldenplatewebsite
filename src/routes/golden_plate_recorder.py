@@ -4,19 +4,68 @@ import uuid
 import csv
 import io
 import os
+import json
 
 recorder_bp = Blueprint('recorder', __name__)
 
-# Global storage for sessions, users, and delete requests
-session_data = {}
-global_csv_data = None
-delete_requests = []  # Store delete requests from normal users
-users_db = {
+# Data storage directory
+DATA_DIR = "persistent_data"
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+# File paths for persistent storage
+SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
+GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv.json")
+
+def load_data_from_file(file_path, default_data):
+    """Load data from file or return default if file doesn't exist"""
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading {file_path}: {e}")
+    return default_data
+
+def save_data_to_file(file_path, data):
+    """Save data to file"""
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving {file_path}: {e}")
+
+# Initialize persistent storage
+session_data = load_data_from_file(SESSIONS_FILE, {})
+global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, None)
+delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
+
+# Initialize users database with default users if file doesn't exist
+default_users = {
     'antineutrino': {'password': 'b-decay', 'role': 'superadmin', 'name': 'Super Administrator', 'status': 'active'},
     'admin': {'password': 'admin123', 'role': 'admin', 'name': 'Administrator', 'status': 'active'},
     'user1': {'password': 'user123', 'role': 'user', 'name': 'Regular User', 'status': 'active'},
     'demo': {'password': 'demo', 'role': 'user', 'name': 'Demo User', 'status': 'active'}
 }
+users_db = load_data_from_file(USERS_FILE, default_users)
+
+def save_session_data():
+    """Save session data to file"""
+    save_data_to_file(SESSIONS_FILE, session_data)
+
+def save_users_db():
+    """Save users database to file"""
+    save_data_to_file(USERS_FILE, users_db)
+
+def save_delete_requests():
+    """Save delete requests to file"""
+    save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+
+def save_global_csv():
+    """Save global CSV data to file"""
+    save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
 def get_current_user():
     """Get current logged in user"""
@@ -116,6 +165,9 @@ def signup():
         'status': 'active'
     }
     
+    # Save users database to file
+    save_users_db()
+    
     return jsonify({
         'status': 'success',
         'message': 'Account created successfully'
@@ -170,6 +222,7 @@ def manage_account_status():
     
     # Update status
     users_db[target_username]['status'] = new_status
+    save_users_db()
     
     return jsonify({
         'status': 'success',
@@ -199,6 +252,7 @@ def request_delete_session():
     # If user is admin or super admin, delete immediately
     if current_user['role'] in ['admin', 'superadmin']:
         del session_data[session_id]
+        save_session_data()
         return jsonify({
             'status': 'success',
             'message': 'Session deleted successfully'
@@ -215,6 +269,9 @@ def request_delete_session():
     }
     
     delete_requests.append(delete_request)
+    
+    # Save delete requests to file
+    save_delete_requests()
     
     return jsonify({
         'status': 'success',
@@ -250,6 +307,8 @@ def approve_delete_request():
         if req['id'] == request_id:
             request_to_approve = req
             del delete_requests[i]
+            # Save delete requests to file
+            save_delete_requests()
             break
     
     if not request_to_approve:
@@ -259,6 +318,7 @@ def approve_delete_request():
     session_id = request_to_approve['session_id']
     if session_id in session_data:
         del session_data[session_id]
+    save_session_data()
     
     return jsonify({
         'status': 'success',
@@ -314,6 +374,7 @@ def admin_delete_session(session_id):
     
     session_name = session_data[session_id]['session_name']
     del session_data[session_id]
+    save_session_data()
     
     return jsonify({
         'status': 'success',
@@ -350,6 +411,9 @@ def create_session():
         'red_records': [],
         'scan_history': []
     }
+    
+    # Save session data to file
+    save_session_data()
     
     # Set as current session
     session['session_id'] = session_id
@@ -436,6 +500,7 @@ def delete_session(session_id):
     
     # Delete the session
     del session_data[session_id]
+    save_session_data()
     
     return jsonify({
         'status': 'success',
@@ -486,6 +551,9 @@ def upload_csv():
             'uploaded_by': session['user_id'],
             'uploaded_at': datetime.now().isoformat()
         }
+        
+        # Save global CSV data to file
+        save_global_csv()
         
         return jsonify({
             'status': 'success',
@@ -621,6 +689,9 @@ def record_student(category):
     # Add to appropriate category
     session_info[f'{category}_records'].append(record)
     session_info['scan_history'].append(record)
+    
+    # Save session data to file
+    save_session_data()
     
     return jsonify({
         'status': 'success',
@@ -808,6 +879,7 @@ def change_user_role():
         return jsonify({'error': 'User not found'}), 404
     
     users_db[target_username]['role'] = new_role
+    save_users_db()
     
     return jsonify({
         'status': 'success',
@@ -839,6 +911,7 @@ def delete_user_account():
     
     # Delete user account
     del users_db[target_username]
+    save_users_db()
     
     # Clean up user's CSV data file
     user_csv_file = f"user_csv_{target_username}.json"
@@ -853,6 +926,7 @@ def delete_user_account():
     
     for session_id in sessions_to_remove:
         del session_data[session_id]
+    save_session_data()
     
     return jsonify({
         'status': 'success',
