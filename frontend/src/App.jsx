@@ -12,6 +12,9 @@ import './App.css'
 const API_BASE = '/api'
 
 function App() {
+  // Startup animation state
+  const [showStartupAnimation, setShowStartupAnimation] = useState(true)
+  
   // Authentication state
   const [user, setUser] = useState(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -76,7 +79,14 @@ function App() {
 
   // Check authentication status on load
   useEffect(() => {
+    // Startup animation timer
+    const animationTimer = setTimeout(() => {
+      setShowStartupAnimation(false)
+    }, 3000) // 3 second animation
+
     checkAuthStatus()
+
+    return () => clearTimeout(animationTimer)
   }, [])
 
   const checkAuthStatus = async () => {
@@ -212,12 +222,35 @@ function App() {
         // Load scan history for the session
         await loadScanHistory()
       } else {
-        // No active session, create one
-        await createSession()
+        // No active session - allow user to work without sessions
+        setSessionId(null)
+        setSessionName('')
+        setSessionStats({ 
+          clean_count: 0, 
+          dirty_count: 0, 
+          red_count: 0, 
+          combined_dirty_count: 0, 
+          total_recorded: 0, 
+          clean_percentage: 0, 
+          dirty_percentage: 0 
+        })
+        setScanHistory([])
       }
     } catch (error) {
       console.error('Session initialization failed:', error)
-      await createSession()
+      // Don't automatically create session on error
+      setSessionId(null)
+      setSessionName('')
+      setSessionStats({ 
+        clean_count: 0, 
+        dirty_count: 0, 
+        red_count: 0, 
+        combined_dirty_count: 0, 
+        total_recorded: 0, 
+        clean_percentage: 0, 
+        dirty_percentage: 0 
+      })
+      setScanHistory([])
     }
   }
 
@@ -621,6 +654,34 @@ function App() {
     }
   }
 
+  // Startup Animation
+  if (showStartupAnimation) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-bounce mb-8">
+            <div className="text-8xl mb-4">🍽️</div>
+          </div>
+          <div className="animate-pulse">
+            <h1 className="text-6xl font-bold bg-gradient-to-r from-amber-600 via-yellow-600 to-orange-600 bg-clip-text text-transparent mb-4">
+              PLATE
+            </h1>
+            <p className="text-xl text-gray-600 font-medium">
+              Prevention, Logging & Assessment of Tossed Edibles
+            </p>
+          </div>
+          <div className="mt-8">
+            <div className="inline-flex items-center space-x-2">
+              <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
+              <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Login Screen
   if (!isAuthenticated) {
     return (
@@ -783,49 +844,85 @@ function App() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Session Info */}
-        <div className="mb-6 text-center">
-          <div className="text-lg font-medium text-gray-900">
-            Session: {sessionName}
+        {/* No Session State */}
+        {!sessionId ? (
+          <div className="text-center py-16">
+            <div className="max-w-md mx-auto">
+              <div className="mb-8">
+                <div className="text-6xl mb-4">🍽️</div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">No Active Session</h2>
+                <p className="text-gray-600 mb-6">
+                  Create a new session to start tracking plate cleanliness and food waste data.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <Button 
+                  onClick={() => setShowNewSessionDialog(true)} 
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-3 text-lg"
+                  size="lg"
+                >
+                  <Plus className="h-5 w-5 mr-2" />
+                  Create New Session
+                </Button>
+                <div className="text-sm text-gray-500">
+                  or
+                </div>
+                <Button 
+                  onClick={() => { loadSessions(); setShowSessionsDialog(true) }} 
+                  variant="outline"
+                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Join Existing Session
+                </Button>
+              </div>
+            </div>
           </div>
-          <div className="text-sm text-gray-500">
-            Total: {sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count}
-          </div>
-        </div>
+        ) : (
+          <>
+            {/* Session Info */}
+            <div className="mb-6 text-center">
+              <div className="text-lg font-medium text-gray-900">
+                Session: {sessionName}
+              </div>
+              <div className="text-sm text-gray-500">
+                Total: {sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count}
+              </div>
+            </div>
 
-        {/* Success/Error Messages */}
-        {message && (
-          <Alert className={`mb-6 ${messageType === 'error' ? 'border-red-200 bg-red-50' : messageType === 'success' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}`}>
-            <CheckCircle className="h-4 w-4" />
-            <AlertDescription className={messageType === 'error' ? 'text-red-800' : messageType === 'success' ? 'text-green-800' : 'text-blue-800'}>
-              {message}
-            </AlertDescription>
-          </Alert>
-        )}
+            {/* Success/Error Messages */}
+            {message && (
+              <Alert className={`mb-6 ${messageType === 'error' ? 'border-red-200 bg-red-50' : messageType === 'success' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}`}>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription className={messageType === 'error' ? 'text-red-800' : messageType === 'success' ? 'text-green-800' : 'text-blue-800'}>
+                  {message}
+                </AlertDescription>
+              </Alert>
+            )}
 
-        {/* Navigation Buttons */}
-        <div className="flex flex-wrap gap-2 mb-6 justify-center">
-          <Button onClick={() => setShowNewSessionDialog(true)} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="h-4 w-4 mr-2" />
-            New Session
-          </Button>
-          <Button onClick={() => { loadSessions(); setShowSessionsDialog(true) }} className="bg-orange-600 hover:bg-orange-700">
-            <Users className="h-4 w-4 mr-2" />
-            Switch Session
-          </Button>
-          {user.role !== 'user' && (
-            <Button onClick={() => { loadAdminData(); setShowDashboard(true) }} className="bg-purple-600 hover:bg-purple-700">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Dashboard
-            </Button>
-          )}
-          {['admin', 'superadmin'].includes(user.role) && (
-            <Button onClick={() => { loadAdminData(); setShowAdminPanel(true) }} className="bg-red-600 hover:bg-red-700">
-              <Shield className="h-4 w-4 mr-2" />
-              Admin Panel
-            </Button>
-          )}
-        </div>
+            {/* Navigation Buttons */}
+            <div className="flex flex-wrap gap-2 mb-6 justify-center">
+              <Button onClick={() => setShowNewSessionDialog(true)} className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4 mr-2" />
+                New Session
+              </Button>
+              <Button onClick={() => { loadSessions(); setShowSessionsDialog(true) }} className="bg-orange-600 hover:bg-orange-700">
+                <Users className="h-4 w-4 mr-2" />
+                Switch Session
+              </Button>
+              {user.role !== 'user' && (
+                <Button onClick={() => { loadAdminData(); setShowDashboard(true) }} className="bg-purple-600 hover:bg-purple-700">
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Dashboard
+                </Button>
+              )}
+              {['admin', 'superadmin'].includes(user.role) && (
+                <Button onClick={() => { loadAdminData(); setShowAdminPanel(true) }} className="bg-red-600 hover:bg-red-700">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Admin Panel
+                </Button>
+              )}
+            </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Student Database */}
@@ -1490,6 +1587,8 @@ function App() {
             </Button>
           </DialogContent>
         </Dialog>
+        </>
+        )}
       </div>
     </div>
   )
