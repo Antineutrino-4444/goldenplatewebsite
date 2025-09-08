@@ -37,23 +37,44 @@ def load_data_from_file(file_path, default_data):
     return default_data
 
 def save_data_to_file(file_path, data):
-    """Save data to file"""
+    """Save data to file with Windows compatibility"""
     try:
         # Ensure directory exists
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
-        # Write to temporary file first, then rename for atomic operation
-        temp_file = file_path + '.tmp'
-        with open(temp_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        # Atomic rename
-        os.rename(temp_file, file_path)
-        print(f"Successfully saved data to {file_path}")
-        return True
+        # For Windows compatibility, try direct write first
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            print(f"Successfully saved data to {file_path}")
+            return True
+        except (PermissionError, FileExistsError):
+            # If direct write fails, try with temporary file
+            temp_file = file_path + '.tmp'
+            
+            # Remove temp file if it exists
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except:
+                    pass
+            
+            with open(temp_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            # Remove original file if it exists
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            
+            # Rename temp file to original
+            os.rename(temp_file, file_path)
+            print(f"Successfully saved data to {file_path}")
+            return True
+            
     except Exception as e:
         print(f"Error saving {file_path}: {e}")
         # Clean up temp file if it exists
+        temp_file = file_path + '.tmp'
         if os.path.exists(temp_file):
             try:
                 os.remove(temp_file)
@@ -544,6 +565,70 @@ def preview_csv():
             'uploaded_by': global_csv_data.get('uploaded_by', 'unknown'),
             'uploaded_at': global_csv_data.get('uploaded_at', 'unknown')
         }
+    }), 200
+
+@recorder_bp.route('/record', methods=['POST'])
+def record_plate():
+    """Record a plate in a category"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if 'session_id' not in session or session['session_id'] not in session_data:
+        return jsonify({'error': 'No active session'}), 400
+    
+    data = request.get_json()
+    student_id = data.get('student_id', '').strip()
+    category = data.get('category', '').upper()
+    
+    if not student_id:
+        return jsonify({'error': 'Student ID is required'}), 400
+    
+    if category not in ['CLEAN', 'DIRTY', 'RED']:
+        return jsonify({'error': 'Invalid category'}), 400
+    
+    session_id = session['session_id']
+    session_info = session_data[session_id]
+    
+    # Create record entry
+    record_entry = {
+        'student_id': student_id,
+        'category': category,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # Add to appropriate category
+    if category == 'CLEAN':
+        session_info['clean_records'].append(record_entry)
+    elif category == 'DIRTY':
+        session_info['dirty_records'].append(record_entry)
+    elif category == 'RED':
+        session_info['red_records'].append(record_entry)
+    
+    # Add to scan history
+    session_info['scan_history'].append(record_entry)
+    
+    # Save session data
+    save_session_data()
+    
+    # Calculate statistics
+    clean_count = len(session_info['clean_records'])
+    dirty_count = len(session_info['dirty_records'])
+    red_count = len(session_info['red_records'])
+    total_recorded = clean_count + dirty_count + red_count
+    
+    clean_percentage = (clean_count / total_recorded * 100) if total_recorded > 0 else 0
+    dirty_percentage = ((dirty_count + red_count) / total_recorded * 100) if total_recorded > 0 else 0
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'{category.title()} plate recorded for student {student_id}',
+        'clean_count': clean_count,
+        'dirty_count': dirty_count,
+        'red_count': red_count,
+        'total_recorded': total_recorded,
+        'clean_percentage': round(clean_percentage, 1),
+        'dirty_percentage': round(dirty_percentage, 1),
+        'scan_history': session_info['scan_history'][-10:]  # Return last 10 entries
     }), 200
 
 @recorder_bp.route('/record/<category>', methods=['POST'])

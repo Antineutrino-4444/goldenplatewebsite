@@ -12,8 +12,14 @@ from src.routes.golden_plate_recorder import recorder_bp
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = 'asdf#FGSgvasgf$5$WGT'
 
-# Enable CORS for all routes
-CORS(app, supports_credentials=True)
+# Fix session configuration for proper authentication
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
+
+# Enable CORS for all routes with proper session support
+CORS(app, supports_credentials=True, origins=['http://localhost:3000', 'http://127.0.0.1:5000', 'http://localhost:5000'])
 
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(recorder_bp, url_prefix='/api')
