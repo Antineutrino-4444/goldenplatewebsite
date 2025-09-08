@@ -68,10 +68,8 @@ session_data = load_data_from_file(SESSIONS_FILE, {})
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, None)
 delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
 
-# Initialize users database with default users if file doesn't exist
-default_users = {
-    'antineutrino': {'password': 'b-decay', 'role': 'superadmin', 'name': 'Super Administrator', 'status': 'active'}
-}
+# Initialize users database with empty default if file doesn't exist
+default_users = {}
 users_db = load_data_from_file(USERS_FILE, default_users)
 
 # Save initial data to ensure files are created
@@ -412,7 +410,7 @@ def create_session():
         session_name = custom_name
     else:
         now = datetime.now()
-        session_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
+        session_name = f"PLATE_Session_{now.strftime('%B_%d_%Y')}"
     
     # Create session data with owner information
     session_data[session_id] = {

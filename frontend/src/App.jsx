@@ -864,17 +864,6 @@ function App() {
                   <Plus className="h-5 w-5 mr-2" />
                   Create New Session
                 </Button>
-                <div className="text-sm text-gray-500">
-                  or
-                </div>
-                <Button 
-                  onClick={() => { loadSessions(); setShowSessionsDialog(true) }} 
-                  variant="outline"
-                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  Join Existing Session
-                </Button>
               </div>
             </div>
           </div>
