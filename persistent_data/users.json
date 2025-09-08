@@ -1,1 +1,7 @@
-{}
+{
+  "antineutrino": {
+    "name": "Antineutrino",
+    "password": "antineutrino",
+    "role": "superadmin"
+  }
+}
