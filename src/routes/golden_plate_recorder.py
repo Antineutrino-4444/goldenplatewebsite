@@ -18,7 +18,6 @@ if not os.path.exists(DATA_DIR):
 # File paths for persistent storage
 SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
-DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
 GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
@@ -64,9 +63,10 @@ def save_data_to_file(file_path, data):
 
 # Initialize persistent storage
 print("Initializing persistent storage...")
+
+# Load persistent data
 session_data = load_data_from_file(SESSIONS_FILE, {})
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, None)
-delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
 
 # Initialize users database with empty default if file doesn't exist
 default_users = {}
@@ -76,7 +76,6 @@ users_db = load_data_from_file(USERS_FILE, default_users)
 print("Saving initial data...")
 save_data_to_file(SESSIONS_FILE, session_data)
 save_data_to_file(USERS_FILE, users_db)
-save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
 if global_csv_data is not None:
     save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
@@ -103,10 +102,6 @@ def save_session_data():
 def save_users_db():
     """Save users database to file"""
     return save_data_to_file(USERS_FILE, users_db)
-
-def save_delete_requests():
-    """Save delete requests to file"""
-    return save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
 
 def save_global_csv():
     """Save global CSV data to file"""
@@ -276,56 +271,6 @@ def manage_account_status():
         'message': f'Account {target_username} has been {new_status}'
     }), 200
 
-@recorder_bp.route('/session/request-delete', methods=['POST'])
-def request_delete_session():
-    """Request session deletion (for normal users)"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    current_user = get_current_user()
-    data = request.get_json()
-    session_id = data.get('session_id')
-    
-    if not session_id:
-        return jsonify({'error': 'Session ID is required'}), 400
-    
-    if session_id not in session_data:
-        return jsonify({'error': 'Session not found'}), 404
-    
-    # Check if user owns the session
-    if session_data[session_id]['owner'] != session['user_id']:
-        return jsonify({'error': 'You can only request deletion of your own sessions'}), 403
-    
-    # If user is admin or super admin, delete immediately
-    if current_user['role'] in ['admin', 'superadmin']:
-        del session_data[session_id]
-        save_session_data()
-        return jsonify({
-            'status': 'success',
-            'message': 'Session deleted successfully'
-        }), 200
-    
-    # For normal users, add to delete requests
-    delete_request = {
-        'id': str(uuid.uuid4()),
-        'session_id': session_id,
-        'session_name': session_data[session_id]['name'],
-        'requester': session['user_id'],
-        'requester_name': current_user['name'],
-        'requested_at': datetime.now().isoformat()
-    }
-    
-    delete_requests.append(delete_request)
-    
-    # Save delete requests to file
-    save_delete_requests()
-    
-    return jsonify({
-        'status': 'success',
-        'message': 'Delete request submitted. An administrator will review your request.'
-    }), 200
-
-@recorder_bp.route('/admin/delete-requests', methods=['GET'])
 def get_delete_requests():
     """Get pending delete requests (admin/super admin only)"""
     if not require_admin():
@@ -486,7 +431,7 @@ def switch_session(session_id):
 
 @recorder_bp.route('/session/delete/<session_id>', methods=['DELETE'])
 def delete_session(session_id):
-    """Delete a session or request deletion"""
+    """Delete a session - anyone can delete any session"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -500,83 +445,10 @@ def delete_session(session_id):
     if session_id == current_session_id:
         return jsonify({'error': 'Cannot delete the currently active session. Switch to another session first.'}), 400
     
-    # Admins and super admins can delete directly
-    if user['role'] in ['admin', 'superadmin']:
-        session_name = session_data[session_id]['session_name']
-        del session_data[session_id]
-        save_session_data()
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'Session "{session_name}" deleted successfully by {user["role"]}',
-            'deleted_session_id': session_id
-        }), 200
-    
-    # Regular users send delete requests
-    else:
-        session_name = session_data[session_id]['session_name']
-        
-        # Check if request already exists
-        existing_request = next((req for req in delete_requests if req['session_id'] == session_id and req['status'] == 'pending'), None)
-        if existing_request:
-            return jsonify({'error': 'Delete request already pending for this session'}), 400
-        
-        # Create delete request
-        delete_request = {
-            'id': str(uuid.uuid4()),
-            'session_id': session_id,
-            'session_name': session_name,
-            'requested_by': session['user_id'],
-            'requested_by_name': user['name'],
-            'requested_at': datetime.now().isoformat(),
-            'status': 'pending',
-            'reason': 'User requested deletion'
-        }
-        
-        delete_requests.append(delete_request)
-        save_delete_requests()
-        
-        return jsonify({
-            'status': 'request_sent',
-            'message': f'Delete request sent for session "{session_name}". Awaiting admin approval.',
-            'request_id': delete_request['id']
-        }), 200
-
-@recorder_bp.route('/admin/delete-requests/<request_id>/approve', methods=['POST'])
-def approve_delete_request(request_id):
-    """Approve a delete request (admin/superadmin only)"""
-    if not require_admin():
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    # Find the request
-    request_obj = next((req for req in delete_requests if req['id'] == request_id), None)
-    if not request_obj:
-        return jsonify({'error': 'Delete request not found'}), 404
-    
-    if request_obj['status'] != 'pending':
-        return jsonify({'error': 'Request is not pending'}), 400
-    
-    session_id = request_obj['session_id']
-    
-    # Check if session still exists
-    if session_id not in session_data:
-        # Mark request as completed since session no longer exists
-        request_obj['status'] = 'completed'
-        request_obj['approved_by'] = session['user_id']
-        request_obj['approved_at'] = datetime.now().isoformat()
-        save_delete_requests()
-        return jsonify({'message': 'Session no longer exists, request marked as completed'}), 200
-    
-    # Delete the session
+    # Anyone can delete any session
     session_name = session_data[session_id]['session_name']
     del session_data[session_id]
     save_session_data()
-    
-    # Update request status
-    request_obj['status'] = 'approved'
-    request_obj['approved_by'] = session['user_id']
-    request_obj['approved_at'] = datetime.now().isoformat()
-    save_delete_requests()
     
     return jsonify({
         'status': 'success',
@@ -584,7 +456,6 @@ def approve_delete_request(request_id):
         'deleted_session_id': session_id
     }), 200
 
-@recorder_bp.route('/admin/delete-requests/<request_id>/reject', methods=['POST'])
 def reject_delete_request(request_id):
     """Reject a delete request (admin/superadmin only)"""
     if not require_admin():
@@ -951,7 +822,7 @@ def export_csv():
 
 @recorder_bp.route('/admin/overview', methods=['GET'])
 def admin_overview():
-    """Get admin overview data"""
+    """Get admin overview data with combined stats for all sessions"""
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
     
@@ -964,21 +835,52 @@ def admin_overview():
             'role': user_data['role']
         })
     
-    # Get all sessions
+    # Get all sessions with combined stats
     sessions = []
+    total_clean = 0
+    total_dirty = 0
+    total_red = 0
+    
     for session_id, session_info in session_data.items():
-        total_records = len(session_info['clean_records']) + len(session_info['dirty_records']) + len(session_info['red_records'])
+        clean_count = len(session_info['clean_records'])
+        dirty_count = len(session_info['dirty_records'])
+        red_count = len(session_info['red_records'])
+        total_records = clean_count + dirty_count + red_count
+        
+        # Add to combined totals
+        total_clean += clean_count
+        total_dirty += dirty_count
+        total_red += red_count
+        
         sessions.append({
             'session_id': session_id,
             'session_name': session_info['session_name'],
             'owner': session_info['owner'],
             'total_records': total_records,
+            'clean_count': clean_count,
+            'dirty_count': dirty_count,
+            'red_count': red_count,
             'created_at': session_info['created_at']
         })
     
+    # Calculate combined statistics
+    combined_dirty = total_dirty + total_red
+    total_all_records = total_clean + total_dirty + total_red
+    
+    combined_stats = {
+        'clean_count': total_clean,
+        'dirty_count': total_dirty,
+        'red_count': total_red,
+        'combined_dirty_count': combined_dirty,
+        'total_recorded': total_all_records,
+        'clean_percentage': round((total_clean / total_all_records * 100) if total_all_records > 0 else 0, 1),
+        'dirty_percentage': round((combined_dirty / total_all_records * 100) if total_all_records > 0 else 0, 1)
+    }
+    
     return jsonify({
         'users': users,
-        'sessions': sessions
+        'sessions': sessions,
+        'combined_stats': combined_stats
     }), 200
 
 

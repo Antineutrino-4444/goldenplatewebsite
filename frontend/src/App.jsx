@@ -70,6 +70,15 @@ function App() {
   // Admin panel state
   const [adminUsers, setAdminUsers] = useState([])
   const [adminSessions, setAdminSessions] = useState([])
+  const [combinedStats, setCombinedStats] = useState({
+    clean_count: 0,
+    dirty_count: 0,
+    red_count: 0,
+    combined_dirty_count: 0,
+    total_recorded: 0,
+    clean_percentage: 0,
+    dirty_percentage: 0
+  })
   
   // CSV preview state
   const [showCsvPreview, setShowCsvPreview] = useState(false)
@@ -222,7 +231,49 @@ function App() {
         // Load scan history for the session
         await loadScanHistory()
       } else {
-        // No active session - allow user to work without sessions
+        // No active session - check if any sessions exist and auto-join the latest one
+        try {
+          const sessionsResponse = await fetch(`${API_BASE}/session/list`)
+          if (sessionsResponse.ok) {
+            const sessionsData = await sessionsResponse.json()
+            if (sessionsData.sessions && sessionsData.sessions.length > 0) {
+              // Sort sessions by creation date and join the latest one
+              const sortedSessions = sessionsData.sessions.sort((a, b) => 
+                new Date(b.created_at) - new Date(a.created_at)
+              )
+              const latestSession = sortedSessions[0]
+              
+              // Auto-join the latest session
+              const joinResponse = await fetch(`${API_BASE}/session/switch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: latestSession.session_id })
+              })
+              
+              if (joinResponse.ok) {
+                const joinData = await joinResponse.json()
+                setSessionId(joinData.session_id)
+                setSessionName(joinData.session_name)
+                setSessionStats({
+                  clean_count: joinData.clean_count || 0,
+                  dirty_count: joinData.dirty_count || 0,
+                  red_count: joinData.red_count || 0,
+                  combined_dirty_count: (joinData.dirty_count || 0) + (joinData.red_count || 0),
+                  total_recorded: (joinData.clean_count || 0) + (joinData.dirty_count || 0) + (joinData.red_count || 0),
+                  clean_percentage: joinData.clean_percentage || 0,
+                  dirty_percentage: joinData.dirty_percentage || 0
+                })
+                await loadScanHistory()
+                showMessage(`Auto-joined latest session: ${joinData.session_name}`, 'success')
+                return
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to check for existing sessions:', error)
+        }
+        
+        // No sessions exist - show create session page
         setSessionId(null)
         setSessionName('')
         setSessionStats({ 
@@ -488,6 +539,15 @@ function App() {
         const data = await response.json()
         setAdminUsers(data.users || [])
         setAdminSessions(data.sessions || [])
+        setCombinedStats(data.combined_stats || {
+          clean_count: 0,
+          dirty_count: 0,
+          red_count: 0,
+          combined_dirty_count: 0,
+          total_recorded: 0,
+          clean_percentage: 0,
+          dirty_percentage: 0
+        })
       }
     } catch (error) {
       console.error('Failed to load admin data:', error)
@@ -623,6 +683,7 @@ function App() {
         const data = await response.json()
         showMessage(data.message, 'success')
         loadAllUsers() // Refresh users list
+        loadAdminData() // Refresh admin panel immediately
       } else {
         const error = await response.json()
         showMessage(error.error, 'error')
@@ -664,7 +725,7 @@ function App() {
           </div>
           <div className="animate-pulse">
             <h1 className="text-6xl font-bold bg-gradient-to-r from-amber-600 via-yellow-600 to-orange-600 bg-clip-text text-transparent mb-4">
-              PLATE
+              P.L.A.T.E.
             </h1>
             <p className="text-xl text-gray-600 font-medium">
               Prevention, Logging & Assessment of Tossed Edibles
@@ -689,7 +750,7 @@ function App() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-              PLATE
+              P.L.A.T.E.
             </CardTitle>
             <CardDescription className="text-gray-600 mt-2">
               Prevention, Logging & Assessment of Tossed Edibles
@@ -815,7 +876,7 @@ function App() {
           <div className="flex justify-between items-center h-16">
             <div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-                PLATE
+                P.L.A.T.E.
               </h1>
               <p className="text-sm text-gray-600">Prevention, Logging & Assessment of Tossed Edibles</p>
             </div>
@@ -1284,33 +1345,33 @@ function App() {
         <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Dashboard</DialogTitle>
+              <DialogTitle>Dashboard - Combined Statistics</DialogTitle>
               <DialogDescription>
-                Session overview and system statistics
+                Combined statistics for all sessions in the system
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                  <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
+                  <div className="text-2xl font-bold text-yellow-600">{combinedStats.clean_count || 0}</div>
                   <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
                   <div className="text-xs text-yellow-600">
-                    {sessionStats.clean_percentage || 0}%
+                    {combinedStats.clean_percentage || 0}%
                   </div>
                 </div>
                 <div className="text-center p-4 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{sessionStats.combined_dirty_count || (sessionStats.dirty_count + sessionStats.red_count)}</div>
+                  <div className="text-2xl font-bold text-orange-600">{combinedStats.combined_dirty_count || 0}</div>
                   <div className="text-sm text-orange-700">🍽️ Dirty Plates</div>
                   <div className="text-xs text-orange-600">
-                    {sessionStats.dirty_percentage || 0}%
+                    {combinedStats.dirty_percentage || 0}%
                   </div>
                 </div>
               </div>
               <div className="text-center p-4 bg-blue-50 rounded-lg">
                 <div className="text-2xl font-bold text-blue-600">
-                  {sessionStats.total_recorded || (sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count)}
+                  {combinedStats.total_recorded || 0}
                 </div>
-                <div className="text-sm text-blue-700">Total Records</div>
+                <div className="text-sm text-blue-700">Total Records (All Sessions)</div>
               </div>
             </div>
             <Button onClick={() => setShowDashboard(false)} className="w-full">
@@ -1321,14 +1382,14 @@ function App() {
 
         {/* Admin Panel Dialog */}
         <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
               <DialogDescription>
                 System administration and management
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-6">
+            <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
               <div className="flex gap-4">
                 {user.role === 'admin' || user.role === 'superadmin' ? (
                   <Button 
