@@ -70,10 +70,7 @@ delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
 
 # Initialize users database with default users if file doesn't exist
 default_users = {
-    'antineutrino': {'password': 'b-decay', 'role': 'superadmin', 'name': 'Super Administrator', 'status': 'active'},
-    'admin': {'password': 'admin123', 'role': 'admin', 'name': 'Administrator', 'status': 'active'},
-    'user1': {'password': 'user123', 'role': 'user', 'name': 'Regular User', 'status': 'active'},
-    'demo': {'password': 'demo', 'role': 'user', 'name': 'Demo User', 'status': 'active'}
+    'antineutrino': {'password': 'b-decay', 'role': 'superadmin', 'name': 'Super Administrator', 'status': 'active'}
 }
 users_db = load_data_from_file(USERS_FILE, default_users)
 
@@ -616,6 +613,50 @@ def upload_csv():
         
     except Exception as e:
         return jsonify({'error': f'Error processing CSV: {str(e)}'}), 400
+
+@recorder_bp.route('/csv/preview', methods=['GET'])
+def preview_csv():
+    """Preview the current student database"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    global global_csv_data
+    
+    if not global_csv_data:
+        return jsonify({
+            'status': 'no_data',
+            'message': 'No student database uploaded yet'
+        }), 200
+    
+    # Get pagination parameters
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    
+    # Calculate pagination
+    total_records = len(global_csv_data['data'])
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    
+    # Get paginated data
+    paginated_data = global_csv_data['data'][start_idx:end_idx]
+    
+    return jsonify({
+        'status': 'success',
+        'data': paginated_data,
+        'columns': global_csv_data['columns'],
+        'pagination': {
+            'page': page,
+            'per_page': per_page,
+            'total_records': total_records,
+            'total_pages': (total_records + per_page - 1) // per_page,
+            'has_next': end_idx < total_records,
+            'has_prev': page > 1
+        },
+        'metadata': {
+            'uploaded_by': global_csv_data.get('uploaded_by', 'unknown'),
+            'uploaded_at': global_csv_data.get('uploaded_at', 'unknown')
+        }
+    }), 200
 
 @recorder_bp.route('/record/<category>', methods=['POST'])
 def record_student(category):

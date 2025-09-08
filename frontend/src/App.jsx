@@ -59,6 +59,12 @@ function App() {
   // Admin panel state
   const [adminUsers, setAdminUsers] = useState([])
   const [adminSessions, setAdminSessions] = useState([])
+  
+  // CSV preview state
+  const [showCsvPreview, setShowCsvPreview] = useState(false)
+  const [csvPreviewData, setCsvPreviewData] = useState(null)
+  const [csvPreviewPage, setCsvPreviewPage] = useState(1)
+  const [csvPreviewLoading, setCsvPreviewLoading] = useState(false)
 
   // Check authentication status on load
   useEffect(() => {
@@ -302,6 +308,30 @@ function App() {
       showMessage('Failed to upload CSV', 'error')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const previewCSV = async (page = 1) => {
+    setCsvPreviewLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/csv/preview?page=${page}&per_page=50`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        if (data.status === 'no_data') {
+          showMessage('No student database uploaded yet', 'info')
+          return
+        }
+        setCsvPreviewData(data)
+        setCsvPreviewPage(page)
+        setShowCsvPreview(true)
+      } else {
+        showMessage(data.error || 'Failed to load preview', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to load preview', 'error')
+    } finally {
+      setCsvPreviewLoading(false)
     }
   }
 
@@ -582,10 +612,10 @@ function App() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-              WAFFLE
+              PLATE
             </CardTitle>
             <CardDescription className="text-gray-600 mt-2">
-              Wasted Food Footprint Logging & Evaluation
+              Prevention, Logging & Assessment of Tossed Edibles
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -708,9 +738,9 @@ function App() {
           <div className="flex justify-between items-center h-16">
             <div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-                WAFFLE
+                PLATE
               </h1>
-              <p className="text-sm text-gray-600">Wasted Food Footprint Logging & Evaluation</p>
+              <p className="text-sm text-gray-600">Prevention, Logging & Assessment of Tossed Edibles</p>
             </div>
             <div className="flex items-center gap-4">
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
@@ -800,6 +830,17 @@ function App() {
                 onChange={(e) => e.target.files[0] && uploadCSV(e.target.files[0])}
                 className="mb-4"
               />
+              <div className="flex gap-2 mb-4">
+                <Button 
+                  onClick={() => previewCSV(1)} 
+                  variant="outline" 
+                  className="flex-1"
+                  disabled={csvPreviewLoading}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  {csvPreviewLoading ? 'Loading...' : 'Preview Database'}
+                </Button>
+              </div>
               {csvData && (
                 <div className="text-sm text-green-600">
                   ✓ {csvData.rows_count} students loaded
@@ -1353,6 +1394,84 @@ function App() {
               )}
             </div>
             <Button onClick={() => setShowDeleteRequests(false)} className="w-full">
+              Close
+            </Button>
+          </DialogContent>
+        </Dialog>
+
+        {/* CSV Preview Dialog */}
+        <Dialog open={showCsvPreview} onOpenChange={setShowCsvPreview}>
+          <DialogContent className="max-w-4xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>Student Database Preview</DialogTitle>
+              <DialogDescription>
+                Current student database with pagination
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {csvPreviewData && (
+                <>
+                  <div className="text-sm text-gray-600">
+                    <p><strong>Total Records:</strong> {csvPreviewData.pagination.total_records}</p>
+                    <p><strong>Uploaded by:</strong> {csvPreviewData.metadata.uploaded_by}</p>
+                    <p><strong>Uploaded at:</strong> {new Date(csvPreviewData.metadata.uploaded_at).toLocaleString()}</p>
+                  </div>
+                  
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto max-h-96">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            {csvPreviewData.columns.map((column, index) => (
+                              <th key={index} className="px-4 py-2 text-left font-medium text-gray-900 border-b">
+                                {column}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {csvPreviewData.data.map((row, index) => (
+                            <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              {csvPreviewData.columns.map((column, colIndex) => (
+                                <td key={colIndex} className="px-4 py-2 border-b text-gray-700">
+                                  {row[column] || '-'}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-600">
+                      Page {csvPreviewData.pagination.page} of {csvPreviewData.pagination.total_pages}
+                      ({csvPreviewData.data.length} of {csvPreviewData.pagination.total_records} records)
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => previewCSV(csvPreviewPage - 1)}
+                        disabled={!csvPreviewData.pagination.has_prev || csvPreviewLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Previous
+                      </Button>
+                      <Button 
+                        onClick={() => previewCSV(csvPreviewPage + 1)}
+                        disabled={!csvPreviewData.pagination.has_next || csvPreviewLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <Button onClick={() => setShowCsvPreview(false)} className="w-full">
               Close
             </Button>
           </DialogContent>
