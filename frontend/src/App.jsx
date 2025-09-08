@@ -75,7 +75,9 @@ function App() {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/auth/status`)
+      const response = await fetch(`${API_BASE}/auth/status`, {
+        credentials: 'include'
+      })
       if (response.ok) {
         const data = await response.json()
         setIsAuthenticated(data.authenticated)
@@ -92,7 +94,9 @@ function App() {
   const initializeSession = async () => {
     try {
       // Check if there are any existing sessions
-      const sessionsResponse = await fetch(`${API_BASE}/session/list`)
+      const sessionsResponse = await fetch(`${API_BASE}/session/list`, {
+        credentials: 'include'
+      })
       if (sessionsResponse.ok) {
         const sessionsData = await sessionsResponse.json()
         if (sessionsData.sessions && sessionsData.sessions.length > 0) {
@@ -121,8 +125,8 @@ function App() {
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(loginForm)
       })
       
@@ -148,8 +152,8 @@ function App() {
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(signupForm)
       })
       
@@ -171,7 +175,7 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE}/auth/logout`, { method: 'POST' })
+      await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' })
       setIsAuthenticated(false)
       setUser(null)
       setSessionId(null)
@@ -196,8 +200,8 @@ function App() {
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include'
       })
       
       if (response.ok) {
@@ -242,8 +246,8 @@ function App() {
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/switch/${newSessionId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include'
       })
       
       if (response.ok) {
@@ -277,8 +281,8 @@ function App() {
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/delete/${sessionId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
+        method: 'DELETE', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include'
       })
       
       if (response.ok) {
@@ -323,8 +327,9 @@ function App() {
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/record`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        credentials: 'include', // Include cookies for session
         body: JSON.stringify({
           student_id: studentId,
           category: category
