@@ -28,5 +28,11 @@
     "role": "user",
     "name": "Test User",
     "status": "active"
+  },
+  "newuser": {
+    "password": "password123",
+    "role": "user",
+    "name": "New Test User",
+    "status": "active"
   }
 }
