@@ -857,12 +857,13 @@ function App() {
               </div>
               <div className="space-y-4">
                 <Button 
-                  onClick={() => setShowNewSessionDialog(true)} 
+                  onClick={() => createSession('')} 
                   className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-3 text-lg"
                   size="lg"
+                  disabled={isLoading}
                 >
                   <Plus className="h-5 w-5 mr-2" />
-                  Create New Session
+                  {isLoading ? 'Creating...' : 'Create New Session'}
                 </Button>
               </div>
             </div>
