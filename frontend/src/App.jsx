@@ -31,7 +31,15 @@ function App() {
   const [csvData, setCsvData] = useState(null)
   const [inputValue, setInputValue] = useState('')
   const [scanHistory, setScanHistory] = useState([])
-  const [sessionStats, setSessionStats] = useState({ clean_count: 0, dirty_count: 0, red_count: 0 })
+  const [sessionStats, setSessionStats] = useState({ 
+    clean_count: 0, 
+    dirty_count: 0, 
+    red_count: 0, 
+    combined_dirty_count: 0, 
+    total_recorded: 0, 
+    clean_percentage: 0, 
+    dirty_percentage: 0 
+  })
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('info')
   const [isLoading, setIsLoading] = useState(false)
@@ -195,7 +203,11 @@ function App() {
         setSessionStats({
           clean_count: data.clean_count,
           dirty_count: data.dirty_count,
-          red_count: data.red_count
+          red_count: data.red_count,
+          combined_dirty_count: data.combined_dirty_count,
+          total_recorded: data.total_recorded,
+          clean_percentage: data.clean_percentage,
+          dirty_percentage: data.dirty_percentage
         })
         // Load scan history for the session
         await loadScanHistory()
@@ -222,7 +234,7 @@ function App() {
       if (response.ok) {
         setSessionId(data.session_id)
         setSessionName(data.session_name)
-        setSessionStats({ clean_count: 0, dirty_count: 0, red_count: 0 })
+        setSessionStats({ clean_count: 0, dirty_count: 0, red_count: 0, combined_dirty_count: 0, total_recorded: 0, clean_percentage: 0, dirty_percentage: 0 })
         showMessage(`Session "${data.session_name}" created successfully`, 'success')
         setShowNewSessionDialog(false)
         setCustomSessionName('')
@@ -385,7 +397,11 @@ function App() {
         setSessionStats({
           clean_count: data.clean_count,
           dirty_count: data.dirty_count,
-          red_count: data.red_count
+          red_count: data.red_count,
+          combined_dirty_count: data.combined_dirty_count,
+          total_recorded: data.total_recorded,
+          clean_percentage: data.clean_percentage,
+          dirty_percentage: data.dirty_percentage
         })
       }
     } catch (error) {
@@ -1108,7 +1124,14 @@ function App() {
                     <div className="text-left">
                       <div className="font-medium">{session.session_name}</div>
                       <div className="text-sm text-gray-500">
-                        {session.total_records} records • Owner: {session.owner}
+                        {session.total_records > 0 ? (
+                          <>
+                            🥇 {session.clean_count} ({session.clean_percentage}%) • 
+                            🍽️ {session.dirty_count} ({session.dirty_percentage}%)
+                          </>
+                        ) : (
+                          'No records yet'
+                        )}
                       </div>
                     </div>
                   </Button>
@@ -1180,23 +1203,25 @@ function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-4 bg-yellow-50 rounded-lg">
                   <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
                   <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
+                  <div className="text-xs text-yellow-600">
+                    {sessionStats.clean_percentage || 0}%
+                  </div>
                 </div>
                 <div className="text-center p-4 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{sessionStats.dirty_count}</div>
+                  <div className="text-2xl font-bold text-orange-600">{sessionStats.combined_dirty_count || (sessionStats.dirty_count + sessionStats.red_count)}</div>
                   <div className="text-sm text-orange-700">🍽️ Dirty Plates</div>
-                </div>
-                <div className="text-center p-4 bg-red-50 rounded-lg">
-                  <div className="text-2xl font-bold text-red-600">{sessionStats.red_count}</div>
-                  <div className="text-sm text-red-700">🍝 Very Dirty Plates</div>
+                  <div className="text-xs text-orange-600">
+                    {sessionStats.dirty_percentage || 0}%
+                  </div>
                 </div>
               </div>
               <div className="text-center p-4 bg-blue-50 rounded-lg">
                 <div className="text-2xl font-bold text-blue-600">
-                  {sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count}
+                  {sessionStats.total_recorded || (sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count)}
                 </div>
                 <div className="text-sm text-blue-700">Total Records</div>
               </div>
@@ -1218,17 +1243,6 @@ function App() {
             </DialogHeader>
             <div className="space-y-6">
               <div className="flex gap-4">
-                <Button 
-                  onClick={() => {
-                    setShowAccountManagement(true)
-                    loadAllUsers()
-                  }}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  Account Management
-                </Button>
                 {user.role === 'admin' || user.role === 'superadmin' ? (
                   <Button 
                     onClick={() => {

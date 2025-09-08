@@ -475,24 +475,30 @@ def create_session():
 
 @recorder_bp.route('/session/list', methods=['GET'])
 def list_sessions():
-    """List sessions for current user"""
+    """List all sessions (shared among all users)"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
     
-    user = get_current_user()
-    current_user_id = session['user_id']
-    
     user_sessions = []
     for session_id, data in session_data.items():
-        # Users see only their own sessions, admins see all
-        if user['role'] == 'admin' or data.get('owner') == current_user_id:
-            total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
-            user_sessions.append({
-                'session_id': session_id,
-                'session_name': data['session_name'],
-                'owner': data.get('owner', 'unknown'),
-                'total_records': total_records
-            })
+        # All users can see all sessions
+        total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
+        clean_count = len(data['clean_records'])
+        dirty_count = len(data['dirty_records']) + len(data['red_records'])  # Combine dirty + very dirty
+        
+        # Calculate percentages
+        clean_percentage = (clean_count / total_records * 100) if total_records > 0 else 0
+        dirty_percentage = (dirty_count / total_records * 100) if total_records > 0 else 0
+        
+        user_sessions.append({
+            'session_id': session_id,
+            'session_name': data['session_name'],
+            'total_records': total_records,
+            'clean_count': clean_count,
+            'dirty_count': dirty_count,
+            'clean_percentage': round(clean_percentage, 1),
+            'dirty_percentage': round(dirty_percentage, 1)
+        })
     
     return jsonify({
         'sessions': user_sessions,
@@ -501,26 +507,19 @@ def list_sessions():
 
 @recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
 def switch_session(session_id):
-    """Switch to a different session"""
+    """Switch to a different session (all sessions are shared)"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
     
     if session_id not in session_data:
         return jsonify({'error': 'Session not found'}), 404
     
-    user = get_current_user()
-    session_owner = session_data[session_id].get('owner')
-    
-    # Check if user can access this session
-    if user['role'] != 'admin' and session_owner != session['user_id']:
-        return jsonify({'error': 'Access denied to this session'}), 403
-    
+    # All users can access any session
     session['session_id'] = session_id
     
     return jsonify({
         'session_id': session_id,
-        'session_name': session_data[session_id]['session_name'],
-        'owner': session_owner
+        'session_name': session_data[session_id]['session_name']
     }), 200
 
 @recorder_bp.route('/session/delete/<session_id>', methods=['DELETE'])
@@ -798,7 +797,7 @@ def record_student(category):
 
 @recorder_bp.route('/session/status', methods=['GET'])
 def get_session_status():
-    """Get current session status"""
+    """Get current session status with percentage calculations"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -808,14 +807,26 @@ def get_session_status():
     session_id = session['session_id']
     data = session_data[session_id]
     
+    clean_count = len(data['clean_records'])
+    dirty_count = len(data['dirty_records'])
+    red_count = len(data['red_records'])
+    combined_dirty_count = dirty_count + red_count  # Combine dirty + very dirty
+    total_recorded = clean_count + dirty_count + red_count
+    
+    # Calculate percentages
+    clean_percentage = (clean_count / total_recorded * 100) if total_recorded > 0 else 0
+    dirty_percentage = (combined_dirty_count / total_recorded * 100) if total_recorded > 0 else 0
+    
     return jsonify({
         'session_id': session_id,
         'session_name': data['session_name'],
-        'owner': data.get('owner'),
-        'clean_count': len(data['clean_records']),
-        'dirty_count': len(data['dirty_records']),
-        'red_count': len(data['red_records']),
-        'total_recorded': len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records']),
+        'clean_count': clean_count,
+        'dirty_count': dirty_count,
+        'red_count': red_count,
+        'combined_dirty_count': combined_dirty_count,
+        'total_recorded': total_recorded,
+        'clean_percentage': round(clean_percentage, 1),
+        'dirty_percentage': round(dirty_percentage, 1),
         'scan_history_count': len(data['scan_history'])
     }), 200
 
