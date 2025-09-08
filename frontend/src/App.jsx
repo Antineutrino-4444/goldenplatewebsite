@@ -31,7 +31,15 @@ function App() {
   const [csvData, setCsvData] = useState(null)
   const [inputValue, setInputValue] = useState('')
   const [scanHistory, setScanHistory] = useState([])
-  const [sessionStats, setSessionStats] = useState({ clean_count: 0, dirty_count: 0, red_count: 0 })
+  const [sessionStats, setSessionStats] = useState({ 
+    clean_count: 0, 
+    dirty_count: 0, 
+    red_count: 0, 
+    combined_dirty_count: 0, 
+    total_recorded: 0, 
+    clean_percentage: 0, 
+    dirty_percentage: 0 
+  })
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState('info')
   const [isLoading, setIsLoading] = useState(false)
@@ -59,6 +67,12 @@ function App() {
   // Admin panel state
   const [adminUsers, setAdminUsers] = useState([])
   const [adminSessions, setAdminSessions] = useState([])
+  
+  // CSV preview state
+  const [showCsvPreview, setShowCsvPreview] = useState(false)
+  const [csvPreviewData, setCsvPreviewData] = useState(null)
+  const [csvPreviewPage, setCsvPreviewPage] = useState(1)
+  const [csvPreviewLoading, setCsvPreviewLoading] = useState(false)
 
   // Check authentication status on load
   useEffect(() => {
@@ -189,7 +203,11 @@ function App() {
         setSessionStats({
           clean_count: data.clean_count,
           dirty_count: data.dirty_count,
-          red_count: data.red_count
+          red_count: data.red_count,
+          combined_dirty_count: data.combined_dirty_count,
+          total_recorded: data.total_recorded,
+          clean_percentage: data.clean_percentage,
+          dirty_percentage: data.dirty_percentage
         })
         // Load scan history for the session
         await loadScanHistory()
@@ -216,7 +234,7 @@ function App() {
       if (response.ok) {
         setSessionId(data.session_id)
         setSessionName(data.session_name)
-        setSessionStats({ clean_count: 0, dirty_count: 0, red_count: 0 })
+        setSessionStats({ clean_count: 0, dirty_count: 0, red_count: 0, combined_dirty_count: 0, total_recorded: 0, clean_percentage: 0, dirty_percentage: 0 })
         showMessage(`Session "${data.session_name}" created successfully`, 'success')
         setShowNewSessionDialog(false)
         setCustomSessionName('')
@@ -305,6 +323,30 @@ function App() {
     }
   }
 
+  const previewCSV = async (page = 1) => {
+    setCsvPreviewLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/csv/preview?page=${page}&per_page=50`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        if (data.status === 'no_data') {
+          showMessage('No student database uploaded yet', 'info')
+          return
+        }
+        setCsvPreviewData(data)
+        setCsvPreviewPage(page)
+        setShowCsvPreview(true)
+      } else {
+        showMessage(data.error || 'Failed to load preview', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to load preview', 'error')
+    } finally {
+      setCsvPreviewLoading(false)
+    }
+  }
+
   const recordStudent = async (category, inputValue) => {
     if (!inputValue.trim()) {
       showMessage('Please enter a Student ID or Name', 'error')
@@ -355,7 +397,11 @@ function App() {
         setSessionStats({
           clean_count: data.clean_count,
           dirty_count: data.dirty_count,
-          red_count: data.red_count
+          red_count: data.red_count,
+          combined_dirty_count: data.combined_dirty_count,
+          total_recorded: data.total_recorded,
+          clean_percentage: data.clean_percentage,
+          dirty_percentage: data.dirty_percentage
         })
       }
     } catch (error) {
@@ -582,10 +628,10 @@ function App() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-              WAFFLE
+              PLATE
             </CardTitle>
             <CardDescription className="text-gray-600 mt-2">
-              Wasted Food Footprint Logging & Evaluation
+              Prevention, Logging & Assessment of Tossed Edibles
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -708,9 +754,9 @@ function App() {
           <div className="flex justify-between items-center h-16">
             <div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-                WAFFLE
+                PLATE
               </h1>
-              <p className="text-sm text-gray-600">Wasted Food Footprint Logging & Evaluation</p>
+              <p className="text-sm text-gray-600">Prevention, Logging & Assessment of Tossed Edibles</p>
             </div>
             <div className="flex items-center gap-4">
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
@@ -800,6 +846,17 @@ function App() {
                 onChange={(e) => e.target.files[0] && uploadCSV(e.target.files[0])}
                 className="mb-4"
               />
+              <div className="flex gap-2 mb-4">
+                <Button 
+                  onClick={() => previewCSV(1)} 
+                  variant="outline" 
+                  className="flex-1"
+                  disabled={csvPreviewLoading}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  {csvPreviewLoading ? 'Loading...' : 'Preview Database'}
+                </Button>
+              </div>
               {csvData && (
                 <div className="text-sm text-green-600">
                   ✓ {csvData.rows_count} students loaded
@@ -1067,7 +1124,14 @@ function App() {
                     <div className="text-left">
                       <div className="font-medium">{session.session_name}</div>
                       <div className="text-sm text-gray-500">
-                        {session.total_records} records • Owner: {session.owner}
+                        {session.total_records > 0 ? (
+                          <>
+                            🥇 {session.clean_count} ({session.clean_percentage}%) • 
+                            🍽️ {session.dirty_count} ({session.dirty_percentage}%)
+                          </>
+                        ) : (
+                          'No records yet'
+                        )}
                       </div>
                     </div>
                   </Button>
@@ -1139,23 +1203,25 @@ function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-4 bg-yellow-50 rounded-lg">
                   <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
                   <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
+                  <div className="text-xs text-yellow-600">
+                    {sessionStats.clean_percentage || 0}%
+                  </div>
                 </div>
                 <div className="text-center p-4 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{sessionStats.dirty_count}</div>
+                  <div className="text-2xl font-bold text-orange-600">{sessionStats.combined_dirty_count || (sessionStats.dirty_count + sessionStats.red_count)}</div>
                   <div className="text-sm text-orange-700">🍽️ Dirty Plates</div>
-                </div>
-                <div className="text-center p-4 bg-red-50 rounded-lg">
-                  <div className="text-2xl font-bold text-red-600">{sessionStats.red_count}</div>
-                  <div className="text-sm text-red-700">🍝 Very Dirty Plates</div>
+                  <div className="text-xs text-orange-600">
+                    {sessionStats.dirty_percentage || 0}%
+                  </div>
                 </div>
               </div>
               <div className="text-center p-4 bg-blue-50 rounded-lg">
                 <div className="text-2xl font-bold text-blue-600">
-                  {sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count}
+                  {sessionStats.total_recorded || (sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count)}
                 </div>
                 <div className="text-sm text-blue-700">Total Records</div>
               </div>
@@ -1177,17 +1243,6 @@ function App() {
             </DialogHeader>
             <div className="space-y-6">
               <div className="flex gap-4">
-                <Button 
-                  onClick={() => {
-                    setShowAccountManagement(true)
-                    loadAllUsers()
-                  }}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  Account Management
-                </Button>
                 {user.role === 'admin' || user.role === 'superadmin' ? (
                   <Button 
                     onClick={() => {
@@ -1353,6 +1408,84 @@ function App() {
               )}
             </div>
             <Button onClick={() => setShowDeleteRequests(false)} className="w-full">
+              Close
+            </Button>
+          </DialogContent>
+        </Dialog>
+
+        {/* CSV Preview Dialog */}
+        <Dialog open={showCsvPreview} onOpenChange={setShowCsvPreview}>
+          <DialogContent className="max-w-4xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>Student Database Preview</DialogTitle>
+              <DialogDescription>
+                Current student database with pagination
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {csvPreviewData && (
+                <>
+                  <div className="text-sm text-gray-600">
+                    <p><strong>Total Records:</strong> {csvPreviewData.pagination.total_records}</p>
+                    <p><strong>Uploaded by:</strong> {csvPreviewData.metadata.uploaded_by}</p>
+                    <p><strong>Uploaded at:</strong> {new Date(csvPreviewData.metadata.uploaded_at).toLocaleString()}</p>
+                  </div>
+                  
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto max-h-96">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            {csvPreviewData.columns.map((column, index) => (
+                              <th key={index} className="px-4 py-2 text-left font-medium text-gray-900 border-b">
+                                {column}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {csvPreviewData.data.map((row, index) => (
+                            <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              {csvPreviewData.columns.map((column, colIndex) => (
+                                <td key={colIndex} className="px-4 py-2 border-b text-gray-700">
+                                  {row[column] || '-'}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-600">
+                      Page {csvPreviewData.pagination.page} of {csvPreviewData.pagination.total_pages}
+                      ({csvPreviewData.data.length} of {csvPreviewData.pagination.total_records} records)
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => previewCSV(csvPreviewPage - 1)}
+                        disabled={!csvPreviewData.pagination.has_prev || csvPreviewLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Previous
+                      </Button>
+                      <Button 
+                        onClick={() => previewCSV(csvPreviewPage + 1)}
+                        disabled={!csvPreviewData.pagination.has_next || csvPreviewLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <Button onClick={() => setShowCsvPreview(false)} className="w-full">
               Close
             </Button>
           </DialogContent>
