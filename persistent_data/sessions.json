@@ -7,5 +7,14 @@
     "dirty_records": [],
     "red_records": [],
     "scan_history": []
+  },
+  "1513de0a-04ae-4ebb-b1e6-dda380ad2731": {
+    "session_name": "PLATE_Session_September_07_2025",
+    "owner": "newuser",
+    "created_at": "2025-09-07T22:34:14.109512",
+    "clean_records": [],
+    "dirty_records": [],
+    "red_records": [],
+    "scan_history": []
   }
 }
