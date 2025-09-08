@@ -338,42 +338,6 @@ def get_delete_requests():
         'requests': delete_requests
     }), 200
 
-@recorder_bp.route('/admin/approve-delete', methods=['POST'])
-def approve_delete_request():
-    """Approve and execute session deletion (admin/super admin only)"""
-    if not require_admin():
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    data = request.get_json()
-    request_id = data.get('request_id')
-    
-    if not request_id:
-        return jsonify({'error': 'Request ID is required'}), 400
-    
-    # Find the request
-    request_to_approve = None
-    for i, req in enumerate(delete_requests):
-        if req['id'] == request_id:
-            request_to_approve = req
-            del delete_requests[i]
-            # Save delete requests to file
-            save_delete_requests()
-            break
-    
-    if not request_to_approve:
-        return jsonify({'error': 'Delete request not found'}), 404
-    
-    # Delete the session if it still exists
-    session_id = request_to_approve['session_id']
-    if session_id in session_data:
-        del session_data[session_id]
-    save_session_data()
-    
-    return jsonify({
-        'status': 'success',
-        'message': f'Session "{request_to_approve["session_name"]}" has been deleted'
-    }), 200
-
 @recorder_bp.route('/admin/users', methods=['GET'])
 def admin_get_users():
     """Admin: Get all users"""
@@ -524,7 +488,7 @@ def switch_session(session_id):
 
 @recorder_bp.route('/session/delete/<session_id>', methods=['DELETE'])
 def delete_session(session_id):
-    """Delete a session (fixed version)"""
+    """Delete a session or request deletion"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -532,28 +496,124 @@ def delete_session(session_id):
         return jsonify({'error': 'Session not found'}), 404
     
     user = get_current_user()
-    session_owner = session_data[session_id].get('owner')
-    
-    # Check if user can delete this session
-    if user['role'] != 'admin' and session_owner != session['user_id']:
-        return jsonify({'error': 'Access denied to delete this session'}), 403
     
     # Check if trying to delete the current active session
     current_session_id = session.get('session_id')
     if session_id == current_session_id:
         return jsonify({'error': 'Cannot delete the currently active session. Switch to another session first.'}), 400
     
-    # Get session name before deletion for response
-    session_name = session_data[session_id]['session_name']
+    # Admins and super admins can delete directly
+    if user['role'] in ['admin', 'superadmin']:
+        session_name = session_data[session_id]['session_name']
+        del session_data[session_id]
+        save_session_data()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Session "{session_name}" deleted successfully by {user["role"]}',
+            'deleted_session_id': session_id
+        }), 200
+    
+    # Regular users send delete requests
+    else:
+        session_name = session_data[session_id]['session_name']
+        
+        # Check if request already exists
+        existing_request = next((req for req in delete_requests if req['session_id'] == session_id and req['status'] == 'pending'), None)
+        if existing_request:
+            return jsonify({'error': 'Delete request already pending for this session'}), 400
+        
+        # Create delete request
+        delete_request = {
+            'id': str(uuid.uuid4()),
+            'session_id': session_id,
+            'session_name': session_name,
+            'requested_by': session['user_id'],
+            'requested_by_name': user['name'],
+            'requested_at': datetime.now().isoformat(),
+            'status': 'pending',
+            'reason': 'User requested deletion'
+        }
+        
+        delete_requests.append(delete_request)
+        save_delete_requests()
+        
+        return jsonify({
+            'status': 'request_sent',
+            'message': f'Delete request sent for session "{session_name}". Awaiting admin approval.',
+            'request_id': delete_request['id']
+        }), 200
+
+@recorder_bp.route('/admin/delete-requests/<request_id>/approve', methods=['POST'])
+def approve_delete_request(request_id):
+    """Approve a delete request (admin/superadmin only)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    # Find the request
+    request_obj = next((req for req in delete_requests if req['id'] == request_id), None)
+    if not request_obj:
+        return jsonify({'error': 'Delete request not found'}), 404
+    
+    if request_obj['status'] != 'pending':
+        return jsonify({'error': 'Request is not pending'}), 400
+    
+    session_id = request_obj['session_id']
+    
+    # Check if session still exists
+    if session_id not in session_data:
+        # Mark request as completed since session no longer exists
+        request_obj['status'] = 'completed'
+        request_obj['approved_by'] = session['user_id']
+        request_obj['approved_at'] = datetime.now().isoformat()
+        save_delete_requests()
+        return jsonify({'message': 'Session no longer exists, request marked as completed'}), 200
     
     # Delete the session
+    session_name = session_data[session_id]['session_name']
     del session_data[session_id]
     save_session_data()
+    
+    # Update request status
+    request_obj['status'] = 'approved'
+    request_obj['approved_by'] = session['user_id']
+    request_obj['approved_at'] = datetime.now().isoformat()
+    save_delete_requests()
     
     return jsonify({
         'status': 'success',
         'message': f'Session "{session_name}" deleted successfully',
         'deleted_session_id': session_id
+    }), 200
+
+@recorder_bp.route('/admin/delete-requests/<request_id>/reject', methods=['POST'])
+def reject_delete_request(request_id):
+    """Reject a delete request (admin/superadmin only)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.get_json() or {}
+    rejection_reason = data.get('reason', 'No reason provided')
+    
+    # Find the request
+    request_obj = next((req for req in delete_requests if req['id'] == request_id), None)
+    if not request_obj:
+        return jsonify({'error': 'Delete request not found'}), 404
+    
+    if request_obj['status'] != 'pending':
+        return jsonify({'error': 'Request is not pending'}), 400
+    
+    # Update request status
+    request_obj['status'] = 'rejected'
+    request_obj['rejected_by'] = session['user_id']
+    request_obj['rejected_at'] = datetime.now().isoformat()
+    request_obj['rejection_reason'] = rejection_reason
+    save_delete_requests()
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'Delete request rejected',
+        'request_id': request_id
     }), 200
 
 # Global CSV data storage
