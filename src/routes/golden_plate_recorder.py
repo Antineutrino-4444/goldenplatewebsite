@@ -86,7 +86,6 @@ def save_all_data():
     try:
         save_data_to_file(SESSIONS_FILE, session_data)
         save_data_to_file(USERS_FILE, users_db)
-        save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
         if global_csv_data is not None:
             save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
         print("All data saved successfully")
@@ -271,16 +270,6 @@ def manage_account_status():
         'message': f'Account {target_username} has been {new_status}'
     }), 200
 
-def get_delete_requests():
-    """Get pending delete requests (admin/super admin only)"""
-    if not require_admin():
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    return jsonify({
-        'status': 'success',
-        'requests': delete_requests
-    }), 200
-
 @recorder_bp.route('/admin/users', methods=['GET'])
 def admin_get_users():
     """Admin: Get all users"""
@@ -454,35 +443,6 @@ def delete_session(session_id):
         'status': 'success',
         'message': f'Session "{session_name}" deleted successfully',
         'deleted_session_id': session_id
-    }), 200
-
-def reject_delete_request(request_id):
-    """Reject a delete request (admin/superadmin only)"""
-    if not require_admin():
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    data = request.get_json() or {}
-    rejection_reason = data.get('reason', 'No reason provided')
-    
-    # Find the request
-    request_obj = next((req for req in delete_requests if req['id'] == request_id), None)
-    if not request_obj:
-        return jsonify({'error': 'Delete request not found'}), 404
-    
-    if request_obj['status'] != 'pending':
-        return jsonify({'error': 'Request is not pending'}), 400
-    
-    # Update request status
-    request_obj['status'] = 'rejected'
-    request_obj['rejected_by'] = session['user_id']
-    request_obj['rejected_at'] = datetime.now().isoformat()
-    request_obj['rejection_reason'] = rejection_reason
-    save_delete_requests()
-    
-    return jsonify({
-        'status': 'success',
-        'message': f'Delete request rejected',
-        'request_id': request_id
     }), 200
 
 # Global CSV data storage
