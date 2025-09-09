@@ -271,7 +271,7 @@ def switch_session():
 
 @recorder_bp.route('/sessions/delete', methods=['POST'])
 def delete_session():
-    """Delete a session or request deletion"""
+    """Delete a session directly"""
     if not require_auth():
         return jsonify({'success': False, 'message': 'Authentication required'}), 401
     
@@ -282,30 +282,15 @@ def delete_session():
     if not sess:
         return jsonify({'success': False, 'message': 'Session not found'}), 404
     
-    user = get_current_user()
+    # Direct deletion for all authenticated users
+    db_session.delete(sess)
+    db_session.commit()
     
-    # Check if user can delete directly
-    if user.role in ['admin', 'superadmin'] or sess.user_id == session['user_id']:
-        # Direct deletion for admins or session owners
-        db_session.delete(sess)
-        db_session.commit()
-        
-        # Clear current session if it was deleted
-        if session.get('current_session') == session_id:
-            session.pop('current_session', None)
-        
-        return jsonify({'success': True, 'message': 'Session deleted successfully'})
-    else:
-        # Create delete request for regular users
-        delete_request = DeleteRequest(
-            session_id=session_id,
-            session_name=sess.name,
-            requester=session['user_id']
-        )
-        db_session.add(delete_request)
-        db_session.commit()
-        
-        return jsonify({'success': True, 'message': 'Delete request sent to administrators'})
+    # Clear current session if it was deleted
+    if session.get('current_session') == session_id:
+        session.pop('current_session', None)
+    
+    return jsonify({'success': True, 'message': 'Session deleted successfully'})
 
 @recorder_bp.route('/csv/upload', methods=['POST'])
 def upload_csv():
