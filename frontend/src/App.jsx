@@ -1573,7 +1573,8 @@ function App() {
                     </div>
                   </div>
                 </Button>
-                {session.session_id !== sessionId && (
+                {session.session_id !== sessionId && 
+                 (user?.role === 'admin' || user?.role === 'superadmin' || session.owner === user?.username) && (
                   <Button
                     variant="ghost"
                     size="sm"

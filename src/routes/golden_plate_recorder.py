@@ -296,7 +296,16 @@ def request_delete_session():
     if session_id == current_session_id:
         return jsonify({'error': 'Cannot delete the currently active session. Switch to another session first.'}), 400
     
-    # Delete the session directly for any user
+    # Get current user
+    current_user = get_current_user()
+    session_owner = session_data[session_id].get('owner')
+    
+    # Permission check: users can only delete their own sessions, admins and super admins can delete any session
+    if current_user['role'] == 'user' and session_owner != session['user_id']:
+        return jsonify({'error': 'You can only delete sessions that you created'}), 403
+    
+    # Delete the session directly
+    session_name = session_data[session_id]['session_name']
     del session_data[session_id]
     save_session_data()
     
@@ -435,6 +444,7 @@ def list_sessions():
         user_sessions.append({
             'session_id': session_id,
             'session_name': data['session_name'],
+            'owner': data.get('owner', 'unknown'),
             'total_records': total_records,
             'clean_count': clean_count,
             'dirty_count': dirty_count,
@@ -478,7 +488,14 @@ def delete_session(session_id):
     if session_id == current_session_id:
         return jsonify({'error': 'Cannot delete the currently active session. Switch to another session first.'}), 400
     
-    # Allow any authenticated user to delete any session directly
+    # Get current user
+    current_user = get_current_user()
+    session_owner = session_data[session_id].get('owner')
+    
+    # Permission check: users can only delete their own sessions, admins and super admins can delete any session
+    if current_user['role'] == 'user' and session_owner != session['user_id']:
+        return jsonify({'error': 'You can only delete sessions that you created'}), 403
+    
     session_name = session_data[session_id]['session_name']
     del session_data[session_id]
     save_session_data()

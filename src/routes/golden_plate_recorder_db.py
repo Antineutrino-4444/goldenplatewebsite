@@ -282,7 +282,14 @@ def delete_session():
     if not sess:
         return jsonify({'success': False, 'message': 'Session not found'}), 404
     
-    # Direct deletion for all authenticated users
+    # Get current user
+    current_user = get_current_user()
+    
+    # Permission check: users can only delete their own sessions, admins and super admins can delete any session
+    if current_user.role == 'user' and sess.user_id != current_user.username:
+        return jsonify({'success': False, 'message': 'You can only delete sessions that you created'}), 403
+    
+    # Delete the session
     db_session.delete(sess)
     db_session.commit()
     
