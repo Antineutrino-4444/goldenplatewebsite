@@ -855,7 +855,7 @@ function App() {
                   Create a new session to start tracking plate cleanliness and food waste data.
                 </p>
               </div>
-              <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button 
                   onClick={() => createSession('')} 
                   className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-3 text-lg"
@@ -864,6 +864,20 @@ function App() {
                 >
                   <Plus className="h-5 w-5 mr-2" />
                   {isLoading ? 'Creating...' : 'Create New Session'}
+                </Button>
+                <Button 
+                  onClick={async () => { 
+                    setIsLoading(true);
+                    await loadSessions(); 
+                    setShowSessionsDialog(true);
+                    setIsLoading(false);
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg"
+                  size="lg"
+                  disabled={isLoading}
+                >
+                  <Users className="h-5 w-5 mr-2" />
+                  {isLoading ? 'Loading...' : 'Open Session'}
                 </Button>
               </div>
             </div>
@@ -1187,60 +1201,6 @@ function App() {
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Switch Session Dialog */}
-        <Dialog open={showSessionsDialog} onOpenChange={setShowSessionsDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Switch Session</DialogTitle>
-              <DialogDescription>
-                Select a session to switch to or delete sessions
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {sessions.map((session) => (
-                <div key={session.session_id} className="flex items-center justify-between p-2 border rounded">
-                  <Button
-                    variant="ghost"
-                    onClick={() => switchSession(session.session_id)}
-                    className="flex-1 justify-start"
-                    disabled={session.session_id === sessionId}
-                  >
-                    <div className="text-left">
-                      <div className="font-medium">{session.session_name}</div>
-                      <div className="text-sm text-gray-500">
-                        {session.total_records > 0 ? (
-                          <>
-                            🥇 {session.clean_count} ({session.clean_percentage}%) • 
-                            🍽️ {session.dirty_count} ({session.dirty_percentage}%)
-                          </>
-                        ) : (
-                          'No records yet'
-                        )}
-                      </div>
-                    </div>
-                  </Button>
-                  {session.session_id !== sessionId && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSessionToDelete(session)
-                        setShowDeleteConfirm(true)
-                      }}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <Button onClick={() => setShowSessionsDialog(false)} className="w-full">
-              Close
-            </Button>
           </DialogContent>
         </Dialog>
 
@@ -1580,6 +1540,60 @@ function App() {
         </>
         )}
       </div>
+      
+      {/* Switch Session Dialog - Moved outside of conditional rendering */}
+      <Dialog open={showSessionsDialog} onOpenChange={setShowSessionsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Switch Session</DialogTitle>
+            <DialogDescription>
+              Select a session to switch to or delete sessions
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {sessions.map((session) => (
+              <div key={session.session_id} className="flex items-center justify-between p-2 border rounded">
+                <Button
+                  variant="ghost"
+                  onClick={() => switchSession(session.session_id)}
+                  className="flex-1 justify-start"
+                  disabled={session.session_id === sessionId}
+                >
+                  <div className="text-left">
+                    <div className="font-medium">{session.session_name}</div>
+                    <div className="text-sm text-gray-500">
+                      {session.total_records > 0 ? (
+                        <>
+                          🥇 {session.clean_count} ({session.clean_percentage}%) • 
+                          🍽️ {session.dirty_count} ({session.dirty_percentage}%)
+                        </>
+                      ) : (
+                        'No records yet'
+                      )}
+                    </div>
+                  </div>
+                </Button>
+                {session.session_id !== sessionId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSessionToDelete(session)
+                      setShowDeleteConfirm(true)
+                    }}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          <Button onClick={() => setShowSessionsDialog(false)} className="w-full">
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
