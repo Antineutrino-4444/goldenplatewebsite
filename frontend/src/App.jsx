@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
-import { Upload, Scan, Download, FileText, CheckCircle, AlertCircle, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus } from 'lucide-react'
+import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle } from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
@@ -35,17 +35,15 @@ function App() {
   const [csvData, setCsvData] = useState(null)
   const [inputValue, setInputValue] = useState('')
   const [scanHistory, setScanHistory] = useState([])
-  const [sessionStats, setSessionStats] = useState({ 
-    clean_count: 0, 
-    dirty_count: 0, 
-    red_count: 0, 
-    combined_dirty_count: 0, 
-    total_recorded: 0, 
-    clean_percentage: 0, 
-    dirty_percentage: 0 
+  const [sessionStats, setSessionStats] = useState({
+    clean_count: 0,
+    dirty_count: 0,
+    red_count: 0,
+    combined_dirty_count: 0,
+    total_recorded: 0,
+    clean_percentage: 0,
+    dirty_percentage: 0
   })
-  const [message, setMessage] = useState('')
-  const [messageType, setMessageType] = useState('info')
   const [isLoading, setIsLoading] = useState(false)
   
   // Dialog states
@@ -526,9 +524,12 @@ function App() {
   }
 
   const showMessage = (text, type = 'info') => {
-    setMessage(text)
-    setMessageType(type)
-    setTimeout(() => setMessage(''), 5000)
+    // Use a simple browser alert so messages are always visible
+    if (typeof window !== 'undefined') {
+      window.alert(text)
+    } else {
+      console.log(text)
+    }
   }
 
   const handleCategoryClick = (category) => {
@@ -790,14 +791,6 @@ function App() {
               </Button>
             </div>
 
-            {message && (
-              <Alert className={messageType === 'error' ? 'border-red-200 bg-red-50' : messageType === 'success' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription className={messageType === 'error' ? 'text-red-800' : messageType === 'success' ? 'text-green-800' : 'text-blue-800'}>
-                  {message}
-                </AlertDescription>
-              </Alert>
-            )}
           </CardContent>
         </Card>
 
@@ -957,16 +950,6 @@ function App() {
                 Total: {sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count}
               </div>
             </div>
-
-            {/* Success/Error Messages */}
-            {message && (
-              <Alert className={`mb-6 ${messageType === 'error' ? 'border-red-200 bg-red-50' : messageType === 'success' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}`}>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription className={messageType === 'error' ? 'text-red-800' : messageType === 'success' ? 'text-green-800' : 'text-blue-800'}>
-                  {message}
-                </AlertDescription>
-              </Alert>
-            )}
 
             {/* Navigation Buttons */}
             <div className="flex flex-wrap gap-2 mb-6 justify-center">
