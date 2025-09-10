@@ -140,6 +140,30 @@ function App() {
     }
   }
 
+  const guestLogin = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/auth/guest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      const data = await response.json()
+      if (response.ok) {
+        setUser(data.user)
+        setIsAuthenticated(true)
+        showMessage('Welcome, Guest! You can view sessions but cannot create or modify them.', 'info')
+        await initializeSession()
+      } else {
+        showMessage(data.error || 'Guest login failed', 'error')
+      }
+    } catch (error) {
+      showMessage('Guest login failed. Please try again.', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const signup = async () => {
     if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim()) {
       showMessage('Please fill in all fields', 'error')
@@ -726,6 +750,15 @@ function App() {
               {isLoading ? 'Logging in...' : 'Login'}
             </Button>
             
+            <Button 
+              onClick={guestLogin} 
+              variant="outline"
+              className="w-full border-amber-600 text-amber-600 hover:bg-amber-50"
+              disabled={isLoading}
+            >
+              Continue as Guest
+            </Button>
+            
             <div className="text-center">
               <Button 
                 variant="link" 
@@ -906,15 +939,17 @@ function App() {
 
             {/* Navigation Buttons */}
             <div className="flex flex-wrap gap-2 mb-6 justify-center">
-              <Button onClick={() => setShowNewSessionDialog(true)} className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="h-4 w-4 mr-2" />
-                New Session
-              </Button>
+              {user?.role !== 'guest' && (
+                <Button onClick={() => setShowNewSessionDialog(true)} className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Session
+                </Button>
+              )}
               <Button onClick={() => { loadSessions(); setShowSessionsDialog(true) }} className="bg-orange-600 hover:bg-orange-700">
                 <Users className="h-4 w-4 mr-2" />
                 Switch Session
               </Button>
-              {user.role !== 'user' && (
+              {user.role !== 'user' && user.role !== 'guest' && (
                 <Button onClick={() => { loadAdminData(); setShowDashboard(true) }} className="bg-purple-600 hover:bg-purple-700">
                   <BarChart3 className="h-4 w-4 mr-2" />
                   Dashboard
@@ -941,12 +976,21 @@ function App() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Input
-                type="file"
-                accept=".csv"
-                onChange={(e) => e.target.files[0] && uploadCSV(e.target.files[0])}
-                className="mb-4"
-              />
+              {user?.role === 'guest' ? (
+                <Alert className="border-blue-200 bg-blue-50">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-blue-800">
+                    You are viewing as a guest. CSV upload is not available. Please sign up to upload student data.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => e.target.files[0] && uploadCSV(e.target.files[0])}
+                  className="mb-4"
+                />
+              )}
               <div className="flex gap-2 mb-4">
                 <Button 
                   onClick={() => previewCSV(1)} 
@@ -988,10 +1032,19 @@ function App() {
 
         {/* Category Recording Buttons */}
         <div className="mt-8 space-y-4">
+          {user?.role === 'guest' && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-blue-800">
+                You are viewing as a guest. Recording is not available. Please sign up to record plate data.
+              </AlertDescription>
+            </Alert>
+          )}
+          
           <Button
             onClick={() => handleCategoryClick('clean')}
-            className="w-full h-20 text-xl font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg"
-            disabled={isLoading}
+            className="w-full h-20 text-xl font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || user?.role === 'guest'}
           >
             🥇 CLEAN PLATE
             <br />
@@ -1000,8 +1053,8 @@ function App() {
 
           <Button
             onClick={() => handleCategoryClick('dirty')}
-            className="w-full h-20 text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg"
-            disabled={isLoading}
+            className="w-full h-20 text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || user?.role === 'guest'}
           >
             🍽️ DIRTY PLATE
             <br />
@@ -1010,8 +1063,8 @@ function App() {
 
           <Button
             onClick={() => handleCategoryClick('red')}
-            className="w-full h-20 text-xl font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg"
-            disabled={isLoading}
+            className="w-full h-20 text-xl font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || user?.role === 'guest'}
           >
             🍝 VERY DIRTY PLATE
             <br />

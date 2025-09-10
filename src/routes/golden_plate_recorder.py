@@ -124,6 +124,14 @@ def require_auth():
     """Check if user is authenticated"""
     return 'user_id' in session and session['user_id'] in users_db
 
+def require_auth_or_guest():
+    """Check if user is authenticated or is a guest"""
+    return require_auth() or session.get('guest_access', False)
+
+def is_guest():
+    """Check if current user is a guest"""
+    return session.get('guest_access', False) and 'user_id' not in session
+
 def require_admin():
     """Check if user is admin or super admin"""
     user = get_current_user()
@@ -181,7 +189,21 @@ def logout():
     
     session.pop('user_id', None)
     session.pop('session_id', None)
+    session.pop('guest_access', None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
+
+@recorder_bp.route('/auth/guest', methods=['POST'])
+def guest_login():
+    """Guest login - allows viewing sessions without signup"""
+    session['guest_access'] = True
+    return jsonify({
+        'status': 'success',
+        'user': {
+            'username': 'guest',
+            'name': 'Guest User',
+            'role': 'guest'
+        }
+    }), 200
 
 @recorder_bp.route('/auth/signup', methods=['POST'])
 def signup():
@@ -231,6 +253,15 @@ def auth_status():
                 'username': session['user_id'],
                 'name': user['name'],
                 'role': user['role']
+            }
+        }), 200
+    elif is_guest():
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'username': 'guest',
+                'name': 'Guest User',
+                'role': 'guest'
             }
         }), 200
     else:
@@ -426,13 +457,13 @@ def create_session():
 
 @recorder_bp.route('/session/list', methods=['GET'])
 def list_sessions():
-    """List all sessions (shared among all users)"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    """List all sessions (shared among all users and guests)"""
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
     
     user_sessions = []
     for session_id, data in session_data.items():
-        # All users can see all sessions
+        # All users and guests can see all sessions
         total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
         clean_count = len(data['clean_records'])
         dirty_count = len(data['dirty_records']) + len(data['red_records'])  # Combine dirty + very dirty
@@ -459,14 +490,14 @@ def list_sessions():
 
 @recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
 def switch_session(session_id):
-    """Switch to a different session (all sessions are shared)"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    """Switch to a different session (all sessions are shared, guests can only view)"""
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
     
     if session_id not in session_data:
         return jsonify({'error': 'Session not found'}), 404
     
-    # All users can access any session
+    # All users and guests can access any session
     session['session_id'] = session_id
     
     return jsonify({
@@ -638,8 +669,8 @@ def upload_csv():
 @recorder_bp.route('/csv/preview', methods=['GET'])
 def preview_csv():
     """Preview the current student database"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
     
     global global_csv_data
     
@@ -820,8 +851,8 @@ def record_student(category):
 @recorder_bp.route('/session/status', methods=['GET'])
 def get_session_status():
     """Get current session status with percentage calculations"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
     
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
@@ -855,8 +886,8 @@ def get_session_status():
 @recorder_bp.route('/session/history', methods=['GET'])
 def get_session_history():
     """Get scan history for current session"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
     
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
@@ -871,8 +902,8 @@ def get_session_history():
 @recorder_bp.route('/export/csv', methods=['GET'])
 def export_csv():
     """Export session records as CSV"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
     
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
@@ -949,8 +980,8 @@ def admin_overview():
 @recorder_bp.route('/session/scan-history', methods=['GET'])
 def get_scan_history():
     """Get scan history for current session"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
     
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
