@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
-import { Upload, Scan, Download, FileText, CheckCircle, AlertCircle, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus } from 'lucide-react'
+import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle } from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
@@ -25,6 +25,7 @@ function App() {
   const [signupUsername, setSignupUsername] = useState('')
   const [signupPassword, setSignupPassword] = useState('')
   const [signupName, setSignupName] = useState('')
+  const [signupInviteCode, setSignupInviteCode] = useState('')
   
   // Session state
   const [sessionId, setSessionId] = useState(null)
@@ -34,17 +35,15 @@ function App() {
   const [csvData, setCsvData] = useState(null)
   const [inputValue, setInputValue] = useState('')
   const [scanHistory, setScanHistory] = useState([])
-  const [sessionStats, setSessionStats] = useState({ 
-    clean_count: 0, 
-    dirty_count: 0, 
-    red_count: 0, 
-    combined_dirty_count: 0, 
-    total_recorded: 0, 
-    clean_percentage: 0, 
-    dirty_percentage: 0 
+  const [sessionStats, setSessionStats] = useState({
+    clean_count: 0,
+    dirty_count: 0,
+    red_count: 0,
+    combined_dirty_count: 0,
+    total_recorded: 0,
+    clean_percentage: 0,
+    dirty_percentage: 0
   })
-  const [message, setMessage] = useState('')
-  const [messageType, setMessageType] = useState('info')
   const [isLoading, setIsLoading] = useState(false)
   
   // Dialog states
@@ -165,7 +164,7 @@ function App() {
   }
 
   const signup = async () => {
-    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim()) {
+    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || !signupInviteCode.trim()) {
       showMessage('Please fill in all fields', 'error')
       return
     }
@@ -188,7 +187,8 @@ function App() {
         body: JSON.stringify({
           username: signupUsername.trim(),
           password: signupPassword.trim(),
-          name: signupName.trim()
+          name: signupName.trim(),
+          invite_code: signupInviteCode.trim()
         })
       })
 
@@ -198,6 +198,7 @@ function App() {
         setSignupUsername('')
         setSignupPassword('')
         setSignupName('')
+        setSignupInviteCode('')
         setShowSignupDialog(false)
       } else {
         showMessage(data.error || 'Signup failed', 'error')
@@ -310,7 +311,11 @@ function App() {
       const response = await fetch(`${API_BASE}/session/list`)
       if (response.ok) {
         const data = await response.json()
-        setSessions(data.sessions || [])
+        let sessionList = data.sessions || []
+        if (user?.role === 'guest') {
+          sessionList = sessionList.filter(s => s.is_public)
+        }
+        setSessions(sessionList)
       }
     } catch (error) {
       console.error('Failed to load sessions:', error)
@@ -519,9 +524,12 @@ function App() {
   }
 
   const showMessage = (text, type = 'info') => {
-    setMessage(text)
-    setMessageType(type)
-    setTimeout(() => setMessage(''), 5000)
+    // Use a simple browser alert so messages are always visible
+    if (typeof window !== 'undefined') {
+      window.alert(text)
+    } else {
+      console.log(text)
+    }
   }
 
   const handleCategoryClick = (category) => {
@@ -631,6 +639,20 @@ function App() {
       }
     } catch (error) {
       showMessage('Failed to approve delete request', 'error')
+    }
+  }
+
+  const generateInviteCode = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/admin/invite`, { method: 'POST' })
+      const data = await response.json()
+      if (response.ok) {
+        showMessage(`Invite code: ${data.invite_code}`, 'success')
+      } else {
+        showMessage(data.error || 'Failed to generate invite code', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to generate invite code', 'error')
     }
   }
 
@@ -769,14 +791,6 @@ function App() {
               </Button>
             </div>
 
-            {message && (
-              <Alert className={messageType === 'error' ? 'border-red-200 bg-red-50' : messageType === 'success' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription className={messageType === 'error' ? 'text-red-800' : messageType === 'success' ? 'text-green-800' : 'text-blue-800'}>
-                  {message}
-                </AlertDescription>
-              </Alert>
-            )}
           </CardContent>
         </Card>
 
@@ -818,6 +832,16 @@ function App() {
                   placeholder="Choose a password (min 6 characters)"
                   value={signupPassword}
                   onChange={(e) => setSignupPassword(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-invite">Invite Code</Label>
+                <Input
+                  id="signup-invite"
+                  type="text"
+                  placeholder="Enter invite code"
+                  value={signupInviteCode}
+                  onChange={(e) => setSignupInviteCode(e.target.value)}
                 />
               </div>
               <div className="flex gap-2">
@@ -927,16 +951,6 @@ function App() {
               </div>
             </div>
 
-            {/* Success/Error Messages */}
-            {message && (
-              <Alert className={`mb-6 ${messageType === 'error' ? 'border-red-200 bg-red-50' : messageType === 'success' ? 'border-green-200 bg-green-50' : 'border-blue-200 bg-blue-50'}`}>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription className={messageType === 'error' ? 'text-red-800' : messageType === 'success' ? 'text-green-800' : 'text-blue-800'}>
-                  {message}
-                </AlertDescription>
-              </Alert>
-            )}
-
             {/* Navigation Buttons */}
             <div className="flex flex-wrap gap-2 mb-6 justify-center">
               {user?.role !== 'guest' && (
@@ -1011,23 +1025,25 @@ function App() {
           </Card>
 
           {/* Export Records */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
-                Export Food Waste Data
-              </CardTitle>
-              <CardDescription>
-                Download plate cleanliness records by category (Clean, Dirty, Very Dirty)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
-                <Download className="h-4 w-4 mr-2" />
-                Export Food Waste Data
-              </Button>
-            </CardContent>
-          </Card>
+          {user?.role !== 'guest' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Download className="h-5 w-5" />
+                  Export Food Waste Data
+                </CardTitle>
+                <CardDescription>
+                  Download plate cleanliness records by category (Clean, Dirty, Very Dirty)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Food Waste Data
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Category Recording Buttons */}
@@ -1343,19 +1359,29 @@ function App() {
             </DialogHeader>
             <div className="space-y-6">
               <div className="flex gap-4">
-                {user.role === 'admin' || user.role === 'superadmin' ? (
-                  <Button 
-                    onClick={() => {
-                      setShowDeleteRequests(true)
-                      loadDeleteRequests()
-                    }}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Requests ({deleteRequests.length})
-                  </Button>
-                ) : null}
+                {['admin', 'superadmin'].includes(user.role) && (
+                  <>
+                    <Button
+                      onClick={generateInviteCode}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Generate Invite Code
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setShowDeleteRequests(true)
+                        loadDeleteRequests()
+                      }}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Requests ({deleteRequests.length})
+                    </Button>
+                  </>
+                )}
               </div>
 
               <div>
