@@ -20,6 +20,7 @@ SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
 GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv.json")
+INVITE_CODES_FILE = os.path.join(DATA_DIR, "invite_codes.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
 
@@ -67,6 +68,7 @@ print("Initializing persistent storage...")
 session_data = load_data_from_file(SESSIONS_FILE, {})
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, None)
 delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
+invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
 
 # Initialize users database with empty default if file doesn't exist
 default_users = {}
@@ -77,6 +79,7 @@ print("Saving initial data...")
 save_data_to_file(SESSIONS_FILE, session_data)
 save_data_to_file(USERS_FILE, users_db)
 save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 if global_csv_data is not None:
     save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
@@ -88,6 +91,7 @@ def save_all_data():
         save_data_to_file(SESSIONS_FILE, session_data)
         save_data_to_file(USERS_FILE, users_db)
         save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+        save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
         if global_csv_data is not None:
             save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
         print("All data saved successfully")
@@ -113,6 +117,10 @@ def save_global_csv():
     if global_csv_data is not None:
         return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
     return True
+
+def save_invite_codes_db():
+    """Save invite codes database to file"""
+    return save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 
 def get_current_user():
     """Get current logged in user"""
@@ -212,10 +220,11 @@ def signup():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     name = data.get('name', '').strip()
+    invite_code = data.get('invite_code', '').strip()
     
     # Validation
-    if not username or not password or not name:
-        return jsonify({'error': 'Username, password, and name are required'}), 400
+    if not username or not password or not name or not invite_code:
+        return jsonify({'error': 'Username, password, name, and invite code are required'}), 400
     
     if len(username) < 3:
         return jsonify({'error': 'Username must be at least 3 characters long'}), 400
@@ -225,15 +234,24 @@ def signup():
     
     if username in users_db:
         return jsonify({'error': 'Username already exists'}), 409
-    
-    # Create new user
+
+    # Validate invite code
+    code_data = invite_codes_db.get(invite_code)
+    if not code_data or code_data.get('used'):
+        return jsonify({'error': 'Invalid invite code'}), 403
+
+    # Create new user with role from invite code (default to 'user')
     users_db[username] = {
         'password': password,
-        'role': 'user',
+        'role': code_data.get('role', 'user'),
         'name': name,
         'status': 'active'
     }
-    
+
+    # Mark invite code as used
+    code_data['used'] = True
+    save_invite_codes_db()
+
     # Save users database to file
     save_users_db()
     
@@ -371,6 +389,21 @@ def admin_get_users():
         })
     
     return jsonify({'users': users_list}), 200
+
+@recorder_bp.route('/admin/invite', methods=['POST'])
+def admin_create_invite():
+    """Admin: Generate a one-time invite code"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    code = str(uuid.uuid4())
+    invite_codes_db[code] = {
+        'issued_by': session.get('user_id'),
+        'used': False,
+        'role': 'user'
+    }
+    save_invite_codes_db()
+    return jsonify({'status': 'success', 'invite_code': code}), 201
 
 @recorder_bp.route('/admin/sessions', methods=['GET'])
 def admin_get_all_sessions():

@@ -25,6 +25,7 @@ function App() {
   const [signupUsername, setSignupUsername] = useState('')
   const [signupPassword, setSignupPassword] = useState('')
   const [signupName, setSignupName] = useState('')
+  const [signupInviteCode, setSignupInviteCode] = useState('')
   
   // Session state
   const [sessionId, setSessionId] = useState(null)
@@ -165,7 +166,7 @@ function App() {
   }
 
   const signup = async () => {
-    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim()) {
+    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || !signupInviteCode.trim()) {
       showMessage('Please fill in all fields', 'error')
       return
     }
@@ -188,7 +189,8 @@ function App() {
         body: JSON.stringify({
           username: signupUsername.trim(),
           password: signupPassword.trim(),
-          name: signupName.trim()
+          name: signupName.trim(),
+          invite_code: signupInviteCode.trim()
         })
       })
 
@@ -198,6 +200,7 @@ function App() {
         setSignupUsername('')
         setSignupPassword('')
         setSignupName('')
+        setSignupInviteCode('')
         setShowSignupDialog(false)
       } else {
         showMessage(data.error || 'Signup failed', 'error')
@@ -638,6 +641,20 @@ function App() {
     }
   }
 
+  const generateInviteCode = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/admin/invite`, { method: 'POST' })
+      const data = await response.json()
+      if (response.ok) {
+        showMessage(`Invite code: ${data.invite_code}`, 'success')
+      } else {
+        showMessage(data.error || 'Failed to generate invite code', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to generate invite code', 'error')
+    }
+  }
+
   // Super admin functions
   const changeUserRole = async (username, newRole) => {
     try {
@@ -822,6 +839,16 @@ function App() {
                   placeholder="Choose a password (min 6 characters)"
                   value={signupPassword}
                   onChange={(e) => setSignupPassword(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signup-invite">Invite Code</Label>
+                <Input
+                  id="signup-invite"
+                  type="text"
+                  placeholder="Enter invite code"
+                  value={signupInviteCode}
+                  onChange={(e) => setSignupInviteCode(e.target.value)}
                 />
               </div>
               <div className="flex gap-2">
@@ -1349,19 +1376,29 @@ function App() {
             </DialogHeader>
             <div className="space-y-6">
               <div className="flex gap-4">
-                {user.role === 'admin' || user.role === 'superadmin' ? (
-                  <Button 
-                    onClick={() => {
-                      setShowDeleteRequests(true)
-                      loadDeleteRequests()
-                    }}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Requests ({deleteRequests.length})
-                  </Button>
-                ) : null}
+                {['admin', 'superadmin'].includes(user.role) && (
+                  <>
+                    <Button
+                      onClick={generateInviteCode}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Generate Invite Code
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setShowDeleteRequests(true)
+                        loadDeleteRequests()
+                      }}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Requests ({deleteRequests.length})
+                    </Button>
+                  </>
+                )}
               </div>
 
               <div>
