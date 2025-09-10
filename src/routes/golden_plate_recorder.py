@@ -421,6 +421,7 @@ def create_session():
     
     data = request.get_json() or {}
     custom_name = data.get('session_name', '').strip()
+    is_public = data.get('is_public', True)
     
     # Generate session ID
     session_id = str(uuid.uuid4())
@@ -440,7 +441,8 @@ def create_session():
         'clean_records': [],
         'dirty_records': [],
         'red_records': [],
-        'scan_history': []
+        'scan_history': [],
+        'is_public': is_public
     }
     
     # Save session data to file
@@ -457,21 +459,21 @@ def create_session():
 
 @recorder_bp.route('/session/list', methods=['GET'])
 def list_sessions():
-    """List all sessions (shared among all users and guests)"""
+    """List sessions. Guests only see public ones."""
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
     
     user_sessions = []
     for session_id, data in session_data.items():
-        # All users and guests can see all sessions
+        if is_guest() and not data.get('is_public', True):
+            continue
         total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
         clean_count = len(data['clean_records'])
         dirty_count = len(data['dirty_records']) + len(data['red_records'])  # Combine dirty + very dirty
-        
-        # Calculate percentages
+
         clean_percentage = (clean_count / total_records * 100) if total_records > 0 else 0
         dirty_percentage = (dirty_count / total_records * 100) if total_records > 0 else 0
-        
+
         user_sessions.append({
             'session_id': session_id,
             'session_name': data['session_name'],
@@ -480,7 +482,8 @@ def list_sessions():
             'clean_count': clean_count,
             'dirty_count': dirty_count,
             'clean_percentage': round(clean_percentage, 1),
-            'dirty_percentage': round(dirty_percentage, 1)
+            'dirty_percentage': round(dirty_percentage, 1),
+            'is_public': data.get('is_public', True)
         })
     
     return jsonify({
@@ -490,14 +493,16 @@ def list_sessions():
 
 @recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
 def switch_session(session_id):
-    """Switch to a different session (all sessions are shared, guests can only view)"""
+    """Switch to a different session. Guests may only access public sessions."""
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
     
     if session_id not in session_data:
         return jsonify({'error': 'Session not found'}), 404
-    
-    # All users and guests can access any session
+
+    if is_guest() and not session_data[session_id].get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
+
     session['session_id'] = session_id
     
     return jsonify({
@@ -859,6 +864,8 @@ def get_session_status():
     
     session_id = session['session_id']
     data = session_data[session_id]
+    if is_guest() and not data.get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
     
     clean_count = len(data['clean_records'])
     dirty_count = len(data['dirty_records'])
@@ -894,7 +901,9 @@ def get_session_history():
     
     session_id = session['session_id']
     data = session_data[session_id]
-    
+    if is_guest() and not data.get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
+
     return jsonify({
         'scan_history': data['scan_history']
     }), 200
@@ -902,8 +911,8 @@ def get_session_history():
 @recorder_bp.route('/export/csv', methods=['GET'])
 def export_csv():
     """Export session records as CSV"""
-    if not require_auth_or_guest():
-        return jsonify({'error': 'Authentication or guest access required'}), 401
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
     
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
