@@ -310,7 +310,11 @@ function App() {
       const response = await fetch(`${API_BASE}/session/list`)
       if (response.ok) {
         const data = await response.json()
-        setSessions(data.sessions || [])
+        let sessionList = data.sessions || []
+        if (user?.role === 'guest') {
+          sessionList = sessionList.filter(s => s.is_public)
+        }
+        setSessions(sessionList)
       }
     } catch (error) {
       console.error('Failed to load sessions:', error)
@@ -1011,23 +1015,25 @@ function App() {
           </Card>
 
           {/* Export Records */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
-                Export Food Waste Data
-              </CardTitle>
-              <CardDescription>
-                Download plate cleanliness records by category (Clean, Dirty, Very Dirty)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
-                <Download className="h-4 w-4 mr-2" />
-                Export Food Waste Data
-              </Button>
-            </CardContent>
-          </Card>
+          {user?.role !== 'guest' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Download className="h-5 w-5" />
+                  Export Food Waste Data
+                </CardTitle>
+                <CardDescription>
+                  Download plate cleanliness records by category (Clean, Dirty, Very Dirty)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Food Waste Data
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Category Recording Buttons */}
