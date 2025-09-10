@@ -20,6 +20,7 @@ SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
 GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv.json")
+INVITE_CODES_FILE = os.path.join(DATA_DIR, "invite_codes.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
 
@@ -67,6 +68,7 @@ print("Initializing persistent storage...")
 session_data = load_data_from_file(SESSIONS_FILE, {})
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, None)
 delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
+invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
 
 # Initialize users database with empty default if file doesn't exist
 default_users = {}
@@ -77,6 +79,7 @@ print("Saving initial data...")
 save_data_to_file(SESSIONS_FILE, session_data)
 save_data_to_file(USERS_FILE, users_db)
 save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 if global_csv_data is not None:
     save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
@@ -88,6 +91,7 @@ def save_all_data():
         save_data_to_file(SESSIONS_FILE, session_data)
         save_data_to_file(USERS_FILE, users_db)
         save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+        save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
         if global_csv_data is not None:
             save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
         print("All data saved successfully")
@@ -113,6 +117,10 @@ def save_global_csv():
     if global_csv_data is not None:
         return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
     return True
+
+def save_invite_codes_db():
+    """Save invite codes database to file"""
+    return save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 
 def get_current_user():
     """Get current logged in user"""
@@ -212,10 +220,11 @@ def signup():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     name = data.get('name', '').strip()
+    invite_code = data.get('invite_code', '').strip()
     
     # Validation
-    if not username or not password or not name:
-        return jsonify({'error': 'Username, password, and name are required'}), 400
+    if not username or not password or not name or not invite_code:
+        return jsonify({'error': 'Username, password, name, and invite code are required'}), 400
     
     if len(username) < 3:
         return jsonify({'error': 'Username must be at least 3 characters long'}), 400
@@ -225,15 +234,24 @@ def signup():
     
     if username in users_db:
         return jsonify({'error': 'Username already exists'}), 409
-    
-    # Create new user
+
+    # Validate invite code
+    code_data = invite_codes_db.get(invite_code)
+    if not code_data or code_data.get('used'):
+        return jsonify({'error': 'Invalid invite code'}), 403
+
+    # Create new user with role from invite code (default to 'user')
     users_db[username] = {
         'password': password,
-        'role': 'user',
+        'role': code_data.get('role', 'user'),
         'name': name,
         'status': 'active'
     }
-    
+
+    # Mark invite code as used
+    code_data['used'] = True
+    save_invite_codes_db()
+
     # Save users database to file
     save_users_db()
     
@@ -372,6 +390,21 @@ def admin_get_users():
     
     return jsonify({'users': users_list}), 200
 
+@recorder_bp.route('/admin/invite', methods=['POST'])
+def admin_create_invite():
+    """Admin: Generate a one-time invite code"""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    code = str(uuid.uuid4())
+    invite_codes_db[code] = {
+        'issued_by': session.get('user_id'),
+        'used': False,
+        'role': 'user'
+    }
+    save_invite_codes_db()
+    return jsonify({'status': 'success', 'invite_code': code}), 201
+
 @recorder_bp.route('/admin/sessions', methods=['GET'])
 def admin_get_all_sessions():
     """Admin: Get all sessions from all users"""
@@ -421,6 +454,7 @@ def create_session():
     
     data = request.get_json() or {}
     custom_name = data.get('session_name', '').strip()
+    is_public = data.get('is_public', True)
     
     # Generate session ID
     session_id = str(uuid.uuid4())
@@ -440,7 +474,8 @@ def create_session():
         'clean_records': [],
         'dirty_records': [],
         'red_records': [],
-        'scan_history': []
+        'scan_history': [],
+        'is_public': is_public
     }
     
     # Save session data to file
@@ -457,21 +492,21 @@ def create_session():
 
 @recorder_bp.route('/session/list', methods=['GET'])
 def list_sessions():
-    """List all sessions (shared among all users and guests)"""
+    """List sessions. Guests only see public ones."""
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
     
     user_sessions = []
     for session_id, data in session_data.items():
-        # All users and guests can see all sessions
+        if is_guest() and not data.get('is_public', True):
+            continue
         total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
         clean_count = len(data['clean_records'])
         dirty_count = len(data['dirty_records']) + len(data['red_records'])  # Combine dirty + very dirty
-        
-        # Calculate percentages
+
         clean_percentage = (clean_count / total_records * 100) if total_records > 0 else 0
         dirty_percentage = (dirty_count / total_records * 100) if total_records > 0 else 0
-        
+
         user_sessions.append({
             'session_id': session_id,
             'session_name': data['session_name'],
@@ -480,7 +515,8 @@ def list_sessions():
             'clean_count': clean_count,
             'dirty_count': dirty_count,
             'clean_percentage': round(clean_percentage, 1),
-            'dirty_percentage': round(dirty_percentage, 1)
+            'dirty_percentage': round(dirty_percentage, 1),
+            'is_public': data.get('is_public', True)
         })
     
     return jsonify({
@@ -490,14 +526,16 @@ def list_sessions():
 
 @recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
 def switch_session(session_id):
-    """Switch to a different session (all sessions are shared, guests can only view)"""
+    """Switch to a different session. Guests may only access public sessions."""
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
     
     if session_id not in session_data:
         return jsonify({'error': 'Session not found'}), 404
-    
-    # All users and guests can access any session
+
+    if is_guest() and not session_data[session_id].get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
+
     session['session_id'] = session_id
     
     return jsonify({
@@ -859,6 +897,8 @@ def get_session_status():
     
     session_id = session['session_id']
     data = session_data[session_id]
+    if is_guest() and not data.get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
     
     clean_count = len(data['clean_records'])
     dirty_count = len(data['dirty_records'])
@@ -894,7 +934,9 @@ def get_session_history():
     
     session_id = session['session_id']
     data = session_data[session_id]
-    
+    if is_guest() and not data.get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
+
     return jsonify({
         'scan_history': data['scan_history']
     }), 200
@@ -902,8 +944,8 @@ def get_session_history():
 @recorder_bp.route('/export/csv', methods=['GET'])
 def export_csv():
     """Export session records as CSV"""
-    if not require_auth_or_guest():
-        return jsonify({'error': 'Authentication or guest access required'}), 401
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
     
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
