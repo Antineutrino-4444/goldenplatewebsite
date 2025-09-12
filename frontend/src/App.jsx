@@ -55,6 +55,8 @@ function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [showAccountManagement, setShowAccountManagement] = useState(false)
   const [showDeleteRequests, setShowDeleteRequests] = useState(false)
+  const [showUserDeleteConfirm, setShowUserDeleteConfirm] = useState(false)
+  const [userToDelete, setUserToDelete] = useState(null)
   
   // Account management state
   const [allUsers, setAllUsers] = useState([])
@@ -530,9 +532,11 @@ function App() {
     }
   }
 
-  const showMessage = (text, type = 'info') => {
-    setNotification({ text, type })
-    setTimeout(() => setNotification(null), 3000)
+  const showMessage = (text, type = 'info', size = 'small') => {
+    setNotification({ text, type, size })
+    if (size === 'small') {
+      setTimeout(() => setNotification(null), 3000)
+    }
   }
 
   const handleCategoryClick = (category) => {
@@ -658,6 +662,11 @@ function App() {
     } catch (error) {
       showMessage('Failed to generate invite code', 'error')
     }
+  }
+
+  const copyInviteCode = () => {
+    navigator.clipboard.writeText(inviteCode)
+    showMessage('Invite code copied', 'success')
   }
 
   // Super admin functions
@@ -1351,7 +1360,7 @@ function App() {
 
         {/* Admin Panel Dialog */}
         <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
               <DialogDescription>
@@ -1415,9 +1424,8 @@ function App() {
                               size="sm"
                               variant="destructive"
                               onClick={() => {
-                                if (confirm(`Are you sure you want to delete account "${adminUser.username}"? This action cannot be undone.`)) {
-                                  deleteUserAccount(adminUser.username)
-                                }
+                                setUserToDelete(adminUser)
+                                setShowUserDeleteConfirm(true)
                               }}
                             >
                               <Trash2 className="h-3 w-3" />
@@ -1493,6 +1501,34 @@ function App() {
             <Button onClick={() => setShowAccountManagement(false)} className="w-full">
               Close
             </Button>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showUserDeleteConfirm} onOpenChange={setShowUserDeleteConfirm}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirm Account Deletion</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete account "{userToDelete?.username}"? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-2 mt-4">
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (userToDelete) {
+                    deleteUserAccount(userToDelete.username)
+                  }
+                  setShowUserDeleteConfirm(false)
+                  setUserToDelete(null)
+                }}
+              >
+                Delete
+              </Button>
+              <Button variant="outline" onClick={() => { setShowUserDeleteConfirm(false); setUserToDelete(null) }}>
+                Cancel
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
 
@@ -1676,7 +1712,7 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      {notification && (
+      {notification && notification.size === 'small' && (
         <div
           className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded text-white z-50 ${
             notification.type === 'success'
@@ -1690,18 +1726,22 @@ function App() {
         </div>
       )}
 
+      {notification && notification.size === 'large' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-sm w-full">
+            <p className="mb-4">{notification.text}</p>
+            <Button onClick={() => setNotification(null)}>Close</Button>
+          </div>
+        </div>
+      )}
+
       {modal?.type === 'invite' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-sm w-full">
             <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
             <div className="flex items-center gap-2 mb-4">
               <Input value={inviteCode} readOnly className="flex-1" />
-              <Button
-                onClick={() => {
-                  navigator.clipboard.writeText(inviteCode)
-                  showMessage('Invite code copied', 'success')
-                }}
-              >
+              <Button onClick={copyInviteCode}>
                 Copy
               </Button>
             </div>
