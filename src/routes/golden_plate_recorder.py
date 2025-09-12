@@ -19,7 +19,6 @@ if not os.path.exists(DATA_DIR):
 SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
-GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv.json")
 INVITE_CODES_FILE = os.path.join(DATA_DIR, "invite_codes.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
@@ -66,9 +65,11 @@ def save_data_to_file(file_path, data):
 # Initialize persistent storage
 print("Initializing persistent storage...")
 session_data = load_data_from_file(SESSIONS_FILE, {})
-global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, None)
 delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
 invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
+
+# In-memory CSV storage per user session
+user_csv_data = {}
 
 # Initialize users database with empty default if file doesn't exist
 default_users = {}
@@ -80,8 +81,6 @@ save_data_to_file(SESSIONS_FILE, session_data)
 save_data_to_file(USERS_FILE, users_db)
 save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
 save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
-if global_csv_data is not None:
-    save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
 print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(users_db)}")
 
@@ -92,8 +91,6 @@ def save_all_data():
         save_data_to_file(USERS_FILE, users_db)
         save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
         save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
-        if global_csv_data is not None:
-            save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
         print("All data saved successfully")
         return True
     except Exception as e:
@@ -111,12 +108,6 @@ def save_users_db():
 def save_delete_requests():
     """Save delete requests to file"""
     return save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-
-def save_global_csv():
-    """Save global CSV data to file"""
-    if global_csv_data is not None:
-        return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
-    return True
 
 def save_invite_codes_db():
     """Save invite codes database to file"""
@@ -165,15 +156,7 @@ def login():
             return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
         
         session['user_id'] = username
-        
-        # Load user's CSV data if exists
-        user_csv_file = f"user_csv_{username}.json"
-        if os.path.exists(user_csv_file):
-            import json
-            with open(user_csv_file, 'r') as f:
-                global global_csv_data
-                global_csv_data = json.load(f)
-        
+
         return jsonify({
             'status': 'success',
             'user': {
@@ -188,16 +171,11 @@ def login():
 @recorder_bp.route('/auth/logout', methods=['POST'])
 def logout():
     """User logout"""
-    # Save user's CSV data before logout
-    if 'user_id' in session and global_csv_data:
-        user_csv_file = f"user_csv_{session['user_id']}.json"
-        import json
-        with open(user_csv_file, 'w') as f:
-            json.dump(global_csv_data, f)
-    
-    session.pop('user_id', None)
+    user_id = session.pop('user_id', None)
     session.pop('session_id', None)
     session.pop('guest_access', None)
+    if user_id:
+        user_csv_data.pop(user_id, None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
 
 @recorder_bp.route('/auth/guest', methods=['POST'])
@@ -521,7 +499,7 @@ def list_sessions():
     
     return jsonify({
         'sessions': user_sessions,
-        'has_global_csv': global_csv_data is not None
+        'has_global_csv': session.get('user_id') in user_csv_data
     }), 200
 
 @recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
@@ -647,16 +625,11 @@ def reject_delete_request(request_id):
         'request_id': request_id
     }), 200
 
-# Global CSV data storage
-global_csv_data = None
-
 @recorder_bp.route('/csv/upload', methods=['POST'])
 def upload_csv():
     """Upload CSV file (requires authentication)"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
-    
-    global global_csv_data
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -683,22 +656,19 @@ def upload_csv():
         if not all(col in csv_reader.fieldnames for col in required_columns):
             return jsonify({'error': f'CSV must contain columns: {", ".join(required_columns)}'}), 400
         
-        # Store globally (applies to all sessions)
-        global_csv_data = {
+        # Store in memory for this user session only
+        user_id = session['user_id']
+        user_csv_data[user_id] = {
             'data': rows,
             'columns': csv_reader.fieldnames,
-            'uploaded_by': session['user_id'],
+            'uploaded_by': user_id,
             'uploaded_at': datetime.now().isoformat()
         }
-        
-        # Save global CSV data to file
-        save_global_csv()
-        
+
         return jsonify({
             'status': 'success',
             'rows_count': len(rows),
-            'columns': csv_reader.fieldnames,
-            'uploaded_by': session['user_id']
+            'uploaded_by': user_id
         }), 200
         
     except Exception as e:
@@ -710,9 +680,10 @@ def preview_csv():
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
     
-    global global_csv_data
-    
-    if not global_csv_data:
+    user_id = session.get('user_id')
+    csv_data = user_csv_data.get(user_id)
+
+    if not csv_data:
         return jsonify({
             'status': 'no_data',
             'message': 'No student database uploaded yet'
@@ -723,17 +694,21 @@ def preview_csv():
     per_page = int(request.args.get('per_page', 50))
     
     # Calculate pagination
-    total_records = len(global_csv_data['data'])
+    total_records = len(csv_data['data'])
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
     
     # Get paginated data
-    paginated_data = global_csv_data['data'][start_idx:end_idx]
-    
+    paginated_rows = csv_data['data'][start_idx:end_idx]
+    sanitized_rows = [{
+        'First': row.get('First', ''),
+        'Last': row.get('Last', '')
+    } for row in paginated_rows]
+
     return jsonify({
         'status': 'success',
-        'data': paginated_data,
-        'columns': global_csv_data['columns'],
+        'data': sanitized_rows,
+        'columns': ['First', 'Last'],
         'pagination': {
             'page': page,
             'per_page': per_page,
@@ -743,8 +718,8 @@ def preview_csv():
             'has_prev': page > 1
         },
         'metadata': {
-            'uploaded_by': global_csv_data.get('uploaded_by', 'unknown'),
-            'uploaded_at': global_csv_data.get('uploaded_at', 'unknown')
+            'uploaded_by': csv_data.get('uploaded_by', 'unknown'),
+            'uploaded_at': csv_data.get('uploaded_at', 'unknown')
         }
     }), 200
 
@@ -768,39 +743,38 @@ def record_student(category):
     
     session_id = session['session_id']
     session_info = session_data[session_id]
-    
+
+    csv_data = user_csv_data.get(session.get('user_id'))
+
     # Determine if input is ID or name
     student_record = None
     is_manual_entry = False
-    student_id = None
     first_name = ""
     last_name = ""
-    
+
     # First, try to find by Student ID in CSV
-    if global_csv_data and global_csv_data['data']:
-        for row in global_csv_data['data']:
+    if csv_data and csv_data['data']:
+        for row in csv_data['data']:
             if str(row.get('Student ID', '')).strip() == input_value:
                 student_record = row
-                student_id = input_value
                 first_name = row.get('First', '')
                 last_name = row.get('Last', '')
                 break
-    
+
     # If not found by ID, try to find by name
-    if not student_record and global_csv_data and global_csv_data['data']:
+    if not student_record and csv_data and csv_data['data']:
         # Parse input as "First Last"
         name_parts = input_value.split()
         if len(name_parts) >= 2:
             input_first = name_parts[0].lower()
             input_last = ' '.join(name_parts[1:]).lower()
-            
-            for row in global_csv_data['data']:
+
+            for row in csv_data['data']:
                 csv_first = str(row.get('First', '')).strip().lower()
                 csv_last = str(row.get('Last', '')).strip().lower()
-                
+
                 if csv_first == input_first and csv_last == input_last:
                     student_record = row
-                    student_id = str(row.get('Student ID', ''))
                     first_name = row.get('First', '')
                     last_name = row.get('Last', '')
                     break
@@ -808,8 +782,7 @@ def record_student(category):
     # If still not found, create manual entry
     if not student_record:
         is_manual_entry = True
-        student_id = "Manual Input"
-        
+
         # Parse name from input
         name_parts = input_value.split()
         if len(name_parts) >= 2:
@@ -825,33 +798,22 @@ def record_student(category):
     # Check for duplicate entries in current session
     all_records = session_info['clean_records'] + session_info['dirty_records'] + session_info['red_records']
     
-    # For manual entries, check by name; for CSV entries, check by student_id
-    if is_manual_entry:
-        duplicate_check = any(
-            record.get('first_name', '').lower() == first_name.lower() and 
-            record.get('last_name', '').lower() == last_name.lower() and
-            record.get('student_id') == "Manual Input"
-            for record in all_records
-        )
-    else:
-        duplicate_check = any(record.get('student_id') == student_id for record in all_records)
+    duplicate_check = any(
+        record.get('first_name', '').lower() == first_name.lower() and
+        record.get('last_name', '').lower() == last_name.lower()
+        for record in all_records
+    )
     
     if duplicate_check:
         existing_category = None
         for cat in ['clean', 'dirty', 'red']:
-            if is_manual_entry:
-                if any(
-                    record.get('first_name', '').lower() == first_name.lower() and 
-                    record.get('last_name', '').lower() == last_name.lower() and
-                    record.get('student_id') == "Manual Input"
-                    for record in session_info[f'{cat}_records']
-                ):
-                    existing_category = cat
-                    break
-            else:
-                if any(record.get('student_id') == student_id for record in session_info[f'{cat}_records']):
-                    existing_category = cat
-                    break
+            if any(
+                record.get('first_name', '').lower() == first_name.lower() and
+                record.get('last_name', '').lower() == last_name.lower()
+                for record in session_info[f'{cat}_records']
+            ):
+                existing_category = cat
+                break
         
         return jsonify({
             'error': 'duplicate',
@@ -860,7 +822,6 @@ def record_student(category):
     
     # Create record
     record = {
-        'student_id': student_id,
         'first_name': first_name,
         'last_name': last_name,
         'category': category,
@@ -880,7 +841,6 @@ def record_student(category):
         'status': 'success',
         'first_name': first_name,
         'last_name': last_name,
-        'student_id': student_id,
         'category': category,
         'is_manual_entry': is_manual_entry,
         'recorded_by': session['user_id']
@@ -1037,7 +997,6 @@ def get_scan_history():
         formatted_history.append({
             'timestamp': record['timestamp'],
             'name': f"{record['first_name']} {record['last_name']}".strip(),
-            'student_id': record['student_id'],
             'category': record['category'].upper(),
             'is_manual_entry': record.get('is_manual_entry', False)
         })
