@@ -76,6 +76,11 @@ function App() {
   const [csvPreviewPage, setCsvPreviewPage] = useState(1)
   const [csvPreviewLoading, setCsvPreviewLoading] = useState(false)
 
+  // Notification and modal states
+  const [notification, setNotification] = useState(null)
+  const [modal, setModal] = useState(null)
+  const [inviteCode, setInviteCode] = useState('')
+
   // Check authentication status on load
   useEffect(() => {
     // Startup animation timer
@@ -222,6 +227,9 @@ function App() {
       setInputValue('')
       setScanHistory([])
       setSessionStats({ clean_count: 0, dirty_count: 0, red_count: 0 })
+      setInviteCode('')
+      setModal(null)
+      setNotification(null)
       showMessage('Logged out successfully', 'info')
     } catch (error) {
       showMessage('Logout failed', 'error')
@@ -426,8 +434,7 @@ function App() {
       const data = await response.json()
       if (response.ok) {
         const displayName = `${data.first_name} ${data.last_name}`.trim()
-        const idInfo = data.is_manual_entry ? 'Manual Input' : data.student_id
-        showMessage(`${displayName} recorded as ${category.toUpperCase()} (${idInfo})`, 'success')
+        showMessage(`${displayName} recorded as ${category.toUpperCase()}`, 'success')
         
         // Clear input and close dialog
         setPopupInputValue('')
@@ -524,12 +531,8 @@ function App() {
   }
 
   const showMessage = (text, type = 'info') => {
-    // Use a simple browser alert so messages are always visible
-    if (typeof window !== 'undefined') {
-      window.alert(text)
-    } else {
-      console.log(text)
-    }
+    setNotification({ text, type })
+    setTimeout(() => setNotification(null), 3000)
   }
 
   const handleCategoryClick = (category) => {
@@ -647,7 +650,8 @@ function App() {
       const response = await fetch(`${API_BASE}/admin/invite`, { method: 'POST' })
       const data = await response.json()
       if (response.ok) {
-        showMessage(`Invite code: ${data.invite_code}`, 'success')
+        setInviteCode(data.invite_code)
+        setModal({ type: 'invite' })
       } else {
         showMessage(data.error || 'Failed to generate invite code', 'error')
       }
@@ -1112,9 +1116,6 @@ function App() {
                         <div className="font-medium">
                           {record.name}
                         </div>
-                        <div className="text-gray-600">
-                          ID: {record.student_id}
-                        </div>
                       </div>
                       <div className={`px-2 py-1 rounded text-xs font-medium ${
                         record.category === 'CLEAN' ? 'bg-yellow-100 text-yellow-800' :
@@ -1350,7 +1351,7 @@ function App() {
 
         {/* Admin Panel Dialog */}
         <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
               <DialogDescription>
@@ -1674,6 +1675,40 @@ function App() {
           </Button>
         </DialogContent>
       </Dialog>
+
+      {notification && (
+        <div
+          className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded text-white z-50 ${
+            notification.type === 'success'
+              ? 'bg-green-600'
+              : notification.type === 'error'
+              ? 'bg-red-600'
+              : 'bg-blue-600'
+          }`}
+        >
+          {notification.text}
+        </div>
+      )}
+
+      {modal?.type === 'invite' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-sm w-full">
+            <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
+            <div className="flex items-center gap-2 mb-4">
+              <Input value={inviteCode} readOnly className="flex-1" />
+              <Button
+                onClick={() => {
+                  navigator.clipboard.writeText(inviteCode)
+                  showMessage('Invite code copied', 'success')
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+            <Button onClick={() => { setModal(null); setInviteCode('') }}>Close</Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
