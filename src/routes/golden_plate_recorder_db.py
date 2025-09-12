@@ -37,15 +37,6 @@ class Session(Base):
     user_id = Column(String(80), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     records = Column(Text)  # JSON string of records
-
-class GlobalCSV(Base):
-    __tablename__ = 'global_csv'
-    
-    id = Column(Integer, primary_key=True)
-    user_id = Column(String(80), nullable=False)
-    csv_data = Column(Text)  # JSON string of CSV data
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
-
 class DeleteRequest(Base):
     __tablename__ = 'delete_requests'
     
@@ -111,11 +102,6 @@ def login():
         
         session['user_id'] = username
         
-        # Load user's CSV data if exists
-        csv_record = db_session.query(GlobalCSV).filter_by(user_id=username).first()
-        if csv_record:
-            session['global_csv_data'] = json.loads(csv_record.csv_data)
-        
         return jsonify({
             'success': True, 
             'user': {
@@ -131,19 +117,8 @@ def login():
 def logout():
     """User logout"""
     if 'user_id' in session:
-        # Save CSV data before logout
-        if 'global_csv_data' in session:
-            user_id = session['user_id']
-            csv_record = db_session.query(GlobalCSV).filter_by(user_id=user_id).first()
-            if csv_record:
-                csv_record.csv_data = json.dumps(session['global_csv_data'])
-            else:
-                csv_record = GlobalCSV(user_id=user_id, csv_data=json.dumps(session['global_csv_data']))
-                db_session.add(csv_record)
-            db_session.commit()
-        
         session.clear()
-    
+
     return jsonify({'success': True})
 
 @recorder_bp.route('/auth/signup', methods=['POST'])
@@ -316,7 +291,7 @@ def upload_csv():
         # Read and parse CSV
         stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
         csv_reader = csv.DictReader(stream)
-        
+
         csv_data = []
         for row in csv_reader:
             if 'Last' in row and 'First' in row and 'Student ID' in row:
@@ -325,21 +300,10 @@ def upload_csv():
                     'first': row['First'].strip(),
                     'student_id': str(row['Student ID']).strip()
                 })
-        
+
         if not csv_data:
             return jsonify({'success': False, 'message': 'No valid data found in CSV'}), 400
-        
-        # Save to database
-        user_id = session['user_id']
-        csv_record = db_session.query(GlobalCSV).filter_by(user_id=user_id).first()
-        if csv_record:
-            csv_record.csv_data = json.dumps(csv_data)
-            csv_record.uploaded_at = datetime.utcnow()
-        else:
-            csv_record = GlobalCSV(user_id=user_id, csv_data=json.dumps(csv_data))
-            db_session.add(csv_record)
-        db_session.commit()
-        
+
         # Store in session for immediate use
         session['global_csv_data'] = csv_data
         
@@ -376,44 +340,31 @@ def record_student():
     
     records = json.loads(sess.records)
     csv_data = session.get('global_csv_data', [])
-    
-    # Check for duplicates
-    for cat_records in records.values():
-        for record in cat_records:
-            if record.get('student_id') == input_value or record.get('name') == input_value:
-                return jsonify({'success': False, 'message': 'Student already recorded in this session'}), 400
-    
-    # Try to find student in CSV
+
+    # Determine display name from input
     student_found = None
-    
-    # Search by ID first
-    for student in csv_data:
-        if student['student_id'] == input_value:
-            student_found = student
-            break
-    
-    # If not found by ID, try name search (case-insensitive)
-    if not student_found:
-        input_lower = input_value.lower()
+    display_name = input_value
+
+    if csv_data:
+        # Search by ID first
         for student in csv_data:
-            full_name = f"{student['first']} {student['last']}".lower()
-            if full_name == input_lower:
+            if student.get('student_id') == input_value:
                 student_found = student
                 break
-    
-    # Create record
+
+        # If not found by ID, try by name
+        if not student_found:
+            input_lower = input_value.lower()
+            for student in csv_data:
+                full_name = f"{student['first']} {student['last']}".lower()
+                if full_name == input_lower:
+                    student_found = student
+                    break
+
     if student_found:
-        # Found in CSV
-        record = {
-            'name': f"{student_found['first']} {student_found['last']}",
-            'student_id': student_found['student_id'],
-            'timestamp': datetime.now().isoformat(),
-            'category': category
-        }
-        message = f"{record['name']} recorded as {category.upper()} ({record['student_id']})"
+        display_name = f"{student_found['first']} {student_found['last']}"
     else:
-        # Manual entry
-        # Try to parse as "First Last" format
+        # Parse manual name
         name_parts = input_value.split()
         if len(name_parts) >= 2:
             first_name = name_parts[0].capitalize()
@@ -421,15 +372,21 @@ def record_student():
             display_name = f"{first_name} {last_name}"
         else:
             display_name = input_value.capitalize()
-        
-        record = {
-            'name': display_name,
-            'student_id': 'Manual Input',
-            'timestamp': datetime.now().isoformat(),
-            'category': category
-        }
-        message = f"{record['name']} recorded as {category.upper()} (Manual Input)"
-    
+
+    # Check for duplicates by name
+    for cat_records in records.values():
+        for record in cat_records:
+            if record.get('name', '').lower() == display_name.lower():
+                return jsonify({'success': False, 'message': 'Student already recorded in this session'}), 400
+
+    # Create record
+    record = {
+        'name': display_name,
+        'timestamp': datetime.now().isoformat(),
+        'category': category
+    }
+    message = f"{display_name} recorded as {category.upper()}"
+
     # Add to records
     records[category].append(record)
     
