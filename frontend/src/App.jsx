@@ -1714,7 +1714,7 @@ function App() {
 
       {notification && notification.size === 'small' && (
         <div
-          className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded text-white z-50 ${
+          className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded text-white z-[1000] ${
             notification.type === 'success'
               ? 'bg-green-600'
               : notification.type === 'error'
@@ -1727,7 +1727,7 @@ function App() {
       )}
 
       {notification && notification.size === 'large' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+        <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-sm w-full">
             <p className="mb-4">{notification.text}</p>
             <Button onClick={() => setNotification(null)}>Close</Button>
@@ -1736,7 +1736,7 @@ function App() {
       )}
 
       {modal?.type === 'invite' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+        <div className="fixed inset-0 z-[800] flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-sm w-full">
             <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
             <div className="flex items-center gap-2 mb-4">
