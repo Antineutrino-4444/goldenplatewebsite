@@ -2,3 +2,4 @@ persistent_data
 __pycache__/
 node_modules
 venv/
+src/static/
