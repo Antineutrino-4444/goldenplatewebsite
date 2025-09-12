@@ -8,6 +8,8 @@ from flask_cors import CORS
 from src.models.user import db
 from src.routes.user import user_bp
 from src.routes.golden_plate_recorder import recorder_bp
+from src.routes.csv_processor import csv_bp
+from src.routes.test_runner import test_runner_bp
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = 'asdf#FGSgvasgf$5$WGT'
@@ -17,6 +19,8 @@ CORS(app, supports_credentials=True)
 
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(recorder_bp, url_prefix='/api')
+app.register_blueprint(csv_bp, url_prefix='/api/csv')
+app.register_blueprint(test_runner_bp, url_prefix='/api')
 
 # uncomment if you need to use database
 app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(os.path.dirname(__file__), 'database', 'app.db')}"

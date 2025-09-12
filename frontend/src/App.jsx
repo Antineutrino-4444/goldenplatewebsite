@@ -45,6 +45,7 @@ function App() {
     dirty_percentage: 0
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [isRunningTests, setIsRunningTests] = useState(false)
   
   // Dialog states
   const [showNewSessionDialog, setShowNewSessionDialog] = useState(false)
@@ -69,12 +70,14 @@ function App() {
   // Admin panel state
   const [adminUsers, setAdminUsers] = useState([])
   const [adminSessions, setAdminSessions] = useState([])
-  
+
   // CSV preview state
   const [showCsvPreview, setShowCsvPreview] = useState(false)
   const [csvPreviewData, setCsvPreviewData] = useState(null)
   const [csvPreviewPage, setCsvPreviewPage] = useState(1)
   const [csvPreviewLoading, setCsvPreviewLoading] = useState(false)
+
+  const showTestButton = process.env.NODE_ENV === 'development' || (user && user.role === 'admin')
 
   // Check authentication status on load
   useEffect(() => {
@@ -160,6 +163,19 @@ function App() {
       showMessage('Guest login failed. Please try again.', 'error')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const runSiteTests = async () => {
+    setIsRunningTests(true)
+    try {
+      const response = await fetch(`${API_BASE}/test/run`, { method: 'POST' })
+      const data = await response.json()
+      alert(`Exit code: ${data.exit_code}\nDuration: ${data.duration.toFixed(2)}s\nStdout:\n${data.stdout}\nStderr:\n${data.stderr}`)
+    } catch (error) {
+      alert('Failed to run tests')
+    } finally {
+      setIsRunningTests(false)
     }
   }
 
@@ -772,18 +788,28 @@ function App() {
               {isLoading ? 'Logging in...' : 'Login'}
             </Button>
             
-            <Button 
-              onClick={guestLogin} 
+            <Button
+              onClick={guestLogin}
               variant="outline"
               className="w-full border-amber-600 text-amber-600 hover:bg-amber-50"
               disabled={isLoading}
             >
               Continue as Guest
             </Button>
-            
+
+            {showTestButton && (
+              <Button
+                onClick={runSiteTests}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                disabled={isRunningTests}
+              >
+                {isRunningTests ? 'Running Tests...' : 'Run Site Tests'}
+              </Button>
+            )}
+
             <div className="text-center">
-              <Button 
-                variant="link" 
+              <Button
+                variant="link"
                 onClick={() => setShowSignupDialog(true)}
                 className="text-amber-600 hover:text-amber-700"
               >

@@ -1,10 +1,11 @@
 from flask import Blueprint, jsonify, request, session, send_file
-import pandas as pd
+import csv
 import os
 import uuid
 import json
 from datetime import datetime
 import tempfile
+import io
 
 csv_bp = Blueprint('csv_processor', __name__)
 
@@ -47,22 +48,24 @@ def upload_csv():
         return jsonify({'error': 'File must be a CSV'}), 400
     
     try:
-        # Read CSV file
-        df = pd.read_csv(file)
+        # Read CSV file using built-in csv module
+        file_content = file.read().decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(file_content))
         
-        # Convert to dictionary for easier processing
-        csv_data = df.to_dict('records')
+        # Convert to list of dictionaries
+        csv_data = list(csv_reader)
+        columns = csv_reader.fieldnames if csv_reader.fieldnames else []
         
         # Store in session
         session_id = session['session_id']
         session_data[session_id]['csv_data'] = csv_data
-        session_data[session_id]['columns'] = list(df.columns)
+        session_data[session_id]['columns'] = columns
         
         return jsonify({
             'status': 'success',
             'message': 'CSV uploaded and processed successfully',
             'rows_count': len(csv_data),
-            'columns': list(df.columns),
+            'columns': columns,
             'sample_data': csv_data[:5] if len(csv_data) > 5 else csv_data
         }), 200
         
@@ -131,8 +134,7 @@ def lookup_data(barcode):
     if not csv_data:
         return jsonify({'error': 'No CSV data loaded'}), 400
     
-    # Search for barcode in CSV data (assuming first column contains barcodes)
-    # This can be customized based on the CSV format
+    # Search for barcode in CSV data
     matching_records = []
     for record in csv_data:
         # Check all columns for the barcode
@@ -219,12 +221,17 @@ def export_csv():
     if not export_records:
         return jsonify({'error': 'No data to export'}), 400
     
-    # Create DataFrame and save to temporary file
-    df = pd.DataFrame(export_records)
+    # Create CSV content using built-in csv module
+    output = io.StringIO()
+    if export_records:
+        fieldnames = export_records[0].keys()
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(export_records)
     
     # Create temporary file
     temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-    df.to_csv(temp_file.name, index=False)
+    temp_file.write(output.getvalue())
     temp_file.close()
     
     return send_file(
