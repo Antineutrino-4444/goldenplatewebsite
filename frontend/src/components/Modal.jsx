@@ -31,15 +31,17 @@ export default function Modal({ open, onClose, children }) {
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 pointer-events-auto"
           onClick={onClose}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
           <motion.div
+            role="dialog"
+            aria-modal="true"
             onClick={(e) => e.stopPropagation()}
-            className="bg-white p-6 rounded-lg shadow-lg relative max-w-sm w-full"
+            className="relative z-[2001] max-w-sm w-full rounded-lg bg-white p-6 shadow-lg"
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}

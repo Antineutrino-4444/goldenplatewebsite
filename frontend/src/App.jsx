@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
 import Modal from '@/components/Modal.jsx'
+import { createPortal } from 'react-dom'
 import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle } from 'lucide-react'
 import './App.css'
 
@@ -1713,19 +1714,21 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      {notification && notification.size === 'small' && (
-        <div
-          className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded text-white z-[1000] ${
-            notification.type === 'success'
-              ? 'bg-green-600'
-              : notification.type === 'error'
-              ? 'bg-red-600'
-              : 'bg-blue-600'
-          }`}
-        >
-          {notification.text}
-        </div>
-      )}
+      {notification && notification.size === 'small' &&
+        createPortal(
+          <div
+            className={`fixed top-4 left-1/2 z-[2100] -translate-x-1/2 transform rounded px-4 py-2 text-white ${
+              notification.type === 'success'
+                ? 'bg-green-600'
+                : notification.type === 'error'
+                ? 'bg-red-600'
+                : 'bg-blue-600'
+            }`}
+          >
+            {notification.text}
+          </div>,
+          document.body
+        )}
 
       {notification && notification.size === 'large' && (
         <Modal open onClose={() => setNotification(null)}>
