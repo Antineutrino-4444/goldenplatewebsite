@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
-import Popup from '@/components/Popup.jsx'
+import Modal from '@/components/Modal.jsx'
 import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle } from 'lucide-react'
 import './App.css'
 
@@ -1728,14 +1728,14 @@ function App() {
       )}
 
       {notification && notification.size === 'large' && (
-        <Popup open onClose={() => setNotification(null)}>
+        <Modal open onClose={() => setNotification(null)}>
           <p className="mb-4">{notification.text}</p>
           <Button onClick={() => setNotification(null)}>Close</Button>
-        </Popup>
+        </Modal>
       )}
 
       {modal?.type === 'invite' && (
-        <Popup open onClose={() => { setModal(null); setInviteCode('') }}>
+        <Modal open onClose={() => { setModal(null); setInviteCode('') }}>
           <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
           <div className="flex items-center gap-2 mb-4">
             <Input value={inviteCode} readOnly className="flex-1" />
@@ -1744,7 +1744,7 @@ function App() {
             </Button>
           </div>
           <Button onClick={() => { setModal(null); setInviteCode('') }}>Close</Button>
-        </Popup>
+        </Modal>
       )}
     </div>
   )
