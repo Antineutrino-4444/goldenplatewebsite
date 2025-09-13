@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
+import Popup from '@/components/Popup.jsx'
 import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle } from 'lucide-react'
 import './App.css'
 
@@ -1727,27 +1728,23 @@ function App() {
       )}
 
       {notification && notification.size === 'large' && (
-        <div className="fixed inset-0 z-[900] flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-sm w-full">
-            <p className="mb-4">{notification.text}</p>
-            <Button onClick={() => setNotification(null)}>Close</Button>
-          </div>
-        </div>
+        <Popup open onClose={() => setNotification(null)}>
+          <p className="mb-4">{notification.text}</p>
+          <Button onClick={() => setNotification(null)}>Close</Button>
+        </Popup>
       )}
 
       {modal?.type === 'invite' && (
-        <div className="fixed inset-0 z-[800] flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg text-center max-w-sm w-full">
-            <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
-            <div className="flex items-center gap-2 mb-4">
-              <Input value={inviteCode} readOnly className="flex-1" />
-              <Button onClick={copyInviteCode}>
-                Copy
-              </Button>
-            </div>
-            <Button onClick={() => { setModal(null); setInviteCode('') }}>Close</Button>
+        <Popup open onClose={() => { setModal(null); setInviteCode('') }}>
+          <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
+          <div className="flex items-center gap-2 mb-4">
+            <Input value={inviteCode} readOnly className="flex-1" />
+            <Button onClick={copyInviteCode}>
+              Copy
+            </Button>
           </div>
-        </div>
+          <Button onClick={() => { setModal(null); setInviteCode('') }}>Close</Button>
+        </Popup>
       )}
     </div>
   )
