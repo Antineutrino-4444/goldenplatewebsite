@@ -1,14 +1,20 @@
 import React, { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion as Motion } from 'framer-motion'
 
 /**
  * Modal component rendered via a React portal.
  * - Locks body scroll while open
- * - Closes on ESC key or overlay click
+ * - Closes on ESC key
+ * - Overlay click dismissal is controlled by `dismissOnOverlayClick`
  * - Animated with framer-motion for smooth appearance
+ *
+ * @param {boolean} open - Whether the modal is visible
+ * @param {() => void} onClose - Called when the modal requests to close
+ * @param {React.ReactNode} children - Modal content
+ * @param {boolean} [dismissOnOverlayClick=true] - Close when clicking the overlay
  */
-export default function Modal({ open, onClose, children }) {
+export default function Modal({ open, onClose, children, dismissOnOverlayClick = true }) {
   // Close on ESC and prevent background scrolling
   useEffect(() => {
     if (!open) return
@@ -30,14 +36,14 @@ export default function Modal({ open, onClose, children }) {
   return createPortal(
     <AnimatePresence>
       {open && (
-        <motion.div
+        <Motion.div
           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 pointer-events-auto"
-          onClick={onClose}
+          onClick={dismissOnOverlayClick ? onClose : undefined}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <motion.div
+          <Motion.div
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
@@ -47,8 +53,8 @@ export default function Modal({ open, onClose, children }) {
             exit={{ scale: 0.95, opacity: 0 }}
           >
             {children}
-          </motion.div>
-        </motion.div>
+          </Motion.div>
+        </Motion.div>
       )}
     </AnimatePresence>,
     document.body

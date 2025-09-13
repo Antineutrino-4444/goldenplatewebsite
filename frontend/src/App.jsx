@@ -1738,7 +1738,11 @@ function App() {
       )}
 
       {modal?.type === 'invite' && (
-        <Modal open onClose={() => { setModal(null); setInviteCode('') }}>
+        <Modal
+          open
+          onClose={() => { setModal(null); setInviteCode('') }}
+          dismissOnOverlayClick={false}
+        >
           <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
           <div className="flex items-center gap-2 mb-4">
             <Input value={inviteCode} readOnly className="flex-1" />
