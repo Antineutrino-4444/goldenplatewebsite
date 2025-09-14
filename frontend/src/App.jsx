@@ -259,19 +259,24 @@ function App() {
         // Load scan history for the session
         await loadScanHistory()
       } else {
-        // No active session - allow user to work without sessions
-        setSessionId(null)
-        setSessionName('')
-        setSessionStats({ 
-          clean_count: 0, 
-          dirty_count: 0, 
-          red_count: 0, 
-          combined_dirty_count: 0, 
-          total_recorded: 0, 
-          clean_percentage: 0, 
-          dirty_percentage: 0 
-        })
-        setScanHistory([])
+        // No active session - try to join an existing one automatically
+        const sessions = await loadSessions()
+        if (sessions.length > 0) {
+          await switchSession(sessions[0].session_id)
+        } else {
+          setSessionId(null)
+          setSessionName('')
+          setSessionStats({
+            clean_count: 0,
+            dirty_count: 0,
+            red_count: 0,
+            combined_dirty_count: 0,
+            total_recorded: 0,
+            clean_percentage: 0,
+            dirty_percentage: 0
+          })
+          setScanHistory([])
+        }
       }
     } catch (error) {
       console.error('Session initialization failed:', error)
@@ -952,8 +957,8 @@ function App() {
               {['admin', 'superadmin'].includes(user?.role) && (
                 <Button
                   onClick={() => {
-                    loadAdminData()
                     setShowAdminPanel(true)
+                    loadAdminData()
                   }}
                   variant="outline"
                   size="sm"
@@ -1010,25 +1015,11 @@ function App() {
                   <Plus className="h-5 w-5 mr-2" />
                   {isLoading ? 'Creating...' : 'Create New Session'}
                 </Button>
-                <Button
-                  onClick={async () => {
-                    setIsLoading(true);
-                    await loadSessions();
-                    setShowSessionsDialog(true);
-                    setIsLoading(false);
-                  }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg"
-                  size="lg"
-                  disabled={isLoading}
-                >
-                  <Users className="h-5 w-5 mr-2" />
-                  {isLoading ? 'Loading...' : 'Open Session'}
-                </Button>
                 {['admin', 'superadmin'].includes(user?.role) && (
                   <Button
                     onClick={() => {
-                      loadAdminData()
                       setShowAdminPanel(true)
+                      loadAdminData()
                     }}
                     className="relative bg-red-600 hover:bg-red-700 text-white px-8 py-3 text-lg"
                     size="lg"
@@ -1460,241 +1451,6 @@ function App() {
           </DialogContent>
         </Dialog>
 
-        {/* Admin Panel Dialog */}
-        <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-          <DialogContent className="max-w-4xl h-[90vh] overflow-y-auto" dismissOnOverlayClick={false}>
-            <DialogHeader>
-              <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
-              <DialogDescription>
-                System administration and management
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6">
-              <div className="flex gap-4">
-                {['admin', 'superadmin'].includes(user.role) && (
-                  <>
-                    <Button
-                      onClick={generateInviteCode}
-                      variant="outline"
-                      className="flex-1"
-                    >
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      Generate Invite Code
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setShowDeleteRequests(true)
-                        loadDeleteRequests()
-                      }}
-                      variant="outline"
-                      className="relative flex-1"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Requests
-                      {deleteRequests.length > 0 && (
-                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
-                          {deleteRequests.length}
-                        </span>
-                      )}
-                    </Button>
-                  </>
-                )}
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Users</h3>
-                <div className="space-y-2">
-                  {adminUsers.map((adminUser) => (
-                    <div key={adminUser.username} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <div className="font-medium">{adminUser.name}</div>
-                        <div className="text-sm text-gray-500">@{adminUser.username} • {adminUser.role}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge 
-                          variant={adminUser.role === 'superadmin' ? 'destructive' : adminUser.role === 'admin' ? 'default' : 'secondary'}
-                        >
-                          {adminUser.role}
-                        </Badge>
-                        {user.role === 'superadmin' && adminUser.username !== user.username && (
-                          <div className="flex gap-1">
-                            <select 
-                              className="text-xs border rounded px-2 py-1"
-                              value={adminUser.role}
-                              onChange={(e) => changeUserRole(adminUser.username, e.target.value)}
-                            >
-                              <option value="user">User</option>
-                              <option value="admin">Admin</option>
-                              <option value="superadmin">Super Admin</option>
-                            </select>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => {
-                                setUserToDelete(adminUser)
-                                setShowUserDeleteConfirm(true)
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3">All Sessions</h3>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {adminSessions.map((adminSession) => (
-                    <div key={adminSession.session_id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <div className="font-medium">{adminSession.session_name}</div>
-                        <div className="text-sm text-gray-500">
-                          Owner: {adminSession.owner} • {adminSession.total_records} records
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <Button onClick={() => setShowAdminPanel(false)} className="w-full">
-              Close
-            </Button>
-          </DialogContent>
-        </Dialog>
-
-        {/* Account Management Dialog */}
-        <Dialog open={showAccountManagement} onOpenChange={setShowAccountManagement}>
-          <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
-            <DialogHeader>
-              <DialogTitle>Account Management</DialogTitle>
-              <DialogDescription>
-                Manage user account status (enable/disable accounts)
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {allUsers.map((userAccount) => (
-                <div key={userAccount.username} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <div className="font-medium">{userAccount.name}</div>
-                    <div className="text-sm text-gray-500">
-                      @{userAccount.username} • {userAccount.role}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge 
-                      variant={userAccount.status === 'active' ? 'default' : 'destructive'}
-                    >
-                      {userAccount.status}
-                    </Badge>
-                    {((user.role === 'superadmin' && userAccount.username !== user.username) ||
-                      (user.role === 'admin' && !['superadmin', 'admin'].includes(userAccount.role))) && (
-                      <Button
-                        onClick={() => toggleAccountStatus(userAccount.username, userAccount.status)}
-                        variant={userAccount.status === 'active' ? 'destructive' : 'default'}
-                        size="sm"
-                      >
-                        {userAccount.status === 'active' ? 'Disable' : 'Enable'}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Button onClick={() => setShowAccountManagement(false)} className="w-full">
-              Close
-            </Button>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={showUserDeleteConfirm} onOpenChange={setShowUserDeleteConfirm}>
-          <DialogContent dismissOnOverlayClick={false}>
-            <DialogHeader>
-              <DialogTitle>Confirm Account Deletion</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete account "{userToDelete?.username}"? This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex gap-2 mt-4">
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (userToDelete) {
-                    deleteUserAccount(userToDelete.username)
-                  }
-                  setShowUserDeleteConfirm(false)
-                  setUserToDelete(null)
-                }}
-              >
-                Delete
-              </Button>
-              <Button variant="outline" onClick={() => { setShowUserDeleteConfirm(false); setUserToDelete(null) }}>
-                Cancel
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Delete Requests Dialog */}
-        <Dialog open={showDeleteRequests} onOpenChange={setShowDeleteRequests}>
-          <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
-            <DialogHeader>
-              <DialogTitle>Delete Requests</DialogTitle>
-              <DialogDescription>
-                Pending session deletion requests from users
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {deleteRequests.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  No pending delete requests
-                </div>
-              ) : (
-                deleteRequests.map((request) => (
-                  <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">{request.session_name}</div>
-                      <div className="text-sm text-gray-500">
-                        Requested by: {request.requester_name} (@{request.requester}) • {request.total_records} records
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        Clean: {request.clean_records} • Dirty: {request.dirty_records} • Red: {request.red_records}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {new Date(request.requested_at).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        onClick={() => approveDeleteRequest(request.id)}
-                        variant="destructive"
-                        size="sm"
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        Approve
-                      </Button>
-                      <Button
-                        onClick={() => rejectDeleteRequest(request.id)}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Reject
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <Button onClick={() => setShowDeleteRequests(false)} className="w-full">
-              Close
-            </Button>
-          </DialogContent>
-        </Dialog>
 
         {/* CSV Preview Dialog */}
         <Dialog open={showCsvPreview} onOpenChange={setShowCsvPreview}>
@@ -1777,6 +1533,242 @@ function App() {
         )}
       </div>
       
+      {/* Admin Panel Dialog */}
+      <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
+        <DialogContent className="max-w-4xl h-[90vh] overflow-y-auto" dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
+            <DialogDescription>
+              System administration and management
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="flex gap-4">
+              {['admin', 'superadmin'].includes(user.role) && (
+                <>
+                  <Button
+                    onClick={generateInviteCode}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Generate Invite Code
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowDeleteRequests(true)
+                      loadDeleteRequests()
+                    }}
+                    variant="outline"
+                    className="relative flex-1"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Requests
+                    {deleteRequests.length > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+                        {deleteRequests.length}
+                      </span>
+                    )}
+                  </Button>
+                </>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Users</h3>
+              <div className="space-y-2">
+                {adminUsers.map((adminUser) => (
+                  <div key={adminUser.username} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div>
+                      <div className="font-medium">{adminUser.name}</div>
+                      <div className="text-sm text-gray-500">@{adminUser.username} • {adminUser.role}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={adminUser.role === 'superadmin' ? 'destructive' : adminUser.role === 'admin' ? 'default' : 'secondary'}
+                      >
+                        {adminUser.role}
+                      </Badge>
+                      {user.role === 'superadmin' && adminUser.username !== user.username && (
+                        <div className="flex gap-1">
+                          <select
+                            className="text-xs border rounded px-2 py-1"
+                            value={adminUser.role}
+                            onChange={(e) => changeUserRole(adminUser.username, e.target.value)}
+                          >
+                            <option value="user">User</option>
+                            <option value="admin">Admin</option>
+                            <option value="superadmin">Super Admin</option>
+                          </select>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setUserToDelete(adminUser)
+                              setShowUserDeleteConfirm(true)
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold mb-3">All Sessions</h3>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {adminSessions.map((adminSession) => (
+                  <div key={adminSession.session_id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div>
+                      <div className="font-medium">{adminSession.session_name}</div>
+                      <div className="text-sm text-gray-500">
+                        Owner: {adminSession.owner} • {adminSession.total_records} records
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <Button onClick={() => setShowAdminPanel(false)} className="w-full">
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Account Management Dialog */}
+      <Dialog open={showAccountManagement} onOpenChange={setShowAccountManagement}>
+        <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle>Account Management</DialogTitle>
+            <DialogDescription>
+              Manage user account status (enable/disable accounts)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {allUsers.map((userAccount) => (
+              <div key={userAccount.username} className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <div className="font-medium">{userAccount.name}</div>
+                  <div className="text-sm text-gray-500">
+                    @{userAccount.username} • {userAccount.role}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={userAccount.status === 'active' ? 'default' : 'destructive'}
+                  >
+                    {userAccount.status}
+                  </Badge>
+                  {((user.role === 'superadmin' && userAccount.username !== user.username) ||
+                    (user.role === 'admin' && !['superadmin', 'admin'].includes(userAccount.role))) && (
+                    <Button
+                      onClick={() => toggleAccountStatus(userAccount.username, userAccount.status)}
+                      variant={userAccount.status === 'active' ? 'destructive' : 'default'}
+                      size="sm"
+                    >
+                      {userAccount.status === 'active' ? 'Disable' : 'Enable'}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <Button onClick={() => setShowAccountManagement(false)} className="w-full">
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUserDeleteConfirm} onOpenChange={setShowUserDeleteConfirm}>
+        <DialogContent dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle>Confirm Account Deletion</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete account "{userToDelete?.username}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (userToDelete) {
+                  deleteUserAccount(userToDelete.username)
+                }
+                setShowUserDeleteConfirm(false)
+                setUserToDelete(null)
+              }}
+            >
+              Delete
+            </Button>
+            <Button variant="outline" onClick={() => { setShowUserDeleteConfirm(false); setUserToDelete(null) }}>
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Requests Dialog */}
+      <Dialog open={showDeleteRequests} onOpenChange={setShowDeleteRequests}>
+        <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle>Delete Requests</DialogTitle>
+            <DialogDescription>
+              Pending session deletion requests from users
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {deleteRequests.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No pending delete requests
+              </div>
+            ) : (
+              deleteRequests.map((request) => (
+                <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <div className="font-medium">{request.session_name}</div>
+                    <div className="text-sm text-gray-500">
+                      Requested by: {request.requester_name} (@{request.requester}) • {request.total_records} records
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      Clean: {request.clean_records} • Dirty: {request.dirty_records} • Red: {request.red_records}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {new Date(request.requested_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      onClick={() => approveDeleteRequest(request.id)}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Approve
+                    </Button>
+                    <Button
+                      onClick={() => rejectDeleteRequest(request.id)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <XCircle className="h-4 w-4 mr-1" />
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <Button onClick={() => setShowDeleteRequests(false)} className="w-full">
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
+
       {/* Switch Session Dialog - Moved outside of conditional rendering */}
       <Dialog open={showSessionsDialog} onOpenChange={setShowSessionsDialog}>
         <DialogContent dismissOnOverlayClick={false}>
