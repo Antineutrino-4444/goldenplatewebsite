@@ -8,7 +8,21 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
 import Modal from '@/components/Modal.jsx'
 import { createPortal } from 'react-dom'
-import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle } from 'lucide-react'
+import {
+  Upload,
+  Scan,
+  Download,
+  FileText,
+  Plus,
+  Users,
+  BarChart3,
+  LogOut,
+  Shield,
+  Settings,
+  Trash2,
+  UserPlus,
+  AlertCircle
+} from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
