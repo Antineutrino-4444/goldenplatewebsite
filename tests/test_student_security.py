@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath('.'))
 from src.main import app
 
 
-def login(client, username='admin', password='admin123'):
+def login(client, username='antineutrino', password='b-decay'):
     return client.post('/api/auth/login', json={'username': username, 'password': password})
 
 

@@ -4,35 +4,5 @@
     "role": "superadmin",
     "name": "Super Administrator",
     "status": "active"
-  },
-  "admin": {
-    "password": "admin123",
-    "role": "admin",
-    "name": "Administrator",
-    "status": "active"
-  },
-  "user1": {
-    "password": "user123",
-    "role": "user",
-    "name": "Regular User",
-    "status": "active"
-  },
-  "demo": {
-    "password": "demo",
-    "role": "user",
-    "name": "Demo User",
-    "status": "active"
-  },
-  "testuser": {
-    "password": "password123",
-    "role": "user",
-    "name": "Test User",
-    "status": "active"
-  },
-  "newuser": {
-    "password": "password123",
-    "role": "user",
-    "name": "New Test User",
-    "status": "active"
   }
 }

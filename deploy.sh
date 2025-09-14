@@ -77,9 +77,9 @@ EOF
     echo "✅ Application started successfully!"
     echo ""
     echo "🌐 Access your application at: http://localhost:5000"
-    echo "👤 Default admin credentials:"
-    echo "   Username: admin"
-    echo "   Password: admin123"
+    echo "👤 Default super admin credentials:"
+    echo "   Username: antineutrino"
+    echo "   Password: b-decay"
     echo ""
     echo "⚠️  IMPORTANT: Change the default password after first login!"
 }
