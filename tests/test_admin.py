@@ -1,5 +1,10 @@
 def test_non_admin_cannot_generate_invite(client, login):
-    login(username='user1', password='user123')
+    client.post('/api/auth/signup', json={
+        'username': 'regular',
+        'password': 'userpass',
+        'name': 'Regular User'
+    })
+    login(username='regular', password='userpass')
     resp = client.post('/api/admin/invite')
     assert resp.status_code == 403
 

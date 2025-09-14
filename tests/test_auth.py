@@ -15,7 +15,7 @@ def test_login_logout_status(client, login):
 
 
 def test_login_failure(client):
-    resp = client.post('/api/auth/login', json={'username': 'admin', 'password': 'wrong'})
+    resp = client.post('/api/auth/login', json={'username': 'antineutrino', 'password': 'wrong'})
     assert resp.status_code == 401
 
 

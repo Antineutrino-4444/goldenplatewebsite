@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath('.'))
 from src.main import app
 
 
-def login(client, username='admin', password='admin123'):
+def login(client, username='antineutrino', password='b-decay'):
     return client.post('/api/auth/login', json={'username': username, 'password': password})
 
 
@@ -24,6 +24,11 @@ def test_records_store_only_names_and_csv_cleared_on_logout():
         # Login and upload CSV
         resp = login(client)
         assert resp.status_code == 200
+        # clear existing sessions
+        listing = client.get('/api/session/list')
+        for s in listing.get_json().get('sessions', []):
+            client.delete(f"/api/session/delete/{s['session_id']}")
+
         assert upload_sample_csv(client).status_code == 200
 
         # Create a session

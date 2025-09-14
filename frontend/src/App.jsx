@@ -361,8 +361,18 @@ function App() {
   const deleteSession = async (sessionId) => {
     setIsLoading(true)
     try {
-      // Use the new request system instead of direct deletion
-      await requestDeleteSession(sessionId)
+      if (user && ['admin', 'superadmin'].includes(user.role)) {
+        const response = await fetch(`${API_BASE}/session/delete/${sessionId}`, { method: 'DELETE' })
+        const data = await response.json()
+        if (response.ok) {
+          showMessage(data.message, 'success')
+        } else {
+          showMessage(data.error || 'Failed to delete session', 'error')
+        }
+      } else {
+        await requestDeleteSession(sessionId)
+      }
+      await loadSessions()
       setShowDeleteConfirm(false)
       setSessionToDelete(null)
     } catch (error) {
@@ -604,10 +614,6 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         showMessage(data.message, 'success')
-        if (user.role === 'user') {
-          // For normal users, refresh sessions list to remove deleted session
-          loadSessions()
-        }
       } else {
         const error = await response.json()
         showMessage(error.error, 'error')
@@ -631,10 +637,8 @@ function App() {
 
   const approveDeleteRequest = async (requestId) => {
     try {
-      const response = await fetch(`${API_BASE}/admin/approve-delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id: requestId })
+      const response = await fetch(`${API_BASE}/admin/delete-requests/${requestId}/approve`, {
+        method: 'POST'
       })
       
       if (response.ok) {
@@ -1554,7 +1558,10 @@ function App() {
                     <div>
                       <div className="font-medium">{request.session_name}</div>
                       <div className="text-sm text-gray-500">
-                        Requested by: {request.requester_name} (@{request.requester})
+                        Requested by: {request.requester_name} (@{request.requester}) • {request.total_records} records
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Clean: {request.clean_records} • Dirty: {request.dirty_records} • Red: {request.red_records}
                       </div>
                       <div className="text-xs text-gray-400">
                         {new Date(request.requested_at).toLocaleString()}
@@ -1691,7 +1698,8 @@ function App() {
                     </div>
                   </div>
                 </Button>
-                {session.session_id !== sessionId && 
+                {sessionId &&
+                 session.session_id !== sessionId &&
                  (user?.role === 'admin' || user?.role === 'superadmin' || session.owner === user?.username) && (
                   <Button
                     variant="ghost"

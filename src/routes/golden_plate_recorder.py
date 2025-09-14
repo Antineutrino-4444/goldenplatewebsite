@@ -305,7 +305,7 @@ def manage_account_status():
 
 @recorder_bp.route('/session/request-delete', methods=['POST'])
 def request_delete_session():
-    """Delete a session directly"""
+    """Submit a delete request for a session"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -326,19 +326,53 @@ def request_delete_session():
     # Get current user
     current_user = get_current_user()
     session_owner = session_data[session_id].get('owner')
-    
-    # Permission check: users can only delete their own sessions, admins and super admins can delete any session
-    if current_user['role'] == 'user' and session_owner != session['user_id']:
+
+    # Admins delete directly without a request
+    if current_user['role'] in ['admin', 'superadmin']:
+        session_name = session_data[session_id]['session_name']
+        del session_data[session_id]
+        save_session_data()
+        return jsonify({
+            'status': 'success',
+            'message': f'Session "{session_name}" deleted successfully',
+            'deleted_session_id': session_id
+        }), 200
+
+    # Regular users can only request deletion of their own sessions
+    if session_owner != session['user_id']:
         return jsonify({'error': 'You can only delete sessions that you created'}), 403
     
-    # Delete the session directly
-    session_name = session_data[session_id]['session_name']
-    del session_data[session_id]
-    save_session_data()
-    
+    session_info = session_data[session_id]
+    session_name = session_info['session_name']
+
+    # Collect session statistics
+    clean_count = len(session_info.get('clean_records', []))
+    dirty_count = len(session_info.get('dirty_records', []))
+    red_count = len(session_info.get('red_records', []))
+    total_records = clean_count + dirty_count + red_count
+
+    # Create delete request
+    request_obj = {
+        'id': str(uuid.uuid4()),
+        'session_id': session_id,
+        'session_name': session_name,
+        'requester': session['user_id'],
+        'requester_name': current_user['name'],
+        'requested_at': datetime.now().isoformat(),
+        'status': 'pending',
+        'total_records': total_records,
+        'clean_records': clean_count,
+        'dirty_records': dirty_count,
+        'red_records': red_count,
+    }
+
+    delete_requests.append(request_obj)
+    save_delete_requests()
+
     return jsonify({
         'status': 'success',
-        'message': 'Session deleted successfully'
+        'message': f'Delete request submitted for "{session_name}"',
+        'request': request_obj
     }), 200
 
 @recorder_bp.route('/admin/delete-requests', methods=['GET'])
@@ -433,16 +467,26 @@ def create_session():
     data = request.get_json() or {}
     custom_name = data.get('session_name', '').strip()
     is_public = data.get('is_public', True)
-    
+
     # Generate session ID
     session_id = str(uuid.uuid4())
-    
-    # Generate session name
+
+    # Collect existing session names
+    existing_names = {s['session_name'] for s in session_data.values()}
+
+    # Generate session name with uniqueness checks
     if custom_name:
+        if custom_name in existing_names:
+            return jsonify({'error': 'Session name already exists'}), 400
         session_name = custom_name
     else:
         now = datetime.now()
-        session_name = f"PLATE_Session_{now.strftime('%B_%d_%Y')}"
+        base_name = f"PLATE_Session_{now.strftime('%B_%d_%Y')}"
+        session_name = base_name
+        suffix = 1
+        while session_name in existing_names:
+            session_name = f"{base_name}_{suffix}"
+            suffix += 1
     
     # Create session data with owner information
     session_data[session_id] = {
@@ -524,9 +568,9 @@ def switch_session(session_id):
 @recorder_bp.route('/session/delete/<session_id>', methods=['DELETE'])
 def delete_session(session_id):
     """Delete a session directly"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
-    
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
     if session_id not in session_data:
         return jsonify({'error': 'Session not found'}), 404
     
@@ -535,18 +579,10 @@ def delete_session(session_id):
     if session_id == current_session_id:
         return jsonify({'error': 'Cannot delete the currently active session. Switch to another session first.'}), 400
     
-    # Get current user
-    current_user = get_current_user()
-    session_owner = session_data[session_id].get('owner')
-    
-    # Permission check: users can only delete their own sessions, admins and super admins can delete any session
-    if current_user['role'] == 'user' and session_owner != session['user_id']:
-        return jsonify({'error': 'You can only delete sessions that you created'}), 403
-    
     session_name = session_data[session_id]['session_name']
     del session_data[session_id]
     save_session_data()
-    
+
     return jsonify({
         'status': 'success',
         'message': f'Session "{session_name}" deleted successfully',

@@ -127,44 +127,7 @@ cp -r frontend/dist/* src/static/
 gunicorn -w 4 -b 0.0.0.0:5000 src.main:app
 ```
 
-#### Option 2: Docker Deployment
-
-```dockerfile
-# Dockerfile
-FROM node:18 AS frontend-build
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install
-COPY frontend/ ./
-RUN npm run build
-
-FROM python:3.11-slim
-WORKDIR /app
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install -r requirements.txt gunicorn
-
-# Copy backend code
-COPY src/ ./src/
-
-# Copy built frontend
-COPY --from=frontend-build /app/frontend/dist ./src/static
-
-# Expose port
-EXPOSE 5000
-
-# Run application
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "src.main:app"]
-```
-
-```bash
-# Build and run
-docker build -t golden-plate-recorder .
-docker run -p 5000:5000 -v $(pwd)/data:/app/data golden-plate-recorder
-```
-
-#### Option 3: Cloud Deployment (Heroku)
+#### Option 2: Cloud Deployment (Heroku)
 
 ```bash
 # Install Heroku CLI and login
@@ -181,7 +144,7 @@ heroku buildpacks:add heroku/python
 git push heroku main
 ```
 
-#### Option 4: VPS/Cloud Server (DigitalOcean, AWS, etc.)
+#### Option 3: VPS/Cloud Server (DigitalOcean, AWS, etc.)
 
 ```bash
 # SSH into your server
@@ -281,10 +244,10 @@ DATABASE_URL=mysql://gpr_user:your_password@localhost/golden_plate_recorder
 
 ## 📱 Usage
 
-### Default Admin Account
+### Default Super Admin Account
 On first run, a super admin account is created:
-- **Username**: `admin`
-- **Password**: `admin123`
+- **Username**: `antineutrino`
+- **Password**: `b-decay`
 
 **⚠️ IMPORTANT**: Change this password immediately after first login!
 

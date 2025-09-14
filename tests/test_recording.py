@@ -9,6 +9,10 @@ def upload_csv(client):
 
 def test_recording_categories_and_stats(client, login):
     login()
+    # clear existing sessions
+    listing = client.get('/api/session/list')
+    for s in listing.get_json().get('sessions', []):
+        client.delete(f"/api/session/delete/{s['session_id']}")
     assert upload_csv(client).status_code == 200
     client.post('/api/session/create', json={'session_name': 'record_test'})
 

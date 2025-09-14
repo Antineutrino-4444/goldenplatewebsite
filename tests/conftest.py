@@ -19,7 +19,7 @@ def client():
 @pytest.fixture
 def login(client):
     """Helper to log in a user"""
-    def _login(username='admin', password='admin123'):
+    def _login(username='antineutrino', password='b-decay'):
         return client.post('/api/auth/login', json={'username': username, 'password': password})
 
     return _login
