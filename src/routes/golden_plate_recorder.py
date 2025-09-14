@@ -325,11 +325,8 @@ def request_delete_session():
     
     # Get current user
     current_user = get_current_user()
-    session_owner = session_data[session_id].get('owner')
 
-    # Permission check: users can only delete their own sessions, admins and super admins can delete any session
-    if current_user['role'] == 'user' and session_owner != session['user_id']:
-        return jsonify({'error': 'You can only delete sessions that you created'}), 403
+    # Users can request deletion for any session; admins and superadmins delete immediately
 
     # Admins and super admins delete immediately
     if current_user['role'] in ['admin', 'superadmin']:
@@ -381,9 +378,10 @@ def get_delete_requests():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
     
+    pending_requests = [req for req in delete_requests if req.get('status') == 'pending']
     return jsonify({
         'status': 'success',
-        'requests': delete_requests
+        'requests': pending_requests
     }), 200
 
 @recorder_bp.route('/admin/users', methods=['GET'])
