@@ -361,13 +361,24 @@ function App() {
   const deleteSession = async (sessionId) => {
     setIsLoading(true)
     try {
-      // Use the new request system instead of direct deletion
-      await requestDeleteSession(sessionId)
+      if (user?.role === 'admin' || user?.role === 'superadmin') {
+        const response = await fetch(`${API_BASE}/session/delete/${sessionId}`, {
+          method: 'DELETE'
+        })
+        const data = await response.json()
+        if (response.ok) {
+          showMessage(data.message, 'success')
+        } else {
+          showMessage(data.error || 'Failed to delete session', 'error')
+        }
+      } else {
+        await requestDeleteSession(sessionId)
+      }
       await loadSessions()
       setShowDeleteConfirm(false)
       setSessionToDelete(null)
     } catch (error) {
-      showMessage('Failed to process delete request', 'error')
+      showMessage('Failed to delete session', 'error')
     } finally {
       setIsLoading(false)
     }

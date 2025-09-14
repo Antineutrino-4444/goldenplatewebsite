@@ -326,11 +326,22 @@ def request_delete_session():
     # Get current user
     current_user = get_current_user()
     session_owner = session_data[session_id].get('owner')
-    
+
     # Permission check: users can only delete their own sessions, admins and super admins can delete any session
     if current_user['role'] == 'user' and session_owner != session['user_id']:
         return jsonify({'error': 'You can only delete sessions that you created'}), 403
-    
+
+    # Admins and super admins delete immediately
+    if current_user['role'] in ['admin', 'superadmin']:
+        session_name = session_data[session_id]['session_name']
+        del session_data[session_id]
+        save_session_data()
+        return jsonify({
+            'status': 'success',
+            'message': f'Session "{session_name}" deleted successfully',
+            'deleted_session_id': session_id
+        }), 200
+
     session_info = session_data[session_id]
     session_name = session_info['session_name']
 
@@ -456,16 +467,26 @@ def create_session():
     data = request.get_json() or {}
     custom_name = data.get('session_name', '').strip()
     is_public = data.get('is_public', True)
-    
+
     # Generate session ID
     session_id = str(uuid.uuid4())
-    
+
+    # Existing session names
+    existing_names = {d['session_name'] for d in session_data.values()}
+
     # Generate session name
     if custom_name:
+        if custom_name in existing_names:
+            return jsonify({'error': 'Session name already exists'}), 400
         session_name = custom_name
     else:
         now = datetime.now()
-        session_name = f"PLATE_Session_{now.strftime('%B_%d_%Y')}"
+        base_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
+        session_name = base_name
+        counter = 1
+        while session_name in existing_names:
+            session_name = f"{base_name}_{counter}"
+            counter += 1
     
     # Create session data with owner information
     session_data[session_id] = {
@@ -617,6 +638,14 @@ def approve_delete_request(request_id):
         'message': f'Session "{session_name}" deleted successfully',
         'deleted_session_id': session_id
     }), 200
+
+@recorder_bp.route('/admin/approve-delete', methods=['POST'])
+def approve_delete_request_api():
+    data = request.get_json() or {}
+    request_id = data.get('request_id')
+    if not request_id:
+        return jsonify({'error': 'Request ID is required'}), 400
+    return approve_delete_request(request_id)
 
 @recorder_bp.route('/admin/delete-requests/<request_id>/reject', methods=['POST'])
 def reject_delete_request(request_id):
