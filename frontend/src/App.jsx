@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
 import Modal from '@/components/Modal.jsx'
 import { createPortal } from 'react-dom'
-import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle } from 'lucide-react'
+import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle } from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
@@ -630,7 +630,8 @@ function App() {
       const response = await fetch(`${API_BASE}/admin/delete-requests`)
       if (response.ok) {
         const data = await response.json()
-        setDeleteRequests(data.requests || [])
+        const pending = (data.requests || []).filter(req => req.status === 'pending')
+        setDeleteRequests(pending)
       }
     } catch (error) {
       console.error('Failed to load delete requests:', error)
@@ -656,6 +657,26 @@ function App() {
       }
     } catch (error) {
       showMessage('Failed to approve delete request', 'error')
+    }
+  }
+
+  const rejectDeleteRequest = async (requestId) => {
+    try {
+      const response = await fetch(`${API_BASE}/admin/delete-requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        loadDeleteRequests()
+      } else {
+        const error = await response.json()
+        showMessage(error.error || 'Failed to reject delete request', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to reject delete request', 'error')
     }
   }
 
@@ -936,8 +957,8 @@ function App() {
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button 
-                  onClick={() => createSession('')} 
+                <Button
+                  onClick={() => createSession('')}
                   className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-3 text-lg"
                   size="lg"
                   disabled={isLoading}
@@ -945,10 +966,10 @@ function App() {
                   <Plus className="h-5 w-5 mr-2" />
                   {isLoading ? 'Creating...' : 'Create New Session'}
                 </Button>
-                <Button 
-                  onClick={async () => { 
+                <Button
+                  onClick={async () => {
                     setIsLoading(true);
-                    await loadSessions(); 
+                    await loadSessions();
                     setShowSessionsDialog(true);
                     setIsLoading(false);
                   }}
@@ -959,6 +980,20 @@ function App() {
                   <Users className="h-5 w-5 mr-2" />
                   {isLoading ? 'Loading...' : 'Open Session'}
                 </Button>
+                {['admin', 'superadmin'].includes(user?.role) && (
+                  <Button
+                    onClick={() => {
+                      loadAdminData();
+                      setShowAdminPanel(true);
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 text-lg"
+                    size="lg"
+                    disabled={isLoading}
+                  >
+                    <Shield className="h-5 w-5 mr-2" />
+                    Admin Panel
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -1571,14 +1606,24 @@ function App() {
                         {new Date(request.requested_at).toLocaleString()}
                       </div>
                     </div>
-                    <Button
-                      onClick={() => approveDeleteRequest(request.id)}
-                      variant="destructive"
-                      size="sm"
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Approve Delete
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => approveDeleteRequest(request.id)}
+                        variant="destructive"
+                        size="sm"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Approve
+                      </Button>
+                      <Button
+                        onClick={() => rejectDeleteRequest(request.id)}
+                        variant="outline"
+                        size="sm"
+                      >
+                        <XCircle className="h-4 w-4 mr-1" />
+                        Reject
+                      </Button>
+                    </div>
                   </div>
                 ))
               )}
@@ -1703,8 +1748,7 @@ function App() {
                   </div>
                 </Button>
                 {sessionId &&
-                 session.session_id !== sessionId &&
-                 (user?.role === 'admin' || user?.role === 'superadmin' || session.owner === user?.username) && (
+                 session.session_id !== sessionId && (
                   <Button
                     variant="ghost"
                     size="sm"
