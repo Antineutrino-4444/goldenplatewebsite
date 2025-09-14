@@ -811,7 +811,7 @@ function App() {
 
         {/* Signup Dialog */}
         <Dialog open={showSignupDialog} onOpenChange={setShowSignupDialog}>
-          <DialogContent>
+          <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Create Account</DialogTitle>
               <DialogDescription>
@@ -1151,7 +1151,7 @@ function App() {
 
         {/* Category Recording Dialogs */}
         <Dialog open={showCleanDialog} onOpenChange={setShowCleanDialog}>
-          <DialogContent>
+          <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle className="text-yellow-600">🥇 Record as CLEAN PLATE</DialogTitle>
               <DialogDescription>
@@ -1184,7 +1184,7 @@ function App() {
         </Dialog>
 
         <Dialog open={showDirtyDialog} onOpenChange={setShowDirtyDialog}>
-          <DialogContent>
+          <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle className="text-orange-600">🍽️ Record as DIRTY PLATE</DialogTitle>
               <DialogDescription>
@@ -1217,7 +1217,7 @@ function App() {
         </Dialog>
 
         <Dialog open={showRedDialog} onOpenChange={setShowRedDialog}>
-          <DialogContent>
+          <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle className="text-red-600">🍝 Record as VERY DIRTY PLATE</DialogTitle>
               <DialogDescription>
@@ -1251,7 +1251,7 @@ function App() {
 
         {/* New Session Dialog */}
         <Dialog open={showNewSessionDialog} onOpenChange={setShowNewSessionDialog}>
-          <DialogContent>
+          <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Create New Session</DialogTitle>
               <DialogDescription>
@@ -1287,7 +1287,7 @@ function App() {
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-          <DialogContent>
+          <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle className="text-red-600">Delete Session</DialogTitle>
               <DialogDescription>
@@ -1323,7 +1323,7 @@ function App() {
 
         {/* Dashboard Dialog */}
         <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Dashboard</DialogTitle>
               <DialogDescription>
@@ -1362,7 +1362,7 @@ function App() {
 
         {/* Admin Panel Dialog */}
         <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-          <DialogContent className="max-w-4xl h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl h-[90vh] overflow-y-auto" dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
               <DialogDescription>
@@ -1464,7 +1464,7 @@ function App() {
 
         {/* Account Management Dialog */}
         <Dialog open={showAccountManagement} onOpenChange={setShowAccountManagement}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Account Management</DialogTitle>
               <DialogDescription>
@@ -1507,7 +1507,7 @@ function App() {
         </Dialog>
 
         <Dialog open={showUserDeleteConfirm} onOpenChange={setShowUserDeleteConfirm}>
-          <DialogContent>
+          <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Confirm Account Deletion</DialogTitle>
               <DialogDescription>
@@ -1536,7 +1536,7 @@ function App() {
 
         {/* Delete Requests Dialog */}
         <Dialog open={showDeleteRequests} onOpenChange={setShowDeleteRequests}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Delete Requests</DialogTitle>
               <DialogDescription>
@@ -1580,7 +1580,7 @@ function App() {
 
         {/* CSV Preview Dialog */}
         <Dialog open={showCsvPreview} onOpenChange={setShowCsvPreview}>
-          <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogContent className="max-w-4xl max-h-[80vh]" dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Student Database Preview</DialogTitle>
               <DialogDescription>
@@ -1661,7 +1661,7 @@ function App() {
       
       {/* Switch Session Dialog - Moved outside of conditional rendering */}
       <Dialog open={showSessionsDialog} onOpenChange={setShowSessionsDialog}>
-        <DialogContent>
+        <DialogContent dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Switch Session</DialogTitle>
             <DialogDescription>
@@ -1738,7 +1738,11 @@ function App() {
       )}
 
       {modal?.type === 'invite' && (
-        <Modal open onClose={() => { setModal(null); setInviteCode('') }}>
+        <Modal
+          open
+          onClose={() => { setModal(null); setInviteCode('') }}
+          dismissOnOverlayClick={false}
+        >
           <h2 className="text-lg font-semibold mb-4">Invite Code</h2>
           <div className="flex items-center gap-2 mb-4">
             <Input value={inviteCode} readOnly className="flex-1" />
