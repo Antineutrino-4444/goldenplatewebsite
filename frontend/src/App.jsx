@@ -363,6 +363,7 @@ function App() {
     try {
       // Use the new request system instead of direct deletion
       await requestDeleteSession(sessionId)
+      await loadSessions()
       setShowDeleteConfirm(false)
       setSessionToDelete(null)
     } catch (error) {
@@ -604,10 +605,6 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         showMessage(data.message, 'success')
-        if (user.role === 'user') {
-          // For normal users, refresh sessions list to remove deleted session
-          loadSessions()
-        }
       } else {
         const error = await response.json()
         showMessage(error.error, 'error')
@@ -1691,7 +1688,8 @@ function App() {
                     </div>
                   </div>
                 </Button>
-                {session.session_id !== sessionId && 
+                {sessionId &&
+                 session.session_id !== sessionId &&
                  (user?.role === 'admin' || user?.role === 'superadmin' || session.owner === user?.username) && (
                   <Button
                     variant="ghost"
