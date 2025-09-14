@@ -328,10 +328,12 @@ function App() {
           sessionList = sessionList.filter(s => s.is_public)
         }
         setSessions(sessionList)
+        return sessionList
       }
     } catch (error) {
       console.error('Failed to load sessions:', error)
     }
+    return []
   }
 
   const switchSession = async (sessionId) => {
@@ -368,13 +370,22 @@ function App() {
         const data = await response.json()
         if (response.ok) {
           showMessage(data.message, 'success')
+          const updated = await loadSessions()
+          if (data.deleted_session_id === sessionId) {
+            if (updated.length > 0) {
+              await switchSession(updated[0].session_id)
+            } else {
+              setSessionId(null)
+              setSessionName('')
+            }
+          }
         } else {
           showMessage(data.error || 'Failed to delete session', 'error')
         }
       } else {
         await requestDeleteSession(sessionId)
+        await loadSessions()
       }
-      await loadSessions()
       setShowDeleteConfirm(false)
       setSessionToDelete(null)
     } catch (error) {
@@ -649,8 +660,16 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         showMessage(data.message, 'success')
+        const updated = await loadSessions() // Refresh sessions list
         loadDeleteRequests() // Refresh delete requests
-        loadSessions() // Refresh sessions list
+        if (data.deleted_session_id === sessionId) {
+          if (updated.length > 0) {
+            await switchSession(updated[0].session_id)
+          } else {
+            setSessionId(null)
+            setSessionName('')
+          }
+        }
       } else {
         const error = await response.json()
         showMessage(error.error, 'error')
@@ -679,6 +698,12 @@ function App() {
       showMessage('Failed to reject delete request', 'error')
     }
   }
+
+  useEffect(() => {
+    if (['admin', 'superadmin'].includes(user?.role)) {
+      loadDeleteRequests()
+    }
+  }, [user])
 
   const generateInviteCode = async () => {
     try {
@@ -983,15 +1008,20 @@ function App() {
                 {['admin', 'superadmin'].includes(user?.role) && (
                   <Button
                     onClick={() => {
-                      loadAdminData();
-                      setShowAdminPanel(true);
+                      loadAdminData()
+                      setShowAdminPanel(true)
                     }}
-                    className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 text-lg"
+                    className="relative bg-red-600 hover:bg-red-700 text-white px-8 py-3 text-lg"
                     size="lg"
                     disabled={isLoading}
                   >
                     <Shield className="h-5 w-5 mr-2" />
                     Admin Panel
+                    {deleteRequests.length > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+                        {deleteRequests.length}
+                      </span>
+                    )}
                   </Button>
                 )}
               </div>
@@ -1028,9 +1058,17 @@ function App() {
                 </Button>
               )}
               {['admin', 'superadmin'].includes(user.role) && (
-                <Button onClick={() => { loadAdminData(); setShowAdminPanel(true) }} className="bg-red-600 hover:bg-red-700">
+                <Button
+                  onClick={() => { loadAdminData(); setShowAdminPanel(true) }}
+                  className="relative bg-red-600 hover:bg-red-700"
+                >
                   <Shield className="h-4 w-4 mr-2" />
                   Admin Panel
+                  {deleteRequests.length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+                      {deleteRequests.length}
+                    </span>
+                  )}
                 </Button>
               )}
             </div>
@@ -1430,10 +1468,15 @@ function App() {
                         loadDeleteRequests()
                       }}
                       variant="outline"
-                      className="flex-1"
+                      className="relative flex-1"
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Requests ({deleteRequests.length})
+                      Delete Requests
+                      {deleteRequests.length > 0 && (
+                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+                          {deleteRequests.length}
+                        </span>
+                      )}
                     </Button>
                   </>
                 )}
@@ -1606,7 +1649,7 @@ function App() {
                         {new Date(request.requested_at).toLocaleString()}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2">
                       <Button
                         onClick={() => approveDeleteRequest(request.id)}
                         variant="destructive"
@@ -1747,8 +1790,7 @@ function App() {
                     </div>
                   </div>
                 </Button>
-                {sessionId &&
-                 session.session_id !== sessionId && (
+                {sessionId && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1757,6 +1799,8 @@ function App() {
                       setShowDeleteConfirm(true)
                     }}
                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    disabled={session.delete_requested}
+                    title={session.delete_requested ? 'Delete request pending' : 'Delete session'}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
