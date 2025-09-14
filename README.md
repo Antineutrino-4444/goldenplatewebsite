@@ -76,27 +76,31 @@ Create your own account using the signup feature, or contact your system adminis
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- pnpm (recommended) or npm
+- npm
 
-### Backend Setup
+### Setup & Build
 ```bash
-cd golden-plate-recorder-source
+# Create and activate virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# On Windows
+venv\Scripts\activate
+# On macOS/Linux
+# source venv/bin/activate
+
+# Install backend dependencies
 pip install -r requirements.txt
-```
 
-### Frontend Setup
-```bash
+# Build the frontend
 cd frontend
-pnpm install  # or npm install
-pnpm run build  # or npm run build
-```
+npm install --legacy-peer-deps
+npm run build
+cd ..
 
-### Build & Deploy
-```bash
 # Copy built frontend to Flask static directory
-cp -r frontend/dist/* src/static/
+# On Windows
+xcopy /E /I frontend\dist\* src\static\
+# On macOS/Linux
+# cp -r frontend/dist/* src/static/
 
 # Run the Flask application
 python src/main.py
@@ -172,7 +176,7 @@ Johnson,Sarah,20230106
 python src/main.py
 
 # Frontend (development)
-cd frontend && pnpm run dev
+cd frontend && npm run dev
 ```
 
 ### Production Deployment
