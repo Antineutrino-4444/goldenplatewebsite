@@ -954,25 +954,6 @@ function App() {
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
                 {user.name} ({user.username})
               </Badge>
-              {['admin', 'superadmin'].includes(user?.role) && (
-                <Button
-                  onClick={() => {
-                    setShowAdminPanel(true)
-                    loadAdminData()
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="relative text-red-600 hover:text-red-700"
-                >
-                  <Shield className="h-4 w-4 mr-2" />
-                  Admin Panel
-                  {deleteRequests.length > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
-                      {deleteRequests.length}
-                    </span>
-                  )}
-                </Button>
-              )}
               <Button
                 onClick={() => window.open('https://github.com/Antineutrino-4444/goldenplatewebsite', '_blank')}
                 variant="outline"
