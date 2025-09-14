@@ -15,3 +15,21 @@ def test_guest_cannot_create_session(client):
     resp = client.post('/api/session/create', json={'session_name': 'guest_session'})
     assert resp.status_code == 401
 
+
+def test_default_session_name_suffix(client, login):
+    login()
+    first = client.post('/api/session/create', json={})
+    assert first.status_code == 200
+    base_name = first.get_json()['session_name']
+    second = client.post('/api/session/create', json={})
+    assert second.status_code == 200
+    assert second.get_json()['session_name'] == f"{base_name}_1"
+
+
+def test_custom_name_duplicate_rejected(client, login):
+    login()
+    first = client.post('/api/session/create', json={'session_name': 'dup'})
+    assert first.status_code == 200
+    second = client.post('/api/session/create', json={'session_name': 'dup'})
+    assert second.status_code == 400
+
