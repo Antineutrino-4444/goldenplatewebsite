@@ -305,7 +305,7 @@ def manage_account_status():
 
 @recorder_bp.route('/session/request-delete', methods=['POST'])
 def request_delete_session():
-    """Delete a session directly"""
+    """Submit a delete request for a session"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -331,14 +331,37 @@ def request_delete_session():
     if current_user['role'] == 'user' and session_owner != session['user_id']:
         return jsonify({'error': 'You can only delete sessions that you created'}), 403
     
-    # Delete the session directly
-    session_name = session_data[session_id]['session_name']
-    del session_data[session_id]
-    save_session_data()
-    
+    session_info = session_data[session_id]
+    session_name = session_info['session_name']
+
+    # Collect session statistics
+    clean_count = len(session_info.get('clean_records', []))
+    dirty_count = len(session_info.get('dirty_records', []))
+    red_count = len(session_info.get('red_records', []))
+    total_records = clean_count + dirty_count + red_count
+
+    # Create delete request
+    request_obj = {
+        'id': str(uuid.uuid4()),
+        'session_id': session_id,
+        'session_name': session_name,
+        'requester': session['user_id'],
+        'requester_name': current_user['name'],
+        'requested_at': datetime.now().isoformat(),
+        'status': 'pending',
+        'total_records': total_records,
+        'clean_records': clean_count,
+        'dirty_records': dirty_count,
+        'red_records': red_count,
+    }
+
+    delete_requests.append(request_obj)
+    save_delete_requests()
+
     return jsonify({
         'status': 'success',
-        'message': 'Session deleted successfully'
+        'message': f'Delete request submitted for "{session_name}"',
+        'request': request_obj
     }), 200
 
 @recorder_bp.route('/admin/delete-requests', methods=['GET'])

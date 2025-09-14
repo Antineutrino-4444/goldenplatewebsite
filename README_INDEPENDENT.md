@@ -281,10 +281,10 @@ DATABASE_URL=mysql://gpr_user:your_password@localhost/golden_plate_recorder
 
 ## 📱 Usage
 
-### Default Admin Account
+### Default Super Admin Account
 On first run, a super admin account is created:
-- **Username**: `admin`
-- **Password**: `admin123`
+- **Username**: `antineutrino`
+- **Password**: `b-decay`
 
 **⚠️ IMPORTANT**: Change this password immediately after first login!
 

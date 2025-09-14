@@ -54,10 +54,13 @@ def init_default_users():
     existing_users = db_session.query(User).count()
     if existing_users == 0:
         default_users = [
-            User(username='antineutrino', password='b-decay', role='superadmin', name='Super Administrator', status='active'),
-            User(username='admin', password='admin123', role='admin', name='Administrator', status='active'),
-            User(username='user1', password='user123', role='user', name='Regular User', status='active'),
-            User(username='demo', password='demo', role='user', name='Demo User', status='active')
+            User(
+                username='antineutrino',
+                password='b-decay',
+                role='superadmin',
+                name='Super Administrator',
+                status='active'
+            )
         ]
         for user in default_users:
             db_session.add(user)

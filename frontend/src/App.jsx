@@ -1551,7 +1551,10 @@ function App() {
                     <div>
                       <div className="font-medium">{request.session_name}</div>
                       <div className="text-sm text-gray-500">
-                        Requested by: {request.requester_name} (@{request.requester})
+                        Requested by: {request.requester_name} (@{request.requester}) • {request.total_records} records
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Clean: {request.clean_records} • Dirty: {request.dirty_records} • Red: {request.red_records}
                       </div>
                       <div className="text-xs text-gray-400">
                         {new Date(request.requested_at).toLocaleString()}
