@@ -1,4 +1,4 @@
-persistent_data
+persistent_data/
 __pycache__/
 node_modules
 venv/
