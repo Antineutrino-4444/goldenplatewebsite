@@ -12,7 +12,8 @@ def login(client, username='antineutrino', password='b-decay'):
 
 
 def upload_sample_csv(client):
-    csv_content = 'Last,First,Student ID\nDoe,John,12345\n'
+    csv_content = 'Student ID,Last,Preferred,Grade,Advisor,House,Clan\n'
+    csv_content += '12345,Doe,John,9,Smith,Barn,Alpha\n'
     data = {
         'file': (io.BytesIO(csv_content.encode('utf-8')), 'students.csv')
     }
@@ -38,8 +39,11 @@ def test_records_store_only_names_and_csv_cleared_on_logout():
         data = history_resp.get_json()
         assert history_resp.status_code == 200
         assert 'scan_history' in data
-        assert data['scan_history'][0]['first_name'] == 'John'
-        assert 'Student ID' not in data['scan_history'][0]
+        record = data['scan_history'][0]
+        assert record['preferred_name'] == 'John'
+        assert record['grade'] == '9'
+        assert 'Student ID' not in record
+        assert 'student_id' not in record
 
         # Logout to clear CSV data
         client.post('/api/auth/logout')

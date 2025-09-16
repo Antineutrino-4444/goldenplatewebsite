@@ -465,8 +465,11 @@ function App() {
 
       const data = await response.json()
       if (response.ok) {
-        const displayName = `${data.first_name} ${data.last_name}`.trim()
-        showMessage(`${displayName} recorded as ${category.toUpperCase()}`, 'success')
+        const preferredName = (data.preferred_name ?? data.first_name ?? '').trim()
+        const lastName = (data.last_name ?? '').trim()
+        const nameParts = [preferredName, lastName].filter(Boolean)
+        const displayName = nameParts.join(' ')
+        showMessage(`${displayName || 'Student'} recorded as ${category.toUpperCase()}`, 'success')
         
         // Clear input and close dialog
         setPopupInputValue('')
@@ -544,6 +547,28 @@ function App() {
       }
     } catch (error) {
       showMessage('Failed to export records', 'error')
+    }
+  }
+
+  const exportDetailedCSV = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/export/csv/detailed`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${sessionName}_detailed_records.csv`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        showMessage('Detailed records exported successfully', 'success')
+      } else {
+        showMessage('Failed to export detailed records', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to export detailed records', 'error')
     }
   }
 
@@ -1073,7 +1098,7 @@ function App() {
                 Student Database
               </CardTitle>
               <CardDescription>
-                Upload CSV with student data for food waste tracking (Last, First, Student ID)
+                Upload CSV with student data for food waste tracking (Student ID, Last, Preferred, Grade, Advisor, House, Clan)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1124,10 +1149,16 @@ function App() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Food Waste Data
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Food Waste Data
+                  </Button>
+                  <Button onClick={exportDetailedCSV} variant="outline" className="w-full">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export Detailed Record List
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -1435,7 +1466,10 @@ function App() {
 
         {/* CSV Preview Dialog */}
         <Dialog open={showCsvPreview} onOpenChange={setShowCsvPreview}>
-          <DialogContent className="max-w-4xl max-h-[80vh]" dismissOnOverlayClick={false}>
+          <DialogContent
+            className="w-full sm:max-w-2xl lg:max-w-3xl max-h-[75vh] overflow-y-auto"
+            dismissOnOverlayClick={false}
+          >
             <DialogHeader>
               <DialogTitle>Student Database Preview</DialogTitle>
               <DialogDescription>
@@ -1452,12 +1486,15 @@ function App() {
                   </div>
                   
                   <div className="border rounded-lg overflow-hidden">
-                    <div className="overflow-x-auto max-h-96">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 sticky top-0">
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full table-auto text-xs leading-tight">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
                           <tr>
                             {csvPreviewData.columns.map((column, index) => (
-                              <th key={index} className="px-4 py-2 text-left font-medium text-gray-900 border-b">
+                              <th
+                                key={index}
+                                className="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-200 whitespace-nowrap"
+                              >
                                 {column}
                               </th>
                             ))}
@@ -1465,9 +1502,15 @@ function App() {
                         </thead>
                         <tbody>
                           {csvPreviewData.data.map((row, index) => (
-                            <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <tr
+                              key={index}
+                              className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100 last:border-b-0`}
+                            >
                               {csvPreviewData.columns.map((column, colIndex) => (
-                                <td key={colIndex} className="px-4 py-2 border-b text-gray-700">
+                                <td
+                                  key={colIndex}
+                                  className="px-3 py-1.5 text-gray-700 align-top break-words"
+                                >
                                   {row[column] || '-'}
                                 </td>
                               ))}
@@ -1516,7 +1559,10 @@ function App() {
       
       {/* Admin Panel Dialog */}
       <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-        <DialogContent className="max-w-4xl h-[90vh] overflow-y-auto" dismissOnOverlayClick={false}>
+        <DialogContent
+          className="w-full sm:max-w-2xl lg:max-w-3xl max-h-[82vh] overflow-y-auto"
+          dismissOnOverlayClick={false}
+        >
           <DialogHeader>
             <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
             <DialogDescription>
