@@ -465,8 +465,11 @@ function App() {
 
       const data = await response.json()
       if (response.ok) {
-        const displayName = `${data.first_name} ${data.last_name}`.trim()
-        showMessage(`${displayName} recorded as ${category.toUpperCase()}`, 'success')
+        const preferredName = (data.preferred_name ?? data.first_name ?? '').trim()
+        const lastName = (data.last_name ?? '').trim()
+        const nameParts = [preferredName, lastName].filter(Boolean)
+        const displayName = nameParts.join(' ')
+        showMessage(`${displayName || 'Student'} recorded as ${category.toUpperCase()}`, 'success')
         
         // Clear input and close dialog
         setPopupInputValue('')
@@ -544,6 +547,28 @@ function App() {
       }
     } catch (error) {
       showMessage('Failed to export records', 'error')
+    }
+  }
+
+  const exportDetailedCSV = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/export/csv/detailed`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${sessionName}_detailed_records.csv`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        showMessage('Detailed records exported successfully', 'success')
+      } else {
+        showMessage('Failed to export detailed records', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to export detailed records', 'error')
     }
   }
 
@@ -1073,7 +1098,7 @@ function App() {
                 Student Database
               </CardTitle>
               <CardDescription>
-                Upload CSV with student data for food waste tracking (Last, First, Student ID)
+                Upload CSV with student data for food waste tracking (Student ID, Last, Preferred, Grade, Advisor, House, Clan)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1124,10 +1149,16 @@ function App() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Food Waste Data
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Food Waste Data
+                  </Button>
+                  <Button onClick={exportDetailedCSV} variant="outline" className="w-full">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export Detailed Record List
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}

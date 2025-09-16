@@ -295,14 +295,25 @@ def upload_csv():
         stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
         csv_reader = csv.DictReader(stream)
 
+        required_columns = ['Student ID', 'Last', 'Preferred', 'Grade', 'Advisor', 'House', 'Clan']
+        if not all(col in csv_reader.fieldnames for col in required_columns):
+            return jsonify({'success': False, 'message': f'CSV must contain columns: {", ".join(required_columns)}'}), 400
+
         csv_data = []
         for row in csv_reader:
-            if 'Last' in row and 'First' in row and 'Student ID' in row:
-                csv_data.append({
-                    'last': row['Last'].strip(),
-                    'first': row['First'].strip(),
-                    'student_id': str(row['Student ID']).strip()
-                })
+            student_id = str(row.get('Student ID', '') or '').strip()
+            if not student_id:
+                continue
+
+            csv_data.append({
+                'student_id': student_id,
+                'last': str(row.get('Last', '') or '').strip(),
+                'preferred': str(row.get('Preferred', '') or '').strip(),
+                'grade': str(row.get('Grade', '') or '').strip(),
+                'advisor': str(row.get('Advisor', '') or '').strip(),
+                'house': str(row.get('House', '') or '').strip(),
+                'clan': str(row.get('Clan', '') or '').strip()
+            })
 
         if not csv_data:
             return jsonify({'success': False, 'message': 'No valid data found in CSV'}), 400
@@ -347,6 +358,13 @@ def record_student():
     # Determine display name from input
     student_found = None
     display_name = input_value
+    preferred_name = ""
+    last_name = ""
+    grade = ""
+    advisor = ""
+    house = ""
+    clan = ""
+    is_manual_entry = False
 
     if csv_data:
         # Search by ID first
@@ -359,22 +377,34 @@ def record_student():
         if not student_found:
             input_lower = input_value.lower()
             for student in csv_data:
-                full_name = f"{student['first']} {student['last']}".lower()
+                preferred = str(student.get('preferred', '') or '').strip()
+                last = str(student.get('last', '') or '').strip()
+                full_name = f"{preferred} {last}".strip().lower()
                 if full_name == input_lower:
                     student_found = student
                     break
 
     if student_found:
-        display_name = f"{student_found['first']} {student_found['last']}"
+        preferred_name = str(student_found.get('preferred', '') or '').strip()
+        last_name = str(student_found.get('last', '') or '').strip()
+        grade = str(student_found.get('grade', '') or '').strip()
+        advisor = str(student_found.get('advisor', '') or '').strip()
+        house = str(student_found.get('house', '') or '').strip()
+        clan = str(student_found.get('clan', '') or '').strip()
+        display_name = f"{preferred_name} {last_name}".strip() or input_value
     else:
-        # Parse manual name
+        is_manual_entry = True
         name_parts = input_value.split()
         if len(name_parts) >= 2:
-            first_name = name_parts[0].capitalize()
+            preferred_name = name_parts[0].capitalize()
             last_name = ' '.join(name_parts[1:]).capitalize()
-            display_name = f"{first_name} {last_name}"
+        elif len(name_parts) == 1:
+            preferred_name = name_parts[0].capitalize()
+            last_name = ''
         else:
-            display_name = input_value.capitalize()
+            preferred_name = input_value.capitalize()
+            last_name = ''
+        display_name = f"{preferred_name} {last_name}".strip() or input_value.capitalize()
 
     # Check for duplicates by name
     for cat_records in records.values():
@@ -385,7 +415,15 @@ def record_student():
     # Create record
     record = {
         'name': display_name,
+        'preferred': preferred_name,
+        'last': last_name,
+        'grade': grade,
+        'advisor': advisor,
+        'house': house,
+        'clan': clan,
+        'is_manual_entry': is_manual_entry,
         'timestamp': datetime.now().isoformat(),
+        'recorded_by': session['user_id'],
         'category': category
     }
     message = f"{display_name} recorded as {category.upper()}"
@@ -442,12 +480,75 @@ def export_csv():
     
     csv_content = output.getvalue()
     output.close()
-    
+
     return jsonify({
         'success': True,
         'csv_content': csv_content,
         'filename': f"{sess.name}_records.csv"
     })
+
+
+@recorder_bp.route('/export/detailed', methods=['GET'])
+def export_detailed_csv():
+    """Export detailed session records without student IDs"""
+    if not require_auth():
+        return jsonify({'success': False, 'message': 'Authentication required'}), 401
+
+    if 'current_session' not in session:
+        return jsonify({'success': False, 'message': 'No active session'}), 400
+
+    session_id = session['current_session']
+    sess = db_session.query(Session).filter_by(id=session_id).first()
+    if not sess:
+        return jsonify({'success': False, 'message': 'Session not found'}), 404
+
+    records = json.loads(sess.records)
+
+    detailed_rows = []
+    for category, category_records in records.items():
+        for record in category_records:
+            preferred = str(record.get('preferred') or '').strip()
+            last = str(record.get('last') or '').strip()
+            if (not preferred or not last) and record.get('name'):
+                name = str(record.get('name') or '').strip()
+                if name:
+                    parts = name.split()
+                    if not preferred and parts:
+                        preferred = ' '.join(parts[:-1]) if len(parts) > 1 else parts[0]
+                    if not last and len(parts) > 1:
+                        last = parts[-1]
+
+            detailed_rows.append({
+                'Category': category.upper(),
+                'Last': last,
+                'Preferred': preferred,
+                'Grade': record.get('grade', ''),
+                'Advisor': record.get('advisor', ''),
+                'House': record.get('house', ''),
+                'Clan': record.get('clan', ''),
+                'Recorded At': record.get('timestamp', ''),
+                'Recorded By': record.get('recorded_by', ''),
+                'Manual Entry': 'Yes' if record.get('is_manual_entry') else 'No'
+            })
+
+    detailed_rows.sort(key=lambda x: x['Recorded At'] or '', reverse=True)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    header = ['Category', 'Last', 'Preferred', 'Grade', 'Advisor', 'House', 'Clan', 'Recorded At', 'Recorded By', 'Manual Entry']
+    writer.writerow(header)
+    for row in detailed_rows:
+        writer.writerow([row[column] for column in header])
+
+    csv_content = output.getvalue()
+    output.close()
+
+    return jsonify({
+        'success': True,
+        'csv_content': csv_content,
+        'filename': f"{sess.name}_detailed_records.csv"
+    })
+
 
 @recorder_bp.route('/scan-history', methods=['GET'])
 def get_scan_history():
