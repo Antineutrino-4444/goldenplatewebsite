@@ -1466,7 +1466,10 @@ function App() {
 
         {/* CSV Preview Dialog */}
         <Dialog open={showCsvPreview} onOpenChange={setShowCsvPreview}>
-          <DialogContent className="max-w-4xl max-h-[80vh]" dismissOnOverlayClick={false}>
+          <DialogContent
+            className="w-full sm:max-w-2xl lg:max-w-3xl max-h-[75vh] overflow-y-auto"
+            dismissOnOverlayClick={false}
+          >
             <DialogHeader>
               <DialogTitle>Student Database Preview</DialogTitle>
               <DialogDescription>
@@ -1556,7 +1559,10 @@ function App() {
       
       {/* Admin Panel Dialog */}
       <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-        <DialogContent className="max-w-4xl h-[90vh] overflow-y-auto" dismissOnOverlayClick={false}>
+        <DialogContent
+          className="w-full sm:max-w-2xl lg:max-w-3xl max-h-[82vh] overflow-y-auto"
+          dismissOnOverlayClick={false}
+        >
           <DialogHeader>
             <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
             <DialogDescription>
