@@ -30,6 +30,9 @@ def load_data_from_file(file_path, default_data):
             with open(file_path, 'r') as f:
                 data = json.load(f)
                 print(f"Successfully loaded data from {file_path}")
+                if (isinstance(data, (dict, list)) and not data) and default_data:
+                    print(f"{file_path} is empty. Loading default data.")
+                    return default_data
                 return data
         else:
             print(f"File {file_path} doesn't exist, using default data")
@@ -71,8 +74,15 @@ invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
 # In-memory CSV storage per user session
 user_csv_data = {}
 
-# Initialize users database with empty default if file doesn't exist
-default_users = {}
+# Initialize users database with default super admin if file doesn't exist
+default_users = {
+    'antineutrino': {
+        'password': 'b-decay',
+        'role': 'superadmin',
+        'name': 'Lead Admin',
+        'status': 'active'
+    }
+}
 users_db = load_data_from_file(USERS_FILE, default_users)
 
 # Save initial data to ensure files are created
@@ -709,7 +719,7 @@ def upload_csv():
             return jsonify({'error': 'CSV file is empty'}), 400
         
         # Check for required columns
-        required_columns = ['Last', 'First', 'Student ID']
+        required_columns = ['Student ID', 'Last', 'Preferred', 'Grade', 'Advisor', 'House', 'Clan']
         if not all(col in csv_reader.fieldnames for col in required_columns):
             return jsonify({'error': f'CSV must contain columns: {", ".join(required_columns)}'}), 400
         
@@ -758,14 +768,18 @@ def preview_csv():
     # Get paginated data
     paginated_rows = csv_data['data'][start_idx:end_idx]
     sanitized_rows = [{
-        'First': row.get('First', ''),
-        'Last': row.get('Last', '')
+        'Preferred': str(row.get('Preferred', '') or '').strip(),
+        'Last': str(row.get('Last', '') or '').strip(),
+        'Grade': str(row.get('Grade', '') or '').strip(),
+        'Advisor': str(row.get('Advisor', '') or '').strip(),
+        'House': str(row.get('House', '') or '').strip(),
+        'Clan': str(row.get('Clan', '') or '').strip()
     } for row in paginated_rows]
 
     return jsonify({
         'status': 'success',
         'data': sanitized_rows,
-        'columns': ['First', 'Last'],
+        'columns': ['Preferred', 'Last', 'Grade', 'Advisor', 'House', 'Clan'],
         'pagination': {
             'page': page,
             'per_page': per_page,
@@ -806,16 +820,18 @@ def record_student(category):
     # Determine if input is ID or name
     student_record = None
     is_manual_entry = False
-    first_name = ""
+    preferred_name = ""
     last_name = ""
+    grade = ""
+    advisor = ""
+    house = ""
+    clan = ""
 
     # First, try to find by Student ID in CSV
     if csv_data and csv_data['data']:
         for row in csv_data['data']:
             if str(row.get('Student ID', '')).strip() == input_value:
                 student_record = row
-                first_name = row.get('First', '')
-                last_name = row.get('Last', '')
                 break
 
     # If not found by ID, try to find by name
@@ -827,15 +843,13 @@ def record_student(category):
             input_last = ' '.join(name_parts[1:]).lower()
 
             for row in csv_data['data']:
-                csv_first = str(row.get('First', '')).strip().lower()
+                csv_first = str(row.get('Preferred', '')).strip().lower()
                 csv_last = str(row.get('Last', '')).strip().lower()
 
                 if csv_first == input_first and csv_last == input_last:
                     student_record = row
-                    first_name = row.get('First', '')
-                    last_name = row.get('Last', '')
                     break
-    
+
     # If still not found, create manual entry
     if not student_record:
         is_manual_entry = True
@@ -843,44 +857,63 @@ def record_student(category):
         # Parse name from input
         name_parts = input_value.split()
         if len(name_parts) >= 2:
-            first_name = name_parts[0].capitalize()
+            preferred_name = name_parts[0].capitalize()
             last_name = ' '.join(name_parts[1:]).capitalize()
         elif len(name_parts) == 1:
-            first_name = name_parts[0].capitalize()
+            preferred_name = name_parts[0].capitalize()
             last_name = ""
         else:
-            first_name = input_value.capitalize()
+            preferred_name = input_value.capitalize()
             last_name = ""
-    
+    else:
+        preferred_name = str(student_record.get('Preferred', '') or '').strip()
+        last_name = str(student_record.get('Last', '') or '').strip()
+        grade = str(student_record.get('Grade', '') or '').strip()
+        advisor = str(student_record.get('Advisor', '') or '').strip()
+        house = str(student_record.get('House', '') or '').strip()
+        clan = str(student_record.get('Clan', '') or '').strip()
+
+    preferred_name = preferred_name or ""
+    last_name = last_name or ""
+    grade = grade or ""
+    advisor = advisor or ""
+    house = house or ""
+    clan = clan or ""
+
     # Check for duplicate entries in current session
     all_records = session_info['clean_records'] + session_info['dirty_records'] + session_info['red_records']
-    
+
     duplicate_check = any(
-        record.get('first_name', '').lower() == first_name.lower() and
+        (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
         record.get('last_name', '').lower() == last_name.lower()
         for record in all_records
     )
-    
+
     if duplicate_check:
         existing_category = None
         for cat in ['clean', 'dirty', 'red']:
             if any(
-                record.get('first_name', '').lower() == first_name.lower() and
+                (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
                 record.get('last_name', '').lower() == last_name.lower()
                 for record in session_info[f'{cat}_records']
             ):
                 existing_category = cat
                 break
-        
+
         return jsonify({
             'error': 'duplicate',
             'message': f'Student already recorded as {existing_category.upper()} in this session'
         }), 409
-    
+
     # Create record
     record = {
-        'first_name': first_name,
+        'preferred_name': preferred_name,
+        'first_name': preferred_name,  # Backward compatibility
         'last_name': last_name,
+        'grade': grade,
+        'advisor': advisor,
+        'house': house,
+        'clan': clan,
         'category': category,
         'timestamp': datetime.now().isoformat(),
         'recorded_by': session['user_id'],
@@ -896,8 +929,13 @@ def record_student(category):
     
     return jsonify({
         'status': 'success',
-        'first_name': first_name,
+        'preferred_name': preferred_name,
+        'first_name': preferred_name,
         'last_name': last_name,
+        'grade': grade,
+        'advisor': advisor,
+        'house': house,
+        'clan': clan,
         'category': category,
         'is_manual_entry': is_manual_entry,
         'recorded_by': session['user_id']
@@ -963,7 +1001,7 @@ def export_csv():
     """Export session records as CSV"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
-    
+
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
     
@@ -976,10 +1014,17 @@ def export_csv():
     # Write header
     output.write("CLEAN,DIRTY,RED\n")
     
+    # Helper to format names using preferred name when available
+    def format_name(record):
+        preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
+        last = (record.get('last_name') or '').strip()
+        full_name = f"{preferred} {last}".strip()
+        return full_name
+
     # Get all records for each category
-    clean_names = [f"{record['first_name']} {record['last_name']}" for record in data['clean_records']]
-    dirty_names = [f"{record['first_name']} {record['last_name']}" for record in data['dirty_records']]
-    red_names = [f"{record['first_name']} {record['last_name']}" for record in data['red_records']]
+    clean_names = [format_name(record) for record in data['clean_records']]
+    dirty_names = [format_name(record) for record in data['dirty_records']]
+    red_names = [format_name(record) for record in data['red_records']]
     
     # Find the maximum number of records to determine how many rows we need
     max_records = max(len(clean_names), len(dirty_names), len(red_names))
@@ -1000,6 +1045,56 @@ def export_csv():
         csv_content,
         mimetype='text/csv',
         headers={'Content-Disposition': f'attachment; filename="{data["session_name"]}_records.csv"'}
+    )
+
+
+@recorder_bp.route('/export/csv/detailed', methods=['GET'])
+def export_detailed_csv():
+    """Export detailed session records without student IDs"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    if 'session_id' not in session or session['session_id'] not in session_data:
+        return jsonify({'error': 'No active session'}), 400
+
+    session_id = session['session_id']
+    data = session_data[session_id]
+
+    detailed_records = []
+    for category in ['clean', 'dirty', 'red']:
+        for record in data.get(f'{category}_records', []):
+            preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
+            last = (record.get('last_name') or '').strip()
+            detailed_records.append({
+                'Category': category.upper(),
+                'Last': last,
+                'Preferred': preferred,
+                'Grade': record.get('grade', ''),
+                'Advisor': record.get('advisor', ''),
+                'House': record.get('house', ''),
+                'Clan': record.get('clan', ''),
+                'Recorded At': record.get('timestamp', ''),
+                'Recorded By': record.get('recorded_by', ''),
+                'Manual Entry': 'Yes' if record.get('is_manual_entry') else 'No'
+            })
+
+    detailed_records.sort(key=lambda x: x['Recorded At'] or '', reverse=True)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    header = ['Category', 'Last', 'Preferred', 'Grade', 'Advisor', 'House', 'Clan', 'Recorded At', 'Recorded By', 'Manual Entry']
+    writer.writerow(header)
+    for record in detailed_records:
+        writer.writerow([record[column] for column in header])
+
+    csv_content = output.getvalue()
+    output.close()
+
+    from flask import Response
+    return Response(
+        csv_content,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{data["session_name"]}_detailed_records.csv"'}
     )
 
 
@@ -1051,10 +1146,14 @@ def get_scan_history():
     # Format scan history for display
     formatted_history = []
     for record in data['scan_history']:
+        preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
+        last = (record.get('last_name') or '').strip()
+        name = f"{preferred} {last}".strip()
+
         formatted_history.append({
-            'timestamp': record['timestamp'],
-            'name': f"{record['first_name']} {record['last_name']}".strip(),
-            'category': record['category'].upper(),
+            'timestamp': record.get('timestamp'),
+            'name': name,
+            'category': record.get('category', '').upper(),
             'is_manual_entry': record.get('is_manual_entry', False)
         })
     

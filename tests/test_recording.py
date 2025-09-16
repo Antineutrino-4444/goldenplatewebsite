@@ -2,7 +2,9 @@ import io
 
 
 def upload_csv(client):
-    csv_content = 'Last,First,Student ID\nDoe,John,123\nRoe,Jane,456\n'
+    csv_content = 'Student ID,Last,Preferred,Grade,Advisor,House,Clan\n'
+    csv_content += '123,Doe,John,9,Smith,Barn,Alpha\n'
+    csv_content += '456,Roe,Jane,10,Jones,Hall,Beta\n'
     data = {'file': (io.BytesIO(csv_content.encode('utf-8')), 'students.csv')}
     return client.post('/api/csv/upload', data=data, content_type='multipart/form-data')
 
