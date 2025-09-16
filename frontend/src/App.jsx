@@ -1483,12 +1483,15 @@ function App() {
                   </div>
                   
                   <div className="border rounded-lg overflow-hidden">
-                    <div className="overflow-x-auto max-h-96">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 sticky top-0">
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full table-auto text-xs leading-tight">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
                           <tr>
                             {csvPreviewData.columns.map((column, index) => (
-                              <th key={index} className="px-4 py-2 text-left font-medium text-gray-900 border-b">
+                              <th
+                                key={index}
+                                className="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-200 whitespace-nowrap"
+                              >
                                 {column}
                               </th>
                             ))}
@@ -1496,9 +1499,15 @@ function App() {
                         </thead>
                         <tbody>
                           {csvPreviewData.data.map((row, index) => (
-                            <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <tr
+                              key={index}
+                              className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100 last:border-b-0`}
+                            >
                               {csvPreviewData.columns.map((column, colIndex) => (
-                                <td key={colIndex} className="px-4 py-2 border-b text-gray-700">
+                                <td
+                                  key={colIndex}
+                                  className="px-3 py-1.5 text-gray-700 align-top break-words"
+                                >
                                   {row[column] || '-'}
                                 </td>
                               ))}
