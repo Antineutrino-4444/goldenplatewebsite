@@ -42,6 +42,7 @@ function App() {
     dirty_count: 0,
     red_count: 0,
     combined_dirty_count: 0,
+    faculty_clean_count: 0,
     total_recorded: 0,
     clean_percentage: 0,
     dirty_percentage: 0
@@ -68,6 +69,7 @@ function App() {
   const [showCleanDialog, setShowCleanDialog] = useState(false)
   const [showDirtyDialog, setShowDirtyDialog] = useState(false)
   const [showRedDialog, setShowRedDialog] = useState(false)
+  const [showFacultyDialog, setShowFacultyDialog] = useState(false)
   const [popupInputValue, setPopupInputValue] = useState('')
   
   // Admin panel state
@@ -230,7 +232,16 @@ function App() {
       setCsvData(null)
       setInputValue('')
       setScanHistory([])
-      setSessionStats({ clean_count: 0, dirty_count: 0, red_count: 0 })
+      setSessionStats({
+        clean_count: 0,
+        dirty_count: 0,
+        red_count: 0,
+        faculty_clean_count: 0,
+        combined_dirty_count: 0,
+        total_recorded: 0,
+        clean_percentage: 0,
+        dirty_percentage: 0
+      })
       setInviteCode('')
       setModal(null)
       setNotification(null)
@@ -252,6 +263,7 @@ function App() {
           dirty_count: data.dirty_count,
           red_count: data.red_count,
           combined_dirty_count: data.combined_dirty_count,
+          faculty_clean_count: data.faculty_clean_count,
           total_recorded: data.total_recorded,
           clean_percentage: data.clean_percentage,
           dirty_percentage: data.dirty_percentage
@@ -270,6 +282,7 @@ function App() {
             clean_count: 0,
             dirty_count: 0,
             red_count: 0,
+            faculty_clean_count: 0,
             combined_dirty_count: 0,
             total_recorded: 0,
             clean_percentage: 0,
@@ -283,14 +296,15 @@ function App() {
       // Don't automatically create session on error
       setSessionId(null)
       setSessionName('')
-      setSessionStats({ 
-        clean_count: 0, 
-        dirty_count: 0, 
-        red_count: 0, 
-        combined_dirty_count: 0, 
-        total_recorded: 0, 
-        clean_percentage: 0, 
-        dirty_percentage: 0 
+      setSessionStats({
+        clean_count: 0,
+        dirty_count: 0,
+        red_count: 0,
+        faculty_clean_count: 0,
+        combined_dirty_count: 0,
+        total_recorded: 0,
+        clean_percentage: 0,
+        dirty_percentage: 0
       })
       setScanHistory([])
     }
@@ -309,7 +323,16 @@ function App() {
       if (response.ok) {
         setSessionId(data.session_id)
         setSessionName(data.session_name)
-        setSessionStats({ clean_count: 0, dirty_count: 0, red_count: 0, combined_dirty_count: 0, total_recorded: 0, clean_percentage: 0, dirty_percentage: 0 })
+        setSessionStats({
+          clean_count: 0,
+          dirty_count: 0,
+          red_count: 0,
+          faculty_clean_count: 0,
+          combined_dirty_count: 0,
+          total_recorded: 0,
+          clean_percentage: 0,
+          dirty_percentage: 0
+        })
         showMessage(`Session "${data.session_name}" created successfully`, 'success')
         setShowNewSessionDialog(false)
         setCustomSessionName('')
@@ -449,45 +472,63 @@ function App() {
     }
   }
 
-  const recordStudent = async (category, inputValue) => {
-    if (!inputValue.trim()) {
-      showMessage('Please enter a Student ID or Name', 'error')
+  const recordEntry = async (category, inputValue = '') => {
+    const trimmedValue = inputValue.trim()
+
+    if (category !== 'dirty' && !trimmedValue) {
+      if (category === 'faculty') {
+        showMessage('Please enter a faculty name', 'error')
+      } else {
+        showMessage('Please enter a Student ID or Name', 'error')
+      }
       return
     }
 
     setIsLoading(true)
     try {
+      const payload = category === 'dirty' ? {} : { input_value: trimmedValue }
       const response = await fetch(`${API_BASE}/record/${category}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input_value: inputValue.trim() })
+        body: JSON.stringify(payload)
       })
 
       const data = await response.json()
       if (response.ok) {
-        const preferredName = (data.preferred_name ?? data.first_name ?? '').trim()
-        const lastName = (data.last_name ?? '').trim()
-        const nameParts = [preferredName, lastName].filter(Boolean)
-        const displayName = nameParts.join(' ')
-        showMessage(`${displayName || 'Student'} recorded as ${category.toUpperCase()}`, 'success')
-        
+        if (category === 'dirty') {
+          const totalDirty = data.dirty_count ?? 0
+          const totalSuffix = totalDirty ? ` (total ${totalDirty})` : ''
+          showMessage(`Dirty plate recorded${totalSuffix}`, 'success')
+        } else {
+          const preferredName = (data.preferred_name ?? data.first_name ?? '').trim()
+          const lastName = (data.last_name ?? '').trim()
+          const nameParts = [preferredName, lastName].filter(Boolean)
+          const displayName = nameParts.join(' ')
+          const subjectLabel = category === 'faculty' ? 'Faculty' : 'Student'
+          const categoryLabel =
+            category === 'faculty' ? 'FACULTY CLEAN' : category === 'red' ? 'VERY DIRTY' : category.toUpperCase()
+
+          showMessage(`${displayName || subjectLabel} recorded as ${categoryLabel}`, 'success')
+        }
+
         // Clear input and close dialog
         setPopupInputValue('')
         setShowCleanDialog(false)
         setShowDirtyDialog(false)
         setShowRedDialog(false)
-        
+        setShowFacultyDialog(false)
+
         // Refresh session status
         await refreshSessionStatus()
       } else {
         if (data.error === 'duplicate') {
           showMessage(data.message, 'error')
         } else {
-          showMessage(data.error || 'Failed to record student', 'error')
+          showMessage(data.error || 'Failed to record entry', 'error')
         }
       }
     } catch (error) {
-      showMessage('Failed to record student', 'error')
+      showMessage('Failed to record entry', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -503,6 +544,7 @@ function App() {
           dirty_count: data.dirty_count,
           red_count: data.red_count,
           combined_dirty_count: data.combined_dirty_count,
+          faculty_clean_count: data.faculty_clean_count,
           total_recorded: data.total_recorded,
           clean_percentage: data.clean_percentage,
           dirty_percentage: data.dirty_percentage
@@ -595,13 +637,16 @@ function App() {
   }
 
   const handleCategoryClick = (category) => {
+    setPopupInputValue('')
     if (category === 'clean') setShowCleanDialog(true)
     else if (category === 'dirty') setShowDirtyDialog(true)
     else if (category === 'red') setShowRedDialog(true)
+    else if (category === 'faculty') setShowFacultyDialog(true)
   }
 
   const handlePopupSubmit = (category) => {
-    recordStudent(category, popupInputValue)
+    if (category === 'dirty') recordEntry(category)
+    else recordEntry(category, popupInputValue)
   }
 
   const handleKeyPress = (e, category) => {
@@ -1051,7 +1096,10 @@ function App() {
                 Session: {sessionName}
               </div>
               <div className="text-sm text-gray-500">
-                Total: {sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count}
+                Student Total: {sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count}
+              </div>
+              <div className="text-sm text-gray-500">
+                Faculty Clean: {sessionStats.faculty_clean_count}
               </div>
             </div>
 
@@ -1145,7 +1193,7 @@ function App() {
                   Export Food Waste Data
                 </CardTitle>
                 <CardDescription>
-                  Download plate cleanliness records by category (Clean, Dirty, Very Dirty)
+                  Download plate cleanliness records by category (Clean, Dirty Count, Very Dirty, Faculty Clean)
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1186,13 +1234,23 @@ function App() {
           </Button>
 
           <Button
+            onClick={() => handleCategoryClick('faculty')}
+            className="w-full h-20 text-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || user?.role === 'guest'}
+          >
+            🧑‍🏫 FACULTY CLEAN
+            <br />
+            <span className="text-sm opacity-90">({sessionStats.faculty_clean_count} recorded)</span>
+          </Button>
+
+          <Button
             onClick={() => handleCategoryClick('dirty')}
             className="w-full h-20 text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isLoading || user?.role === 'guest'}
           >
-            🍽️ DIRTY PLATE
+            🍽️ DIRTY PLATE COUNT
             <br />
-            <span className="text-sm opacity-90">({sessionStats.dirty_count} recorded)</span>
+            <span className="text-sm opacity-90">({sessionStats.dirty_count} total)</span>
           </Button>
 
           <Button
@@ -1234,10 +1292,12 @@ function App() {
                       <div className={`px-2 py-1 rounded text-xs font-medium ${
                         record.category === 'CLEAN' ? 'bg-yellow-100 text-yellow-800' :
                         record.category === 'DIRTY' ? 'bg-orange-100 text-orange-800' :
+                        record.category === 'FACULTY' ? 'bg-green-100 text-green-800' :
                         'bg-red-100 text-red-800'
                       }`}>
-                        {record.category === 'CLEAN' ? '🥇 CLEAN' : 
-                         record.category === 'DIRTY' ? '🍽️ DIRTY' : 
+                        {record.category === 'CLEAN' ? '🥇 CLEAN' :
+                         record.category === 'DIRTY' ? '🍽️ DIRTY' :
+                         record.category === 'FACULTY' ? '🧑‍🏫 FACULTY CLEAN' :
                          '🍝 VERY DIRTY'}
                       </div>
                     </div>
@@ -1289,30 +1349,58 @@ function App() {
         <Dialog open={showDirtyDialog} onOpenChange={setShowDirtyDialog}>
           <DialogContent dismissOnOverlayClick={false}>
             <DialogHeader>
-              <DialogTitle className="text-orange-600">🍽️ Record as DIRTY PLATE</DialogTitle>
+              <DialogTitle className="text-orange-600">🍽️ Add DIRTY PLATE</DialogTitle>
               <DialogDescription>
-                Enter Student ID or Name for dirty plate tracking
+                Increase the dirty plate counter without recording a name
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                This action adds one to the dirty plate count. No student information is stored.
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={() => setShowDirtyDialog(false)} variant="outline" className="flex-1">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => handlePopupSubmit('dirty')}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600"
+                  disabled={isLoading}
+                >
+                  Add Dirty Plate
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showFacultyDialog} onOpenChange={setShowFacultyDialog}>
+          <DialogContent dismissOnOverlayClick={false}>
+            <DialogHeader>
+              <DialogTitle className="text-green-600">🧑‍🏫 Record FACULTY CLEAN PLATE</DialogTitle>
+              <DialogDescription>
+                Enter the faculty member's name for clean plate tracking
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <Input
                 type="text"
-                placeholder="Student ID or Name (e.g., 12345 or John Smith)"
+                placeholder="Faculty Name (e.g., Alex Morgan)"
                 value={popupInputValue}
                 onChange={(e) => setPopupInputValue(e.target.value)}
-                onKeyPress={(e) => handleKeyPress(e, 'dirty')}
+                onKeyPress={(e) => handleKeyPress(e, 'faculty')}
                 autoFocus
               />
               <div className="flex gap-2">
-                <Button onClick={() => setShowDirtyDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => setShowFacultyDialog(false)} variant="outline" className="flex-1">
                   Cancel
                 </Button>
-                <Button 
-                  onClick={() => handlePopupSubmit('dirty')} 
-                  className="flex-1 bg-orange-500 hover:bg-orange-600"
+                <Button
+                  onClick={() => handlePopupSubmit('faculty')}
+                  className="flex-1 bg-green-500 hover:bg-green-600"
                   disabled={isLoading}
                 >
-                  Record as DIRTY PLATE
+                  Record Faculty Clean Plate
                 </Button>
               </div>
             </div>
@@ -1434,7 +1522,7 @@ function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="text-center p-4 bg-yellow-50 rounded-lg">
                   <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
                   <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
@@ -1448,6 +1536,10 @@ function App() {
                   <div className="text-xs text-orange-600">
                     {sessionStats.dirty_percentage || 0}%
                   </div>
+                </div>
+                <div className="text-center p-4 bg-green-50 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">{sessionStats.faculty_clean_count}</div>
+                  <div className="text-sm text-green-700">🧑‍🏫 Faculty Clean Plates</div>
                 </div>
               </div>
               <div className="text-center p-4 bg-blue-50 rounded-lg">
@@ -1653,7 +1745,7 @@ function App() {
                     <div>
                       <div className="font-medium">{adminSession.session_name}</div>
                       <div className="text-sm text-gray-500">
-                        Owner: {adminSession.owner} • {adminSession.total_records} records
+                        Owner: {adminSession.owner} • {adminSession.total_records} records • Faculty Clean: {adminSession.faculty_clean_count ?? 0}
                       </div>
                     </div>
                   </div>
@@ -1762,7 +1854,7 @@ function App() {
                       Requested by: {request.requester_name} (@{request.requester}) • {request.total_records} records
                     </div>
                     <div className="text-xs text-gray-400">
-                      Clean: {request.clean_records} • Dirty: {request.dirty_records} • Red: {request.red_records}
+                      Clean: {request.clean_records} • Dirty: {request.dirty_records} • Red: {request.red_records} • Faculty: {request.faculty_clean_records || 0}
                     </div>
                     <div className="text-xs text-gray-400">
                       {new Date(request.requested_at).toLocaleString()}
@@ -1814,18 +1906,19 @@ function App() {
                   className="flex-1 justify-start"
                   disabled={session.session_id === sessionId}
                 >
-                  <div className="text-left">
-                    <div className="font-medium">{session.session_name}</div>
-                    <div className="text-sm text-gray-500">
-                      {session.total_records > 0 ? (
-                        <>
-                          🥇 {session.clean_count} ({session.clean_percentage}%) • 
-                          🍽️ {session.dirty_count} ({session.dirty_percentage}%)
-                        </>
-                      ) : (
-                        'No records yet'
-                      )}
-                    </div>
+                    <div className="text-left">
+                      <div className="font-medium">{session.session_name}</div>
+                      <div className="text-sm text-gray-500">
+                        {session.total_records > 0 ? (
+                          <>
+                            🥇 {session.clean_count} ({session.clean_percentage}%) •
+                            🍽️ {session.dirty_count} ({session.dirty_percentage}%) •
+                            🧑‍🏫 {session.faculty_clean_count ?? 0}
+                          </>
+                        ) : (
+                          'No records yet'
+                        )}
+                      </div>
                   </div>
                 </Button>
                 {sessionId && (

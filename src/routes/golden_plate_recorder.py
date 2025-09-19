@@ -94,6 +94,46 @@ save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 
 print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(users_db)}")
 
+
+def ensure_session_structure(session_info):
+    """Ensure session data has the expected structure for counters and records."""
+    if 'dirty_count' not in session_info:
+        dirty_records = session_info.get('dirty_records', [])
+        if isinstance(dirty_records, list):
+            session_info['dirty_count'] = len(dirty_records)
+        else:
+            session_info['dirty_count'] = 0
+
+    # Remove legacy dirty record tracking that stored names
+    if 'dirty_records' in session_info:
+        session_info['dirty_records'] = []
+
+    if 'faculty_clean_records' not in session_info or not isinstance(session_info['faculty_clean_records'], list):
+        session_info['faculty_clean_records'] = []
+
+    if 'scan_history' not in session_info or not isinstance(session_info['scan_history'], list):
+        session_info['scan_history'] = []
+
+    # Strip any stored names from historic dirty scan history entries
+    for record in session_info['scan_history']:
+        if record.get('category') == 'dirty':
+            record.pop('preferred_name', None)
+            record.pop('first_name', None)
+            record.pop('last_name', None)
+            if not record.get('display_name'):
+                record['display_name'] = 'Dirty Plate'
+
+
+def get_dirty_count(session_info):
+    """Helper to safely retrieve dirty count from a session."""
+    ensure_session_structure(session_info)
+    return session_info.get('dirty_count', 0)
+
+
+# Normalize any existing sessions loaded from disk
+for session_id, _session_info in session_data.items():
+    ensure_session_structure(_session_info)
+
 def save_all_data():
     """Save all data to files"""
     try:
@@ -353,12 +393,14 @@ def request_delete_session():
         return jsonify({'error': 'Delete request already submitted for this session'}), 400
 
     session_info = session_data[session_id]
+    ensure_session_structure(session_info)
     session_name = session_info['session_name']
 
     # Collect session statistics
     clean_count = len(session_info.get('clean_records', []))
-    dirty_count = len(session_info.get('dirty_records', []))
+    dirty_count = get_dirty_count(session_info)
     red_count = len(session_info.get('red_records', []))
+    faculty_clean_count = len(session_info.get('faculty_clean_records', []))
     total_records = clean_count + dirty_count + red_count
 
     # Create delete request
@@ -374,6 +416,7 @@ def request_delete_session():
         'clean_records': clean_count,
         'dirty_records': dirty_count,
         'red_records': red_count,
+        'faculty_clean_records': faculty_clean_count,
     }
 
     delete_requests.append(request_obj)
@@ -436,7 +479,8 @@ def admin_get_all_sessions():
     
     all_sessions = []
     for session_id, data in session_data.items():
-        total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
+        ensure_session_structure(data)
+        total_records = len(data['clean_records']) + get_dirty_count(data) + len(data['red_records'])
         all_sessions.append({
             'session_id': session_id,
             'session_name': data['session_name'],
@@ -444,8 +488,9 @@ def admin_get_all_sessions():
             'created_at': data.get('created_at', 'unknown'),
             'total_records': total_records,
             'clean_count': len(data['clean_records']),
-            'dirty_count': len(data['dirty_records']),
-            'red_count': len(data['red_records'])
+            'dirty_count': get_dirty_count(data),
+            'red_count': len(data['red_records']),
+            'faculty_clean_count': len(data.get('faculty_clean_records', []))
         })
     
     return jsonify({'sessions': all_sessions}), 200
@@ -507,8 +552,9 @@ def create_session():
         'owner': session['user_id'],
         'created_at': datetime.now().isoformat(),
         'clean_records': [],
-        'dirty_records': [],
+        'dirty_count': 0,
         'red_records': [],
+        'faculty_clean_records': [],
         'scan_history': [],
         'is_public': is_public
     }
@@ -533,11 +579,13 @@ def list_sessions():
     
     user_sessions = []
     for session_id, data in session_data.items():
+        ensure_session_structure(data)
         if is_guest() and not data.get('is_public', True):
             continue
-        total_records = len(data['clean_records']) + len(data['dirty_records']) + len(data['red_records'])
+        total_records = len(data['clean_records']) + get_dirty_count(data) + len(data['red_records'])
         clean_count = len(data['clean_records'])
-        dirty_count = len(data['dirty_records']) + len(data['red_records'])  # Combine dirty + very dirty
+        dirty_count = get_dirty_count(data) + len(data['red_records'])  # Combine dirty + very dirty
+        faculty_clean_count = len(data.get('faculty_clean_records', []))
 
         clean_percentage = (clean_count / total_records * 100) if total_records > 0 else 0
         dirty_percentage = (dirty_count / total_records * 100) if total_records > 0 else 0
@@ -551,6 +599,7 @@ def list_sessions():
             'total_records': total_records,
             'clean_count': clean_count,
             'dirty_count': dirty_count,
+            'faculty_clean_count': faculty_clean_count,
             'clean_percentage': round(clean_percentage, 1),
             'dirty_percentage': round(dirty_percentage, 1),
             'is_public': data.get('is_public', True),
@@ -799,21 +848,94 @@ def record_student(category):
     """Record a student in a category"""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
-    
+
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
-    
-    if category not in ['clean', 'dirty', 'red']:
+
+    if category not in ['clean', 'dirty', 'red', 'faculty']:
         return jsonify({'error': 'Invalid category'}), 400
-    
-    data = request.get_json()
+
+    data = request.get_json(silent=True) or {}
     input_value = data.get('input_value', '').strip()
-    
-    if not input_value:
-        return jsonify({'error': 'Student ID or Name is required'}), 400
-    
+
     session_id = session['session_id']
     session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+
+    if category == 'dirty':
+        new_count = session_info.get('dirty_count', 0) + 1
+        session_info['dirty_count'] = new_count
+        record = {
+            'category': 'dirty',
+            'timestamp': datetime.now().isoformat(),
+            'recorded_by': session['user_id'],
+            'display_name': f"Dirty Plate #{new_count}"
+        }
+        session_info['scan_history'].append(record)
+        save_session_data()
+        return jsonify({
+            'status': 'success',
+            'category': 'dirty',
+            'dirty_count': new_count
+        }), 200
+
+    if category == 'faculty':
+        if not input_value:
+            return jsonify({'error': 'Faculty name is required'}), 400
+
+        name_parts = input_value.split()
+        preferred_name = ""
+        last_name = ""
+        if len(name_parts) >= 2:
+            preferred_name = name_parts[0].strip().title()
+            last_name = ' '.join(name_parts[1:]).strip().title()
+        elif len(name_parts) == 1:
+            preferred_name = name_parts[0].strip().title()
+            last_name = ""
+        else:
+            return jsonify({'error': 'Faculty name is required'}), 400
+
+        duplicate_check = any(
+            (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
+            record.get('last_name', '').lower() == last_name.lower()
+            for record in session_info['faculty_clean_records']
+        )
+
+        if duplicate_check:
+            return jsonify({
+                'error': 'duplicate',
+                'message': 'Faculty member already recorded in this session'
+            }), 409
+
+        record = {
+            'preferred_name': preferred_name,
+            'first_name': preferred_name,
+            'last_name': last_name,
+            'grade': '',
+            'advisor': '',
+            'house': '',
+            'clan': '',
+            'category': 'faculty',
+            'timestamp': datetime.now().isoformat(),
+            'recorded_by': session['user_id'],
+            'is_manual_entry': True
+        }
+        session_info['faculty_clean_records'].append(record)
+        session_info['scan_history'].append(record)
+        save_session_data()
+        return jsonify({
+            'status': 'success',
+            'preferred_name': preferred_name,
+            'first_name': preferred_name,
+            'last_name': last_name,
+            'category': 'faculty',
+            'is_manual_entry': True,
+            'recorded_by': session['user_id']
+        }), 200
+
+    # Remaining categories rely on student database lookup (clean, red)
+    if not input_value:
+        return jsonify({'error': 'Student ID or Name is required'}), 400
 
     csv_data = user_csv_data.get(session.get('user_id'))
 
@@ -827,16 +949,13 @@ def record_student(category):
     house = ""
     clan = ""
 
-    # First, try to find by Student ID in CSV
     if csv_data and csv_data['data']:
         for row in csv_data['data']:
             if str(row.get('Student ID', '')).strip() == input_value:
                 student_record = row
                 break
 
-    # If not found by ID, try to find by name
     if not student_record and csv_data and csv_data['data']:
-        # Parse input as "First Last"
         name_parts = input_value.split()
         if len(name_parts) >= 2:
             input_first = name_parts[0].lower()
@@ -850,11 +969,8 @@ def record_student(category):
                     student_record = row
                     break
 
-    # If still not found, create manual entry
     if not student_record:
         is_manual_entry = True
-
-        # Parse name from input
         name_parts = input_value.split()
         if len(name_parts) >= 2:
             preferred_name = name_parts[0].capitalize()
@@ -880,18 +996,17 @@ def record_student(category):
     house = house or ""
     clan = clan or ""
 
-    # Check for duplicate entries in current session
-    all_records = session_info['clean_records'] + session_info['dirty_records'] + session_info['red_records']
+    student_records = session_info['clean_records'] + session_info['red_records']
 
     duplicate_check = any(
         (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
         record.get('last_name', '').lower() == last_name.lower()
-        for record in all_records
+        for record in student_records
     )
 
     if duplicate_check:
         existing_category = None
-        for cat in ['clean', 'dirty', 'red']:
+        for cat in ['clean', 'red']:
             if any(
                 (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
                 record.get('last_name', '').lower() == last_name.lower()
@@ -905,10 +1020,9 @@ def record_student(category):
             'message': f'Student already recorded as {existing_category.upper()} in this session'
         }), 409
 
-    # Create record
     record = {
         'preferred_name': preferred_name,
-        'first_name': preferred_name,  # Backward compatibility
+        'first_name': preferred_name,
         'last_name': last_name,
         'grade': grade,
         'advisor': advisor,
@@ -919,14 +1033,11 @@ def record_student(category):
         'recorded_by': session['user_id'],
         'is_manual_entry': is_manual_entry
     }
-    
-    # Add to appropriate category
+
     session_info[f'{category}_records'].append(record)
     session_info['scan_history'].append(record)
-    
-    # Save session data to file
     save_session_data()
-    
+
     return jsonify({
         'status': 'success',
         'preferred_name': preferred_name,
@@ -955,10 +1066,12 @@ def get_session_status():
     if is_guest() and not data.get('is_public', True):
         return jsonify({'error': 'Access denied'}), 403
     
+    ensure_session_structure(data)
     clean_count = len(data['clean_records'])
-    dirty_count = len(data['dirty_records'])
+    dirty_count = get_dirty_count(data)
     red_count = len(data['red_records'])
     combined_dirty_count = dirty_count + red_count  # Combine dirty + very dirty
+    faculty_clean_count = len(data.get('faculty_clean_records', []))
     total_recorded = clean_count + dirty_count + red_count
     
     # Calculate percentages
@@ -972,6 +1085,7 @@ def get_session_status():
         'dirty_count': dirty_count,
         'red_count': red_count,
         'combined_dirty_count': combined_dirty_count,
+        'faculty_clean_count': faculty_clean_count,
         'total_recorded': total_recorded,
         'clean_percentage': round(clean_percentage, 1),
         'dirty_percentage': round(dirty_percentage, 1),
@@ -1008,12 +1122,14 @@ def export_csv():
     session_id = session['session_id']
     data = session_data[session_id]
     
-    # Create CSV content with three columns
+    ensure_session_structure(data)
+
+    # Create CSV content with four columns
     output = io.StringIO()
-    
+
     # Write header
-    output.write("CLEAN,DIRTY,RED\n")
-    
+    output.write("CLEAN,DIRTY,RED,FACULTY CLEAN\n")
+
     # Helper to format names using preferred name when available
     def format_name(record):
         preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
@@ -1023,19 +1139,26 @@ def export_csv():
 
     # Get all records for each category
     clean_names = [format_name(record) for record in data['clean_records']]
-    dirty_names = [format_name(record) for record in data['dirty_records']]
     red_names = [format_name(record) for record in data['red_records']]
-    
+    faculty_names = [format_name(record) for record in data.get('faculty_clean_records', [])]
+    dirty_count = get_dirty_count(data)
+
     # Find the maximum number of records to determine how many rows we need
-    max_records = max(len(clean_names), len(dirty_names), len(red_names))
-    
+    max_records = max(
+        len(clean_names),
+        len(red_names),
+        len(faculty_names),
+        1 if dirty_count > 0 else 0
+    )
+
     # Write data rows
     for i in range(max_records):
         clean_name = clean_names[i] if i < len(clean_names) else ""
-        dirty_name = dirty_names[i] if i < len(dirty_names) else ""
         red_name = red_names[i] if i < len(red_names) else ""
-        
-        output.write(f'"{clean_name}","{dirty_name}","{red_name}"\n')
+        faculty_name = faculty_names[i] if i < len(faculty_names) else ""
+        dirty_value = str(dirty_count) if i == 0 and dirty_count > 0 else ""
+
+        output.write(f'"{clean_name}","{dirty_value}","{red_name}","{faculty_name}"\n')
     
     csv_content = output.getvalue()
     output.close()
@@ -1060,8 +1183,10 @@ def export_detailed_csv():
     session_id = session['session_id']
     data = session_data[session_id]
 
+    ensure_session_structure(data)
+
     detailed_records = []
-    for category in ['clean', 'dirty', 'red']:
+    for category in ['clean', 'red']:
         for record in data.get(f'{category}_records', []):
             preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
             last = (record.get('last_name') or '').strip()
@@ -1077,6 +1202,21 @@ def export_detailed_csv():
                 'Recorded By': record.get('recorded_by', ''),
                 'Manual Entry': 'Yes' if record.get('is_manual_entry') else 'No'
             })
+
+    dirty_count = get_dirty_count(data)
+    if dirty_count > 0:
+        detailed_records.append({
+            'Category': 'DIRTY',
+            'Last': '',
+            'Preferred': f'Count: {dirty_count}',
+            'Grade': '',
+            'Advisor': '',
+            'House': '',
+            'Clan': '',
+            'Recorded At': '',
+            'Recorded By': '',
+            'Manual Entry': ''
+        })
 
     detailed_records.sort(key=lambda x: x['Recorded At'] or '', reverse=True)
 
@@ -1116,13 +1256,15 @@ def admin_overview():
     # Get all sessions
     sessions = []
     for session_id, session_info in session_data.items():
-        total_records = len(session_info['clean_records']) + len(session_info['dirty_records']) + len(session_info['red_records'])
+        ensure_session_structure(session_info)
+        total_records = len(session_info['clean_records']) + get_dirty_count(session_info) + len(session_info['red_records'])
         sessions.append({
             'session_id': session_id,
             'session_name': session_info['session_name'],
             'owner': session_info['owner'],
             'total_records': total_records,
-            'created_at': session_info['created_at']
+            'created_at': session_info['created_at'],
+            'faculty_clean_count': len(session_info.get('faculty_clean_records', []))
         })
     
     return jsonify({
@@ -1139,21 +1281,31 @@ def get_scan_history():
     
     if 'session_id' not in session or session['session_id'] not in session_data:
         return jsonify({'error': 'No active session'}), 400
-    
+
     session_id = session['session_id']
     data = session_data[session_id]
-    
+    ensure_session_structure(data)
+
     # Format scan history for display
     formatted_history = []
     for record in data['scan_history']:
-        preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
-        last = (record.get('last_name') or '').strip()
-        name = f"{preferred} {last}".strip()
+        name = (record.get('display_name') or '').strip()
+        if not name:
+            preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
+            last = (record.get('last_name') or '').strip()
+            name = f"{preferred} {last}".strip()
+
+        category = record.get('category', '').lower()
+        if not name:
+            if category == 'dirty':
+                name = 'Dirty Plate'
+            elif category == 'faculty':
+                name = 'Faculty Clean Plate'
 
         formatted_history.append({
             'timestamp': record.get('timestamp'),
             'name': name,
-            'category': record.get('category', '').upper(),
+            'category': category.upper(),
             'is_manual_entry': record.get('is_manual_entry', False)
         })
     

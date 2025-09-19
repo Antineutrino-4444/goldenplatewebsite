@@ -16,10 +16,15 @@ def test_recording_categories_and_stats(client, login):
 
     assert client.post('/api/record/clean', json={'input_value': '123'}).status_code == 200
     assert client.post('/api/record/red', json={'input_value': '456'}).status_code == 200
+    assert client.post('/api/record/dirty', json={}).status_code == 200
+    assert client.post('/api/record/faculty', json={'input_value': 'Dr Jane Smith'}).status_code == 200
 
     status = client.get('/api/session/status')
     assert status.status_code == 200
     data = status.get_json()
     assert data['clean_count'] == 1
     assert data['red_count'] == 1
+    assert data['dirty_count'] == 1
+    assert data['faculty_clean_count'] == 1
+    assert data['combined_dirty_count'] == 2
 
