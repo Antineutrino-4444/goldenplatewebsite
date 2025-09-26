@@ -587,8 +587,11 @@ def list_sessions():
         dirty_count = get_dirty_count(data) + len(data['red_records'])  # Combine dirty + very dirty
         faculty_clean_count = len(data.get('faculty_clean_records', []))
 
-        clean_percentage = (clean_count / total_records * 100) if total_records > 0 else 0
-        dirty_percentage = (dirty_count / total_records * 100) if total_records > 0 else 0
+        # Calculate percentages - both clean and faculty clean count as "clean" for ratio
+        combined_clean_count = clean_count + faculty_clean_count
+        total_for_ratio = total_records + faculty_clean_count  # Include faculty in total for ratio calculation
+        clean_percentage = (combined_clean_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
+        dirty_percentage = (dirty_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
 
         pending = any(req['session_id'] == session_id and req['status'] == 'pending'
                        for req in delete_requests)
@@ -1074,9 +1077,11 @@ def get_session_status():
     faculty_clean_count = len(data.get('faculty_clean_records', []))
     total_recorded = clean_count + dirty_count + red_count
     
-    # Calculate percentages
-    clean_percentage = (clean_count / total_recorded * 100) if total_recorded > 0 else 0
-    dirty_percentage = (combined_dirty_count / total_recorded * 100) if total_recorded > 0 else 0
+    # Calculate percentages - both clean and faculty clean count as "clean" for ratio
+    combined_clean_count = clean_count + faculty_clean_count
+    total_for_ratio = total_recorded + faculty_clean_count  # Include faculty in total for ratio calculation
+    clean_percentage = (combined_clean_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
+    dirty_percentage = (combined_dirty_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
     
     return jsonify({
         'session_id': session_id,
