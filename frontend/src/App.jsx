@@ -1527,7 +1527,7 @@ function App() {
                   <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
                   <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
                   <div className="text-xs text-yellow-600">
-                    {sessionStats.clean_percentage || 0}%
+                    {sessionStats.clean_percentage || 0}% (includes faculty)
                   </div>
                 </div>
                 <div className="text-center p-4 bg-orange-50 rounded-lg">
@@ -1911,7 +1911,7 @@ function App() {
                       <div className="text-sm text-gray-500">
                         {session.total_records > 0 ? (
                           <>
-                            🥇 {session.clean_count} ({session.clean_percentage}%) •
+                            🥇 {session.clean_count} ({session.clean_percentage}% incl. faculty) •
                             🍽️ {session.dirty_count} ({session.dirty_percentage}%) •
                             🧑‍🏫 {session.faculty_clean_count ?? 0}
                           </>
