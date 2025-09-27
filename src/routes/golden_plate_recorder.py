@@ -20,6 +20,8 @@ SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
 INVITE_CODES_FILE = os.path.join(DATA_DIR, "invite_codes.json")
+GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv_data.json")
+GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv_data.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
 
@@ -71,8 +73,8 @@ session_data = load_data_from_file(SESSIONS_FILE, {})
 delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
 invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
 
-# In-memory CSV storage per user session
-user_csv_data = {}
+# Global CSV storage (admin/super admin can upload, all users can use)
+global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, {})
 
 # Initialize users database with default super admin if file doesn't exist
 default_users = {
@@ -91,6 +93,7 @@ save_data_to_file(SESSIONS_FILE, session_data)
 save_data_to_file(USERS_FILE, users_db)
 save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
 save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
+save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
 print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(users_db)}")
 
@@ -141,6 +144,7 @@ def save_all_data():
         save_data_to_file(USERS_FILE, users_db)
         save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
         save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
+        save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
         print("All data saved successfully")
         return True
     except Exception as e:
@@ -162,6 +166,14 @@ def save_delete_requests():
 def save_invite_codes_db():
     """Save invite codes database to file"""
     return save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
+
+def save_global_csv_data():
+    """Save global CSV data to file"""
+    return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
+
+def save_global_csv_data():
+    """Save global CSV data to file"""
+    return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
 def get_current_user():
     """Get current logged in user"""
@@ -224,8 +236,6 @@ def logout():
     user_id = session.pop('user_id', None)
     session.pop('session_id', None)
     session.pop('guest_access', None)
-    if user_id:
-        user_csv_data.pop(user_id, None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
 
 @recorder_bp.route('/auth/guest', methods=['POST'])
@@ -611,7 +621,7 @@ def list_sessions():
     
     return jsonify({
         'sessions': user_sessions,
-        'has_global_csv': session.get('user_id') in user_csv_data
+        'has_global_csv': bool(global_csv_data.get('data'))
     }), 200
 
 @recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
@@ -746,9 +756,9 @@ def reject_delete_request(request_id):
 
 @recorder_bp.route('/csv/upload', methods=['POST'])
 def upload_csv():
-    """Upload CSV file (requires authentication)"""
-    if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+    """Upload CSV file (requires admin or super admin)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin or super admin access required'}), 403
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -775,14 +785,18 @@ def upload_csv():
         if not all(col in csv_reader.fieldnames for col in required_columns):
             return jsonify({'error': f'CSV must contain columns: {", ".join(required_columns)}'}), 400
         
-        # Store in memory for this user session only
+        # Store globally (accessible to all users)
         user_id = session['user_id']
-        user_csv_data[user_id] = {
+        global global_csv_data
+        global_csv_data = {
             'data': rows,
             'columns': csv_reader.fieldnames,
             'uploaded_by': user_id,
             'uploaded_at': datetime.now().isoformat()
         }
+        
+        # Save to persistent storage
+        save_global_csv_data()
 
         return jsonify({
             'status': 'success',
@@ -795,12 +809,11 @@ def upload_csv():
 
 @recorder_bp.route('/csv/preview', methods=['GET'])
 def preview_csv():
-    """Preview the current student database"""
-    if not require_auth_or_guest():
-        return jsonify({'error': 'Authentication or guest access required'}), 401
+    """Preview the current student database (admin/super admin only)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin or super admin access required'}), 403
     
-    user_id = session.get('user_id')
-    csv_data = user_csv_data.get(user_id)
+    csv_data = global_csv_data
 
     if not csv_data:
         return jsonify({
@@ -940,7 +953,7 @@ def record_student(category):
     if not input_value:
         return jsonify({'error': 'Student ID or Name is required'}), 400
 
-    csv_data = user_csv_data.get(session.get('user_id'))
+    csv_data = global_csv_data
 
     # Determine if input is ID or name
     student_record = None
