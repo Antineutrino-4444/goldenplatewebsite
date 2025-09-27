@@ -21,7 +21,7 @@ USERS_FILE = os.path.join(DATA_DIR, "users.json")
 DELETE_REQUESTS_FILE = os.path.join(DATA_DIR, "delete_requests.json")
 INVITE_CODES_FILE = os.path.join(DATA_DIR, "invite_codes.json")
 GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv_data.json")
-GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv_data.json")
+TEACHER_LIST_FILE = os.path.join(DATA_DIR, "teacher_list.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
 
@@ -76,6 +76,9 @@ invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
 # Global CSV storage (admin/super admin can upload, all users can use)
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, {})
 
+# Global teacher list storage (admin/super admin can upload, all users can use)
+global_teacher_data = load_data_from_file(TEACHER_LIST_FILE, {})
+
 # Initialize users database with default super admin if file doesn't exist
 default_users = {
     'antineutrino': {
@@ -94,6 +97,7 @@ save_data_to_file(USERS_FILE, users_db)
 save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
 save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
+save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
 
 print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(users_db)}")
 
@@ -171,9 +175,9 @@ def save_global_csv_data():
     """Save global CSV data to file"""
     return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 
-def save_global_csv_data():
-    """Save global CSV data to file"""
-    return save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
+def save_global_teacher_data():
+    """Save global teacher data to file"""
+    return save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
 
 def get_current_user():
     """Get current logged in user"""
@@ -900,6 +904,127 @@ def get_student_names():
     return jsonify({
         'status': 'success',
         'names': names
+    }), 200
+
+@recorder_bp.route('/teachers/upload', methods=['POST'])
+def upload_teachers():
+    """Upload teacher list (admin/super admin only)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin or super admin access required'}), 403
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not file.filename.lower().endswith(('.csv', '.txt')):
+        return jsonify({'error': 'File must be a CSV or TXT file'}), 400
+    
+    try:
+        # Read file content
+        content = file.read().decode('utf-8-sig')  # Handle BOM if present
+        lines = content.strip().split('\n')
+        
+        teachers = []
+        for line in lines:
+            # Remove quotes and whitespace
+            teacher_name = line.strip().strip('"').strip("'")
+            if teacher_name:  # Skip empty lines
+                teachers.append({
+                    'name': teacher_name,
+                    'display_name': teacher_name
+                })
+        
+        if not teachers:
+            return jsonify({'error': 'No valid teacher names found in file'}), 400
+        
+        # Store globally (accessible to all users)
+        user_id = session['user_id']
+        global global_teacher_data
+        global_teacher_data = {
+            'teachers': teachers,
+            'uploaded_by': user_id,
+            'uploaded_at': datetime.now().isoformat()
+        }
+        
+        # Save to persistent storage
+        save_global_teacher_data()
+
+        return jsonify({
+            'status': 'success',
+            'count': len(teachers),
+            'uploaded_by': user_id
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Error processing file: {str(e)}'}), 400
+
+@recorder_bp.route('/teachers/list', methods=['GET'])
+def get_teacher_names():
+    """Get teacher names for dropdown suggestions"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    teacher_data = global_teacher_data
+    if not teacher_data or 'teachers' not in teacher_data:
+        return jsonify({
+            'status': 'no_data',
+            'names': []
+        }), 200
+    
+    # Sort names alphabetically
+    teachers = sorted(teacher_data['teachers'], key=lambda x: x['display_name'].lower())
+    
+    return jsonify({
+        'status': 'success',
+        'names': teachers
+    }), 200
+
+@recorder_bp.route('/teachers/preview', methods=['GET'])
+def preview_teachers():
+    """Preview the current teacher list (admin/super admin only)"""
+    if not require_admin():
+        return jsonify({'error': 'Admin or super admin access required'}), 403
+    
+    teacher_data = global_teacher_data
+
+    if not teacher_data:
+        return jsonify({
+            'status': 'no_data',
+            'message': 'No teacher list uploaded yet'
+        }), 200
+    
+    # Get pagination parameters
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
+    
+    teachers = teacher_data.get('teachers', [])
+    
+    # Calculate pagination
+    total_records = len(teachers)
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    
+    # Get paginated data
+    paginated_teachers = teachers[start_idx:end_idx]
+
+    return jsonify({
+        'status': 'success',
+        'data': paginated_teachers,
+        'pagination': {
+            'page': page,
+            'per_page': per_page,
+            'total_records': total_records,
+            'total_pages': (total_records + per_page - 1) // per_page,
+            'has_next': end_idx < total_records,
+            'has_prev': page > 1
+        },
+        'metadata': {
+            'uploaded_by': teacher_data.get('uploaded_by', 'unknown'),
+            'uploaded_at': teacher_data.get('uploaded_at', 'unknown')
+        }
     }), 200
 
 @recorder_bp.route('/record/<category>', methods=['POST'])
