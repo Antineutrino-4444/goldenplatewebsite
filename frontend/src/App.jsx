@@ -86,6 +86,13 @@ function App() {
   // Student names for dropdown
   const [studentNames, setStudentNames] = useState([])
 
+  // Teacher names for dropdown
+  const [teacherNames, setTeacherNames] = useState([])
+  const [showTeacherPreview, setShowTeacherPreview] = useState(false)
+  const [teacherPreviewData, setTeacherPreviewData] = useState(null)
+  const [teacherPreviewPage, setTeacherPreviewPage] = useState(1)
+  const [teacherPreviewLoading, setTeacherPreviewLoading] = useState(false)
+
   // Notification and modal states
   const [notification, setNotification] = useState(null)
   const [modal, setModal] = useState(null)
@@ -276,6 +283,8 @@ function App() {
         await loadScanHistory()
         // Load student names for dropdown
         await loadStudentNames()
+        // Load teacher names for dropdown
+        await loadTeacherNames()
       } else {
         // No active session - try to join an existing one automatically
         const sessions = await loadSessions()
@@ -297,6 +306,8 @@ function App() {
           setScanHistory([])
           // Still try to load student names even without a session
           await loadStudentNames()
+          // Still try to load teacher names even without a session
+          await loadTeacherNames()
         }
       }
     } catch (error) {
@@ -385,6 +396,7 @@ function App() {
         setSessionName(data.session_name)
         await refreshSessionStatus()
         await loadStudentNames()
+        await loadTeacherNames()
         showMessage(`Switched to "${data.session_name}"`, 'success')
         setShowSessionsDialog(false)
       } else {
@@ -459,6 +471,32 @@ function App() {
     }
   }
 
+  const uploadTeachers = async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    setIsLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/teachers/upload`, {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+      if (response.ok) {
+        showMessage(`Teacher list uploaded successfully! ${data.count} teachers loaded.`, 'success')
+        // Reload teacher names for dropdown
+        await loadTeacherNames()
+      } else {
+        showMessage(data.error || 'Failed to upload teacher list', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to upload teacher list', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const previewCSV = async (page = 1) => {
     setCsvPreviewLoading(true)
     try {
@@ -480,6 +518,31 @@ function App() {
       showMessage('Failed to load preview', 'error')
     } finally {
       setCsvPreviewLoading(false)
+    }
+  }
+
+  const previewTeachers = async (page = 1) => {
+    setTeacherPreviewLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/teachers/preview?page=${page}&per_page=50`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        if (data.status === 'no_data') {
+          showMessage('No teacher list uploaded yet', 'info')
+          return
+        }
+        
+        setTeacherPreviewData(data)
+        setTeacherPreviewPage(page)
+        setShowTeacherPreview(true)
+      } else {
+        showMessage(data.error || 'Failed to load teacher preview', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to load teacher preview', 'error')
+    } finally {
+      setTeacherPreviewLoading(false)
     }
   }
 
@@ -568,6 +631,7 @@ function App() {
     // Also load scan history and student names
     await loadScanHistory()
     await loadStudentNames()
+    await loadTeacherNames()
   }
 
   const loadScanHistory = async () => {
@@ -598,6 +662,25 @@ function App() {
     } catch (error) {
       console.error('Failed to load student names:', error)
       setStudentNames([])
+    }
+  }
+
+  const loadTeacherNames = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/teachers/list`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.status === 'success') {
+          console.log('Loaded teacher names:', data.names?.length || 0)
+          setTeacherNames(data.names || [])
+        } else {
+          console.log('No teacher names available')
+          setTeacherNames([])
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load teacher names:', error)
+      setTeacherNames([])
     }
   }
 
@@ -1217,6 +1300,54 @@ function App() {
             </CardContent>
           </Card>
 
+          {/* Teacher List Upload */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Teacher Database
+              </CardTitle>
+              <CardDescription>
+                Upload teacher list for faculty clean plate tracking (one teacher name per line, e.g., "Smith, J")
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!['admin', 'superadmin'].includes(user?.role) ? (
+                <Alert className="border-blue-200 bg-blue-50">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-blue-800">
+                    Teacher list upload is restricted to admin and super admin users only.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Input
+                  type="file"
+                  accept=".csv,.txt"
+                  onChange={(e) => e.target.files[0] && uploadTeachers(e.target.files[0])}
+                  className="mb-4"
+                />
+              )}
+              {['admin', 'superadmin'].includes(user?.role) && (
+                <div className="flex gap-2 mb-4">
+                  <Button 
+                    onClick={() => previewTeachers(1)} 
+                    variant="outline" 
+                    className="flex-1"
+                    disabled={teacherPreviewLoading}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    {teacherPreviewLoading ? 'Loading...' : 'Preview Teacher List'}
+                  </Button>
+                </div>
+              )}
+              {teacherNames.length > 0 && (
+                <div className="text-sm text-green-600">
+                  ✓ {teacherNames.length} teachers loaded
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Export Records */}
           {user?.role !== 'guest' && (
             <Card>
@@ -1416,12 +1547,12 @@ function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <Input
-                type="text"
+              <SearchableNameInput
                 placeholder="Faculty Name (e.g., Alex Morgan)"
                 value={popupInputValue}
-                onChange={(e) => setPopupInputValue(e.target.value)}
+                onChange={setPopupInputValue}
                 onKeyPress={(e) => handleKeyPress(e, 'faculty')}
+                names={teacherNames}
                 autoFocus
               />
               <div className="flex gap-2">
@@ -1678,6 +1809,77 @@ function App() {
             </Button>
           </DialogContent>
         </Dialog>
+
+        {/* Teacher Preview Dialog */}
+        {showTeacherPreview && (
+        <Dialog open={showTeacherPreview} onOpenChange={setShowTeacherPreview}>
+          <DialogContent className="w-full sm:max-w-2xl lg:max-w-4xl max-h-[80vh] overflow-hidden" dismissOnOverlayClick={false}>
+            <DialogHeader>
+              <DialogTitle>Teacher List Preview</DialogTitle>
+              <DialogDescription>
+                Preview of the uploaded teacher names
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {teacherPreviewLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-muted-foreground">Loading teacher list...</div>
+                </div>
+              ) : teacherPreviewData ? (
+                <>
+                  <div className="text-sm text-muted-foreground">
+                    <p><strong>Total Teachers:</strong> {teacherPreviewData.pagination.total_records}</p>
+                    <p><strong>Uploaded by:</strong> {teacherPreviewData.metadata.uploaded_by}</p>
+                    <p><strong>Uploaded at:</strong> {new Date(teacherPreviewData.metadata.uploaded_at).toLocaleString()}</p>
+                  </div>
+                  
+                  <div className="max-h-96 overflow-y-auto border rounded-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4">
+                      {teacherPreviewData.data.map((teacher, index) => (
+                        <div key={index} className="p-2 bg-gray-50 rounded text-sm">
+                          {teacher.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4">
+                    <div className="text-sm text-muted-foreground">
+                      Page {teacherPreviewData.pagination.page} of {teacherPreviewData.pagination.total_pages}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => previewTeachers(teacherPreviewPage - 1)}
+                        disabled={!teacherPreviewData.pagination.has_prev || teacherPreviewLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        onClick={() => previewTeachers(teacherPreviewPage + 1)}
+                        disabled={!teacherPreviewData.pagination.has_next || teacherPreviewLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-muted-foreground">No teacher data available</div>
+                </div>
+              )}
+            </div>
+            <Button onClick={() => setShowTeacherPreview(false)} className="w-full">
+              Close
+            </Button>
+          </DialogContent>
+        </Dialog>
+        )}
+
         </>
         )}
       </div>
