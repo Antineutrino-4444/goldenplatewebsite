@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
+import { SearchableNameInput } from '@/components/SearchableNameInput.jsx'
 import Modal from '@/components/Modal.jsx'
 import { createPortal } from 'react-dom'
 import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle } from 'lucide-react'
@@ -81,6 +82,9 @@ function App() {
   const [csvPreviewData, setCsvPreviewData] = useState(null)
   const [csvPreviewPage, setCsvPreviewPage] = useState(1)
   const [csvPreviewLoading, setCsvPreviewLoading] = useState(false)
+
+  // Student names for dropdown
+  const [studentNames, setStudentNames] = useState([])
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -270,6 +274,8 @@ function App() {
         })
         // Load scan history for the session
         await loadScanHistory()
+        // Load student names for dropdown
+        await loadStudentNames()
       } else {
         // No active session - try to join an existing one automatically
         const sessions = await loadSessions()
@@ -289,6 +295,8 @@ function App() {
             dirty_percentage: 0
           })
           setScanHistory([])
+          // Still try to load student names even without a session
+          await loadStudentNames()
         }
       }
     } catch (error) {
@@ -376,6 +384,7 @@ function App() {
         setSessionId(sessionId)
         setSessionName(data.session_name)
         await refreshSessionStatus()
+        await loadStudentNames()
         showMessage(`Switched to "${data.session_name}"`, 'success')
         setShowSessionsDialog(false)
       } else {
@@ -438,6 +447,8 @@ function App() {
       if (response.ok) {
         setCsvData(data)
         showMessage(`CSV uploaded successfully! ${data.rows_count} students loaded.`, 'success')
+        // Reload student names for dropdown
+        await loadStudentNames()
       } else {
         showMessage(data.error || 'Failed to upload CSV', 'error')
       }
@@ -554,8 +565,9 @@ function App() {
       console.error('Failed to refresh session status:', error)
     }
     
-    // Also load scan history
+    // Also load scan history and student names
     await loadScanHistory()
+    await loadStudentNames()
   }
 
   const loadScanHistory = async () => {
@@ -567,6 +579,25 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to load scan history:', error)
+    }
+  }
+
+  const loadStudentNames = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/csv/student-names`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.status === 'success') {
+          console.log('Loaded student names:', data.names?.length || 0)
+          setStudentNames(data.names || [])
+        } else {
+          console.log('No student names available')
+          setStudentNames([])
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load student names:', error)
+      setStudentNames([])
     }
   }
 
@@ -1324,12 +1355,12 @@ function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <Input
-                type="text"
+              <SearchableNameInput
                 placeholder="Student ID or Name (e.g., 12345 or John Smith)"
                 value={popupInputValue}
-                onChange={(e) => setPopupInputValue(e.target.value)}
+                onChange={setPopupInputValue}
                 onKeyPress={(e) => handleKeyPress(e, 'clean')}
+                names={studentNames}
                 autoFocus
               />
               <div className="flex gap-2">
@@ -1418,12 +1449,12 @@ function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <Input
-                type="text"
+              <SearchableNameInput
                 placeholder="Student ID or Name (e.g., 12345 or John Smith)"
                 value={popupInputValue}
-                onChange={(e) => setPopupInputValue(e.target.value)}
+                onChange={setPopupInputValue}
                 onKeyPress={(e) => handleKeyPress(e, 'red')}
+                names={studentNames}
                 autoFocus
               />
               <div className="flex gap-2">

@@ -859,6 +859,49 @@ def preview_csv():
         }
     }), 200
 
+@recorder_bp.route('/csv/student-names', methods=['GET'])
+def get_student_names():
+    """Get student names for dropdown suggestions"""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    csv_data = global_csv_data
+    if not csv_data or 'data' not in csv_data:
+        return jsonify({
+            'status': 'no_data',
+            'names': []
+        }), 200
+    
+    # Extract names from CSV data
+    names = []
+    for row in csv_data['data']:
+        preferred = str(row.get('Preferred', '') or '').strip()
+        last = str(row.get('Last', '') or '').strip()
+        
+        if preferred and last:
+            full_name = f"{preferred} {last}"
+            names.append({
+                'display_name': full_name,
+                'preferred': preferred,
+                'last': last,
+                'student_id': str(row.get('Student ID', '') or '').strip()
+            })
+        elif preferred:
+            names.append({
+                'display_name': preferred,
+                'preferred': preferred,
+                'last': '',
+                'student_id': str(row.get('Student ID', '') or '').strip()
+            })
+    
+    # Sort names alphabetically
+    names.sort(key=lambda x: x['display_name'].lower())
+    
+    return jsonify({
+        'status': 'success',
+        'names': names
+    }), 200
+
 @recorder_bp.route('/record/<category>', methods=['POST'])
 def record_student(category):
     """Record a student in a category"""
