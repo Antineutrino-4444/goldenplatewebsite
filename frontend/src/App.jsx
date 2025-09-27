@@ -1150,11 +1150,11 @@ function App() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {user?.role === 'guest' ? (
+              {!['admin', 'superadmin'].includes(user?.role) ? (
                 <Alert className="border-blue-200 bg-blue-50">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-blue-800">
-                    You are viewing as a guest. CSV upload is not available. Please sign up to upload student data.
+                    CSV upload is restricted to admin and super admin users only.
                   </AlertDescription>
                 </Alert>
               ) : (
@@ -1165,17 +1165,19 @@ function App() {
                   className="mb-4"
                 />
               )}
-              <div className="flex gap-2 mb-4">
-                <Button 
-                  onClick={() => previewCSV(1)} 
-                  variant="outline" 
-                  className="flex-1"
-                  disabled={csvPreviewLoading}
-                >
-                  <FileText className="h-4 w-4 mr-2" />
-                  {csvPreviewLoading ? 'Loading...' : 'Preview Database'}
-                </Button>
-              </div>
+              {['admin', 'superadmin'].includes(user?.role) && (
+                <div className="flex gap-2 mb-4">
+                  <Button 
+                    onClick={() => previewCSV(1)} 
+                    variant="outline" 
+                    className="flex-1"
+                    disabled={csvPreviewLoading}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    {csvPreviewLoading ? 'Loading...' : 'Preview Database'}
+                  </Button>
+                </div>
+              )}
               {csvData && (
                 <div className="text-sm text-green-600">
                   ✓ {csvData.rows_count} students loaded
