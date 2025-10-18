@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { SearchableNameInput } from '@/components/SearchableNameInput.jsx'
 import Modal from '@/components/Modal.jsx'
 import { createPortal } from 'react-dom'
-import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle } from 'lucide-react'
+import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle, Trophy, Wand2, CheckCircle, RefreshCcw, ShieldCheck, Ban, Clock, History, ListOrdered } from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
@@ -46,7 +46,9 @@ function App() {
     faculty_clean_count: 0,
     total_recorded: 0,
     clean_percentage: 0,
-    dirty_percentage: 0
+    dirty_percentage: 0,
+    is_discarded: false,
+    draw_info: null
   })
   const [isLoading, setIsLoading] = useState(false)
   
@@ -93,10 +95,23 @@ function App() {
   const [teacherPreviewPage, setTeacherPreviewPage] = useState(1)
   const [teacherPreviewLoading, setTeacherPreviewLoading] = useState(false)
 
+  // Draw center state
+  const [drawSummary, setDrawSummary] = useState(null)
+  const [drawSummaryLoading, setDrawSummaryLoading] = useState(false)
+  const [showDrawDialog, setShowDrawDialog] = useState(false)
+  const [overrideSelection, setOverrideSelection] = useState('')
+  const [drawActionLoading, setDrawActionLoading] = useState(false)
+  const [discardLoading, setDiscardLoading] = useState(false)
+
   // Notification and modal states
   const [notification, setNotification] = useState(null)
   const [modal, setModal] = useState(null)
   const [inviteCode, setInviteCode] = useState('')
+
+  const isSessionDiscarded = drawSummary?.is_discarded ?? sessionStats.is_discarded
+  const currentDrawInfo = drawSummary?.draw_info ?? sessionStats.draw_info
+  const canManageDraw = ['admin', 'superadmin'].includes(user?.role)
+  const canOverrideWinner = user?.role === 'superadmin'
 
   // Check authentication status on load
   useEffect(() => {
@@ -251,7 +266,9 @@ function App() {
         combined_dirty_count: 0,
         total_recorded: 0,
         clean_percentage: 0,
-        dirty_percentage: 0
+        dirty_percentage: 0,
+        is_discarded: false,
+        draw_info: null
       })
       setInviteCode('')
       setModal(null)
@@ -277,7 +294,9 @@ function App() {
           faculty_clean_count: data.faculty_clean_count,
           total_recorded: data.total_recorded,
           clean_percentage: data.clean_percentage,
-          dirty_percentage: data.dirty_percentage
+          dirty_percentage: data.dirty_percentage,
+          is_discarded: data.is_discarded ?? false,
+          draw_info: data.draw_info ?? null
         })
         // Load scan history for the session
         await loadScanHistory()
@@ -285,6 +304,7 @@ function App() {
         await loadStudentNames()
         // Load teacher names for dropdown
         await loadTeacherNames()
+        await loadDrawSummary({ silent: true, sessionIdOverride: data.session_id, sessionNameOverride: data.session_name, isDiscarded: data.is_discarded })
       } else {
         // No active session - try to join an existing one automatically
         const sessions = await loadSessions()
@@ -301,9 +321,13 @@ function App() {
             combined_dirty_count: 0,
             total_recorded: 0,
             clean_percentage: 0,
-            dirty_percentage: 0
+            dirty_percentage: 0,
+            is_discarded: false,
+            draw_info: null
           })
           setScanHistory([])
+          setDrawSummary(null)
+          setOverrideSelection('')
           // Still try to load student names even without a session
           await loadStudentNames()
           // Still try to load teacher names even without a session
@@ -326,6 +350,8 @@ function App() {
         dirty_percentage: 0
       })
       setScanHistory([])
+      setDrawSummary(null)
+      setOverrideSelection('')
     }
   }
 
@@ -613,7 +639,8 @@ function App() {
       const response = await fetch(`${API_BASE}/session/status`)
       if (response.ok) {
         const data = await response.json()
-        setSessionStats({
+        setSessionStats((prev) => ({
+          ...prev,
           clean_count: data.clean_count,
           dirty_count: data.dirty_count,
           red_count: data.red_count,
@@ -621,8 +648,10 @@ function App() {
           faculty_clean_count: data.faculty_clean_count,
           total_recorded: data.total_recorded,
           clean_percentage: data.clean_percentage,
-          dirty_percentage: data.dirty_percentage
-        })
+          dirty_percentage: data.dirty_percentage,
+          is_discarded: data.is_discarded ?? prev.is_discarded,
+          draw_info: data.draw_info ?? prev.draw_info
+        }))
       }
     } catch (error) {
       console.error('Failed to refresh session status:', error)
@@ -632,6 +661,7 @@ function App() {
     await loadScanHistory()
     await loadStudentNames()
     await loadTeacherNames()
+    await loadDrawSummary({ silent: true })
   }
 
   const loadScanHistory = async () => {
@@ -681,6 +711,260 @@ function App() {
     } catch (error) {
       console.error('Failed to load teacher names:', error)
       setTeacherNames([])
+    }
+  }
+
+  const loadDrawSummary = async ({ silent = false, sessionIdOverride = null, sessionNameOverride = null, isDiscarded = undefined } = {}) => {
+    const targetSessionId = sessionIdOverride || sessionId
+    if (!targetSessionId) {
+      setDrawSummary(null)
+      return
+    }
+
+    setDrawSummaryLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${targetSessionId}/draw/summary`)
+      const data = await response.json()
+      if (response.ok) {
+        const summaryPayload = {
+          session_id: data.session_id || targetSessionId,
+          session_name: data.session_name || sessionNameOverride || sessionName,
+          created_at: data.created_at || null,
+          is_discarded: data.is_discarded ?? (isDiscarded ?? sessionStats.is_discarded),
+          total_tickets: data.total_tickets ?? 0,
+          eligible_count: data.eligible_count ?? 0,
+          excluded_records: data.excluded_records ?? 0,
+          top_candidates: data.top_candidates ?? [],
+          candidates: data.candidates ?? [],
+          ticket_snapshot: data.ticket_snapshot ?? {},
+          generated_at: data.generated_at ?? new Date().toISOString(),
+          draw_info: data.draw_info ?? null
+        }
+        setDrawSummary(summaryPayload)
+        setOverrideSelection(prev => (summaryPayload.candidates?.some(candidate => candidate.key === prev) ? prev : ''))
+        setSessionStats(prev => ({
+          ...prev,
+          is_discarded: summaryPayload.is_discarded,
+          draw_info: summaryPayload.draw_info
+        }))
+      } else {
+        if (!silent) {
+          showMessage(data.error || 'Failed to load draw summary', 'error')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load draw summary:', error)
+      if (!silent) {
+        showMessage('Failed to load draw summary', 'error')
+      }
+    } finally {
+      setDrawSummaryLoading(false)
+    }
+  }
+
+  const applyDrawResponse = (data, { silent = false } = {}) => {
+    if (!data) {
+      return
+    }
+
+    const summaryData = data.summary
+    const nextIsDiscarded = data.discarded ?? summaryData?.is_discarded ?? sessionStats.is_discarded
+
+    if (summaryData) {
+      const summaryPayload = {
+        session_id: summaryData.session_id || sessionId,
+        session_name: summaryData.session_name || drawSummary?.session_name || sessionName,
+        created_at: summaryData.created_at || drawSummary?.created_at || null,
+        is_discarded: nextIsDiscarded,
+        total_tickets: summaryData.total_tickets ?? 0,
+        eligible_count: summaryData.eligible_count ?? 0,
+        excluded_records: summaryData.excluded_records ?? 0,
+        top_candidates: summaryData.top_candidates ?? [],
+        candidates: summaryData.candidates ?? [],
+        ticket_snapshot: summaryData.tickets_snapshot ?? {},
+        generated_at: summaryData.generated_at ?? new Date().toISOString(),
+        draw_info: data.draw_info ?? sessionStats.draw_info
+      }
+      setDrawSummary(summaryPayload)
+      setOverrideSelection(prev => (summaryPayload.candidates?.some(candidate => candidate.key === prev) ? prev : ''))
+      setSessionStats(prev => ({
+        ...prev,
+        is_discarded: summaryPayload.is_discarded,
+        draw_info: summaryPayload.draw_info
+      }))
+    } else {
+      if (typeof nextIsDiscarded === 'boolean') {
+        setSessionStats(prev => ({ ...prev, is_discarded: nextIsDiscarded }))
+      }
+      if (data.draw_info) {
+        setSessionStats(prev => ({ ...prev, draw_info: data.draw_info }))
+      }
+      if (!summaryData && !silent && data.error) {
+        showMessage(data.error, 'error')
+      }
+    }
+  }
+
+  const startDrawProcess = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before starting a draw', 'error')
+      return
+    }
+    if (!canManageDraw) {
+      showMessage('You do not have permission to start a draw', 'error')
+      return
+    }
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/start`, {
+        method: 'POST'
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        if (data.winner?.display_name) {
+          showMessage(`Winner selected: ${data.winner.display_name}`, 'success')
+        } else {
+          showMessage('Winner selected', 'success')
+        }
+      } else {
+        showMessage(data.error || 'Failed to start draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to start draw:', error)
+      showMessage('Failed to start draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const finalizeDrawWinner = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before finalizing a draw', 'error')
+      return
+    }
+    if (!canManageDraw) {
+      showMessage('You do not have permission to finalize this draw', 'error')
+      return
+    }
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/finalize`, {
+        method: 'POST'
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        showMessage('Winner finalized', 'success')
+      } else {
+        showMessage(data.error || 'Failed to finalize draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to finalize draw:', error)
+      showMessage('Failed to finalize draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const resetDrawWinner = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before resetting the draw', 'error')
+      return
+    }
+    if (!sessionStats.draw_info?.winner) {
+      showMessage('There is no winner to reset', 'error')
+      return
+    }
+    if (!canManageDraw) {
+      showMessage('You do not have permission to reset this draw', 'error')
+      return
+    }
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/reset`, {
+        method: 'POST'
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        showMessage('Draw reset successfully', 'success')
+      } else {
+        showMessage(data.error || 'Failed to reset draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to reset draw:', error)
+      showMessage('Failed to reset draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const overrideDrawWinner = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before overriding the draw', 'error')
+      return
+    }
+    if (!canOverrideWinner) {
+      showMessage('Only super admins can override the draw winner', 'error')
+      return
+    }
+    if (!overrideSelection) {
+      showMessage('Select a participant to set as the winner', 'error')
+      return
+    }
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_key: overrideSelection })
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        showMessage('Winner overridden successfully', 'success')
+      } else {
+        showMessage(data.error || 'Failed to override draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to override draw:', error)
+      showMessage('Failed to override draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const toggleDiscardState = async (nextDiscarded) => {
+    if (!sessionId) {
+      showMessage('Select a session before toggling discard status', 'error')
+      return
+    }
+    if (!canOverrideWinner) {
+      showMessage('Only super admins can change discard status', 'error')
+      return
+    }
+    setDiscardLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/discard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discarded: nextDiscarded })
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        if (typeof data.discarded === 'boolean') {
+          showMessage(data.message || (data.discarded ? 'Session removed from draw calculations' : 'Session reinstated for draw calculations'), 'success')
+        }
+      } else {
+        showMessage(data.error || 'Failed to update discard status', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to toggle discard state:', error)
+      showMessage('Failed to update discard status', 'error')
+    } finally {
+      setDiscardLoading(false)
     }
   }
 
@@ -1215,6 +1499,33 @@ function App() {
               <div className="text-sm text-gray-500">
                 Faculty Clean: {sessionStats.faculty_clean_count}
               </div>
+              {isSessionDiscarded && (
+                <div className="mt-2 flex justify-center">
+                  <Badge variant="destructive" className="uppercase tracking-wide">Discarded from draw</Badge>
+                </div>
+              )}
+              <div className="mt-3 text-sm text-gray-600">
+                {currentDrawInfo?.winner ? (
+                  <div className="space-y-1">
+                    <div>
+                      Current Winner:{' '}
+                      <span className="font-semibold">{currentDrawInfo.winner.display_name}</span>
+                      {currentDrawInfo.finalized ? ' (Finalized)' : ' (Pending Finalization)'}
+                      {currentDrawInfo.override && (
+                        <Badge variant="outline" className="ml-2 text-xs">Superadmin Override</Badge>
+                      )}
+                    </div>
+                    {currentDrawInfo.winner_timestamp && (
+                      <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(currentDrawInfo.winner_timestamp).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-gray-500">No winner selected yet.</span>
+                )}
+              </div>
             </div>
 
             {/* Navigation Buttons */}
@@ -1229,6 +1540,15 @@ function App() {
                 <Users className="h-4 w-4 mr-2" />
                 Switch Session
               </Button>
+              {sessionId && (
+                <Button
+                  onClick={() => { loadDrawSummary({ silent: false }); setShowDrawDialog(true) }}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  <Trophy className="h-4 w-4 mr-2" />
+                  Draw Center
+                </Button>
+              )}
               {user.role !== 'user' && user.role !== 'guest' && (
                 <Button onClick={() => { loadAdminData(); setShowDashboard(true) }} className="bg-purple-600 hover:bg-purple-700">
                   <BarChart3 className="h-4 w-4 mr-2" />
@@ -1676,8 +1996,238 @@ function App() {
           </DialogContent>
         </Dialog>
 
-        {/* Dashboard Dialog */}
-        <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
+        {/* Draw Center Dialog */}
+        <Dialog
+          open={showDrawDialog}
+          onOpenChange={(open) => {
+            setShowDrawDialog(open)
+            if (open) {
+              loadDrawSummary({ silent: true })
+            } else {
+              setOverrideSelection('')
+            }
+          }}
+        >
+          <DialogContent className="max-w-3xl" dismissOnOverlayClick={false}>
+            <div className="flex max-h-[80vh] flex-col">
+              <DialogHeader>
+                <DialogTitle>Draw Center</DialogTitle>
+                <DialogDescription>Review ticket standings and manage the draw for this session.</DialogDescription>
+              </DialogHeader>
+              <div className="flex-1 overflow-y-auto pr-1">
+                {drawSummaryLoading ? (
+                  <div className="py-8 text-center text-gray-500">Loading draw summary...</div>
+                ) : drawSummary ? (
+                  <div className="space-y-4 pb-4">
+                    {isSessionDiscarded && (
+                      <Alert variant="destructive">
+                        <Ban className="h-4 w-4" />
+                        <AlertDescription>
+                          This session is currently discarded from draw calculations. Restore it to include ticket updates.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <ListOrdered className="h-4 w-4" />
+                            Ticket Summary
+                          </CardTitle>
+                          <CardDescription>
+                            Updated {drawSummary.generated_at ? new Date(drawSummary.generated_at).toLocaleString() : 'N/A'}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span>Total tickets</span>
+                              <span className="font-semibold">{Number(drawSummary.total_tickets ?? 0).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Eligible students</span>
+                              <span className="font-semibold">{drawSummary.eligible_count ?? 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Excluded records</span>
+                              <span className="font-semibold">{drawSummary.excluded_records ?? 0}</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Trophy className="h-4 w-4" />
+                            Current Winner
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {currentDrawInfo?.winner ? (
+                            <div className="space-y-2 text-sm">
+                              <div className="text-lg font-semibold">{currentDrawInfo.winner.display_name}</div>
+                              <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                                {currentDrawInfo.winner.grade && <span>Grade: {currentDrawInfo.winner.grade}</span>}
+                                {currentDrawInfo.winner.house && <span>House: {currentDrawInfo.winner.house}</span>}
+                                {currentDrawInfo.winner.clan && <span>Clan: {currentDrawInfo.winner.clan}</span>}
+                              </div>
+                              <div className="text-xs text-gray-500 flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {currentDrawInfo.winner_timestamp ? new Date(currentDrawInfo.winner_timestamp).toLocaleString() : 'Time not recorded'}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Tickets at selection: {Number(currentDrawInfo.tickets_at_selection ?? 0).toFixed(2)} • Chance: {Number(currentDrawInfo.probability_at_selection ?? 0).toFixed(2)}%
+                              </div>
+                              <div className="text-xs">
+                                Status:{' '}
+                                <Badge variant={currentDrawInfo.finalized ? 'default' : 'outline'}>{currentDrawInfo.finalized ? 'Finalized' : 'Awaiting Finalization'}</Badge>
+                              </div>
+                              {currentDrawInfo.override && (
+                                <div className="text-xs text-orange-600">Winner selected by superadmin override.</div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-500">No winner selected yet.</div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <ListOrdered className="h-4 w-4" />
+                          Top Candidates
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {drawSummary.top_candidates && drawSummary.top_candidates.length > 0 ? (
+                          <div className="space-y-2">
+                            {drawSummary.top_candidates.map((candidate, index) => (
+                              <div key={candidate.key} className="flex items-center justify-between rounded border p-2">
+                                <div>
+                                  <div className="font-medium">{candidate.display_name}</div>
+                                  <div className="text-xs text-gray-500">Tickets: {Number(candidate.tickets ?? 0).toFixed(2)} • Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</div>
+                                </div>
+                                <Badge variant="outline">#{index + 1}</Badge>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">No eligible students yet.</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <History className="h-4 w-4" />
+                          Draw History
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {currentDrawInfo?.history && currentDrawInfo.history.length > 0 ? (
+                          <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-gray-600">
+                            {currentDrawInfo.history
+                              .slice()
+                              .reverse()
+                              .map((entry, index) => (
+                                <div key={`${entry.timestamp}-${index}`} className="rounded border p-2">
+                                  <div className="font-semibold uppercase">{entry.action.replace(/_/g, ' ')}</div>
+                                  <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
+                                  {entry.winner_display_name && <div>Winner: {entry.winner_display_name}</div>}
+                                  {entry.total_tickets !== undefined && (
+                                    <div>Total tickets: {Number(entry.total_tickets ?? 0).toFixed(2)}</div>
+                                  )}
+                                  {entry.winner_tickets !== undefined && (
+                                    <div>Winner tickets: {Number(entry.winner_tickets ?? 0).toFixed(2)}</div>
+                                  )}
+                                  {entry.probability !== undefined && (
+                                    <div>Probability: {Number(entry.probability ?? 0).toFixed(2)}%</div>
+                                  )}
+                                  {entry.performed_by && <div>By: {entry.performed_by}</div>}
+                                </div>
+                              ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">No draw activity recorded yet.</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-gray-500">
+                    No draw data available yet. Record plate data to generate tickets.
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={startDrawProcess}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  disabled={drawActionLoading || !canManageDraw || isSessionDiscarded || (drawSummary?.total_tickets ?? 0) <= 0}
+                >
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  Start Draw
+                </Button>
+                <Button
+                  onClick={finalizeDrawWinner}
+                  variant="outline"
+                  disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner || currentDrawInfo.finalized}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Finalize Winner
+                </Button>
+                <Button
+                  onClick={resetDrawWinner}
+                  variant="outline"
+                  disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner}
+                >
+                  <RefreshCcw className="h-4 w-4 mr-2" />
+                  Reset Draw
+                </Button>
+            {canOverrideWinner && (
+              <>
+                <select
+                  className="border rounded px-2 py-2 text-sm"
+                  value={overrideSelection}
+                  onChange={(e) => setOverrideSelection(e.target.value)}
+                  disabled={drawActionLoading || !drawSummary?.candidates?.length}
+                >
+                  <option value="">Select winner override</option>
+                  {drawSummary?.candidates?.map((candidate) => (
+                    <option key={candidate.key} value={candidate.key}>
+                      {candidate.display_name} — {Number(candidate.tickets ?? 0).toFixed(2)} tickets
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  onClick={overrideDrawWinner}
+                  variant="outline"
+                  disabled={drawActionLoading || !overrideSelection}
+                >
+                  <ShieldCheck className="h-4 w-4 mr-2" />
+                  Override Winner
+                </Button>
+                <Button
+                  onClick={() => toggleDiscardState(!isSessionDiscarded)}
+                  variant={isSessionDiscarded ? 'default' : 'outline'}
+                  disabled={discardLoading}
+                >
+                  <Ban className="h-4 w-4 mr-2" />
+                  {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
+                </Button>
+              </>
+            )}
+          </div>
+              <Button onClick={() => setShowDrawDialog(false)} className="mt-4 w-full">
+                Close
+              </Button>
+            </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dashboard Dialog */}
+      <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
           <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Dashboard</DialogTitle>
@@ -1978,7 +2528,12 @@ function App() {
                 {adminSessions.map((adminSession) => (
                   <div key={adminSession.session_id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
-                      <div className="font-medium">{adminSession.session_name}</div>
+                      <div className="font-medium flex items-center gap-2">
+                        {adminSession.session_name}
+                        {adminSession.is_discarded && (
+                          <Badge variant="destructive" className="text-xs uppercase">Discarded</Badge>
+                        )}
+                      </div>
                       <div className="text-sm text-gray-500">
                         Owner: {adminSession.owner} • {adminSession.total_records} records • Faculty Clean: {adminSession.faculty_clean_count ?? 0}
                       </div>
@@ -2143,6 +2698,9 @@ function App() {
                 >
                     <div className="text-left">
                       <div className="font-medium">{session.session_name}</div>
+                      {session.is_discarded && (
+                        <Badge variant="destructive" className="mt-1 text-xs uppercase">Discarded</Badge>
+                      )}
                       <div className="text-sm text-gray-500">
                         {session.total_records > 0 ? (
                           <>
