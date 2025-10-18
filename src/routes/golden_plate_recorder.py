@@ -311,6 +311,7 @@ def compute_ticket_rollups():
     for session_id, info in ordered:
         ensure_session_structure(info)
         if info.get('is_discarded'):
+            total_records = len(info.get('clean_records', [])) + get_dirty_count(info) + len(info.get('red_records', []))
             summaries[session_id] = {
                 'session_id': session_id,
                 'session_name': info.get('session_name', ''),
@@ -323,13 +324,18 @@ def compute_ticket_rollups():
                 'top_candidates': [],
                 'eligible_count': 0,
                 'excluded_records': 0,
-                'generated_at': generated_at
+                'generated_at': generated_at,
+                'record_count': total_records
             }
             continue
+        clean_records = info.get('clean_records', [])
+        red_records = info.get('red_records', [])
+        dirty_count = get_dirty_count(info)
+        total_records = len(clean_records) + dirty_count + len(red_records)
         pre_session_keys = set(current_tickets.keys())
         present_keys = set()
         excluded_records = 0
-        for record in info.get('clean_records', []):
+        for record in clean_records:
             profile = build_profile_from_record(record)
             key = profile.get('key')
             if not key or not is_student_profile_eligible(profile):
@@ -338,7 +344,7 @@ def compute_ticket_rollups():
             present_keys.add(key)
             student_profiles[key] = profile
             current_tickets[key] = current_tickets.get(key, 0.0) + 1.0
-        for record in info.get('red_records', []):
+        for record in red_records:
             profile = build_profile_from_record(record)
             key = profile.get('key')
             if not key or not is_student_profile_eligible(profile):
@@ -385,7 +391,8 @@ def compute_ticket_rollups():
             'top_candidates': candidates[:3],
             'eligible_count': len(candidates),
             'excluded_records': excluded_records,
-            'generated_at': generated_at
+            'generated_at': generated_at,
+            'record_count': total_records
         }
         draw_info = info.get('draw_info', {})
         winner = draw_info.get('winner')
@@ -394,6 +401,80 @@ def compute_ticket_rollups():
             if winner_key:
                 current_tickets[winner_key] = 0.0
     return summaries
+
+def resolve_candidate_from_input(input_value, summary):
+    """Resolve a student key and profile from a free-form input value."""
+    if not input_value:
+        return None, None
+
+    cleaned_value = normalize_name(input_value)
+    if not cleaned_value:
+        return None, None
+
+    normalized_lower = cleaned_value.lower()
+    tickets_snapshot = summary.get('tickets_snapshot') or {}
+    if not tickets_snapshot:
+        return None, None
+
+    profiles = summary.get('profiles') or {}
+
+    # Match by student ID if available
+    for key, profile in profiles.items():
+        student_id = normalize_name(profile.get('student_id'))
+        if student_id and student_id.lower() == normalized_lower:
+            return key, profile.copy()
+
+    # Match by display name
+    for key, profile in profiles.items():
+        display_name = profile.get('display_name') or format_display_name(profile)
+        if normalize_name(display_name).lower() == normalized_lower:
+            return key, profile.copy()
+
+    # Direct key submission
+    if '|' in cleaned_value:
+        candidate_key = cleaned_value.lower()
+        if candidate_key in tickets_snapshot:
+            profile = profiles.get(candidate_key, {}).copy()
+            if not profile:
+                lookup_profile = student_lookup.get(candidate_key, {}).copy()
+                if lookup_profile:
+                    profile = lookup_profile
+            if profile:
+                return candidate_key, profile
+            return candidate_key, None
+
+    # Attempt to interpret as a name
+    parts = cleaned_value.split()
+    if len(parts) >= 2:
+        preferred = parts[0]
+        last = ' '.join(parts[1:])
+    elif len(parts) == 1:
+        preferred = parts[0]
+        last = ''
+    else:
+        return None, None
+
+    candidate_key = make_student_key(preferred, last)
+    if not candidate_key or candidate_key not in tickets_snapshot:
+        return None, None
+
+    profile = profiles.get(candidate_key, {}).copy()
+    if not profile:
+        lookup_profile = student_lookup.get(candidate_key, {}).copy()
+        profile = lookup_profile or {}
+
+    if not profile:
+        profile = {
+            'preferred_name': preferred.title(),
+            'last_name': last.title(),
+            'grade': '',
+            'advisor': '',
+            'house': '',
+            'clan': '',
+            'student_id': ''
+        }
+
+    return candidate_key, profile
 
 def get_ticket_summary_for_session(session_id):
     summaries = compute_ticket_rollups()
@@ -1729,6 +1810,11 @@ def get_draw_summary(session_id):
 
     ensure_session_structure(session_info)
     summary, _ = get_ticket_summary_for_session(session_id)
+    record_count = (
+        len(session_info.get('clean_records', []))
+        + get_dirty_count(session_info)
+        + len(session_info.get('red_records', []))
+    )
     if not summary:
         summary = {
             'session_id': session_id,
@@ -1741,7 +1827,8 @@ def get_draw_summary(session_id):
             'top_candidates': [],
             'eligible_count': 0,
             'excluded_records': 0,
-            'generated_at': datetime.now().isoformat()
+            'generated_at': datetime.now().isoformat(),
+            'record_count': record_count
         }
 
     response = {
@@ -1756,6 +1843,7 @@ def get_draw_summary(session_id):
         'candidates': summary.get('candidates', []),
         'ticket_snapshot': summary.get('tickets_snapshot', {}),
         'generated_at': summary.get('generated_at', datetime.now().isoformat()),
+        'record_count': summary.get('record_count', record_count),
         'draw_info': serialize_draw_info(session_info.get('draw_info', {}))
     }
     return jsonify(response), 200
@@ -1779,6 +1867,16 @@ def start_draw(session_id):
     summary, _ = get_ticket_summary_for_session(session_id)
     if not summary or summary.get('total_tickets', 0.0) <= 0:
         return jsonify({'error': 'No eligible tickets available for drawing'}), 400
+
+    record_count = summary.get('record_count')
+    if record_count is None:
+        record_count = (
+            len(session_info.get('clean_records', []))
+            + get_dirty_count(session_info)
+            + len(session_info.get('red_records', []))
+        )
+    if record_count <= 0:
+        return jsonify({'error': 'Session must have at least one recorded student before starting a draw'}), 400
 
     tickets_snapshot = summary.get('tickets_snapshot') or {}
     total_tickets = summary.get('total_tickets', 0.0)
@@ -1972,25 +2070,56 @@ def override_draw(session_id):
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
 
     data = request.get_json(silent=True) or {}
-    override_key = data.get('student_key')
-    if not override_key:
-        preferred = data.get('preferred_name')
-        last = data.get('last_name')
-        override_key = make_student_key(preferred, last)
-
-    if not override_key:
-        return jsonify({'error': 'student_key or preferred_name/last_name is required'}), 400
 
     summary, _ = get_ticket_summary_for_session(session_id)
     if not summary or summary.get('total_tickets', 0.0) <= 0:
         return jsonify({'error': 'No eligible tickets available for drawing'}), 400
 
+    record_count = summary.get('record_count')
+    if record_count is None:
+        record_count = (
+            len(session_info.get('clean_records', []))
+            + get_dirty_count(session_info)
+            + len(session_info.get('red_records', []))
+        )
+    if record_count <= 0:
+        return jsonify({'error': 'Session must have at least one recorded student before overriding the draw'}), 400
+
     tickets_snapshot = summary.get('tickets_snapshot') or {}
-    if override_key not in tickets_snapshot:
-        return jsonify({'error': 'Specified student is not eligible for this draw'}), 400
+    if not tickets_snapshot:
+        return jsonify({'error': 'No eligible tickets available for drawing'}), 400
 
     profiles = summary.get('profiles') or {}
-    profile = profiles.get(override_key, {}).copy()
+    raw_input_value = data.get('input_value')
+    override_key = str(data.get('student_key') or '').strip().lower()
+    profile = None
+
+    if override_key:
+        if override_key not in tickets_snapshot:
+            return jsonify({'error': 'Specified student is not eligible for this draw'}), 400
+        profile = profiles.get(override_key, {}).copy()
+    else:
+        preferred = data.get('preferred_name')
+        last = data.get('last_name')
+        if not (preferred or last or normalize_name(raw_input_value)):
+            return jsonify({'error': 'Provide a student name or ID to override the draw'}), 400
+        if preferred or last:
+            override_key = make_student_key(preferred, last)
+            if override_key and override_key in tickets_snapshot:
+                profile = profiles.get(override_key, {}).copy()
+
+        if (not override_key or override_key not in tickets_snapshot) and raw_input_value:
+            resolved_key, resolved_profile = resolve_candidate_from_input(raw_input_value, summary)
+            if resolved_key:
+                override_key = resolved_key
+                if isinstance(resolved_profile, dict):
+                    profile = resolved_profile.copy()
+
+        if not override_key or override_key not in tickets_snapshot:
+            return jsonify({'error': 'Specified student is not eligible for this draw'}), 400
+
+    if not profile:
+        profile = profiles.get(override_key, {}).copy()
     if not profile:
         preferred, last = split_student_key(override_key)
         profile = {
