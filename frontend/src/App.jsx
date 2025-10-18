@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -99,7 +99,9 @@ function App() {
   const [drawSummary, setDrawSummary] = useState(null)
   const [drawSummaryLoading, setDrawSummaryLoading] = useState(false)
   const [showDrawDialog, setShowDrawDialog] = useState(false)
-  const [overrideSelection, setOverrideSelection] = useState('')
+  const [overrideInput, setOverrideInput] = useState('')
+  const [overrideCandidate, setOverrideCandidate] = useState(null)
+  const [selectedCandidateKey, setSelectedCandidateKey] = useState(null)
   const [drawActionLoading, setDrawActionLoading] = useState(false)
   const [discardLoading, setDiscardLoading] = useState(false)
 
@@ -112,6 +114,15 @@ function App() {
   const currentDrawInfo = drawSummary?.draw_info ?? sessionStats.draw_info
   const canManageDraw = ['admin', 'superadmin'].includes(user?.role)
   const canOverrideWinner = user?.role === 'superadmin'
+  const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
+  const hasStudentRecords = studentRecordCount > 0
+
+  const selectedCandidate = useMemo(() => {
+    if (!drawSummary?.candidates?.length) {
+      return null
+    }
+    return drawSummary.candidates.find(candidate => candidate.key === selectedCandidateKey) ?? null
+  }, [drawSummary, selectedCandidateKey])
 
   // Check authentication status on load
   useEffect(() => {
@@ -273,6 +284,9 @@ function App() {
       setInviteCode('')
       setModal(null)
       setNotification(null)
+      setOverrideInput('')
+      setOverrideCandidate(null)
+      setSelectedCandidateKey(null)
       showMessage('Logged out successfully', 'info')
     } catch (error) {
       showMessage('Logout failed', 'error')
@@ -327,7 +341,9 @@ function App() {
           })
           setScanHistory([])
           setDrawSummary(null)
-          setOverrideSelection('')
+          setOverrideInput('')
+          setOverrideCandidate(null)
+          setSelectedCandidateKey(null)
           // Still try to load student names even without a session
           await loadStudentNames()
           // Still try to load teacher names even without a session
@@ -351,7 +367,9 @@ function App() {
       })
       setScanHistory([])
       setDrawSummary(null)
-      setOverrideSelection('')
+      setOverrideInput('')
+      setOverrideCandidate(null)
+      setSelectedCandidateKey(null)
     }
   }
 
@@ -714,10 +732,50 @@ function App() {
     }
   }
 
+  const updateDrawSummaryState = (summaryPayload, { resetOverrideInput = false } = {}) => {
+    if (!summaryPayload) {
+      setDrawSummary(null)
+      setSelectedCandidateKey(null)
+      setOverrideCandidate(null)
+      if (resetOverrideInput) {
+        setOverrideInput('')
+      }
+      return
+    }
+
+    setDrawSummary(summaryPayload)
+    const candidates = summaryPayload.candidates ?? []
+    const winnerKey = summaryPayload.draw_info?.winner?.key
+
+    setSelectedCandidateKey(prevKey => {
+      if (prevKey && candidates.some(candidate => candidate.key === prevKey)) {
+        return prevKey
+      }
+      if (winnerKey && candidates.some(candidate => candidate.key === winnerKey)) {
+        return winnerKey
+      }
+      return candidates[0]?.key ?? null
+    })
+
+    setOverrideCandidate(prevCandidate => {
+      if (!prevCandidate) return null
+      const match = candidates.find(candidate => candidate.key === prevCandidate.key)
+      return match || null
+    })
+
+    const overrideKey = overrideCandidate?.key
+    if (
+      resetOverrideInput ||
+      (overrideKey && !candidates.some(candidate => candidate.key === overrideKey))
+    ) {
+      setOverrideInput('')
+    }
+  }
+
   const loadDrawSummary = async ({ silent = false, sessionIdOverride = null, sessionNameOverride = null, isDiscarded = undefined } = {}) => {
     const targetSessionId = sessionIdOverride || sessionId
     if (!targetSessionId) {
-      setDrawSummary(null)
+      updateDrawSummaryState(null, { resetOverrideInput: true })
       return
     }
 
@@ -740,8 +798,7 @@ function App() {
           generated_at: data.generated_at ?? new Date().toISOString(),
           draw_info: data.draw_info ?? null
         }
-        setDrawSummary(summaryPayload)
-        setOverrideSelection(prev => (summaryPayload.candidates?.some(candidate => candidate.key === prev) ? prev : ''))
+        updateDrawSummaryState(summaryPayload)
         setSessionStats(prev => ({
           ...prev,
           is_discarded: summaryPayload.is_discarded,
@@ -785,8 +842,7 @@ function App() {
         generated_at: summaryData.generated_at ?? new Date().toISOString(),
         draw_info: data.draw_info ?? sessionStats.draw_info
       }
-      setDrawSummary(summaryPayload)
-      setOverrideSelection(prev => (summaryPayload.candidates?.some(candidate => candidate.key === prev) ? prev : ''))
+      updateDrawSummaryState(summaryPayload)
       setSessionStats(prev => ({
         ...prev,
         is_discarded: summaryPayload.is_discarded,
@@ -812,6 +868,11 @@ function App() {
     }
     if (!canManageDraw) {
       showMessage('You do not have permission to start a draw', 'error')
+      return
+    }
+    const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
+    if (studentRecordCount <= 0) {
+      showMessage('Add at least one student record before starting a draw', 'error')
       return
     }
     setDrawActionLoading(true)
@@ -909,16 +970,50 @@ function App() {
       showMessage('Only super admins can override the draw winner', 'error')
       return
     }
-    if (!overrideSelection) {
-      showMessage('Select a participant to set as the winner', 'error')
+
+    const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
+    if (studentRecordCount <= 0) {
+      showMessage('A draw cannot be managed until the session has student records', 'error')
       return
     }
+
+    const trimmedInput = overrideInput.trim()
+    if (!trimmedInput) {
+      showMessage('Enter a student name or ID to override the winner', 'error')
+      return
+    }
+
+    const eligibleCandidates = drawSummary?.candidates ?? []
+    if (!eligibleCandidates.length) {
+      showMessage('No eligible students are available for override', 'error')
+      return
+    }
+
+    let candidate = null
+    if (overrideCandidate && eligibleCandidates.some(entry => entry.key === overrideCandidate.key)) {
+      candidate = eligibleCandidates.find(entry => entry.key === overrideCandidate.key) || overrideCandidate
+    }
+
+    if (!candidate) {
+      const normalizedInput = trimmedInput.toLowerCase()
+      candidate = eligibleCandidates.find(entry => (entry.display_name || '').toLowerCase() === normalizedInput)
+        || eligibleCandidates.find(entry => String(entry.student_id || '').toLowerCase() === normalizedInput)
+    }
+
+    if (!candidate) {
+      showMessage('No eligible student matches the provided name or ID', 'error')
+      return
+    }
+
+    setOverrideCandidate(candidate)
+    setOverrideInput(candidate.display_name)
+
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/override`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_key: overrideSelection })
+        body: JSON.stringify({ student_key: candidate.key })
       })
       const data = await response.json()
       if (response.ok) {
@@ -2004,11 +2099,13 @@ function App() {
             if (open) {
               loadDrawSummary({ silent: true })
             } else {
-              setOverrideSelection('')
+              setOverrideInput('')
+              setOverrideCandidate(null)
+              setSelectedCandidateKey(null)
             }
           }}
         >
-          <DialogContent className="max-w-3xl" dismissOnOverlayClick={false}>
+          <DialogContent className="max-w-4xl sm:max-h-[85vh]" dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Draw Center</DialogTitle>
             <DialogDescription>Review ticket standings and manage the draw for this session.</DialogDescription>
@@ -2016,16 +2113,17 @@ function App() {
           {drawSummaryLoading ? (
             <div className="py-8 text-center text-gray-500">Loading draw summary...</div>
           ) : drawSummary ? (
-            <div className="space-y-4">
-              {isSessionDiscarded && (
-                <Alert variant="destructive">
-                  <Ban className="h-4 w-4" />
-                  <AlertDescription>
-                    This session is currently discarded from draw calculations. Restore it to include ticket updates.
-                  </AlertDescription>
-                </Alert>
-              )}
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <>
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                {isSessionDiscarded && (
+                  <Alert variant="destructive">
+                    <Ban className="h-4 w-4" />
+                    <AlertDescription>
+                      This session is currently discarded from draw calculations. Restore it to include ticket updates.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -2064,6 +2162,9 @@ function App() {
                     {currentDrawInfo?.winner ? (
                       <div className="space-y-2 text-sm">
                         <div className="text-lg font-semibold">{currentDrawInfo.winner.display_name}</div>
+                        {currentDrawInfo.winner.student_id && (
+                          <div className="text-xs text-gray-500">Student ID: {currentDrawInfo.winner.student_id}</div>
+                        )}
                         <div className="flex flex-wrap gap-2 text-xs text-gray-500">
                           {currentDrawInfo.winner.grade && <span>Grade: {currentDrawInfo.winner.grade}</span>}
                           {currentDrawInfo.winner.house && <span>House: {currentDrawInfo.winner.house}</span>}
@@ -2090,25 +2191,111 @@ function App() {
                   </CardContent>
                 </Card>
               </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ListOrdered className="h-4 w-4" />
+                      Top Candidates
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {drawSummary.top_candidates && drawSummary.top_candidates.length > 0 ? (
+                      <div className="space-y-2">
+                        {drawSummary.top_candidates.map((candidate, index) => {
+                          const isActive = selectedCandidateKey === candidate.key
+                          return (
+                            <button
+                              key={candidate.key}
+                              type="button"
+                              onClick={() => setSelectedCandidateKey(candidate.key)}
+                              className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left transition ${
+                                isActive ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div>
+                                <div className="font-medium">{candidate.display_name}</div>
+                                <div className="text-xs text-gray-500">
+                                  Tickets: {Number(candidate.tickets ?? 0).toFixed(2)} • Chance: {Number(candidate.probability ?? 0).toFixed(2)}%
+                                </div>
+                              </div>
+                              <Badge variant={isActive ? 'default' : 'outline'}>#{index + 1}</Badge>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">No eligible students yet.</div>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Selected Candidate Details
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {selectedCandidate ? (
+                      <div className="space-y-3 text-sm">
+                        <div>
+                          <div className="text-lg font-semibold">{selectedCandidate.display_name}</div>
+                          {selectedCandidate.student_id && (
+                            <div className="text-xs text-gray-500">Student ID: {selectedCandidate.student_id}</div>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 gap-1 text-xs text-gray-600 sm:grid-cols-2">
+                          {selectedCandidate.grade && <span>Grade: {selectedCandidate.grade}</span>}
+                          {selectedCandidate.advisor && <span>Advisor: {selectedCandidate.advisor}</span>}
+                          {selectedCandidate.house && <span>House: {selectedCandidate.house}</span>}
+                          {selectedCandidate.clan && <span>Clan: {selectedCandidate.clan}</span>}
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Tickets: {Number(selectedCandidate.tickets ?? 0).toFixed(2)} • Chance: {Number(selectedCandidate.probability ?? 0).toFixed(2)}%
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">Select a student to see their ticket details and student ID.</div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <ListOrdered className="h-4 w-4" />
-                    Top Candidates
+                    Eligible Students
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {drawSummary.top_candidates && drawSummary.top_candidates.length > 0 ? (
-                    <div className="space-y-2">
-                      {drawSummary.top_candidates.map((candidate, index) => (
-                        <div key={candidate.key} className="flex items-center justify-between rounded border p-2">
-                          <div>
-                            <div className="font-medium">{candidate.display_name}</div>
-                            <div className="text-xs text-gray-500">Tickets: {Number(candidate.tickets ?? 0).toFixed(2)} • Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</div>
-                          </div>
-                          <Badge variant="outline">#{index + 1}</Badge>
-                        </div>
-                      ))}
+                  {drawSummary.candidates && drawSummary.candidates.length > 0 ? (
+                    <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                      {drawSummary.candidates.map((candidate) => {
+                        const isActive = selectedCandidateKey === candidate.key
+                        return (
+                          <button
+                            key={candidate.key}
+                            type="button"
+                            onClick={() => setSelectedCandidateKey(candidate.key)}
+                            className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left transition ${
+                              isActive ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-medium">{candidate.display_name}</div>
+                              <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                                {candidate.student_id && <span>ID: {candidate.student_id}</span>}
+                                <span>Tickets: {Number(candidate.tickets ?? 0).toFixed(2)}</span>
+                                <span>Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</span>
+                              </div>
+                            </div>
+                            {candidate.key === currentDrawInfo?.winner?.key && (
+                              <Badge variant="outline" className="text-xs">Winner</Badge>
+                            )}
+                          </button>
+                        )
+                      })}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500">No eligible students yet.</div>
@@ -2151,7 +2338,8 @@ function App() {
                   )}
                 </CardContent>
               </Card>
-            </div>
+              </div>
+            </>
           ) : (
             <div className="py-8 text-center text-gray-500">
               No draw data available yet. Record plate data to generate tickets.
@@ -2161,7 +2349,13 @@ function App() {
             <Button
               onClick={startDrawProcess}
               className="bg-emerald-600 hover:bg-emerald-700"
-              disabled={drawActionLoading || !canManageDraw || isSessionDiscarded || (drawSummary?.total_tickets ?? 0) <= 0}
+              disabled={
+                drawActionLoading ||
+                !canManageDraw ||
+                isSessionDiscarded ||
+                !hasStudentRecords ||
+                (drawSummary?.total_tickets ?? 0) <= 0
+              }
             >
               <Wand2 className="h-4 w-4 mr-2" />
               Start Draw
@@ -2183,24 +2377,35 @@ function App() {
               Reset Draw
             </Button>
             {canOverrideWinner && (
-              <>
-                <select
-                  className="border rounded px-2 py-2 text-sm"
-                  value={overrideSelection}
-                  onChange={(e) => setOverrideSelection(e.target.value)}
-                  disabled={drawActionLoading || !drawSummary?.candidates?.length}
-                >
-                  <option value="">Select winner override</option>
-                  {drawSummary?.candidates?.map((candidate) => (
-                    <option key={candidate.key} value={candidate.key}>
-                      {candidate.display_name} — {Number(candidate.tickets ?? 0).toFixed(2)} tickets
-                    </option>
-                  ))}
-                </select>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
+                <div className="w-full sm:max-w-xs">
+                  <SearchableNameInput
+                    placeholder="Search eligible student (name or ID)"
+                    value={overrideInput}
+                    onChange={(value) => {
+                      setOverrideInput(value)
+                      setOverrideCandidate(null)
+                    }}
+                    onSelectName={(candidate) => {
+                      if (candidate) {
+                        setOverrideCandidate(candidate)
+                        setSelectedCandidateKey(candidate.key)
+                      }
+                    }}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        overrideDrawWinner()
+                      }
+                    }}
+                    names={drawSummary?.candidates ?? []}
+                    className="w-full"
+                  />
+                </div>
                 <Button
                   onClick={overrideDrawWinner}
                   variant="outline"
-                  disabled={drawActionLoading || !overrideSelection}
+                  disabled={drawActionLoading || !overrideInput.trim() || !hasStudentRecords}
                 >
                   <ShieldCheck className="h-4 w-4 mr-2" />
                   Override Winner
@@ -2213,7 +2418,7 @@ function App() {
                   <Ban className="h-4 w-4 mr-2" />
                   {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
                 </Button>
-              </>
+              </div>
             )}
           </div>
           <Button onClick={() => setShowDrawDialog(false)} className="mt-4 w-full">Close</Button>

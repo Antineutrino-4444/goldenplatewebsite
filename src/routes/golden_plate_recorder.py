@@ -1776,6 +1776,10 @@ def start_draw(session_id):
     if session_info.get('is_discarded'):
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
 
+    student_records_count = len(session_info.get('clean_records', [])) + len(session_info.get('red_records', []))
+    if student_records_count <= 0:
+        return jsonify({'error': 'No student records available for this session'}), 400
+
     summary, _ = get_ticket_summary_for_session(session_id)
     if not summary or summary.get('total_tickets', 0.0) <= 0:
         return jsonify({'error': 'No eligible tickets available for drawing'}), 400
@@ -1971,19 +1975,50 @@ def override_draw(session_id):
     if session_info.get('is_discarded'):
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
 
+    student_records_count = len(session_info.get('clean_records', [])) + len(session_info.get('red_records', []))
+    if student_records_count <= 0:
+        return jsonify({'error': 'No student records available for this session'}), 400
+
     data = request.get_json(silent=True) or {}
-    override_key = data.get('student_key')
-    if not override_key:
-        preferred = data.get('preferred_name')
-        last = data.get('last_name')
-        override_key = make_student_key(preferred, last)
-
-    if not override_key:
-        return jsonify({'error': 'student_key or preferred_name/last_name is required'}), 400
-
     summary, _ = get_ticket_summary_for_session(session_id)
     if not summary or summary.get('total_tickets', 0.0) <= 0:
         return jsonify({'error': 'No eligible tickets available for drawing'}), 400
+
+    candidates = summary.get('candidates') or []
+    override_key = data.get('student_key')
+    student_id = str(data.get('student_id', '')).strip()
+    input_value = str(data.get('input_value', '')).strip()
+    preferred = data.get('preferred_name')
+    last = data.get('last_name')
+
+    if not override_key and student_id:
+        normalized_id = student_id.lower()
+        match = next(
+            (candidate for candidate in candidates if str(candidate.get('student_id', '')).strip().lower() == normalized_id),
+            None
+        )
+        if match:
+            override_key = match.get('key')
+
+    if not override_key and input_value:
+        normalized_input = input_value.lower()
+        match = next(
+            (candidate for candidate in candidates if (candidate.get('display_name') or '').lower() == normalized_input),
+            None
+        )
+        if not match and input_value.isdigit():
+            match = next(
+                (candidate for candidate in candidates if str(candidate.get('student_id', '')).strip() == input_value),
+                None
+            )
+        if match:
+            override_key = match.get('key')
+
+    if not override_key and preferred and last:
+        override_key = make_student_key(preferred, last)
+
+    if not override_key:
+        return jsonify({'error': 'Unable to determine the override candidate from the provided input'}), 400
 
     tickets_snapshot = summary.get('tickets_snapshot') or {}
     if override_key not in tickets_snapshot:

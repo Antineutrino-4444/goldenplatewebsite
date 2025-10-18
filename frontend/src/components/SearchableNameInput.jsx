@@ -8,14 +8,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
 
-export function SearchableNameInput({ 
-  value = "", 
-  onChange, 
-  placeholder = "Enter name...", 
+export function SearchableNameInput({
+  value = "",
+  onChange,
+  onSelectName,
+  placeholder = "Enter name...",
   names = [],
   onKeyPress,
   className,
-  autoFocus = false 
+  autoFocus = false
 }) {
   const [open, setOpen] = React.useState(false)
   const [inputValue, setInputValue] = React.useState(value)
@@ -25,9 +26,11 @@ export function SearchableNameInput({
   const filteredNames = React.useMemo(() => {
     if (!inputValue.trim()) return names
     const searchTerm = inputValue.toLowerCase()
-    return names.filter(name => 
-      name.display_name.toLowerCase().includes(searchTerm)
-    )
+    return names.filter(name => {
+      const displayName = name.display_name?.toLowerCase() || ""
+      const studentId = String(name.student_id || "").toLowerCase()
+      return displayName.includes(searchTerm) || (studentId && studentId.includes(searchTerm))
+    })
   }, [names, inputValue])
 
   const handleInputChange = (e) => {
@@ -46,6 +49,7 @@ export function SearchableNameInput({
   const handleSelectName = (selectedName) => {
     setInputValue(selectedName.display_name)
     onChange?.(selectedName.display_name)
+    onSelectName?.(selectedName)
     setOpen(false)
     // Keep focus on input after selection
     setTimeout(() => {
