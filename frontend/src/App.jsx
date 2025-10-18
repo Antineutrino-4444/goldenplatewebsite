@@ -2287,9 +2287,7 @@ function App() {
                               .map((entry, index) => (
                                 <div key={`${entry.timestamp}-${index}`} className="rounded border p-2">
                                   <div className="font-semibold uppercase">{entry.action.replace(/_/g, ' ')}</div>
-                                  <div>
-                                    When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}
-                                  </div>
+                                  <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
                                   {entry.winner_display_name && <div>Winner: {entry.winner_display_name}</div>}
                                   {entry.total_tickets !== undefined && (
                                     <div>Total tickets: {Number(entry.total_tickets ?? 0).toFixed(2)}</div>
@@ -2309,8 +2307,8 @@ function App() {
                         )}
                       </CardContent>
                     </Card>
-                    </div>
                   </div>
+            </div>
           ) : (
             <div className="py-8 text-center text-gray-500">
               No draw data available yet. Record plate data to generate tickets.
