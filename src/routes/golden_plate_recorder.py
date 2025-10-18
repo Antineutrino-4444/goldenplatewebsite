@@ -5,6 +5,7 @@ import csv
 import io
 import os
 import json
+import random
 
 recorder_bp = Blueprint('recorder', __name__)
 
@@ -24,6 +25,53 @@ GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv_data.json")
 TEACHER_LIST_FILE = os.path.join(DATA_DIR, "teacher_list.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
+
+# Student lookup cache built from the global CSV data for fast eligibility checks
+student_lookup = {}
+
+secure_random = random.SystemRandom()
+
+def normalize_name(value):
+    return str(value or '').strip()
+
+def make_student_key(preferred_name, last_name):
+    preferred_norm = normalize_name(preferred_name).lower()
+    last_norm = normalize_name(last_name).lower()
+    if not preferred_norm and not last_norm:
+        return None
+    return f"{preferred_norm}|{last_norm}"
+
+def split_student_key(key):
+    if not key:
+        return '', ''
+    parts = key.split('|', 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return parts[0], ''
+
+def update_student_lookup():
+    global student_lookup
+    student_lookup = {}
+    data = []
+    if isinstance(global_csv_data, dict):
+        data = global_csv_data.get('data') or []
+    if not isinstance(data, list):
+        data = []
+    for row in data:
+        preferred = normalize_name(row.get('Preferred', ''))
+        last = normalize_name(row.get('Last', ''))
+        key = make_student_key(preferred, last)
+        if not key:
+            continue
+        student_lookup[key] = {
+            'preferred_name': preferred,
+            'last_name': last,
+            'grade': normalize_name(row.get('Grade', '')),
+            'advisor': normalize_name(row.get('Advisor', '')),
+            'house': normalize_name(row.get('House', '')),
+            'clan': normalize_name(row.get('Clan', '')),
+            'student_id': normalize_name(row.get('Student ID', ''))
+        }
 
 def load_data_from_file(file_path, default_data):
     """Load data from file or return default if file doesn't exist"""
@@ -75,6 +123,7 @@ invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
 
 # Global CSV storage (admin/super admin can upload, all users can use)
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, {})
+update_student_lookup()
 
 # Global teacher list storage (admin/super admin can upload, all users can use)
 global_teacher_data = load_data_from_file(TEACHER_LIST_FILE, {})
@@ -130,6 +179,29 @@ def ensure_session_structure(session_info):
             if not record.get('display_name'):
                 record['display_name'] = 'Dirty Plate'
 
+    # Ensure draw information structure exists
+    draw_info = session_info.get('draw_info')
+    if not isinstance(draw_info, dict):
+        draw_info = {}
+        session_info['draw_info'] = draw_info
+    draw_info.setdefault('winner', None)
+    draw_info.setdefault('winner_timestamp', None)
+    draw_info.setdefault('selected_by', None)
+    draw_info.setdefault('method', None)
+    draw_info.setdefault('finalized', False)
+    draw_info.setdefault('finalized_at', None)
+    draw_info.setdefault('finalized_by', None)
+    draw_info.setdefault('history', [])
+    draw_info.setdefault('override', False)
+    draw_info.setdefault('tickets_at_selection', None)
+    draw_info.setdefault('probability_at_selection', None)
+    draw_info.setdefault('eligible_pool_size', None)
+    session_info['draw_info'] = draw_info
+
+    if 'is_discarded' not in session_info:
+        session_info['is_discarded'] = False
+    if 'discard_metadata' not in session_info or not isinstance(session_info['discard_metadata'], dict):
+        session_info['discard_metadata'] = {}
 
 def get_dirty_count(session_info):
     """Helper to safely retrieve dirty count from a session."""
@@ -178,6 +250,202 @@ def save_global_csv_data():
 def save_global_teacher_data():
     """Save global teacher data to file"""
     return save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
+
+def format_display_name(profile):
+    preferred = normalize_name(profile.get('preferred_name') or profile.get('first_name', ''))
+    last = normalize_name(profile.get('last_name'))
+    if preferred and last:
+        return f"{preferred} {last}"
+    return preferred or last
+
+def build_profile_from_record(record):
+    preferred = normalize_name(record.get('preferred_name') or record.get('first_name'))
+    last = normalize_name(record.get('last_name'))
+    profile = {
+        'preferred_name': preferred,
+        'last_name': last,
+        'grade': normalize_name(record.get('grade')),
+        'advisor': normalize_name(record.get('advisor')),
+        'house': normalize_name(record.get('house')),
+        'clan': normalize_name(record.get('clan')),
+        'student_id': normalize_name(record.get('student_id'))
+    }
+    key = make_student_key(preferred, last)
+    profile['key'] = key
+    if key and key in student_lookup:
+        lookup = student_lookup[key]
+        for field in ['preferred_name', 'last_name', 'grade', 'advisor', 'house', 'clan', 'student_id']:
+            if not profile.get(field):
+                profile[field] = lookup.get(field, '')
+    profile['display_name'] = format_display_name(profile)
+    return profile
+
+def is_student_profile_eligible(profile):
+    key = profile.get('key')
+    if not key:
+        return False
+    if student_lookup:
+        return key in student_lookup
+    return True
+
+def safe_parse_datetime(value):
+    if not value:
+        return datetime.min
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        try:
+            return datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except Exception:
+            return datetime.min
+
+def compute_ticket_rollups():
+    generated_at = datetime.now().isoformat()
+    ordered = sorted(
+        session_data.items(),
+        key=lambda item: (safe_parse_datetime(item[1].get('created_at')), item[0])
+    )
+    summaries = {}
+    current_tickets = {}
+    student_profiles = {}
+    for session_id, info in ordered:
+        ensure_session_structure(info)
+        if info.get('is_discarded'):
+            summaries[session_id] = {
+                'session_id': session_id,
+                'session_name': info.get('session_name', ''),
+                'created_at': info.get('created_at'),
+                'is_discarded': True,
+                'tickets_snapshot': {},
+                'profiles': {},
+                'total_tickets': 0.0,
+                'candidates': [],
+                'top_candidates': [],
+                'eligible_count': 0,
+                'excluded_records': 0,
+                'generated_at': generated_at
+            }
+            continue
+        pre_session_keys = set(current_tickets.keys())
+        present_keys = set()
+        excluded_records = 0
+        for record in info.get('clean_records', []):
+            profile = build_profile_from_record(record)
+            key = profile.get('key')
+            if not key or not is_student_profile_eligible(profile):
+                excluded_records += 1
+                continue
+            present_keys.add(key)
+            student_profiles[key] = profile
+            current_tickets[key] = current_tickets.get(key, 0.0) + 1.0
+        for record in info.get('red_records', []):
+            profile = build_profile_from_record(record)
+            key = profile.get('key')
+            if not key or not is_student_profile_eligible(profile):
+                excluded_records += 1
+                continue
+            present_keys.add(key)
+            student_profiles[key] = profile
+            current_tickets[key] = 0.0
+        for key in pre_session_keys:
+            if key not in present_keys:
+                value = current_tickets.get(key, 0.0)
+                if value > 0:
+                    current_tickets[key] = value / 2.0
+        snapshot = {k: float(v) for k, v in current_tickets.items() if v > 0}
+        total_tickets = sum(snapshot.values())
+        profiles_snapshot = {k: student_profiles.get(k, {}).copy() for k in snapshot}
+        candidates = []
+        for key, value in sorted(snapshot.items(), key=lambda item: (-item[1], item[0])):
+            profile = profiles_snapshot.get(key, {})
+            display_name = profile.get('display_name') or format_display_name(profile)
+            candidate = {
+                'key': key,
+                'tickets': value,
+                'preferred_name': profile.get('preferred_name', ''),
+                'last_name': profile.get('last_name', ''),
+                'display_name': display_name,
+                'grade': profile.get('grade', ''),
+                'advisor': profile.get('advisor', ''),
+                'house': profile.get('house', ''),
+                'clan': profile.get('clan', ''),
+                'student_id': profile.get('student_id', ''),
+                'probability': (value / total_tickets * 100.0) if total_tickets > 0 else 0.0
+            }
+            candidates.append(candidate)
+        summaries[session_id] = {
+            'session_id': session_id,
+            'session_name': info.get('session_name', ''),
+            'created_at': info.get('created_at'),
+            'is_discarded': False,
+            'tickets_snapshot': snapshot,
+            'profiles': profiles_snapshot,
+            'total_tickets': total_tickets,
+            'candidates': candidates,
+            'top_candidates': candidates[:3],
+            'eligible_count': len(candidates),
+            'excluded_records': excluded_records,
+            'generated_at': generated_at
+        }
+        draw_info = info.get('draw_info', {})
+        winner = draw_info.get('winner')
+        if winner and draw_info.get('finalized'):
+            winner_key = winner.get('key')
+            if winner_key:
+                current_tickets[winner_key] = 0.0
+    return summaries
+
+def get_ticket_summary_for_session(session_id):
+    summaries = compute_ticket_rollups()
+    return summaries.get(session_id), summaries
+
+def serialize_draw_info(draw_info):
+    if not isinstance(draw_info, dict):
+        return {
+            'winner': None,
+            'winner_timestamp': None,
+            'selected_by': None,
+            'method': None,
+            'finalized': False,
+            'finalized_at': None,
+            'finalized_by': None,
+            'override': False,
+            'tickets_at_selection': None,
+            'probability_at_selection': None,
+            'eligible_pool_size': None,
+            'history': []
+        }
+    result = {
+        'winner_timestamp': draw_info.get('winner_timestamp'),
+        'selected_by': draw_info.get('selected_by'),
+        'method': draw_info.get('method'),
+        'finalized': draw_info.get('finalized', False),
+        'finalized_at': draw_info.get('finalized_at'),
+        'finalized_by': draw_info.get('finalized_by'),
+        'override': draw_info.get('override', False),
+        'tickets_at_selection': draw_info.get('tickets_at_selection'),
+        'probability_at_selection': draw_info.get('probability_at_selection'),
+        'eligible_pool_size': draw_info.get('eligible_pool_size'),
+        'history': list(draw_info.get('history', []))
+    }
+    winner = draw_info.get('winner')
+    if isinstance(winner, dict):
+        result['winner'] = {
+            'key': winner.get('key'),
+            'display_name': winner.get('display_name') or format_display_name(winner),
+            'preferred_name': winner.get('preferred_name'),
+            'last_name': winner.get('last_name'),
+            'grade': winner.get('grade'),
+            'advisor': winner.get('advisor'),
+            'house': winner.get('house'),
+            'clan': winner.get('clan'),
+            'student_id': winner.get('student_id'),
+            'tickets': winner.get('tickets'),
+            'probability': winner.get('probability')
+        }
+    else:
+        result['winner'] = None
+    return result
 
 def get_current_user():
     """Get current logged in user"""
@@ -570,7 +838,23 @@ def create_session():
         'red_records': [],
         'faculty_clean_records': [],
         'scan_history': [],
-        'is_public': is_public
+        'is_public': is_public,
+        'draw_info': {
+            'winner': None,
+            'winner_timestamp': None,
+            'selected_by': None,
+            'method': None,
+            'finalized': False,
+            'finalized_at': None,
+            'finalized_by': None,
+            'history': [],
+            'override': False,
+            'tickets_at_selection': None,
+            'probability_at_selection': None,
+            'eligible_pool_size': None
+        },
+        'is_discarded': False,
+        'discard_metadata': {}
     }
     
     # Save session data to file
@@ -620,7 +904,9 @@ def list_sessions():
             'clean_percentage': round(clean_percentage, 1),
             'dirty_percentage': round(dirty_percentage, 1),
             'is_public': data.get('is_public', True),
-            'delete_requested': pending
+            'delete_requested': pending,
+            'is_discarded': data.get('is_discarded', False),
+            'draw_info': serialize_draw_info(data.get('draw_info', {}))
         })
     
     return jsonify({
@@ -798,6 +1084,7 @@ def upload_csv():
             'uploaded_by': user_id,
             'uploaded_at': datetime.now().isoformat()
         }
+        update_student_lookup()
         
         # Save to persistent storage
         save_global_csv_data()
@@ -1275,7 +1562,9 @@ def get_session_status():
         'total_recorded': total_recorded,
         'clean_percentage': round(clean_percentage, 1),
         'dirty_percentage': round(dirty_percentage, 1),
-        'scan_history_count': len(data['scan_history'])
+        'scan_history_count': len(data['scan_history']),
+        'is_discarded': data.get('is_discarded', False),
+        'draw_info': serialize_draw_info(data.get('draw_info', {}))
     }), 200
 
 @recorder_bp.route('/session/history', methods=['GET'])
@@ -1424,6 +1713,399 @@ def export_detailed_csv():
     )
 
 
+
+@recorder_bp.route('/session/<session_id>/draw/summary', methods=['GET'])
+def get_draw_summary(session_id):
+    """Return draw summary for a session."""
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    if is_guest() and not session_info.get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
+
+    ensure_session_structure(session_info)
+    summary, _ = get_ticket_summary_for_session(session_id)
+    if not summary:
+        summary = {
+            'session_id': session_id,
+            'session_name': session_info.get('session_name', ''),
+            'created_at': session_info.get('created_at'),
+            'is_discarded': session_info.get('is_discarded', False),
+            'tickets_snapshot': {},
+            'total_tickets': 0.0,
+            'candidates': [],
+            'top_candidates': [],
+            'eligible_count': 0,
+            'excluded_records': 0,
+            'generated_at': datetime.now().isoformat()
+        }
+
+    response = {
+        'session_id': session_id,
+        'session_name': session_info.get('session_name', ''),
+        'created_at': session_info.get('created_at'),
+        'is_discarded': session_info.get('is_discarded', False),
+        'total_tickets': summary.get('total_tickets', 0.0),
+        'eligible_count': summary.get('eligible_count', 0),
+        'excluded_records': summary.get('excluded_records', 0),
+        'top_candidates': summary.get('top_candidates', []),
+        'candidates': summary.get('candidates', []),
+        'ticket_snapshot': summary.get('tickets_snapshot', {}),
+        'generated_at': summary.get('generated_at', datetime.now().isoformat()),
+        'draw_info': serialize_draw_info(session_info.get('draw_info', {}))
+    }
+    return jsonify(response), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/start', methods=['POST'])
+def start_draw(session_id):
+    """Start a weighted random draw for a session."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+
+    if session_info.get('is_discarded'):
+        return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    summary, _ = get_ticket_summary_for_session(session_id)
+    if not summary or summary.get('total_tickets', 0.0) <= 0:
+        return jsonify({'error': 'No eligible tickets available for drawing'}), 400
+
+    tickets_snapshot = summary.get('tickets_snapshot') or {}
+    total_tickets = summary.get('total_tickets', 0.0)
+    profiles = summary.get('profiles') or {}
+
+    cumulative = 0.0
+    target = secure_random.random() * total_tickets
+    chosen_key = None
+    for key, value in tickets_snapshot.items():
+        cumulative += value
+        if target <= cumulative:
+            chosen_key = key
+            break
+    if chosen_key is None and tickets_snapshot:
+        chosen_key = next(iter(tickets_snapshot))
+
+    if chosen_key is None:
+        return jsonify({'error': 'Unable to determine a winner'}), 400
+
+    profile = profiles.get(chosen_key, {}).copy()
+    if not profile:
+        preferred, last = split_student_key(chosen_key)
+        profile = {
+            'preferred_name': preferred.title(),
+            'last_name': last.title(),
+            'grade': '',
+            'advisor': '',
+            'house': '',
+            'clan': '',
+            'student_id': ''
+        }
+    display_name = profile.get('display_name') or format_display_name(profile)
+    winner_tickets = tickets_snapshot.get(chosen_key, 0.0)
+    probability = (winner_tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
+
+    winner_data = {
+        'key': chosen_key,
+        'preferred_name': profile.get('preferred_name', ''),
+        'last_name': profile.get('last_name', ''),
+        'display_name': display_name,
+        'grade': profile.get('grade', ''),
+        'advisor': profile.get('advisor', ''),
+        'house': profile.get('house', ''),
+        'clan': profile.get('clan', ''),
+        'student_id': profile.get('student_id', ''),
+        'tickets': winner_tickets,
+        'probability': probability
+    }
+
+    timestamp = datetime.now().isoformat()
+    draw_info = session_info['draw_info']
+    draw_info['winner'] = winner_data
+    draw_info['winner_timestamp'] = timestamp
+    draw_info['selected_by'] = session.get('user_id')
+    draw_info['method'] = 'random'
+    draw_info['finalized'] = False
+    draw_info['finalized_at'] = None
+    draw_info['finalized_by'] = None
+    draw_info['override'] = False
+    draw_info['tickets_at_selection'] = total_tickets
+    draw_info['probability_at_selection'] = probability
+    draw_info['eligible_pool_size'] = summary.get('eligible_count', 0)
+
+    history_entry = {
+        'action': 'random_draw',
+        'performed_by': session.get('user_id'),
+        'timestamp': timestamp,
+        'winner_key': chosen_key,
+        'winner_display_name': display_name,
+        'total_tickets': total_tickets,
+        'winner_tickets': winner_tickets,
+        'probability': probability
+    }
+    draw_info['history'].append(history_entry)
+
+    save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'winner': winner_data,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/finalize', methods=['POST'])
+def finalize_draw(session_id):
+    """Finalize the current draw winner for a session."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+    draw_info = session_info.get('draw_info', {})
+    winner = draw_info.get('winner')
+    if not winner:
+        return jsonify({'error': 'No winner to finalize'}), 400
+
+    if not draw_info.get('finalized'):
+        timestamp = datetime.now().isoformat()
+        draw_info['finalized'] = True
+        draw_info['finalized_at'] = timestamp
+        draw_info['finalized_by'] = session.get('user_id')
+        draw_info['history'].append({
+            'action': 'finalized',
+            'performed_by': session.get('user_id'),
+            'timestamp': timestamp,
+            'winner_key': winner.get('key'),
+            'winner_display_name': winner.get('display_name')
+        })
+        save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'finalized': True,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/reset', methods=['POST'])
+def reset_draw(session_id):
+    """Reset the draw for a session."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+    draw_info = session_info.get('draw_info', {})
+    winner = draw_info.get('winner')
+
+    if not winner:
+        return jsonify({'error': 'No draw to reset'}), 400
+
+    if draw_info.get('finalized') and not require_superadmin():
+        return jsonify({'error': 'Only super admins can reset a finalized draw'}), 403
+
+    timestamp = datetime.now().isoformat()
+    draw_info['history'].append({
+        'action': 'reset',
+        'performed_by': session.get('user_id'),
+        'timestamp': timestamp,
+        'previous_winner_key': winner.get('key'),
+        'previous_winner_display_name': winner.get('display_name')
+    })
+
+    draw_info['winner'] = None
+    draw_info['winner_timestamp'] = None
+    draw_info['selected_by'] = None
+    draw_info['method'] = None
+    draw_info['finalized'] = False
+    draw_info['finalized_at'] = None
+    draw_info['finalized_by'] = None
+    draw_info['override'] = False
+    draw_info['tickets_at_selection'] = None
+    draw_info['probability_at_selection'] = None
+    draw_info['eligible_pool_size'] = None
+
+    save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'reset': True,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/override', methods=['POST'])
+def override_draw(session_id):
+    """Allow a super admin to override the draw winner."""
+    if not require_superadmin():
+        return jsonify({'error': 'Super admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+
+    if session_info.get('is_discarded'):
+        return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    data = request.get_json(silent=True) or {}
+    override_key = data.get('student_key')
+    if not override_key:
+        preferred = data.get('preferred_name')
+        last = data.get('last_name')
+        override_key = make_student_key(preferred, last)
+
+    if not override_key:
+        return jsonify({'error': 'student_key or preferred_name/last_name is required'}), 400
+
+    summary, _ = get_ticket_summary_for_session(session_id)
+    if not summary or summary.get('total_tickets', 0.0) <= 0:
+        return jsonify({'error': 'No eligible tickets available for drawing'}), 400
+
+    tickets_snapshot = summary.get('tickets_snapshot') or {}
+    if override_key not in tickets_snapshot:
+        return jsonify({'error': 'Specified student is not eligible for this draw'}), 400
+
+    profiles = summary.get('profiles') or {}
+    profile = profiles.get(override_key, {}).copy()
+    if not profile:
+        preferred, last = split_student_key(override_key)
+        profile = {
+            'preferred_name': preferred.title(),
+            'last_name': last.title(),
+            'grade': '',
+            'advisor': '',
+            'house': '',
+            'clan': '',
+            'student_id': ''
+        }
+    display_name = profile.get('display_name') or format_display_name(profile)
+    winner_tickets = tickets_snapshot.get(override_key, 0.0)
+    total_tickets = summary.get('total_tickets', 0.0)
+    probability = (winner_tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
+
+    winner_data = {
+        'key': override_key,
+        'preferred_name': profile.get('preferred_name', ''),
+        'last_name': profile.get('last_name', ''),
+        'display_name': display_name,
+        'grade': profile.get('grade', ''),
+        'advisor': profile.get('advisor', ''),
+        'house': profile.get('house', ''),
+        'clan': profile.get('clan', ''),
+        'student_id': profile.get('student_id', ''),
+        'tickets': winner_tickets,
+        'probability': probability
+    }
+
+    timestamp = datetime.now().isoformat()
+    draw_info = session_info['draw_info']
+    draw_info['winner'] = winner_data
+    draw_info['winner_timestamp'] = timestamp
+    draw_info['selected_by'] = session.get('user_id')
+    draw_info['method'] = 'random'
+    draw_info['finalized'] = True
+    draw_info['finalized_at'] = timestamp
+    draw_info['finalized_by'] = session.get('user_id')
+    draw_info['override'] = True
+    draw_info['tickets_at_selection'] = summary.get('total_tickets', 0.0)
+    draw_info['probability_at_selection'] = probability
+    draw_info['eligible_pool_size'] = summary.get('eligible_count', 0)
+
+    draw_info['history'].append({
+        'action': 'override',
+        'performed_by': session.get('user_id'),
+        'timestamp': timestamp,
+        'winner_key': override_key,
+        'winner_display_name': display_name,
+        'winner_tickets': winner_tickets,
+        'probability': probability
+    })
+
+    save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'override': True,
+        'winner': winner_data,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/discard', methods=['POST'])
+def toggle_discard(session_id):
+    """Toggle whether a session is included in ticket calculations."""
+    if not require_superadmin():
+        return jsonify({'error': 'Super admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+
+    data = request.get_json(silent=True) or {}
+    discard = bool(data.get('discarded'))
+
+    timestamp = datetime.now().isoformat()
+    message = 'Session state unchanged'
+    if session_info.get('is_discarded') != discard:
+        session_info['is_discarded'] = discard
+        metadata = session_info.get('discard_metadata')
+        if not isinstance(metadata, dict):
+            metadata = {}
+        if discard:
+            metadata['discarded_by'] = session.get('user_id')
+            metadata['discarded_at'] = timestamp
+            message = 'Session discarded from draw calculations'
+        else:
+            metadata['restored_by'] = session.get('user_id')
+            metadata['restored_at'] = timestamp
+            message = 'Session reinstated for draw calculations'
+        session_info['discard_metadata'] = metadata
+        session_info['draw_info']['history'].append({
+            'action': 'session_discarded' if discard else 'session_restored',
+            'performed_by': session.get('user_id'),
+            'timestamp': timestamp
+        })
+        save_session_data()
+
+    summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'discarded': session_info.get('is_discarded', False),
+        'message': message,
+        'draw_info': serialize_draw_info(session_info.get('draw_info', {})),
+        'summary': summary,
+        'discard_metadata': session_info.get('discard_metadata', {})
+    }), 200
+
+
 @recorder_bp.route('/admin/overview', methods=['GET'])
 def admin_overview():
     """Get admin overview data"""
@@ -1450,7 +2132,9 @@ def admin_overview():
             'owner': session_info['owner'],
             'total_records': total_records,
             'created_at': session_info['created_at'],
-            'faculty_clean_count': len(session_info.get('faculty_clean_records', []))
+            'faculty_clean_count': len(session_info.get('faculty_clean_records', [])),
+            'is_discarded': session_info.get('is_discarded', False),
+            'draw_info': serialize_draw_info(session_info.get('draw_info', {}))
         })
     
     return jsonify({
