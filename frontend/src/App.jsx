@@ -2405,34 +2405,34 @@ function App() {
                 Session overview and system statistics
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                  <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
-                  <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
-                  <div className="text-xs text-yellow-600">
-                    {sessionStats.clean_percentage || 0}% (includes faculty)
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="rounded-lg bg-yellow-50 p-4 text-center">
+                    <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
+                    <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
+                    <div className="text-xs text-yellow-600">
+                      {sessionStats.clean_percentage || 0}% (includes faculty)
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-orange-50 p-4 text-center">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {sessionStats.combined_dirty_count ?? (sessionStats.dirty_count + sessionStats.red_count)}
+                    </div>
+                    <div className="text-sm text-orange-700">🍽️ Dirty Plates</div>
+                    <div className="text-xs text-orange-600">{sessionStats.dirty_percentage || 0}%</div>
+                  </div>
+                  <div className="rounded-lg bg-green-50 p-4 text-center">
+                    <div className="text-2xl font-bold text-green-600">{sessionStats.faculty_clean_count}</div>
+                    <div className="text-sm text-green-700">🧑‍🏫 Faculty Clean Plates</div>
                   </div>
                 </div>
-                <div className="text-center p-4 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{sessionStats.combined_dirty_count || (sessionStats.dirty_count + sessionStats.red_count)}</div>
-                  <div className="text-sm text-orange-700">🍽️ Dirty Plates</div>
-                  <div className="text-xs text-orange-600">
-                    {sessionStats.dirty_percentage || 0}%
+                <div className="rounded-lg bg-blue-50 p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {sessionStats.total_recorded ?? (sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count)}
                   </div>
-                </div>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">{sessionStats.faculty_clean_count}</div>
-                  <div className="text-sm text-green-700">🧑‍🏫 Faculty Clean Plates</div>
+                  <div className="text-sm text-blue-700">Total Records</div>
                 </div>
               </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">
-                  {sessionStats.total_recorded || (sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count)}
-                </div>
-                <div className="text-sm text-blue-700">Total Records</div>
-              </div>
-            </div>
             <Button onClick={() => setShowDashboard(false)} className="w-full">
               Close
             </Button>
