@@ -2009,182 +2009,179 @@ function App() {
           }}
         >
           <DialogContent className="max-w-3xl" dismissOnOverlayClick={false}>
-            <div className="flex max-h-[80vh] flex-col">
-              <DialogHeader>
-                <DialogTitle>Draw Center</DialogTitle>
-                <DialogDescription>Review ticket standings and manage the draw for this session.</DialogDescription>
-              </DialogHeader>
-              <div className="flex-1 overflow-y-auto pr-1">
-                {drawSummaryLoading ? (
-                  <div className="py-8 text-center text-gray-500">Loading draw summary...</div>
-                ) : drawSummary ? (
-                  <div className="space-y-4 pb-4">
-                    {isSessionDiscarded && (
-                      <Alert variant="destructive">
-                        <Ban className="h-4 w-4" />
-                        <AlertDescription>
-                          This session is currently discarded from draw calculations. Restore it to include ticket updates.
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            <ListOrdered className="h-4 w-4" />
-                            Ticket Summary
-                          </CardTitle>
-                          <CardDescription>
-                            Updated {drawSummary.generated_at ? new Date(drawSummary.generated_at).toLocaleString() : 'N/A'}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span>Total tickets</span>
-                              <span className="font-semibold">{Number(drawSummary.total_tickets ?? 0).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Eligible students</span>
-                              <span className="font-semibold">{drawSummary.eligible_count ?? 0}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Excluded records</span>
-                              <span className="font-semibold">{drawSummary.excluded_records ?? 0}</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            <Trophy className="h-4 w-4" />
-                            Current Winner
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          {currentDrawInfo?.winner ? (
-                            <div className="space-y-2 text-sm">
-                              <div className="text-lg font-semibold">{currentDrawInfo.winner.display_name}</div>
-                              <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                                {currentDrawInfo.winner.grade && <span>Grade: {currentDrawInfo.winner.grade}</span>}
-                                {currentDrawInfo.winner.house && <span>House: {currentDrawInfo.winner.house}</span>}
-                                {currentDrawInfo.winner.clan && <span>Clan: {currentDrawInfo.winner.clan}</span>}
-                              </div>
-                              <div className="text-xs text-gray-500 flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {currentDrawInfo.winner_timestamp ? new Date(currentDrawInfo.winner_timestamp).toLocaleString() : 'Time not recorded'}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                Tickets at selection: {Number(currentDrawInfo.tickets_at_selection ?? 0).toFixed(2)} • Chance: {Number(currentDrawInfo.probability_at_selection ?? 0).toFixed(2)}%
-                              </div>
-                              <div className="text-xs">
-                                Status:{' '}
-                                <Badge variant={currentDrawInfo.finalized ? 'default' : 'outline'}>{currentDrawInfo.finalized ? 'Finalized' : 'Awaiting Finalization'}</Badge>
-                              </div>
-                              {currentDrawInfo.override && (
-                                <div className="text-xs text-orange-600">Winner selected by superadmin override.</div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="text-sm text-gray-500">No winner selected yet.</div>
-                          )}
-                        </CardContent>
-                      </Card>
+          <DialogHeader>
+            <DialogTitle>Draw Center</DialogTitle>
+            <DialogDescription>Review ticket standings and manage the draw for this session.</DialogDescription>
+          </DialogHeader>
+          {drawSummaryLoading ? (
+            <div className="py-8 text-center text-gray-500">Loading draw summary...</div>
+          ) : drawSummary ? (
+            <div className="space-y-4">
+              {isSessionDiscarded && (
+                <Alert variant="destructive">
+                  <Ban className="h-4 w-4" />
+                  <AlertDescription>
+                    This session is currently discarded from draw calculations. Restore it to include ticket updates.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ListOrdered className="h-4 w-4" />
+                      Ticket Summary
+                    </CardTitle>
+                    <CardDescription>
+                      Updated {drawSummary.generated_at ? new Date(drawSummary.generated_at).toLocaleString() : 'N/A'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Total tickets</span>
+                        <span className="font-semibold">{Number(drawSummary.total_tickets ?? 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Eligible students</span>
+                        <span className="font-semibold">{drawSummary.eligible_count ?? 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Excluded records</span>
+                        <span className="font-semibold">{drawSummary.excluded_records ?? 0}</span>
+                      </div>
                     </div>
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <ListOrdered className="h-4 w-4" />
-                          Top Candidates
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {drawSummary.top_candidates && drawSummary.top_candidates.length > 0 ? (
-                          <div className="space-y-2">
-                            {drawSummary.top_candidates.map((candidate, index) => (
-                              <div key={candidate.key} className="flex items-center justify-between rounded border p-2">
-                                <div>
-                                  <div className="font-medium">{candidate.display_name}</div>
-                                  <div className="text-xs text-gray-500">Tickets: {Number(candidate.tickets ?? 0).toFixed(2)} • Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</div>
-                                </div>
-                                <Badge variant="outline">#{index + 1}</Badge>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-gray-500">No eligible students yet.</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Trophy className="h-4 w-4" />
+                      Current Winner
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {currentDrawInfo?.winner ? (
+                      <div className="space-y-2 text-sm">
+                        <div className="text-lg font-semibold">{currentDrawInfo.winner.display_name}</div>
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                          {currentDrawInfo.winner.grade && <span>Grade: {currentDrawInfo.winner.grade}</span>}
+                          {currentDrawInfo.winner.house && <span>House: {currentDrawInfo.winner.house}</span>}
+                          {currentDrawInfo.winner.clan && <span>Clan: {currentDrawInfo.winner.clan}</span>}
+                        </div>
+                        <div className="text-xs text-gray-500 flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {currentDrawInfo.winner_timestamp ? new Date(currentDrawInfo.winner_timestamp).toLocaleString() : 'Time not recorded'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Tickets at selection: {Number(currentDrawInfo.tickets_at_selection ?? 0).toFixed(2)} • Chance: {Number(currentDrawInfo.probability_at_selection ?? 0).toFixed(2)}%
+                        </div>
+                        <div className="text-xs">
+                          Status:{' '}
+                          <Badge variant={currentDrawInfo.finalized ? 'default' : 'outline'}>{currentDrawInfo.finalized ? 'Finalized' : 'Awaiting Finalization'}</Badge>
+                        </div>
+                        {currentDrawInfo.override && (
+                          <div className="text-xs text-orange-600">Winner selected by superadmin override.</div>
                         )}
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <History className="h-4 w-4" />
-                          Draw History
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {currentDrawInfo?.history && currentDrawInfo.history.length > 0 ? (
-                          <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-gray-600">
-                            {currentDrawInfo.history
-                              .slice()
-                              .reverse()
-                              .map((entry, index) => (
-                                <div key={`${entry.timestamp}-${index}`} className="rounded border p-2">
-                                  <div className="font-semibold uppercase">{entry.action.replace(/_/g, ' ')}</div>
-                                  <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
-                                  {entry.winner_display_name && <div>Winner: {entry.winner_display_name}</div>}
-                                  {entry.total_tickets !== undefined && (
-                                    <div>Total tickets: {Number(entry.total_tickets ?? 0).toFixed(2)}</div>
-                                  )}
-                                  {entry.winner_tickets !== undefined && (
-                                    <div>Winner tickets: {Number(entry.winner_tickets ?? 0).toFixed(2)}</div>
-                                  )}
-                                  {entry.probability !== undefined && (
-                                    <div>Probability: {Number(entry.probability ?? 0).toFixed(2)}%</div>
-                                  )}
-                                  {entry.performed_by && <div>By: {entry.performed_by}</div>}
-                                </div>
-                              ))}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-gray-500">No draw activity recorded yet.</div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
-                ) : (
-                  <div className="py-8 text-center text-gray-500">
-                    No draw data available yet. Record plate data to generate tickets.
-                  </div>
-                )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">No winner selected yet.</div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button
-                  onClick={startDrawProcess}
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                  disabled={drawActionLoading || !canManageDraw || isSessionDiscarded || (drawSummary?.total_tickets ?? 0) <= 0}
-                >
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Start Draw
-                </Button>
-                <Button
-                  onClick={finalizeDrawWinner}
-                  variant="outline"
-                  disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner || currentDrawInfo.finalized}
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Finalize Winner
-                </Button>
-                <Button
-                  onClick={resetDrawWinner}
-                  variant="outline"
-                  disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner}
-                >
-                  <RefreshCcw className="h-4 w-4 mr-2" />
-                  Reset Draw
-                </Button>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ListOrdered className="h-4 w-4" />
+                    Top Candidates
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {drawSummary.top_candidates && drawSummary.top_candidates.length > 0 ? (
+                    <div className="space-y-2">
+                      {drawSummary.top_candidates.map((candidate, index) => (
+                        <div key={candidate.key} className="flex items-center justify-between rounded border p-2">
+                          <div>
+                            <div className="font-medium">{candidate.display_name}</div>
+                            <div className="text-xs text-gray-500">Tickets: {Number(candidate.tickets ?? 0).toFixed(2)} • Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</div>
+                          </div>
+                          <Badge variant="outline">#{index + 1}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">No eligible students yet.</div>
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="h-4 w-4" />
+                    Draw History
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {currentDrawInfo?.history && currentDrawInfo.history.length > 0 ? (
+                    <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-gray-600">
+                      {currentDrawInfo.history
+                        .slice()
+                        .reverse()
+                        .map((entry, index) => (
+                          <div key={`${entry.timestamp}-${index}`} className="rounded border p-2">
+                            <div className="font-semibold uppercase">{entry.action.replace(/_/g, ' ')}</div>
+                            <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
+                            {entry.winner_display_name && <div>Winner: {entry.winner_display_name}</div>}
+                            {entry.total_tickets !== undefined && (
+                              <div>Total tickets: {Number(entry.total_tickets ?? 0).toFixed(2)}</div>
+                            )}
+                            {entry.winner_tickets !== undefined && (
+                              <div>Winner tickets: {Number(entry.winner_tickets ?? 0).toFixed(2)}</div>
+                            )}
+                            {entry.probability !== undefined && (
+                              <div>Probability: {Number(entry.probability ?? 0).toFixed(2)}%</div>
+                            )}
+                            {entry.performed_by && <div>By: {entry.performed_by}</div>}
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">No draw activity recorded yet.</div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-gray-500">
+              No draw data available yet. Record plate data to generate tickets.
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button
+              onClick={startDrawProcess}
+              className="bg-emerald-600 hover:bg-emerald-700"
+              disabled={drawActionLoading || !canManageDraw || isSessionDiscarded || (drawSummary?.total_tickets ?? 0) <= 0}
+            >
+              <Wand2 className="h-4 w-4 mr-2" />
+              Start Draw
+            </Button>
+            <Button
+              onClick={finalizeDrawWinner}
+              variant="outline"
+              disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner || currentDrawInfo.finalized}
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Finalize Winner
+            </Button>
+            <Button
+              onClick={resetDrawWinner}
+              variant="outline"
+              disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner}
+            >
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              Reset Draw
+            </Button>
             {canOverrideWinner && (
               <>
                 <select
@@ -2219,10 +2216,7 @@ function App() {
               </>
             )}
           </div>
-              <Button onClick={() => setShowDrawDialog(false)} className="mt-4 w-full">
-                Close
-              </Button>
-            </div>
+          <Button onClick={() => setShowDrawDialog(false)} className="mt-4 w-full">Close</Button>
         </DialogContent>
       </Dialog>
 
