@@ -16,13 +16,35 @@ const API_BASE = '/api'
 
 const normalizeName = (value) => (value ?? '').toString().trim()
 
-const makeStudentKey = (preferred, last) => {
+const makeStudentKey = (preferred, last, studentId = '') => {
+  const studentIdNorm = normalizeName(studentId).toLowerCase()
+  if (studentIdNorm) {
+    return `id:${studentIdNorm}`
+  }
   const preferredNorm = normalizeName(preferred).toLowerCase()
   const lastNorm = normalizeName(last).toLowerCase()
   if (!preferredNorm && !lastNorm) {
     return null
   }
   return `${preferredNorm}|${lastNorm}`
+}
+
+const sanitizeSelection = (entry) => {
+  if (!entry) return null
+  const preferred = normalizeName(entry.preferred ?? entry.preferred_name)
+  const last = normalizeName(entry.last ?? entry.last_name)
+  const studentId = normalizeName(entry.student_id)
+  const existingKey = entry.key ? String(entry.key).toLowerCase() : null
+  const key = existingKey || makeStudentKey(preferred, last, studentId)
+  return {
+    ...entry,
+    preferred,
+    preferred_name: entry.preferred_name ?? preferred,
+    last,
+    last_name: entry.last_name ?? last,
+    student_id: studentId,
+    key
+  }
 }
 
 function App() {
@@ -105,6 +127,7 @@ function App() {
   const [teacherPreviewData, setTeacherPreviewData] = useState(null)
   const [teacherPreviewPage, setTeacherPreviewPage] = useState(1)
   const [teacherPreviewLoading, setTeacherPreviewLoading] = useState(false)
+  const [popupSelectedEntry, setPopupSelectedEntry] = useState(null)
 
   // Draw center state
   const [drawSummary, setDrawSummary] = useState(null)
@@ -144,7 +167,7 @@ function App() {
       }
     }
     for (const entry of studentNames) {
-      const key = entry.key || makeStudentKey(entry.preferred, entry.last)
+      const key = entry.key || makeStudentKey(entry.preferred || entry.preferred_name, entry.last || entry.last_name, entry.student_id)
       if (!key) continue
       if (combined.has(key)) {
         const existing = combined.get(key)
@@ -152,18 +175,18 @@ function App() {
           ...entry,
           ...existing,
           key,
-          display_name: existing.display_name || entry.display_name || `${normalizeName(entry.preferred)} ${normalizeName(entry.last)}`.trim(),
-          preferred_name: existing.preferred_name || entry.preferred || '',
-          last_name: existing.last_name || entry.last || '',
+          display_name: existing.display_name || entry.display_name || `${normalizeName(entry.preferred || entry.preferred_name)} ${normalizeName(entry.last || entry.last_name)}`.trim(),
+          preferred_name: existing.preferred_name || entry.preferred || entry.preferred_name || '',
+          last_name: existing.last_name || entry.last || entry.last_name || '',
           student_id: existing.student_id || entry.student_id || ''
         })
       } else {
         combined.set(key, {
           ...entry,
           key,
-          display_name: entry.display_name || `${normalizeName(entry.preferred)} ${normalizeName(entry.last)}`.trim(),
-          preferred_name: entry.preferred || '',
-          last_name: entry.last || '',
+          display_name: entry.display_name || `${normalizeName(entry.preferred || entry.preferred_name)} ${normalizeName(entry.last || entry.last_name)}`.trim(),
+          preferred_name: entry.preferred || entry.preferred_name || '',
+          last_name: entry.last || entry.last_name || '',
           student_id: entry.student_id || ''
         })
       }
@@ -637,21 +660,54 @@ function App() {
     }
   }
 
-  const recordEntry = async (category, inputValue = '') => {
+  const recordEntry = async (category, inputValue = '', selectedEntry = null) => {
     const trimmedValue = inputValue.trim()
+    const normalizedSelection = selectedEntry || null
 
-    if (category !== 'dirty' && !trimmedValue) {
-      if (category === 'faculty') {
-        showMessage('Please enter a faculty name', 'error')
-      } else {
-        showMessage('Please enter a Student ID or Name', 'error')
+    const selectedStudentId = normalizedSelection
+      ? normalizeName(normalizedSelection.student_id || normalizedSelection.studentId)
+      : ''
+    const selectedPreferred = normalizedSelection
+      ? normalizeName(normalizedSelection.preferred_name ?? normalizedSelection.preferred)
+      : ''
+    const selectedLast = normalizedSelection
+      ? normalizeName(normalizedSelection.last_name ?? normalizedSelection.last)
+      : ''
+
+    if (category !== 'dirty') {
+      const hasReference = Boolean(
+        trimmedValue || selectedStudentId || (selectedPreferred && selectedLast)
+      )
+      if (!hasReference) {
+        if (category === 'faculty') {
+          showMessage('Please enter a faculty name', 'error')
+        } else {
+          showMessage('Please enter a Student ID or Name', 'error')
+        }
+        return
       }
-      return
     }
 
     setIsLoading(true)
     try {
       const payload = category === 'dirty' ? {} : { input_value: trimmedValue }
+
+      if (category !== 'dirty' && normalizedSelection) {
+        if (selectedStudentId) {
+          payload.student_id = selectedStudentId
+        }
+        if (selectedPreferred) {
+          payload.preferred_name = selectedPreferred
+        }
+        if (selectedLast) {
+          payload.last_name = selectedLast
+        }
+        const derivedKey = normalizedSelection.key || makeStudentKey(selectedPreferred, selectedLast, selectedStudentId)
+        if (derivedKey) {
+          payload.student_key = derivedKey
+        }
+      }
+
       const response = await fetch(`${API_BASE}/record/${category}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -682,6 +738,7 @@ function App() {
         setShowDirtyDialog(false)
         setShowRedDialog(false)
         setShowFacultyDialog(false)
+        setPopupSelectedEntry(null)
 
         // Refresh session status
         await refreshSessionStatus()
@@ -748,17 +805,20 @@ function App() {
         const data = await response.json()
         if (data.status === 'success') {
           const sanitizedNames = (data.names || []).map((name) => {
-            const preferred = normalizeName(name.preferred)
-            const last = normalizeName(name.last)
-            const key = name.key || makeStudentKey(preferred, last)
+            const preferred = normalizeName(name.preferred ?? name.preferred_name)
+            const last = normalizeName(name.last ?? name.last_name)
+            const studentId = normalizeName(name.student_id)
+            const key = (name.key && normalizeName(name.key).toLowerCase()) || makeStudentKey(preferred, last, studentId)
             const displayNameRaw = name.display_name || `${preferred} ${last}`.trim()
             const display_name = displayNameRaw || preferred || last
             return {
               ...name,
               preferred,
+              preferred_name: name.preferred_name ?? preferred,
               last,
+              last_name: name.last_name ?? last,
               key,
-              student_id: normalizeName(name.student_id),
+              student_id: studentId,
               display_name
             }
           })
@@ -1207,6 +1267,7 @@ function App() {
 
   const handleCategoryClick = (category) => {
     setPopupInputValue('')
+    setPopupSelectedEntry(null)
     if (category === 'clean') setShowCleanDialog(true)
     else if (category === 'dirty') setShowDirtyDialog(true)
     else if (category === 'red') setShowRedDialog(true)
@@ -1215,7 +1276,7 @@ function App() {
 
   const handlePopupSubmit = (category) => {
     if (category === 'dirty') recordEntry(category)
-    else recordEntry(category, popupInputValue)
+    else recordEntry(category, popupInputValue, popupSelectedEntry)
   }
 
   const handleKeyPress = (e, category) => {
@@ -1987,15 +2048,18 @@ function App() {
                         <SearchableNameInput
                           placeholder="Search student (name or ID)"
                           value={overrideInput}
-                          onChange={(value) => {
+                          onChange={(value, meta) => {
                             setOverrideInput(value)
-                            setOverrideCandidate(null)
+                            if (!meta || meta.source !== 'selection') {
+                              setOverrideCandidate(null)
+                            }
                           }}
                           onSelectName={(candidate) => {
                             if (candidate) {
-                              setOverrideCandidate(candidate)
-                              if (drawSummary?.candidates?.some(entry => entry.key === candidate.key)) {
-                                setSelectedCandidateKey(candidate.key)
+                              const sanitized = sanitizeSelection(candidate)
+                              setOverrideCandidate(sanitized)
+                              if (sanitized?.key && drawSummary?.candidates?.some(entry => entry.key === sanitized.key)) {
+                                setSelectedCandidateKey(sanitized.key)
                               }
                             }
                           }}
@@ -2331,13 +2395,22 @@ function App() {
               <SearchableNameInput
                 placeholder="Student ID or Name (e.g., 12345 or John Smith)"
                 value={popupInputValue}
-                onChange={setPopupInputValue}
+                onChange={(value, meta) => {
+                  setPopupInputValue(value)
+                  if (!meta || meta.source !== 'selection') {
+                    setPopupSelectedEntry(null)
+                  }
+                }}
+                onSelectName={(entry) => {
+                  const sanitized = sanitizeSelection(entry)
+                  setPopupSelectedEntry(sanitized)
+                }}
                 onKeyPress={(e) => handleKeyPress(e, 'clean')}
                 names={studentNames}
                 autoFocus
               />
               <div className="flex gap-2">
-                <Button onClick={() => setShowCleanDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowCleanDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button 
@@ -2365,7 +2438,7 @@ function App() {
                 This action adds one to the dirty plate count. No student information is stored.
               </p>
               <div className="flex gap-2">
-                <Button onClick={() => setShowDirtyDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowDirtyDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button
@@ -2392,13 +2465,22 @@ function App() {
               <SearchableNameInput
                 placeholder="Faculty Name (e.g., Alex Morgan)"
                 value={popupInputValue}
-                onChange={setPopupInputValue}
+                onChange={(value, meta) => {
+                  setPopupInputValue(value)
+                  if (!meta || meta.source !== 'selection') {
+                    setPopupSelectedEntry(null)
+                  }
+                }}
+                onSelectName={(entry) => {
+                  const sanitized = sanitizeSelection(entry)
+                  setPopupSelectedEntry(sanitized)
+                }}
                 onKeyPress={(e) => handleKeyPress(e, 'faculty')}
                 names={teacherNames}
                 autoFocus
               />
               <div className="flex gap-2">
-                <Button onClick={() => setShowFacultyDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowFacultyDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button
@@ -2425,13 +2507,22 @@ function App() {
               <SearchableNameInput
                 placeholder="Student ID or Name (e.g., 12345 or John Smith)"
                 value={popupInputValue}
-                onChange={setPopupInputValue}
+                onChange={(value, meta) => {
+                  setPopupInputValue(value)
+                  if (!meta || meta.source !== 'selection') {
+                    setPopupSelectedEntry(null)
+                  }
+                }}
+                onSelectName={(entry) => {
+                  const sanitized = sanitizeSelection(entry)
+                  setPopupSelectedEntry(sanitized)
+                }}
                 onKeyPress={(e) => handleKeyPress(e, 'red')}
                 names={studentNames}
                 autoFocus
               />
               <div className="flex gap-2">
-                <Button onClick={() => setShowRedDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowRedDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button 
