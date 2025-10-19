@@ -497,18 +497,22 @@ function App() {
     return []
   }
 
-  const switchSession = async (sessionId) => {
+  const switchSession = async (targetSessionId) => {
     setIsLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/session/switch/${sessionId}`, {
+      const response = await fetch(`${API_BASE}/session/switch/${targetSessionId}`, {
         method: 'POST'
       })
 
       const data = await response.json()
       if (response.ok) {
-        setSessionId(sessionId)
+        setSessionId(targetSessionId)
         setSessionName(data.session_name)
-        await refreshSessionStatus()
+        await refreshSessionStatus({
+          sessionIdOverride: data.session_id ?? targetSessionId,
+          sessionNameOverride: data.session_name,
+          isDiscardedOverride: data.is_discarded
+        })
         await loadStudentNames()
         await loadTeacherNames()
         showMessage(`Switched to "${data.session_name}"`, 'success')
@@ -756,7 +760,15 @@ function App() {
     }
   }
 
-  const refreshSessionStatus = async () => {
+  const refreshSessionStatus = async ({
+    sessionIdOverride = null,
+    sessionNameOverride = null,
+    isDiscardedOverride = undefined
+  } = {}) => {
+    let nextSessionId = sessionIdOverride ?? sessionId
+    let nextSessionName = sessionNameOverride ?? sessionName
+    let nextIsDiscarded =
+      isDiscardedOverride !== undefined ? isDiscardedOverride : sessionStats.is_discarded
     try {
       const response = await fetch(`${API_BASE}/session/status`)
       if (response.ok) {
@@ -774,16 +786,26 @@ function App() {
           is_discarded: data.is_discarded ?? prev.is_discarded,
           draw_info: data.draw_info ?? prev.draw_info
         }))
+        nextSessionId = data.session_id ?? nextSessionId
+        nextSessionName = data.session_name ?? nextSessionName
+        if (data.is_discarded !== undefined) {
+          nextIsDiscarded = data.is_discarded
+        }
       }
     } catch (error) {
       console.error('Failed to refresh session status:', error)
     }
-    
+
     // Also load scan history and student names
     await loadScanHistory()
     await loadStudentNames()
     await loadTeacherNames()
-    await loadDrawSummary({ silent: true })
+    await loadDrawSummary({
+      silent: true,
+      sessionIdOverride: nextSessionId,
+      sessionNameOverride: nextSessionName,
+      isDiscarded: nextIsDiscarded
+    })
   }
 
   const loadScanHistory = async () => {
