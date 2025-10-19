@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { SearchableNameInput } from '@/components/SearchableNameInput.jsx'
 import Modal from '@/components/Modal.jsx'
 import { createPortal } from 'react-dom'
-import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle, Trophy, Wand2, CheckCircle, RefreshCcw, ShieldCheck, Ban, Clock, History, ListOrdered } from 'lucide-react'
+import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle, Trophy, Wand2, CheckCircle, RefreshCcw, ShieldCheck, Ban, Clock, History, ListOrdered, ChevronDown, ChevronUp } from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
@@ -114,6 +114,7 @@ function App() {
   const [selectedCandidateKey, setSelectedCandidateKey] = useState(null)
   const [drawActionLoading, setDrawActionLoading] = useState(false)
   const [discardLoading, setDiscardLoading] = useState(false)
+  const [isDrawCenterCollapsed, setIsDrawCenterCollapsed] = useState(false)
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -1710,21 +1711,6 @@ function App() {
                 <Users className="h-4 w-4 mr-2" />
                 Switch Session
               </Button>
-              {sessionId && (
-                <Button
-                  onClick={() => {
-                    loadDrawSummary({ silent: false })
-                    const section = document.getElementById('draw-center-section')
-                    if (section) {
-                      section.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <Trophy className="h-4 w-4 mr-2" />
-                  Draw Center
-                </Button>
-              )}
               {user.role !== 'user' && user.role !== 'guest' && (
                 <Button onClick={() => { loadAdminData(); setShowDashboard(true) }} className="bg-purple-600 hover:bg-purple-700">
                   <BarChart3 className="h-4 w-4 mr-2" />
@@ -1881,26 +1867,50 @@ function App() {
                   <Trophy className="h-5 w-5" />
                   Draw Center
                 </CardTitle>
-                <Button
-                  onClick={() => loadDrawSummary({ silent: false })}
-                  variant="outline"
-                  size="sm"
-                  disabled={drawSummaryLoading}
-                >
-                  <RefreshCcw className="h-4 w-4 mr-2" />
-                  Refresh
-                </Button>
-              </div>
-              <CardDescription>
-                Review ticket standings and manage the draw for this session.
-              </CardDescription>
-              {drawSummary?.generated_at && (
-                <div className="text-xs text-gray-500">
-                  Updated {new Date(drawSummary.generated_at).toLocaleString()}
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => loadDrawSummary({ silent: false })}
+                    variant="outline"
+                    size="sm"
+                    disabled={drawSummaryLoading}
+                  >
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                  <Button
+                    onClick={() => setIsDrawCenterCollapsed((prev) => !prev)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {isDrawCenterCollapsed ? (
+                      <>
+                        <ChevronDown className="h-4 w-4 mr-2" />
+                        Expand
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="h-4 w-4 mr-2" />
+                        Collapse
+                      </>
+                    )}
+                  </Button>
                 </div>
+              </div>
+              {!isDrawCenterCollapsed && (
+                <>
+                  <CardDescription>
+                    Review ticket standings and manage the draw for this session.
+                  </CardDescription>
+                  {drawSummary?.generated_at && (
+                    <div className="text-xs text-gray-500">
+                      Updated {new Date(drawSummary.generated_at).toLocaleString()}
+                    </div>
+                  )}
+                </>
               )}
             </CardHeader>
-            <CardContent>
+            {!isDrawCenterCollapsed && (
+              <CardContent>
               {drawSummaryLoading ? (
                 <div className="py-8 text-center text-gray-500">Loading draw summary...</div>
               ) : drawSummary ? (
@@ -2203,7 +2213,8 @@ function App() {
                   No draw data available yet. Record plate data to generate tickets.
                 </div>
               )}
-            </CardContent>
+              </CardContent>
+            )}
           </Card>
         </div>
 

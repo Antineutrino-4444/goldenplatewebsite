@@ -1419,6 +1419,7 @@ def record_student(category):
     advisor = ""
     house = ""
     clan = ""
+    student_id = ""
 
     if csv_data and csv_data['data']:
         for row in csv_data['data']:
@@ -1459,6 +1460,10 @@ def record_student(category):
         advisor = str(student_record.get('Advisor', '') or '').strip()
         house = str(student_record.get('House', '') or '').strip()
         clan = str(student_record.get('Clan', '') or '').strip()
+        student_id = str(student_record.get('Student ID', '') or '').strip()
+
+    if not student_id and student_record:
+        student_id = str(student_record.get('Student ID', '') or '').strip()
 
     preferred_name = preferred_name or ""
     last_name = last_name or ""
@@ -1466,12 +1471,51 @@ def record_student(category):
     advisor = advisor or ""
     house = house or ""
     clan = clan or ""
+    student_id = student_id or ""
 
     student_records = session_info['clean_records'] + session_info['red_records']
 
+    def normalize_field(value):
+        return str(value or '').strip().lower()
+
+    target_student_id = normalize_field(student_id)
+    target_preferred = normalize_field(preferred_name)
+    target_last = normalize_field(last_name)
+    target_grade = normalize_field(grade)
+    target_advisor = normalize_field(advisor)
+    target_house = normalize_field(house)
+    target_clan = normalize_field(clan)
+
+    def is_duplicate(existing_record):
+        existing_student_id = normalize_field(existing_record.get('student_id'))
+
+        if target_student_id and existing_student_id:
+            return existing_student_id == target_student_id
+
+        if target_student_id and not existing_student_id:
+            return False
+
+        if not target_student_id and existing_student_id:
+            return False
+
+        existing_preferred = normalize_field(existing_record.get('preferred_name') or existing_record.get('first_name'))
+        existing_last = normalize_field(existing_record.get('last_name'))
+        existing_grade = normalize_field(existing_record.get('grade'))
+        existing_advisor = normalize_field(existing_record.get('advisor'))
+        existing_house = normalize_field(existing_record.get('house'))
+        existing_clan = normalize_field(existing_record.get('clan'))
+
+        return (
+            existing_preferred == target_preferred and
+            existing_last == target_last and
+            existing_grade == target_grade and
+            existing_advisor == target_advisor and
+            existing_house == target_house and
+            existing_clan == target_clan
+        )
+
     duplicate_check = any(
-        (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
-        record.get('last_name', '').lower() == last_name.lower()
+        is_duplicate(record)
         for record in student_records
     )
 
@@ -1479,8 +1523,7 @@ def record_student(category):
         existing_category = None
         for cat in ['clean', 'red']:
             if any(
-                (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
-                record.get('last_name', '').lower() == last_name.lower()
+                is_duplicate(record)
                 for record in session_info[f'{cat}_records']
             ):
                 existing_category = cat
@@ -1499,6 +1542,7 @@ def record_student(category):
         'advisor': advisor,
         'house': house,
         'clan': clan,
+        'student_id': student_id,
         'category': category,
         'timestamp': datetime.now().isoformat(),
         'recorded_by': session['user_id'],
@@ -1518,6 +1562,7 @@ def record_student(category):
         'advisor': advisor,
         'house': house,
         'clan': clan,
+        'student_id': student_id,
         'category': category,
         'is_manual_entry': is_manual_entry,
         'recorded_by': session['user_id']
