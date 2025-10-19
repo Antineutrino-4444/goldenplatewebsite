@@ -1981,10 +1981,40 @@ def override_draw(session_id):
 
     data = request.get_json(silent=True) or {}
     summary, _ = get_ticket_summary_for_session(session_id)
-    if not summary or summary.get('total_tickets', 0.0) <= 0:
-        return jsonify({'error': 'No eligible tickets available for drawing'}), 400
+    if not summary:
+        return jsonify({'error': 'Unable to load draw summary for this session'}), 400
 
     candidates = summary.get('candidates') or []
+    tickets_snapshot = summary.get('tickets_snapshot') or {}
+    profiles = summary.get('profiles') or {}
+
+    all_profiles = {}
+    for key, profile in profiles.items():
+        if isinstance(profile, dict):
+            copied = profile.copy()
+            copied.setdefault('key', key)
+            copied.setdefault('display_name', format_display_name(copied))
+            all_profiles[key] = copied
+
+    for record in session_info.get('clean_records', []):
+        profile = build_profile_from_record(record)
+        key = profile.get('key')
+        if key and key not in all_profiles:
+            all_profiles[key] = profile
+
+    for record in session_info.get('red_records', []):
+        profile = build_profile_from_record(record)
+        key = profile.get('key')
+        if key and key not in all_profiles:
+            all_profiles[key] = profile
+
+    for key, info in student_lookup.items():
+        if key not in all_profiles:
+            profile = info.copy()
+            profile['key'] = key
+            profile['display_name'] = format_display_name(profile)
+            all_profiles[key] = profile
+
     override_key = data.get('student_key')
     student_id = str(data.get('student_id', '')).strip()
     input_value = str(data.get('input_value', '')).strip()
@@ -1994,7 +2024,11 @@ def override_draw(session_id):
     if not override_key and student_id:
         normalized_id = student_id.lower()
         match = next(
-            (candidate for candidate in candidates if str(candidate.get('student_id', '')).strip().lower() == normalized_id),
+            (
+                profile
+                for profile in all_profiles.values()
+                if str(profile.get('student_id', '')).strip().lower() == normalized_id
+            ),
             None
         )
         if match:
@@ -2003,12 +2037,20 @@ def override_draw(session_id):
     if not override_key and input_value:
         normalized_input = input_value.lower()
         match = next(
-            (candidate for candidate in candidates if (candidate.get('display_name') or '').lower() == normalized_input),
+            (
+                profile
+                for profile in all_profiles.values()
+                if (profile.get('display_name') or '').lower() == normalized_input
+            ),
             None
         )
         if not match and input_value.isdigit():
             match = next(
-                (candidate for candidate in candidates if str(candidate.get('student_id', '')).strip() == input_value),
+                (
+                    profile
+                    for profile in all_profiles.values()
+                    if str(profile.get('student_id', '')).strip() == input_value
+                ),
                 None
             )
         if match:
@@ -2020,12 +2062,10 @@ def override_draw(session_id):
     if not override_key:
         return jsonify({'error': 'Unable to determine the override candidate from the provided input'}), 400
 
-    tickets_snapshot = summary.get('tickets_snapshot') or {}
-    if override_key not in tickets_snapshot:
-        return jsonify({'error': 'Specified student is not eligible for this draw'}), 400
+    if override_key not in all_profiles:
+        return jsonify({'error': 'Specified student was not found in the uploaded CSV'}), 400
 
-    profiles = summary.get('profiles') or {}
-    profile = profiles.get(override_key, {}).copy()
+    profile = all_profiles.get(override_key, {}).copy()
     if not profile:
         preferred, last = split_student_key(override_key)
         profile = {
