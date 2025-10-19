@@ -6,6 +6,7 @@ import io
 import os
 import json
 import random
+import re
 
 recorder_bp = Blueprint('recorder', __name__)
 
@@ -34,7 +35,10 @@ secure_random = random.SystemRandom()
 def normalize_name(value):
     return str(value or '').strip()
 
-def make_student_key(preferred_name, last_name):
+def make_student_key(preferred_name, last_name, student_id=None):
+    student_id_norm = normalize_name(student_id).lower()
+    if student_id_norm:
+        return f"id:{student_id_norm}"
     preferred_norm = normalize_name(preferred_name).lower()
     last_norm = normalize_name(last_name).lower()
     if not preferred_norm and not last_norm:
@@ -44,10 +48,20 @@ def make_student_key(preferred_name, last_name):
 def split_student_key(key):
     if not key:
         return '', ''
+    if key.startswith('id:'):
+        return '', ''
     parts = key.split('|', 1)
     if len(parts) == 2:
         return parts[0], parts[1]
     return parts[0], ''
+
+
+def extract_student_id_from_key(key):
+    if not key:
+        return ''
+    if key.startswith('id:'):
+        return key.split(':', 1)[1]
+    return ''
 
 def update_student_lookup():
     global student_lookup
@@ -60,7 +74,8 @@ def update_student_lookup():
     for row in data:
         preferred = normalize_name(row.get('Preferred', ''))
         last = normalize_name(row.get('Last', ''))
-        key = make_student_key(preferred, last)
+        student_id = normalize_name(row.get('Student ID', ''))
+        key = make_student_key(preferred, last, student_id)
         if not key:
             continue
         student_lookup[key] = {
@@ -70,7 +85,8 @@ def update_student_lookup():
             'advisor': normalize_name(row.get('Advisor', '')),
             'house': normalize_name(row.get('House', '')),
             'clan': normalize_name(row.get('Clan', '')),
-            'student_id': normalize_name(row.get('Student ID', ''))
+            'student_id': student_id,
+            'key': key
         }
 
 def load_data_from_file(file_path, default_data):
@@ -179,6 +195,28 @@ def ensure_session_structure(session_info):
             if not record.get('display_name'):
                 record['display_name'] = 'Dirty Plate'
 
+    for category in ['clean_records', 'red_records']:
+        records = session_info.get(category)
+        if not isinstance(records, list):
+            session_info[category] = []
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            preferred = record.get('preferred_name') or record.get('first_name')
+            last = record.get('last_name')
+            student_id = record.get('student_id')
+            key = record.get('student_key')
+            if not key:
+                key = make_student_key(preferred, last, student_id)
+            if key:
+                key_lower = key.lower()
+                record['student_key'] = key_lower
+                if not record.get('student_id'):
+                    extracted = extract_student_id_from_key(key_lower)
+                    if extracted:
+                        record['student_id'] = extracted
+
     # Ensure draw information structure exists
     draw_info = session_info.get('draw_info')
     if not isinstance(draw_info, dict):
@@ -261,6 +299,10 @@ def format_display_name(profile):
 def build_profile_from_record(record):
     preferred = normalize_name(record.get('preferred_name') or record.get('first_name'))
     last = normalize_name(record.get('last_name'))
+    student_id = normalize_name(record.get('student_id'))
+    key = record.get('student_key') or make_student_key(preferred, last, student_id)
+    if not student_id and key:
+        student_id = extract_student_id_from_key(key)
     profile = {
         'preferred_name': preferred,
         'last_name': last,
@@ -268,9 +310,8 @@ def build_profile_from_record(record):
         'advisor': normalize_name(record.get('advisor')),
         'house': normalize_name(record.get('house')),
         'clan': normalize_name(record.get('clan')),
-        'student_id': normalize_name(record.get('student_id'))
+        'student_id': student_id
     }
-    key = make_student_key(preferred, last)
     profile['key'] = key
     if key and key in student_lookup:
         lookup = student_lookup[key]
@@ -1168,21 +1209,29 @@ def get_student_names():
     for row in csv_data['data']:
         preferred = str(row.get('Preferred', '') or '').strip()
         last = str(row.get('Last', '') or '').strip()
-        
+        student_id = str(row.get('Student ID', '') or '').strip()
+        key = make_student_key(preferred, last, student_id)
+
         if preferred and last:
             full_name = f"{preferred} {last}"
             names.append({
                 'display_name': full_name,
                 'preferred': preferred,
+                'preferred_name': preferred,
                 'last': last,
-                'student_id': str(row.get('Student ID', '') or '').strip()
+                'last_name': last,
+                'student_id': student_id,
+                'key': key
             })
         elif preferred:
             names.append({
                 'display_name': preferred,
                 'preferred': preferred,
+                'preferred_name': preferred,
                 'last': '',
-                'student_id': str(row.get('Student ID', '') or '').strip()
+                'last_name': '',
+                'student_id': student_id,
+                'key': key
             })
     
     # Sort names alphabetically
@@ -1327,7 +1376,12 @@ def record_student(category):
         return jsonify({'error': 'Invalid category'}), 400
 
     data = request.get_json(silent=True) or {}
-    input_value = data.get('input_value', '').strip()
+    input_value = str(data.get('input_value', '') or '').strip()
+    provided_student_id = normalize_name(data.get('student_id'))
+    provided_key_raw = str(data.get('student_key') or '').strip()
+    provided_key = provided_key_raw.lower() if provided_key_raw else ''
+    provided_preferred = normalize_name(data.get('preferred_name') or data.get('preferred'))
+    provided_last = normalize_name(data.get('last_name') or data.get('last'))
 
     session_id = session['session_id']
     session_info = session_data[session_id]
@@ -1405,55 +1459,111 @@ def record_student(category):
         }), 200
 
     # Remaining categories rely on student database lookup (clean, red)
-    if not input_value:
+    has_reference = bool(
+        input_value or
+        provided_student_id or
+        provided_key or
+        (provided_preferred and provided_last)
+    )
+    if not has_reference:
         return jsonify({'error': 'Student ID or Name is required'}), 400
 
     csv_data = global_csv_data
+    csv_rows = []
+    if isinstance(csv_data, dict):
+        csv_rows = csv_data.get('data') or []
+    if not isinstance(csv_rows, list):
+        csv_rows = []
 
-    # Determine if input is ID or name
     student_record = None
-    is_manual_entry = False
-    preferred_name = ""
-    last_name = ""
-    grade = ""
-    advisor = ""
-    house = ""
-    clan = ""
-    student_id = ""
+    lookup_profile = None
+    dataset_match = False
 
-    if csv_data and csv_data['data']:
-        for row in csv_data['data']:
-            if str(row.get('Student ID', '')).strip() == input_value:
-                student_record = row
-                break
-
-    if not student_record and csv_data and csv_data['data']:
-        name_parts = input_value.split()
-        if len(name_parts) >= 2:
-            input_first = name_parts[0].lower()
-            input_last = ' '.join(name_parts[1:]).lower()
-
-            for row in csv_data['data']:
-                csv_first = str(row.get('Preferred', '')).strip().lower()
-                csv_last = str(row.get('Last', '')).strip().lower()
-
-                if csv_first == input_first and csv_last == input_last:
-                    student_record = row
-                    break
-
-    if not student_record:
-        is_manual_entry = True
-        name_parts = input_value.split()
-        if len(name_parts) >= 2:
-            preferred_name = name_parts[0].capitalize()
-            last_name = ' '.join(name_parts[1:]).capitalize()
-        elif len(name_parts) == 1:
-            preferred_name = name_parts[0].capitalize()
-            last_name = ""
-        else:
-            preferred_name = input_value.capitalize()
-            last_name = ""
+    candidate_ids = []
+    if provided_student_id:
+        candidate_ids.append(provided_student_id)
+    key_id = extract_student_id_from_key(provided_key) if provided_key else ''
+    if key_id:
+        candidate_ids.append(key_id)
+    if input_value.isdigit():
+        candidate_ids.append(input_value)
     else:
+        id_match = re.search(r'\b(\d{3,})\b', input_value)
+        if id_match:
+            candidate_ids.append(id_match.group(1))
+
+    normalized_ids = []
+    for candidate_id in candidate_ids:
+        norm_id = normalize_name(candidate_id)
+        if norm_id and norm_id not in normalized_ids:
+            normalized_ids.append(norm_id)
+
+    for candidate_id in normalized_ids:
+        match = next(
+            (
+                row
+                for row in csv_rows
+                if normalize_name(row.get('Student ID', '')) == candidate_id
+            ),
+            None
+        )
+        if match:
+            student_record = match
+            dataset_match = True
+            break
+
+    cleaned_input = input_value
+    if cleaned_input:
+        cleaned_input = re.sub(r'\([^)]*\)', '', cleaned_input).strip()
+
+    candidate_preferred = provided_preferred
+    candidate_last = provided_last
+
+    if (not candidate_preferred or not candidate_last) and provided_key and not provided_key.startswith('id:'):
+        key_preferred, key_last = split_student_key(provided_key)
+        if key_preferred and not candidate_preferred:
+            candidate_preferred = key_preferred
+        if key_last and not candidate_last:
+            candidate_last = key_last
+
+    if not candidate_preferred or not candidate_last:
+        name_parts = cleaned_input.split()
+        if len(name_parts) >= 2:
+            candidate_preferred = candidate_preferred or name_parts[0]
+            candidate_last = candidate_last or ' '.join(name_parts[1:])
+        elif len(name_parts) == 1:
+            candidate_preferred = candidate_preferred or name_parts[0]
+            candidate_last = candidate_last or ''
+
+    if not student_record and csv_rows and candidate_preferred and candidate_last:
+        input_first = candidate_preferred.lower()
+        input_last = candidate_last.lower()
+        student_record = next(
+            (
+                row
+                for row in csv_rows
+                if str(row.get('Preferred', '')).strip().lower() == input_first
+                and str(row.get('Last', '')).strip().lower() == input_last
+            ),
+            None
+        )
+        if student_record:
+            dataset_match = True
+
+    if not student_record and provided_key and provided_key in student_lookup:
+        lookup_profile = student_lookup.get(provided_key)
+        if lookup_profile:
+            dataset_match = True
+
+    preferred_name = ''
+    last_name = ''
+    grade = ''
+    advisor = ''
+    house = ''
+    clan = ''
+    student_id = ''
+
+    if student_record:
         preferred_name = str(student_record.get('Preferred', '') or '').strip()
         last_name = str(student_record.get('Last', '') or '').strip()
         grade = str(student_record.get('Grade', '') or '').strip()
@@ -1461,22 +1571,55 @@ def record_student(category):
         house = str(student_record.get('House', '') or '').strip()
         clan = str(student_record.get('Clan', '') or '').strip()
         student_id = str(student_record.get('Student ID', '') or '').strip()
+    elif lookup_profile:
+        preferred_name = normalize_name(lookup_profile.get('preferred_name'))
+        last_name = normalize_name(lookup_profile.get('last_name'))
+        grade = normalize_name(lookup_profile.get('grade'))
+        advisor = normalize_name(lookup_profile.get('advisor'))
+        house = normalize_name(lookup_profile.get('house'))
+        clan = normalize_name(lookup_profile.get('clan'))
+        student_id = normalize_name(lookup_profile.get('student_id'))
+    else:
+        preferred_name = normalize_name(candidate_preferred or (cleaned_input.split()[0] if cleaned_input else input_value))
+        if cleaned_input:
+            parts = cleaned_input.split()
+            if len(parts) >= 2:
+                candidate_last = candidate_last or ' '.join(parts[1:])
+        last_name = normalize_name(candidate_last)
 
-    if not student_id and student_record:
-        student_id = str(student_record.get('Student ID', '') or '').strip()
+    if not preferred_name and provided_preferred:
+        preferred_name = provided_preferred
+    if not last_name and provided_last:
+        last_name = provided_last
+    if not student_id and provided_student_id:
+        student_id = provided_student_id
+    if not student_id and provided_key:
+        extracted_id = extract_student_id_from_key(provided_key)
+        if extracted_id:
+            student_id = extracted_id
+    if not student_id and normalized_ids:
+        student_id = normalized_ids[0]
 
-    preferred_name = preferred_name or ""
-    last_name = last_name or ""
-    grade = grade or ""
-    advisor = advisor or ""
-    house = house or ""
-    clan = clan or ""
-    student_id = student_id or ""
+    preferred_name = preferred_name or ''
+    last_name = last_name or ''
+    grade = grade or ''
+    advisor = advisor or ''
+    house = house or ''
+    clan = clan or ''
+    student_id = student_id or ''
+
+    student_key = make_student_key(preferred_name, last_name, student_id) or provided_key or None
+    if student_key:
+        student_key = student_key.lower()
+
+    is_manual_entry = not dataset_match
 
     student_records = session_info['clean_records'] + session_info['red_records']
 
     def normalize_field(value):
         return str(value or '').strip().lower()
+
+    student_key = student_key or ''
 
     target_student_id = normalize_field(student_id)
     target_preferred = normalize_field(preferred_name)
@@ -1485,6 +1628,7 @@ def record_student(category):
     target_advisor = normalize_field(advisor)
     target_house = normalize_field(house)
     target_clan = normalize_field(clan)
+    target_key = normalize_field(student_key)
 
     def is_duplicate(existing_record):
         existing_student_id = normalize_field(existing_record.get('student_id'))
@@ -1497,6 +1641,10 @@ def record_student(category):
 
         if not target_student_id and existing_student_id:
             return False
+
+        existing_key = normalize_field(existing_record.get('student_key'))
+        if target_key and existing_key:
+            return existing_key == target_key
 
         existing_preferred = normalize_field(existing_record.get('preferred_name') or existing_record.get('first_name'))
         existing_last = normalize_field(existing_record.get('last_name'))
@@ -1543,6 +1691,7 @@ def record_student(category):
         'house': house,
         'clan': clan,
         'student_id': student_id,
+        'student_key': student_key,
         'category': category,
         'timestamp': datetime.now().isoformat(),
         'recorded_by': session['user_id'],
@@ -1563,6 +1712,7 @@ def record_student(category):
         'house': house,
         'clan': clan,
         'student_id': student_id,
+        'student_key': student_key,
         'category': category,
         'is_manual_entry': is_manual_entry,
         'recorded_by': session['user_id']
@@ -1850,14 +2000,15 @@ def start_draw(session_id):
     profile = profiles.get(chosen_key, {}).copy()
     if not profile:
         preferred, last = split_student_key(chosen_key)
+        fallback_id = extract_student_id_from_key(chosen_key)
         profile = {
-            'preferred_name': preferred.title(),
-            'last_name': last.title(),
+            'preferred_name': preferred.title() if preferred else '',
+            'last_name': last.title() if last else '',
             'grade': '',
             'advisor': '',
             'house': '',
             'clan': '',
-            'student_id': ''
+            'student_id': fallback_id
         }
     display_name = profile.get('display_name') or format_display_name(profile)
     winner_tickets = tickets_snapshot.get(chosen_key, 0.0)
@@ -2060,7 +2211,8 @@ def override_draw(session_id):
             profile['display_name'] = format_display_name(profile)
             all_profiles[key] = profile
 
-    override_key = data.get('student_key')
+    override_key_raw = data.get('student_key')
+    override_key = str(override_key_raw or '').strip().lower()
     student_id = str(data.get('student_id', '')).strip()
     input_value = str(data.get('input_value', '')).strip()
     preferred = data.get('preferred_name')
@@ -2101,8 +2253,8 @@ def override_draw(session_id):
         if match:
             override_key = match.get('key')
 
-    if not override_key and preferred and last:
-        override_key = make_student_key(preferred, last)
+    if not override_key and (preferred and last or student_id):
+        override_key = make_student_key(preferred, last, student_id)
 
     if not override_key:
         return jsonify({'error': 'Unable to determine the override candidate from the provided input'}), 400
@@ -2113,14 +2265,15 @@ def override_draw(session_id):
     profile = all_profiles.get(override_key, {}).copy()
     if not profile:
         preferred, last = split_student_key(override_key)
+        fallback_id = extract_student_id_from_key(override_key)
         profile = {
-            'preferred_name': preferred.title(),
-            'last_name': last.title(),
+            'preferred_name': preferred.title() if preferred else '',
+            'last_name': last.title() if last else '',
             'grade': '',
             'advisor': '',
             'house': '',
             'clan': '',
-            'student_id': ''
+            'student_id': fallback_id
         }
     display_name = profile.get('display_name') or format_display_name(profile)
     winner_tickets = tickets_snapshot.get(override_key, 0.0)

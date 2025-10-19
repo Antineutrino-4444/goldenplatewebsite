@@ -22,6 +22,19 @@ export function SearchableNameInput({
   const [inputValue, setInputValue] = React.useState(value)
   const inputRef = React.useRef(null)
 
+  const formatSelectionValue = React.useCallback((entry) => {
+    if (!entry) return ''
+    const base = entry.display_name || ''
+    const studentId = entry.student_id ? String(entry.student_id).trim() : ''
+    if (studentId && base && !base.toLowerCase().includes(studentId.toLowerCase())) {
+      return `${base} (${studentId})`
+    }
+    if (studentId && !base) {
+      return studentId
+    }
+    return base
+  }, [])
+
   // Filter names based on input value
   const filteredNames = React.useMemo(() => {
     if (!inputValue.trim()) return names
@@ -36,7 +49,7 @@ export function SearchableNameInput({
   const handleInputChange = (e) => {
     const newValue = e.target.value
     setInputValue(newValue)
-    onChange?.(newValue)
+    onChange?.(newValue, { source: 'input' })
     
     // Show dropdown when typing and there are matches
     if (newValue && filteredNames.length > 0) {
@@ -47,8 +60,9 @@ export function SearchableNameInput({
   }
 
   const handleSelectName = (selectedName) => {
-    setInputValue(selectedName.display_name)
-    onChange?.(selectedName.display_name)
+    const displayValue = formatSelectionValue(selectedName)
+    setInputValue(displayValue)
+    onChange?.(displayValue, { source: 'selection', name: selectedName })
     onSelectName?.(selectedName)
     setOpen(false)
     // Keep focus on input after selection
@@ -141,23 +155,27 @@ export function SearchableNameInput({
                   <CommandEmpty>No names found.</CommandEmpty>
                 ) : (
                   <CommandGroup>
-                    {filteredNames.slice(0, 10).map((name, index) => (
-                      <CommandItem
-                        key={`${name.student_id}-${index}`}
-                        value={name.display_name}
-                        onSelect={() => handleSelectName(name)}
-                        onMouseDown={(e) => e.preventDefault()}
-                        className="flex items-center justify-between cursor-pointer"
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-medium">{name.display_name}</span>
-                          {name.student_id && (
-                            <span className="text-xs text-muted-foreground">ID: {name.student_id}</span>
-                          )}
-                        </div>
-                        <Check className="ml-2 h-4 w-4 opacity-0 group-data-[selected=true]:opacity-100" />
-                      </CommandItem>
-                    ))}
+                    {filteredNames.slice(0, 10).map((name, index) => {
+                      const optionKey = name.key || (name.student_id ? `id:${name.student_id}` : `${name.display_name || 'option'}-${index}`)
+                      const optionValue = `${name.display_name || ''} ${name.student_id || ''}`.trim()
+                      return (
+                        <CommandItem
+                          key={`${optionKey}-${index}`}
+                          value={optionValue}
+                          onSelect={() => handleSelectName(name)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          className="flex items-center justify-between cursor-pointer"
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-medium">{name.display_name}</span>
+                            {name.student_id && (
+                              <span className="text-xs text-muted-foreground">ID: {name.student_id}</span>
+                            )}
+                          </div>
+                          <Check className="ml-2 h-4 w-4 opacity-0 group-data-[selected=true]:opacity-100" />
+                        </CommandItem>
+                      )
+                    })}
                     {filteredNames.length > 10 && (
                       <div className="px-2 py-1 text-xs text-muted-foreground text-center">
                         {filteredNames.length - 10} more results...
