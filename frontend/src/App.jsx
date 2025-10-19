@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -9,10 +9,43 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { SearchableNameInput } from '@/components/SearchableNameInput.jsx'
 import Modal from '@/components/Modal.jsx'
 import { createPortal } from 'react-dom'
-import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle } from 'lucide-react'
+import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle, Trophy, Wand2, CheckCircle, RefreshCcw, ShieldCheck, Ban, Clock, History, ListOrdered, ChevronDown, ChevronUp } from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
+
+const normalizeName = (value) => (value ?? '').toString().trim()
+
+const makeStudentKey = (preferred, last, studentId = '') => {
+  const studentIdNorm = normalizeName(studentId).toLowerCase()
+  if (studentIdNorm) {
+    return `id:${studentIdNorm}`
+  }
+  const preferredNorm = normalizeName(preferred).toLowerCase()
+  const lastNorm = normalizeName(last).toLowerCase()
+  if (!preferredNorm && !lastNorm) {
+    return null
+  }
+  return `${preferredNorm}|${lastNorm}`
+}
+
+const sanitizeSelection = (entry) => {
+  if (!entry) return null
+  const preferred = normalizeName(entry.preferred ?? entry.preferred_name)
+  const last = normalizeName(entry.last ?? entry.last_name)
+  const studentId = normalizeName(entry.student_id)
+  const existingKey = entry.key ? String(entry.key).toLowerCase() : null
+  const key = existingKey || makeStudentKey(preferred, last, studentId)
+  return {
+    ...entry,
+    preferred,
+    preferred_name: entry.preferred_name ?? preferred,
+    last,
+    last_name: entry.last_name ?? last,
+    student_id: studentId,
+    key
+  }
+}
 
 function App() {
   // Startup animation state
@@ -46,7 +79,9 @@ function App() {
     faculty_clean_count: 0,
     total_recorded: 0,
     clean_percentage: 0,
-    dirty_percentage: 0
+    dirty_percentage: 0,
+    is_discarded: false,
+    draw_info: null
   })
   const [isLoading, setIsLoading] = useState(false)
   
@@ -92,11 +127,72 @@ function App() {
   const [teacherPreviewData, setTeacherPreviewData] = useState(null)
   const [teacherPreviewPage, setTeacherPreviewPage] = useState(1)
   const [teacherPreviewLoading, setTeacherPreviewLoading] = useState(false)
+  const [popupSelectedEntry, setPopupSelectedEntry] = useState(null)
+
+  // Draw center state
+  const [drawSummary, setDrawSummary] = useState(null)
+  const [drawSummaryLoading, setDrawSummaryLoading] = useState(false)
+  const [overrideInput, setOverrideInput] = useState('')
+  const [overrideCandidate, setOverrideCandidate] = useState(null)
+  const [selectedCandidateKey, setSelectedCandidateKey] = useState(null)
+  const [drawActionLoading, setDrawActionLoading] = useState(false)
+  const [discardLoading, setDiscardLoading] = useState(false)
+  const [isDrawCenterCollapsed, setIsDrawCenterCollapsed] = useState(false)
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
   const [modal, setModal] = useState(null)
   const [inviteCode, setInviteCode] = useState('')
+
+  const isSessionDiscarded = drawSummary?.is_discarded ?? sessionStats.is_discarded
+  const currentDrawInfo = drawSummary?.draw_info ?? sessionStats.draw_info
+  const canManageDraw = ['admin', 'superadmin'].includes(user?.role)
+  const canOverrideWinner = user?.role === 'superadmin'
+  const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
+  const hasStudentRecords = studentRecordCount > 0
+  const showExportCard = user?.role !== 'guest'
+
+  const selectedCandidate = useMemo(() => {
+    if (!drawSummary?.candidates?.length) {
+      return null
+    }
+    return drawSummary.candidates.find(candidate => candidate.key === selectedCandidateKey) ?? null
+  }, [drawSummary, selectedCandidateKey])
+
+  const overrideOptions = useMemo(() => {
+    const combined = new Map()
+    if (drawSummary?.candidates?.length) {
+      for (const candidate of drawSummary.candidates) {
+        combined.set(candidate.key, { ...candidate })
+      }
+    }
+    for (const entry of studentNames) {
+      const key = entry.key || makeStudentKey(entry.preferred || entry.preferred_name, entry.last || entry.last_name, entry.student_id)
+      if (!key) continue
+      if (combined.has(key)) {
+        const existing = combined.get(key)
+        combined.set(key, {
+          ...entry,
+          ...existing,
+          key,
+          display_name: existing.display_name || entry.display_name || `${normalizeName(entry.preferred || entry.preferred_name)} ${normalizeName(entry.last || entry.last_name)}`.trim(),
+          preferred_name: existing.preferred_name || entry.preferred || entry.preferred_name || '',
+          last_name: existing.last_name || entry.last || entry.last_name || '',
+          student_id: existing.student_id || entry.student_id || ''
+        })
+      } else {
+        combined.set(key, {
+          ...entry,
+          key,
+          display_name: entry.display_name || `${normalizeName(entry.preferred || entry.preferred_name)} ${normalizeName(entry.last || entry.last_name)}`.trim(),
+          preferred_name: entry.preferred || entry.preferred_name || '',
+          last_name: entry.last || entry.last_name || '',
+          student_id: entry.student_id || ''
+        })
+      }
+    }
+    return Array.from(combined.values())
+  }, [drawSummary, studentNames])
 
   // Check authentication status on load
   useEffect(() => {
@@ -251,11 +347,16 @@ function App() {
         combined_dirty_count: 0,
         total_recorded: 0,
         clean_percentage: 0,
-        dirty_percentage: 0
+        dirty_percentage: 0,
+        is_discarded: false,
+        draw_info: null
       })
       setInviteCode('')
       setModal(null)
       setNotification(null)
+      setOverrideInput('')
+      setOverrideCandidate(null)
+      setSelectedCandidateKey(null)
       showMessage('Logged out successfully', 'info')
     } catch (error) {
       showMessage('Logout failed', 'error')
@@ -277,7 +378,9 @@ function App() {
           faculty_clean_count: data.faculty_clean_count,
           total_recorded: data.total_recorded,
           clean_percentage: data.clean_percentage,
-          dirty_percentage: data.dirty_percentage
+          dirty_percentage: data.dirty_percentage,
+          is_discarded: data.is_discarded ?? false,
+          draw_info: data.draw_info ?? null
         })
         // Load scan history for the session
         await loadScanHistory()
@@ -285,6 +388,7 @@ function App() {
         await loadStudentNames()
         // Load teacher names for dropdown
         await loadTeacherNames()
+        await loadDrawSummary({ silent: true, sessionIdOverride: data.session_id, sessionNameOverride: data.session_name, isDiscarded: data.is_discarded })
       } else {
         // No active session - try to join an existing one automatically
         const sessions = await loadSessions()
@@ -301,9 +405,15 @@ function App() {
             combined_dirty_count: 0,
             total_recorded: 0,
             clean_percentage: 0,
-            dirty_percentage: 0
+            dirty_percentage: 0,
+            is_discarded: false,
+            draw_info: null
           })
           setScanHistory([])
+          setDrawSummary(null)
+          setOverrideInput('')
+          setOverrideCandidate(null)
+          setSelectedCandidateKey(null)
           // Still try to load student names even without a session
           await loadStudentNames()
           // Still try to load teacher names even without a session
@@ -326,6 +436,10 @@ function App() {
         dirty_percentage: 0
       })
       setScanHistory([])
+      setDrawSummary(null)
+      setOverrideInput('')
+      setOverrideCandidate(null)
+      setSelectedCandidateKey(null)
     }
   }
 
@@ -383,18 +497,22 @@ function App() {
     return []
   }
 
-  const switchSession = async (sessionId) => {
+  const switchSession = async (targetSessionId) => {
     setIsLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/session/switch/${sessionId}`, {
+      const response = await fetch(`${API_BASE}/session/switch/${targetSessionId}`, {
         method: 'POST'
       })
 
       const data = await response.json()
       if (response.ok) {
-        setSessionId(sessionId)
+        setSessionId(targetSessionId)
         setSessionName(data.session_name)
-        await refreshSessionStatus()
+        await refreshSessionStatus({
+          sessionIdOverride: data.session_id ?? targetSessionId,
+          sessionNameOverride: data.session_name,
+          isDiscardedOverride: data.is_discarded
+        })
         await loadStudentNames()
         await loadTeacherNames()
         showMessage(`Switched to "${data.session_name}"`, 'success')
@@ -546,21 +664,54 @@ function App() {
     }
   }
 
-  const recordEntry = async (category, inputValue = '') => {
+  const recordEntry = async (category, inputValue = '', selectedEntry = null) => {
     const trimmedValue = inputValue.trim()
+    const normalizedSelection = selectedEntry || null
 
-    if (category !== 'dirty' && !trimmedValue) {
-      if (category === 'faculty') {
-        showMessage('Please enter a faculty name', 'error')
-      } else {
-        showMessage('Please enter a Student ID or Name', 'error')
+    const selectedStudentId = normalizedSelection
+      ? normalizeName(normalizedSelection.student_id || normalizedSelection.studentId)
+      : ''
+    const selectedPreferred = normalizedSelection
+      ? normalizeName(normalizedSelection.preferred_name ?? normalizedSelection.preferred)
+      : ''
+    const selectedLast = normalizedSelection
+      ? normalizeName(normalizedSelection.last_name ?? normalizedSelection.last)
+      : ''
+
+    if (category !== 'dirty') {
+      const hasReference = Boolean(
+        trimmedValue || selectedStudentId || (selectedPreferred && selectedLast)
+      )
+      if (!hasReference) {
+        if (category === 'faculty') {
+          showMessage('Please enter a faculty name', 'error')
+        } else {
+          showMessage('Please enter a Student ID or Name', 'error')
+        }
+        return
       }
-      return
     }
 
     setIsLoading(true)
     try {
       const payload = category === 'dirty' ? {} : { input_value: trimmedValue }
+
+      if (category !== 'dirty' && normalizedSelection) {
+        if (selectedStudentId) {
+          payload.student_id = selectedStudentId
+        }
+        if (selectedPreferred) {
+          payload.preferred_name = selectedPreferred
+        }
+        if (selectedLast) {
+          payload.last_name = selectedLast
+        }
+        const derivedKey = normalizedSelection.key || makeStudentKey(selectedPreferred, selectedLast, selectedStudentId)
+        if (derivedKey) {
+          payload.student_key = derivedKey
+        }
+      }
+
       const response = await fetch(`${API_BASE}/record/${category}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -591,6 +742,7 @@ function App() {
         setShowDirtyDialog(false)
         setShowRedDialog(false)
         setShowFacultyDialog(false)
+        setPopupSelectedEntry(null)
 
         // Refresh session status
         await refreshSessionStatus()
@@ -608,12 +760,21 @@ function App() {
     }
   }
 
-  const refreshSessionStatus = async () => {
+  const refreshSessionStatus = async ({
+    sessionIdOverride = null,
+    sessionNameOverride = null,
+    isDiscardedOverride = undefined
+  } = {}) => {
+    let nextSessionId = sessionIdOverride ?? sessionId
+    let nextSessionName = sessionNameOverride ?? sessionName
+    let nextIsDiscarded =
+      isDiscardedOverride !== undefined ? isDiscardedOverride : sessionStats.is_discarded
     try {
       const response = await fetch(`${API_BASE}/session/status`)
       if (response.ok) {
         const data = await response.json()
-        setSessionStats({
+        setSessionStats((prev) => ({
+          ...prev,
           clean_count: data.clean_count,
           dirty_count: data.dirty_count,
           red_count: data.red_count,
@@ -621,17 +782,30 @@ function App() {
           faculty_clean_count: data.faculty_clean_count,
           total_recorded: data.total_recorded,
           clean_percentage: data.clean_percentage,
-          dirty_percentage: data.dirty_percentage
-        })
+          dirty_percentage: data.dirty_percentage,
+          is_discarded: data.is_discarded ?? prev.is_discarded,
+          draw_info: data.draw_info ?? prev.draw_info
+        }))
+        nextSessionId = data.session_id ?? nextSessionId
+        nextSessionName = data.session_name ?? nextSessionName
+        if (data.is_discarded !== undefined) {
+          nextIsDiscarded = data.is_discarded
+        }
       }
     } catch (error) {
       console.error('Failed to refresh session status:', error)
     }
-    
+
     // Also load scan history and student names
     await loadScanHistory()
     await loadStudentNames()
     await loadTeacherNames()
+    await loadDrawSummary({
+      silent: true,
+      sessionIdOverride: nextSessionId,
+      sessionNameOverride: nextSessionName,
+      isDiscarded: nextIsDiscarded
+    })
   }
 
   const loadScanHistory = async () => {
@@ -652,8 +826,26 @@ function App() {
       if (response.ok) {
         const data = await response.json()
         if (data.status === 'success') {
-          console.log('Loaded student names:', data.names?.length || 0)
-          setStudentNames(data.names || [])
+          const sanitizedNames = (data.names || []).map((name) => {
+            const preferred = normalizeName(name.preferred ?? name.preferred_name)
+            const last = normalizeName(name.last ?? name.last_name)
+            const studentId = normalizeName(name.student_id)
+            const key = (name.key && normalizeName(name.key).toLowerCase()) || makeStudentKey(preferred, last, studentId)
+            const displayNameRaw = name.display_name || `${preferred} ${last}`.trim()
+            const display_name = displayNameRaw || preferred || last
+            return {
+              ...name,
+              preferred,
+              preferred_name: name.preferred_name ?? preferred,
+              last,
+              last_name: name.last_name ?? last,
+              key,
+              student_id: studentId,
+              display_name
+            }
+          })
+          console.log('Loaded student names:', sanitizedNames.length || 0)
+          setStudentNames(sanitizedNames)
         } else {
           console.log('No student names available')
           setStudentNames([])
@@ -681,6 +873,351 @@ function App() {
     } catch (error) {
       console.error('Failed to load teacher names:', error)
       setTeacherNames([])
+    }
+  }
+
+  const updateDrawSummaryState = (summaryPayload, { resetOverrideInput = false } = {}) => {
+    if (!summaryPayload) {
+      setDrawSummary(null)
+      setSelectedCandidateKey(null)
+      setOverrideCandidate(null)
+      if (resetOverrideInput) {
+        setOverrideInput('')
+      }
+      return
+    }
+
+    setDrawSummary(summaryPayload)
+    const candidates = summaryPayload.candidates ?? []
+    const winnerKey = summaryPayload.draw_info?.winner?.key
+
+    setSelectedCandidateKey(prevKey => {
+      if (prevKey && candidates.some(candidate => candidate.key === prevKey)) {
+        return prevKey
+      }
+      if (winnerKey && candidates.some(candidate => candidate.key === winnerKey)) {
+        return winnerKey
+      }
+      return candidates[0]?.key ?? null
+    })
+
+    setOverrideCandidate(prevCandidate => {
+      if (!prevCandidate) return null
+      const match = candidates.find(candidate => candidate.key === prevCandidate.key)
+      if (match) {
+        return { ...prevCandidate, ...match }
+      }
+      return prevCandidate
+    })
+
+    if (resetOverrideInput) {
+      setOverrideInput('')
+    }
+  }
+
+  const loadDrawSummary = async ({ silent = false, sessionIdOverride = null, sessionNameOverride = null, isDiscarded = undefined } = {}) => {
+    const targetSessionId = sessionIdOverride || sessionId
+    if (!targetSessionId) {
+      updateDrawSummaryState(null, { resetOverrideInput: true })
+      return
+    }
+
+    setDrawSummaryLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${targetSessionId}/draw/summary`)
+      const data = await response.json()
+      if (response.ok) {
+        const summaryPayload = {
+          session_id: data.session_id || targetSessionId,
+          session_name: data.session_name || sessionNameOverride || sessionName,
+          created_at: data.created_at || null,
+          is_discarded: data.is_discarded ?? (isDiscarded ?? sessionStats.is_discarded),
+          total_tickets: data.total_tickets ?? 0,
+          eligible_count: data.eligible_count ?? 0,
+          excluded_records: data.excluded_records ?? 0,
+          top_candidates: data.top_candidates ?? [],
+          candidates: data.candidates ?? [],
+          ticket_snapshot: data.ticket_snapshot ?? {},
+          generated_at: data.generated_at ?? new Date().toISOString(),
+          draw_info: data.draw_info ?? null
+        }
+        updateDrawSummaryState(summaryPayload)
+        setSessionStats(prev => ({
+          ...prev,
+          is_discarded: summaryPayload.is_discarded,
+          draw_info: summaryPayload.draw_info
+        }))
+      } else {
+        if (!silent) {
+          showMessage(data.error || 'Failed to load draw summary', 'error')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load draw summary:', error)
+      if (!silent) {
+        showMessage('Failed to load draw summary', 'error')
+      }
+    } finally {
+      setDrawSummaryLoading(false)
+    }
+  }
+
+  const applyDrawResponse = (data, { silent = false } = {}) => {
+    if (!data) {
+      return
+    }
+
+    const summaryData = data.summary
+    const nextIsDiscarded = data.discarded ?? summaryData?.is_discarded ?? sessionStats.is_discarded
+
+    if (summaryData) {
+      const summaryPayload = {
+        session_id: summaryData.session_id || sessionId,
+        session_name: summaryData.session_name || drawSummary?.session_name || sessionName,
+        created_at: summaryData.created_at || drawSummary?.created_at || null,
+        is_discarded: nextIsDiscarded,
+        total_tickets: summaryData.total_tickets ?? 0,
+        eligible_count: summaryData.eligible_count ?? 0,
+        excluded_records: summaryData.excluded_records ?? 0,
+        top_candidates: summaryData.top_candidates ?? [],
+        candidates: summaryData.candidates ?? [],
+        ticket_snapshot: summaryData.tickets_snapshot ?? {},
+        generated_at: summaryData.generated_at ?? new Date().toISOString(),
+        draw_info: data.draw_info ?? sessionStats.draw_info
+      }
+      updateDrawSummaryState(summaryPayload)
+      setSessionStats(prev => ({
+        ...prev,
+        is_discarded: summaryPayload.is_discarded,
+        draw_info: summaryPayload.draw_info
+      }))
+    } else {
+      if (typeof nextIsDiscarded === 'boolean') {
+        setSessionStats(prev => ({ ...prev, is_discarded: nextIsDiscarded }))
+      }
+      if (data.draw_info) {
+        setSessionStats(prev => ({ ...prev, draw_info: data.draw_info }))
+      }
+      if (!summaryData && !silent && data.error) {
+        showMessage(data.error, 'error')
+      }
+    }
+  }
+
+  const startDrawProcess = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before starting a draw', 'error')
+      return
+    }
+    if (!canManageDraw) {
+      showMessage('You do not have permission to start a draw', 'error')
+      return
+    }
+    const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
+    if (studentRecordCount <= 0) {
+      showMessage('Add at least one student record before starting a draw', 'error')
+      return
+    }
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/start`, {
+        method: 'POST'
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        if (data.winner?.display_name) {
+          showMessage(`Winner selected: ${data.winner.display_name}`, 'success')
+        } else {
+          showMessage('Winner selected', 'success')
+        }
+      } else {
+        showMessage(data.error || 'Failed to start draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to start draw:', error)
+      showMessage('Failed to start draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const finalizeDrawWinner = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before finalizing a draw', 'error')
+      return
+    }
+    if (!canManageDraw) {
+      showMessage('You do not have permission to finalize this draw', 'error')
+      return
+    }
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/finalize`, {
+        method: 'POST'
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        showMessage('Winner finalized', 'success')
+      } else {
+        showMessage(data.error || 'Failed to finalize draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to finalize draw:', error)
+      showMessage('Failed to finalize draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const resetDrawWinner = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before resetting the draw', 'error')
+      return
+    }
+    if (!sessionStats.draw_info?.winner) {
+      showMessage('There is no winner to reset', 'error')
+      return
+    }
+    if (!canManageDraw) {
+      showMessage('You do not have permission to reset this draw', 'error')
+      return
+    }
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/reset`, {
+        method: 'POST'
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        showMessage('Draw reset successfully', 'success')
+      } else {
+        showMessage(data.error || 'Failed to reset draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to reset draw:', error)
+      showMessage('Failed to reset draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const overrideDrawWinner = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before overriding the draw', 'error')
+      return
+    }
+    if (!canOverrideWinner) {
+      showMessage('Only super admins can override the draw winner', 'error')
+      return
+    }
+
+    const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
+    if (studentRecordCount <= 0) {
+      showMessage('A draw cannot be managed until the session has student records', 'error')
+      return
+    }
+
+    const trimmedInput = overrideInput.trim()
+    if (!trimmedInput) {
+      showMessage('Enter a student name or ID to override the winner', 'error')
+      return
+    }
+
+    const candidatePool = overrideOptions
+    let candidate = null
+    if (overrideCandidate?.key) {
+      candidate = candidatePool.find(entry => entry.key === overrideCandidate.key) || overrideCandidate
+    }
+
+    if (!candidate) {
+      const normalizedInput = trimmedInput.toLowerCase()
+      candidate = candidatePool.find(entry => (entry.display_name || '').toLowerCase() === normalizedInput)
+        || candidatePool.find(entry => String(entry.student_id || '').toLowerCase() === normalizedInput)
+    }
+
+    const payload = {
+      input_value: trimmedInput
+    }
+
+    if (candidate?.key) {
+      payload.student_key = candidate.key
+      if (candidate.student_id) {
+        payload.student_id = candidate.student_id
+      }
+      payload.preferred_name = candidate.preferred_name || candidate.preferred || ''
+      payload.last_name = candidate.last_name || candidate.last || ''
+
+      setOverrideCandidate(candidate)
+      setOverrideInput(candidate.display_name)
+
+      if (drawSummary?.candidates?.some(entry => entry.key === candidate.key)) {
+        setSelectedCandidateKey(candidate.key)
+      }
+    } else if (/^\d+$/.test(trimmedInput)) {
+      payload.student_id = trimmedInput
+    } else {
+      const parts = trimmedInput.split(/\s+/)
+      if (parts.length >= 2) {
+        payload.preferred_name = parts.slice(0, -1).join(' ')
+        payload.last_name = parts.slice(-1).join(' ')
+      }
+    }
+
+    setDrawActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        showMessage('Winner overridden successfully', 'success')
+      } else {
+        showMessage(data.error || 'Failed to override draw', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to override draw:', error)
+      showMessage('Failed to override draw', 'error')
+    } finally {
+      setDrawActionLoading(false)
+    }
+  }
+
+  const toggleDiscardState = async (nextDiscarded) => {
+    if (!sessionId) {
+      showMessage('Select a session before toggling discard status', 'error')
+      return
+    }
+    if (!canOverrideWinner) {
+      showMessage('Only super admins can change discard status', 'error')
+      return
+    }
+    setDiscardLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/draw/discard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discarded: nextDiscarded })
+      })
+      const data = await response.json()
+      if (response.ok) {
+        applyDrawResponse(data, { silent: true })
+        if (typeof data.discarded === 'boolean') {
+          showMessage(data.message || (data.discarded ? 'Session removed from draw calculations' : 'Session reinstated for draw calculations'), 'success')
+        }
+      } else {
+        showMessage(data.error || 'Failed to update discard status', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to toggle discard state:', error)
+      showMessage('Failed to update discard status', 'error')
+    } finally {
+      setDiscardLoading(false)
     }
   }
 
@@ -752,6 +1289,7 @@ function App() {
 
   const handleCategoryClick = (category) => {
     setPopupInputValue('')
+    setPopupSelectedEntry(null)
     if (category === 'clean') setShowCleanDialog(true)
     else if (category === 'dirty') setShowDirtyDialog(true)
     else if (category === 'red') setShowRedDialog(true)
@@ -760,7 +1298,7 @@ function App() {
 
   const handlePopupSubmit = (category) => {
     if (category === 'dirty') recordEntry(category)
-    else recordEntry(category, popupInputValue)
+    else recordEntry(category, popupInputValue, popupSelectedEntry)
   }
 
   const handleKeyPress = (e, category) => {
@@ -1215,6 +1753,33 @@ function App() {
               <div className="text-sm text-gray-500">
                 Faculty Clean: {sessionStats.faculty_clean_count}
               </div>
+              {isSessionDiscarded && (
+                <div className="mt-2 flex justify-center">
+                  <Badge variant="destructive" className="uppercase tracking-wide">Discarded from draw</Badge>
+                </div>
+              )}
+              <div className="mt-3 text-sm text-gray-600">
+                {currentDrawInfo?.winner ? (
+                  <div className="space-y-1">
+                    <div>
+                      Current Winner:{' '}
+                      <span className="font-semibold">{currentDrawInfo.winner.display_name}</span>
+                      {currentDrawInfo.finalized ? ' (Finalized)' : ' (Pending Finalization)'}
+                      {currentDrawInfo.override && (
+                        <Badge variant="outline" className="ml-2 text-xs">Superadmin Override</Badge>
+                      )}
+                    </div>
+                    {currentDrawInfo.winner_timestamp && (
+                      <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(currentDrawInfo.winner_timestamp).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-gray-500">No winner selected yet.</span>
+                )}
+              </div>
             </div>
 
             {/* Navigation Buttons */}
@@ -1251,7 +1816,7 @@ function App() {
               )}
             </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
           {/* Student Database */}
           <Card>
             <CardHeader>
@@ -1349,7 +1914,7 @@ function App() {
           </Card>
 
           {/* Export Records */}
-          {user?.role !== 'guest' && (
+          {showExportCard && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1374,6 +1939,369 @@ function App() {
               </CardContent>
             </Card>
           )}
+
+          <Card
+            id="draw-center-section"
+            className={`${showExportCard ? '' : 'lg:col-span-2'}`}
+          >
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Trophy className="h-5 w-5" />
+                  Draw Center
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => loadDrawSummary({ silent: false })}
+                    variant="outline"
+                    size="sm"
+                    disabled={drawSummaryLoading}
+                  >
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                  <Button
+                    onClick={() => setIsDrawCenterCollapsed((prev) => !prev)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {isDrawCenterCollapsed ? (
+                      <>
+                        <ChevronDown className="h-4 w-4 mr-2" />
+                        Expand
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="h-4 w-4 mr-2" />
+                        Collapse
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              {!isDrawCenterCollapsed && (
+                <>
+                  <CardDescription>
+                    Review ticket standings and manage the draw for this session.
+                  </CardDescription>
+                  {drawSummary?.generated_at && (
+                    <div className="text-xs text-gray-500">
+                      Updated {new Date(drawSummary.generated_at).toLocaleString()}
+                    </div>
+                  )}
+                </>
+              )}
+            </CardHeader>
+            {!isDrawCenterCollapsed && (
+              <CardContent>
+              {drawSummaryLoading ? (
+                <div className="py-8 text-center text-gray-500">Loading draw summary...</div>
+              ) : drawSummary ? (
+                <div className="space-y-6">
+                  {isSessionDiscarded && (
+                    <Alert variant="destructive">
+                      <Ban className="h-4 w-4" />
+                      <AlertDescription>
+                        This session is currently discarded from draw calculations. Restore it to include ticket updates.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="text-sm text-gray-500">Total tickets</div>
+                      <div className="text-2xl font-semibold">
+                        {Number(drawSummary.total_tickets ?? 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="text-sm text-gray-500">Eligible students</div>
+                      <div className="text-2xl font-semibold">
+                        {drawSummary.eligible_count ?? 0}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="text-sm text-gray-500">Excluded records</div>
+                      <div className="text-2xl font-semibold">
+                        {drawSummary.excluded_records ?? 0}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="text-sm text-gray-500">Winner status</div>
+                      <div className="text-2xl font-semibold">
+                        {currentDrawInfo?.finalized ? 'Finalized' : 'Pending'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      onClick={startDrawProcess}
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                      disabled={
+                        drawActionLoading ||
+                        !canManageDraw ||
+                        isSessionDiscarded ||
+                        !hasStudentRecords ||
+                        (drawSummary?.total_tickets ?? 0) <= 0
+                      }
+                    >
+                      <Wand2 className="h-4 w-4 mr-2" />
+                      Start Draw
+                    </Button>
+                    <Button
+                      onClick={finalizeDrawWinner}
+                      variant="outline"
+                      disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner || currentDrawInfo.finalized}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Finalize Winner
+                    </Button>
+                    <Button
+                      onClick={resetDrawWinner}
+                      variant="outline"
+                      disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner}
+                    >
+                      <RefreshCcw className="h-4 w-4 mr-2" />
+                      Reset Draw
+                    </Button>
+                  </div>
+                  {canOverrideWinner && (
+                    <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="w-full sm:max-w-xs">
+                        <SearchableNameInput
+                          placeholder="Search student (name or ID)"
+                          value={overrideInput}
+                          onChange={(value, meta) => {
+                            setOverrideInput(value)
+                            if (!meta || meta.source !== 'selection') {
+                              setOverrideCandidate(null)
+                            }
+                          }}
+                          onSelectName={(candidate) => {
+                            if (candidate) {
+                              const sanitized = sanitizeSelection(candidate)
+                              setOverrideCandidate(sanitized)
+                              if (sanitized?.key && drawSummary?.candidates?.some(entry => entry.key === sanitized.key)) {
+                                setSelectedCandidateKey(sanitized.key)
+                              }
+                            }
+                          }}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              overrideDrawWinner()
+                            }
+                          }}
+                          names={overrideOptions}
+                          className="w-full"
+                        />
+                      </div>
+                      <Button
+                        onClick={overrideDrawWinner}
+                        variant="outline"
+                        disabled={drawActionLoading || !overrideInput.trim() || !hasStudentRecords}
+                      >
+                        <ShieldCheck className="h-4 w-4 mr-2" />
+                        Override Winner
+                      </Button>
+                      <Button
+                        onClick={() => toggleDiscardState(!isSessionDiscarded)}
+                        variant={isSessionDiscarded ? 'default' : 'outline'}
+                        disabled={discardLoading}
+                      >
+                        <Ban className="h-4 w-4 mr-2" />
+                        {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
+                      </Button>
+                    </div>
+                  )}
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <Trophy className="h-4 w-4" />
+                        Current Winner
+                      </div>
+                      <div className="mt-3 text-sm">
+                        {currentDrawInfo?.winner ? (
+                          <div className="space-y-2">
+                            <div className="text-lg font-semibold">{currentDrawInfo.winner.display_name}</div>
+                            {currentDrawInfo.winner.student_id && (
+                              <div className="text-xs text-gray-500">Student ID: {currentDrawInfo.winner.student_id}</div>
+                            )}
+                            <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                              {currentDrawInfo.winner.grade && <span>Grade: {currentDrawInfo.winner.grade}</span>}
+                              {currentDrawInfo.winner.house && <span>House: {currentDrawInfo.winner.house}</span>}
+                              {currentDrawInfo.winner.clan && <span>Clan: {currentDrawInfo.winner.clan}</span>}
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Clock className="h-3 w-3" />
+                              {currentDrawInfo.winner_timestamp ? new Date(currentDrawInfo.winner_timestamp).toLocaleString() : 'Time not recorded'}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Tickets at selection: {Number(currentDrawInfo.tickets_at_selection ?? 0).toFixed(2)} • Chance: {Number(currentDrawInfo.probability_at_selection ?? 0).toFixed(2)}%
+                            </div>
+                            <div className="text-xs">
+                              Status:{' '}
+                              <Badge variant={currentDrawInfo.finalized ? 'default' : 'outline'}>
+                                {currentDrawInfo.finalized ? 'Finalized' : 'Awaiting Finalization'}
+                              </Badge>
+                            </div>
+                            {currentDrawInfo.override && (
+                              <div className="text-xs text-orange-600">Winner selected by superadmin override.</div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">No winner selected yet.</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <ListOrdered className="h-4 w-4" />
+                        Top Candidates
+                      </div>
+                      <div className="mt-3">
+                        {drawSummary.top_candidates && drawSummary.top_candidates.length > 0 ? (
+                          <div className="space-y-2">
+                            {drawSummary.top_candidates.map((candidate, index) => {
+                              const isActive = selectedCandidateKey === candidate.key
+                              return (
+                                <button
+                                  key={candidate.key}
+                                  type="button"
+                                  onClick={() => setSelectedCandidateKey(candidate.key)}
+                                  className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left transition ${
+                                    isActive ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-medium">{candidate.display_name}</div>
+                                    <div className="text-xs text-gray-500">
+                                      Tickets: {Number(candidate.tickets ?? 0).toFixed(2)} • Chance: {Number(candidate.probability ?? 0).toFixed(2)}%
+                                    </div>
+                                  </div>
+                                  <Badge variant={isActive ? 'default' : 'outline'}>#{index + 1}</Badge>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">No eligible students yet.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <Users className="h-4 w-4" />
+                        Selected Candidate Details
+                      </div>
+                      <div className="mt-3 text-sm">
+                        {selectedCandidate ? (
+                          <div className="space-y-3">
+                            <div>
+                              <div className="text-lg font-semibold">{selectedCandidate.display_name}</div>
+                              {selectedCandidate.student_id && (
+                                <div className="text-xs text-gray-500">Student ID: {selectedCandidate.student_id}</div>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 gap-1 text-xs text-gray-600 sm:grid-cols-2">
+                              {selectedCandidate.grade && <span>Grade: {selectedCandidate.grade}</span>}
+                              {selectedCandidate.advisor && <span>Advisor: {selectedCandidate.advisor}</span>}
+                              {selectedCandidate.house && <span>House: {selectedCandidate.house}</span>}
+                              {selectedCandidate.clan && <span>Clan: {selectedCandidate.clan}</span>}
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              Tickets: {Number(selectedCandidate.tickets ?? 0).toFixed(2)} • Chance: {Number(selectedCandidate.probability ?? 0).toFixed(2)}%
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">Select a student to see their ticket details and student ID.</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <History className="h-4 w-4" />
+                        Draw History
+                      </div>
+                      <div className="mt-3 text-sm">
+                        {currentDrawInfo?.history && currentDrawInfo.history.length > 0 ? (
+                          <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-gray-600">
+                            {currentDrawInfo.history
+                              .slice()
+                              .reverse()
+                              .map((entry, index) => (
+                                <div key={`${entry.timestamp}-${index}`} className="rounded border p-2">
+                                  <div className="font-semibold uppercase">{entry.action.replace(/_/g, ' ')}</div>
+                                  <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
+                                  {entry.winner_display_name && <div>Winner: {entry.winner_display_name}</div>}
+                                  {entry.total_tickets !== undefined && (
+                                    <div>Total tickets: {Number(entry.total_tickets ?? 0).toFixed(2)}</div>
+                                  )}
+                                  {entry.winner_tickets !== undefined && (
+                                    <div>Winner tickets: {Number(entry.winner_tickets ?? 0).toFixed(2)}</div>
+                                  )}
+                                  {entry.probability !== undefined && (
+                                    <div>Probability: {Number(entry.probability ?? 0).toFixed(2)}%</div>
+                                  )}
+                                  {entry.performed_by && <div>By: {entry.performed_by}</div>}
+                                </div>
+                              ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">No draw activity recorded yet.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                      <ListOrdered className="h-4 w-4" />
+                      Eligible Students
+                    </div>
+                    <div className="mt-3">
+                      {drawSummary.candidates && drawSummary.candidates.length > 0 ? (
+                        <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                          {drawSummary.candidates.map((candidate) => {
+                            const isActive = selectedCandidateKey === candidate.key
+                            return (
+                              <button
+                                key={candidate.key}
+                                type="button"
+                                onClick={() => setSelectedCandidateKey(candidate.key)}
+                                className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left transition ${
+                                  isActive ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-medium">{candidate.display_name}</div>
+                                  <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                                    {candidate.student_id && <span>ID: {candidate.student_id}</span>}
+                                    <span>Tickets: {Number(candidate.tickets ?? 0).toFixed(2)}</span>
+                                    <span>Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</span>
+                                  </div>
+                                </div>
+                                {candidate.key === currentDrawInfo?.winner?.key && (
+                                  <Badge variant="outline" className="text-xs">Winner</Badge>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500">No eligible students yet.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-8 text-center text-gray-500">
+                  No draw data available yet. Record plate data to generate tickets.
+                </div>
+              )}
+              </CardContent>
+            )}
+          </Card>
         </div>
 
         {/* Category Recording Buttons */}
@@ -1489,13 +2417,22 @@ function App() {
               <SearchableNameInput
                 placeholder="Student ID or Name (e.g., 12345 or John Smith)"
                 value={popupInputValue}
-                onChange={setPopupInputValue}
+                onChange={(value, meta) => {
+                  setPopupInputValue(value)
+                  if (!meta || meta.source !== 'selection') {
+                    setPopupSelectedEntry(null)
+                  }
+                }}
+                onSelectName={(entry) => {
+                  const sanitized = sanitizeSelection(entry)
+                  setPopupSelectedEntry(sanitized)
+                }}
                 onKeyPress={(e) => handleKeyPress(e, 'clean')}
                 names={studentNames}
                 autoFocus
               />
               <div className="flex gap-2">
-                <Button onClick={() => setShowCleanDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowCleanDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button 
@@ -1523,7 +2460,7 @@ function App() {
                 This action adds one to the dirty plate count. No student information is stored.
               </p>
               <div className="flex gap-2">
-                <Button onClick={() => setShowDirtyDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowDirtyDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button
@@ -1550,13 +2487,22 @@ function App() {
               <SearchableNameInput
                 placeholder="Faculty Name (e.g., Alex Morgan)"
                 value={popupInputValue}
-                onChange={setPopupInputValue}
+                onChange={(value, meta) => {
+                  setPopupInputValue(value)
+                  if (!meta || meta.source !== 'selection') {
+                    setPopupSelectedEntry(null)
+                  }
+                }}
+                onSelectName={(entry) => {
+                  const sanitized = sanitizeSelection(entry)
+                  setPopupSelectedEntry(sanitized)
+                }}
                 onKeyPress={(e) => handleKeyPress(e, 'faculty')}
                 names={teacherNames}
                 autoFocus
               />
               <div className="flex gap-2">
-                <Button onClick={() => setShowFacultyDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowFacultyDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button
@@ -1583,13 +2529,22 @@ function App() {
               <SearchableNameInput
                 placeholder="Student ID or Name (e.g., 12345 or John Smith)"
                 value={popupInputValue}
-                onChange={setPopupInputValue}
+                onChange={(value, meta) => {
+                  setPopupInputValue(value)
+                  if (!meta || meta.source !== 'selection') {
+                    setPopupSelectedEntry(null)
+                  }
+                }}
+                onSelectName={(entry) => {
+                  const sanitized = sanitizeSelection(entry)
+                  setPopupSelectedEntry(sanitized)
+                }}
                 onKeyPress={(e) => handleKeyPress(e, 'red')}
                 names={studentNames}
                 autoFocus
               />
               <div className="flex gap-2">
-                <Button onClick={() => setShowRedDialog(false)} variant="outline" className="flex-1">
+                <Button onClick={() => { setShowRedDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                   Cancel
                 </Button>
                 <Button 
@@ -1676,48 +2631,6 @@ function App() {
           </DialogContent>
         </Dialog>
 
-        {/* Dashboard Dialog */}
-        <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
-          <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
-            <DialogHeader>
-              <DialogTitle>Dashboard</DialogTitle>
-              <DialogDescription>
-                Session overview and system statistics
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                  <div className="text-2xl font-bold text-yellow-600">{sessionStats.clean_count}</div>
-                  <div className="text-sm text-yellow-700">🥇 Clean Plates</div>
-                  <div className="text-xs text-yellow-600">
-                    {sessionStats.clean_percentage || 0}% (includes faculty)
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{sessionStats.combined_dirty_count || (sessionStats.dirty_count + sessionStats.red_count)}</div>
-                  <div className="text-sm text-orange-700">🍽️ Dirty Plates</div>
-                  <div className="text-xs text-orange-600">
-                    {sessionStats.dirty_percentage || 0}%
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">{sessionStats.faculty_clean_count}</div>
-                  <div className="text-sm text-green-700">🧑‍🏫 Faculty Clean Plates</div>
-                </div>
-              </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">
-                  {sessionStats.total_recorded || (sessionStats.clean_count + sessionStats.dirty_count + sessionStats.red_count)}
-                </div>
-                <div className="text-sm text-blue-700">Total Records</div>
-              </div>
-            </div>
-            <Button onClick={() => setShowDashboard(false)} className="w-full">
-              Close
-            </Button>
-          </DialogContent>
-        </Dialog>
 
 
         {/* CSV Preview Dialog */}
@@ -1978,7 +2891,12 @@ function App() {
                 {adminSessions.map((adminSession) => (
                   <div key={adminSession.session_id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
-                      <div className="font-medium">{adminSession.session_name}</div>
+                      <div className="font-medium flex items-center gap-2">
+                        {adminSession.session_name}
+                        {adminSession.is_discarded && (
+                          <Badge variant="destructive" className="text-xs uppercase">Discarded</Badge>
+                        )}
+                      </div>
                       <div className="text-sm text-gray-500">
                         Owner: {adminSession.owner} • {adminSession.total_records} records • Faculty Clean: {adminSession.faculty_clean_count ?? 0}
                       </div>
@@ -2143,6 +3061,9 @@ function App() {
                 >
                     <div className="text-left">
                       <div className="font-medium">{session.session_name}</div>
+                      {session.is_discarded && (
+                        <Badge variant="destructive" className="mt-1 text-xs uppercase">Discarded</Badge>
+                      )}
                       <div className="text-sm text-gray-500">
                         {session.total_records > 0 ? (
                           <>

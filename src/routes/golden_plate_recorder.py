@@ -5,6 +5,8 @@ import csv
 import io
 import os
 import json
+import random
+import re
 
 recorder_bp = Blueprint('recorder', __name__)
 
@@ -24,6 +26,68 @@ GLOBAL_CSV_FILE = os.path.join(DATA_DIR, "global_csv_data.json")
 TEACHER_LIST_FILE = os.path.join(DATA_DIR, "teacher_list.json")
 
 print(f"Persistent storage directory: {DATA_DIR}")
+
+# Student lookup cache built from the global CSV data for fast eligibility checks
+student_lookup = {}
+
+secure_random = random.SystemRandom()
+
+def normalize_name(value):
+    return str(value or '').strip()
+
+def make_student_key(preferred_name, last_name, student_id=None):
+    student_id_norm = normalize_name(student_id).lower()
+    if student_id_norm:
+        return f"id:{student_id_norm}"
+    preferred_norm = normalize_name(preferred_name).lower()
+    last_norm = normalize_name(last_name).lower()
+    if not preferred_norm and not last_norm:
+        return None
+    return f"{preferred_norm}|{last_norm}"
+
+def split_student_key(key):
+    if not key:
+        return '', ''
+    if key.startswith('id:'):
+        return '', ''
+    parts = key.split('|', 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return parts[0], ''
+
+
+def extract_student_id_from_key(key):
+    if not key:
+        return ''
+    if key.startswith('id:'):
+        return key.split(':', 1)[1]
+    return ''
+
+def update_student_lookup():
+    global student_lookup
+    student_lookup = {}
+    data = []
+    if isinstance(global_csv_data, dict):
+        data = global_csv_data.get('data') or []
+    if not isinstance(data, list):
+        data = []
+    for row in data:
+        preferred = normalize_name(row.get('Preferred', ''))
+        last = normalize_name(row.get('Last', ''))
+        student_id = normalize_name(row.get('Student ID', ''))
+        key = make_student_key(preferred, last, student_id)
+        if not key:
+            continue
+        student_lookup[key] = {
+            'preferred_name': preferred,
+            'last_name': last,
+            'grade': normalize_name(row.get('Grade', '')),
+            'advisor': normalize_name(row.get('Advisor', '')),
+            'house': normalize_name(row.get('House', '')),
+            'clan': normalize_name(row.get('Clan', '')),
+            'student_id': student_id,
+            'key': key
+        }
 
 def load_data_from_file(file_path, default_data):
     """Load data from file or return default if file doesn't exist"""
@@ -75,6 +139,7 @@ invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
 
 # Global CSV storage (admin/super admin can upload, all users can use)
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, {})
+update_student_lookup()
 
 # Global teacher list storage (admin/super admin can upload, all users can use)
 global_teacher_data = load_data_from_file(TEACHER_LIST_FILE, {})
@@ -130,6 +195,51 @@ def ensure_session_structure(session_info):
             if not record.get('display_name'):
                 record['display_name'] = 'Dirty Plate'
 
+    for category in ['clean_records', 'red_records']:
+        records = session_info.get(category)
+        if not isinstance(records, list):
+            session_info[category] = []
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            preferred = record.get('preferred_name') or record.get('first_name')
+            last = record.get('last_name')
+            student_id = record.get('student_id')
+            key = record.get('student_key')
+            if not key:
+                key = make_student_key(preferred, last, student_id)
+            if key:
+                key_lower = key.lower()
+                record['student_key'] = key_lower
+                if not record.get('student_id'):
+                    extracted = extract_student_id_from_key(key_lower)
+                    if extracted:
+                        record['student_id'] = extracted
+
+    # Ensure draw information structure exists
+    draw_info = session_info.get('draw_info')
+    if not isinstance(draw_info, dict):
+        draw_info = {}
+        session_info['draw_info'] = draw_info
+    draw_info.setdefault('winner', None)
+    draw_info.setdefault('winner_timestamp', None)
+    draw_info.setdefault('selected_by', None)
+    draw_info.setdefault('method', None)
+    draw_info.setdefault('finalized', False)
+    draw_info.setdefault('finalized_at', None)
+    draw_info.setdefault('finalized_by', None)
+    draw_info.setdefault('history', [])
+    draw_info.setdefault('override', False)
+    draw_info.setdefault('tickets_at_selection', None)
+    draw_info.setdefault('probability_at_selection', None)
+    draw_info.setdefault('eligible_pool_size', None)
+    session_info['draw_info'] = draw_info
+
+    if 'is_discarded' not in session_info:
+        session_info['is_discarded'] = False
+    if 'discard_metadata' not in session_info or not isinstance(session_info['discard_metadata'], dict):
+        session_info['discard_metadata'] = {}
 
 def get_dirty_count(session_info):
     """Helper to safely retrieve dirty count from a session."""
@@ -178,6 +288,205 @@ def save_global_csv_data():
 def save_global_teacher_data():
     """Save global teacher data to file"""
     return save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
+
+def format_display_name(profile):
+    preferred = normalize_name(profile.get('preferred_name') or profile.get('first_name', ''))
+    last = normalize_name(profile.get('last_name'))
+    if preferred and last:
+        return f"{preferred} {last}"
+    return preferred or last
+
+def build_profile_from_record(record):
+    preferred = normalize_name(record.get('preferred_name') or record.get('first_name'))
+    last = normalize_name(record.get('last_name'))
+    student_id = normalize_name(record.get('student_id'))
+    key = record.get('student_key') or make_student_key(preferred, last, student_id)
+    if not student_id and key:
+        student_id = extract_student_id_from_key(key)
+    profile = {
+        'preferred_name': preferred,
+        'last_name': last,
+        'grade': normalize_name(record.get('grade')),
+        'advisor': normalize_name(record.get('advisor')),
+        'house': normalize_name(record.get('house')),
+        'clan': normalize_name(record.get('clan')),
+        'student_id': student_id
+    }
+    profile['key'] = key
+    if key and key in student_lookup:
+        lookup = student_lookup[key]
+        for field in ['preferred_name', 'last_name', 'grade', 'advisor', 'house', 'clan', 'student_id']:
+            if not profile.get(field):
+                profile[field] = lookup.get(field, '')
+    profile['display_name'] = format_display_name(profile)
+    return profile
+
+def is_student_profile_eligible(profile):
+    key = profile.get('key')
+    if not key:
+        return False
+    if student_lookup:
+        return key in student_lookup
+    return True
+
+def safe_parse_datetime(value):
+    if not value:
+        return datetime.min
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        try:
+            return datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except Exception:
+            return datetime.min
+
+def compute_ticket_rollups():
+    generated_at = datetime.now().isoformat()
+    ordered = sorted(
+        session_data.items(),
+        key=lambda item: (safe_parse_datetime(item[1].get('created_at')), item[0])
+    )
+    summaries = {}
+    current_tickets = {}
+    student_profiles = {}
+    for session_id, info in ordered:
+        ensure_session_structure(info)
+        if info.get('is_discarded'):
+            summaries[session_id] = {
+                'session_id': session_id,
+                'session_name': info.get('session_name', ''),
+                'created_at': info.get('created_at'),
+                'is_discarded': True,
+                'tickets_snapshot': {},
+                'profiles': {},
+                'total_tickets': 0.0,
+                'candidates': [],
+                'top_candidates': [],
+                'eligible_count': 0,
+                'excluded_records': 0,
+                'generated_at': generated_at
+            }
+            continue
+        pre_session_keys = set(current_tickets.keys())
+        present_keys = set()
+        excluded_records = 0
+        for record in info.get('clean_records', []):
+            profile = build_profile_from_record(record)
+            key = profile.get('key')
+            if not key or not is_student_profile_eligible(profile):
+                excluded_records += 1
+                continue
+            present_keys.add(key)
+            student_profiles[key] = profile
+            current_tickets[key] = current_tickets.get(key, 0.0) + 1.0
+        for record in info.get('red_records', []):
+            profile = build_profile_from_record(record)
+            key = profile.get('key')
+            if not key or not is_student_profile_eligible(profile):
+                excluded_records += 1
+                continue
+            present_keys.add(key)
+            student_profiles[key] = profile
+            current_tickets[key] = 0.0
+        for key in pre_session_keys:
+            if key not in present_keys:
+                value = current_tickets.get(key, 0.0)
+                if value > 0:
+                    current_tickets[key] = value / 2.0
+        snapshot = {k: float(v) for k, v in current_tickets.items() if v > 0}
+        total_tickets = sum(snapshot.values())
+        profiles_snapshot = {k: student_profiles.get(k, {}).copy() for k in snapshot}
+        candidates = []
+        for key, value in sorted(snapshot.items(), key=lambda item: (-item[1], item[0])):
+            profile = profiles_snapshot.get(key, {})
+            display_name = profile.get('display_name') or format_display_name(profile)
+            candidate = {
+                'key': key,
+                'tickets': value,
+                'preferred_name': profile.get('preferred_name', ''),
+                'last_name': profile.get('last_name', ''),
+                'display_name': display_name,
+                'grade': profile.get('grade', ''),
+                'advisor': profile.get('advisor', ''),
+                'house': profile.get('house', ''),
+                'clan': profile.get('clan', ''),
+                'student_id': profile.get('student_id', ''),
+                'probability': (value / total_tickets * 100.0) if total_tickets > 0 else 0.0
+            }
+            candidates.append(candidate)
+        summaries[session_id] = {
+            'session_id': session_id,
+            'session_name': info.get('session_name', ''),
+            'created_at': info.get('created_at'),
+            'is_discarded': False,
+            'tickets_snapshot': snapshot,
+            'profiles': profiles_snapshot,
+            'total_tickets': total_tickets,
+            'candidates': candidates,
+            'top_candidates': candidates[:3],
+            'eligible_count': len(candidates),
+            'excluded_records': excluded_records,
+            'generated_at': generated_at
+        }
+        draw_info = info.get('draw_info', {})
+        winner = draw_info.get('winner')
+        if winner and draw_info.get('finalized'):
+            winner_key = winner.get('key')
+            if winner_key:
+                current_tickets[winner_key] = 0.0
+    return summaries
+
+def get_ticket_summary_for_session(session_id):
+    summaries = compute_ticket_rollups()
+    return summaries.get(session_id), summaries
+
+def serialize_draw_info(draw_info):
+    if not isinstance(draw_info, dict):
+        return {
+            'winner': None,
+            'winner_timestamp': None,
+            'selected_by': None,
+            'method': None,
+            'finalized': False,
+            'finalized_at': None,
+            'finalized_by': None,
+            'override': False,
+            'tickets_at_selection': None,
+            'probability_at_selection': None,
+            'eligible_pool_size': None,
+            'history': []
+        }
+    result = {
+        'winner_timestamp': draw_info.get('winner_timestamp'),
+        'selected_by': draw_info.get('selected_by'),
+        'method': draw_info.get('method'),
+        'finalized': draw_info.get('finalized', False),
+        'finalized_at': draw_info.get('finalized_at'),
+        'finalized_by': draw_info.get('finalized_by'),
+        'override': draw_info.get('override', False),
+        'tickets_at_selection': draw_info.get('tickets_at_selection'),
+        'probability_at_selection': draw_info.get('probability_at_selection'),
+        'eligible_pool_size': draw_info.get('eligible_pool_size'),
+        'history': list(draw_info.get('history', []))
+    }
+    winner = draw_info.get('winner')
+    if isinstance(winner, dict):
+        result['winner'] = {
+            'key': winner.get('key'),
+            'display_name': winner.get('display_name') or format_display_name(winner),
+            'preferred_name': winner.get('preferred_name'),
+            'last_name': winner.get('last_name'),
+            'grade': winner.get('grade'),
+            'advisor': winner.get('advisor'),
+            'house': winner.get('house'),
+            'clan': winner.get('clan'),
+            'student_id': winner.get('student_id'),
+            'tickets': winner.get('tickets'),
+            'probability': winner.get('probability')
+        }
+    else:
+        result['winner'] = None
+    return result
 
 def get_current_user():
     """Get current logged in user"""
@@ -570,7 +879,23 @@ def create_session():
         'red_records': [],
         'faculty_clean_records': [],
         'scan_history': [],
-        'is_public': is_public
+        'is_public': is_public,
+        'draw_info': {
+            'winner': None,
+            'winner_timestamp': None,
+            'selected_by': None,
+            'method': None,
+            'finalized': False,
+            'finalized_at': None,
+            'finalized_by': None,
+            'history': [],
+            'override': False,
+            'tickets_at_selection': None,
+            'probability_at_selection': None,
+            'eligible_pool_size': None
+        },
+        'is_discarded': False,
+        'discard_metadata': {}
     }
     
     # Save session data to file
@@ -620,7 +945,9 @@ def list_sessions():
             'clean_percentage': round(clean_percentage, 1),
             'dirty_percentage': round(dirty_percentage, 1),
             'is_public': data.get('is_public', True),
-            'delete_requested': pending
+            'delete_requested': pending,
+            'is_discarded': data.get('is_discarded', False),
+            'draw_info': serialize_draw_info(data.get('draw_info', {}))
         })
     
     return jsonify({
@@ -798,6 +1125,7 @@ def upload_csv():
             'uploaded_by': user_id,
             'uploaded_at': datetime.now().isoformat()
         }
+        update_student_lookup()
         
         # Save to persistent storage
         save_global_csv_data()
@@ -881,21 +1209,29 @@ def get_student_names():
     for row in csv_data['data']:
         preferred = str(row.get('Preferred', '') or '').strip()
         last = str(row.get('Last', '') or '').strip()
-        
+        student_id = str(row.get('Student ID', '') or '').strip()
+        key = make_student_key(preferred, last, student_id)
+
         if preferred and last:
             full_name = f"{preferred} {last}"
             names.append({
                 'display_name': full_name,
                 'preferred': preferred,
+                'preferred_name': preferred,
                 'last': last,
-                'student_id': str(row.get('Student ID', '') or '').strip()
+                'last_name': last,
+                'student_id': student_id,
+                'key': key
             })
         elif preferred:
             names.append({
                 'display_name': preferred,
                 'preferred': preferred,
+                'preferred_name': preferred,
                 'last': '',
-                'student_id': str(row.get('Student ID', '') or '').strip()
+                'last_name': '',
+                'student_id': student_id,
+                'key': key
             })
     
     # Sort names alphabetically
@@ -1040,7 +1376,12 @@ def record_student(category):
         return jsonify({'error': 'Invalid category'}), 400
 
     data = request.get_json(silent=True) or {}
-    input_value = data.get('input_value', '').strip()
+    input_value = str(data.get('input_value', '') or '').strip()
+    provided_student_id = normalize_name(data.get('student_id'))
+    provided_key_raw = str(data.get('student_key') or '').strip()
+    provided_key = provided_key_raw.lower() if provided_key_raw else ''
+    provided_preferred = normalize_name(data.get('preferred_name') or data.get('preferred'))
+    provided_last = normalize_name(data.get('last_name') or data.get('last'))
 
     session_id = session['session_id']
     session_info = session_data[session_id]
@@ -1118,73 +1459,211 @@ def record_student(category):
         }), 200
 
     # Remaining categories rely on student database lookup (clean, red)
-    if not input_value:
+    has_reference = bool(
+        input_value or
+        provided_student_id or
+        provided_key or
+        (provided_preferred and provided_last)
+    )
+    if not has_reference:
         return jsonify({'error': 'Student ID or Name is required'}), 400
 
     csv_data = global_csv_data
+    csv_rows = []
+    if isinstance(csv_data, dict):
+        csv_rows = csv_data.get('data') or []
+    if not isinstance(csv_rows, list):
+        csv_rows = []
 
-    # Determine if input is ID or name
     student_record = None
-    is_manual_entry = False
-    preferred_name = ""
-    last_name = ""
-    grade = ""
-    advisor = ""
-    house = ""
-    clan = ""
+    lookup_profile = None
+    dataset_match = False
 
-    if csv_data and csv_data['data']:
-        for row in csv_data['data']:
-            if str(row.get('Student ID', '')).strip() == input_value:
-                student_record = row
-                break
-
-    if not student_record and csv_data and csv_data['data']:
-        name_parts = input_value.split()
-        if len(name_parts) >= 2:
-            input_first = name_parts[0].lower()
-            input_last = ' '.join(name_parts[1:]).lower()
-
-            for row in csv_data['data']:
-                csv_first = str(row.get('Preferred', '')).strip().lower()
-                csv_last = str(row.get('Last', '')).strip().lower()
-
-                if csv_first == input_first and csv_last == input_last:
-                    student_record = row
-                    break
-
-    if not student_record:
-        is_manual_entry = True
-        name_parts = input_value.split()
-        if len(name_parts) >= 2:
-            preferred_name = name_parts[0].capitalize()
-            last_name = ' '.join(name_parts[1:]).capitalize()
-        elif len(name_parts) == 1:
-            preferred_name = name_parts[0].capitalize()
-            last_name = ""
-        else:
-            preferred_name = input_value.capitalize()
-            last_name = ""
+    candidate_ids = []
+    if provided_student_id:
+        candidate_ids.append(provided_student_id)
+    key_id = extract_student_id_from_key(provided_key) if provided_key else ''
+    if key_id:
+        candidate_ids.append(key_id)
+    if input_value.isdigit():
+        candidate_ids.append(input_value)
     else:
+        id_match = re.search(r'\b(\d{3,})\b', input_value)
+        if id_match:
+            candidate_ids.append(id_match.group(1))
+
+    normalized_ids = []
+    for candidate_id in candidate_ids:
+        norm_id = normalize_name(candidate_id)
+        if norm_id and norm_id not in normalized_ids:
+            normalized_ids.append(norm_id)
+
+    for candidate_id in normalized_ids:
+        match = next(
+            (
+                row
+                for row in csv_rows
+                if normalize_name(row.get('Student ID', '')) == candidate_id
+            ),
+            None
+        )
+        if match:
+            student_record = match
+            dataset_match = True
+            break
+
+    cleaned_input = input_value
+    if cleaned_input:
+        cleaned_input = re.sub(r'\([^)]*\)', '', cleaned_input).strip()
+
+    candidate_preferred = provided_preferred
+    candidate_last = provided_last
+
+    if (not candidate_preferred or not candidate_last) and provided_key and not provided_key.startswith('id:'):
+        key_preferred, key_last = split_student_key(provided_key)
+        if key_preferred and not candidate_preferred:
+            candidate_preferred = key_preferred
+        if key_last and not candidate_last:
+            candidate_last = key_last
+
+    if not candidate_preferred or not candidate_last:
+        name_parts = cleaned_input.split()
+        if len(name_parts) >= 2:
+            candidate_preferred = candidate_preferred or name_parts[0]
+            candidate_last = candidate_last or ' '.join(name_parts[1:])
+        elif len(name_parts) == 1:
+            candidate_preferred = candidate_preferred or name_parts[0]
+            candidate_last = candidate_last or ''
+
+    if not student_record and csv_rows and candidate_preferred and candidate_last:
+        input_first = candidate_preferred.lower()
+        input_last = candidate_last.lower()
+        student_record = next(
+            (
+                row
+                for row in csv_rows
+                if str(row.get('Preferred', '')).strip().lower() == input_first
+                and str(row.get('Last', '')).strip().lower() == input_last
+            ),
+            None
+        )
+        if student_record:
+            dataset_match = True
+
+    if not student_record and provided_key and provided_key in student_lookup:
+        lookup_profile = student_lookup.get(provided_key)
+        if lookup_profile:
+            dataset_match = True
+
+    preferred_name = ''
+    last_name = ''
+    grade = ''
+    advisor = ''
+    house = ''
+    clan = ''
+    student_id = ''
+
+    if student_record:
         preferred_name = str(student_record.get('Preferred', '') or '').strip()
         last_name = str(student_record.get('Last', '') or '').strip()
         grade = str(student_record.get('Grade', '') or '').strip()
         advisor = str(student_record.get('Advisor', '') or '').strip()
         house = str(student_record.get('House', '') or '').strip()
         clan = str(student_record.get('Clan', '') or '').strip()
+        student_id = str(student_record.get('Student ID', '') or '').strip()
+    elif lookup_profile:
+        preferred_name = normalize_name(lookup_profile.get('preferred_name'))
+        last_name = normalize_name(lookup_profile.get('last_name'))
+        grade = normalize_name(lookup_profile.get('grade'))
+        advisor = normalize_name(lookup_profile.get('advisor'))
+        house = normalize_name(lookup_profile.get('house'))
+        clan = normalize_name(lookup_profile.get('clan'))
+        student_id = normalize_name(lookup_profile.get('student_id'))
+    else:
+        preferred_name = normalize_name(candidate_preferred or (cleaned_input.split()[0] if cleaned_input else input_value))
+        if cleaned_input:
+            parts = cleaned_input.split()
+            if len(parts) >= 2:
+                candidate_last = candidate_last or ' '.join(parts[1:])
+        last_name = normalize_name(candidate_last)
 
-    preferred_name = preferred_name or ""
-    last_name = last_name or ""
-    grade = grade or ""
-    advisor = advisor or ""
-    house = house or ""
-    clan = clan or ""
+    if not preferred_name and provided_preferred:
+        preferred_name = provided_preferred
+    if not last_name and provided_last:
+        last_name = provided_last
+    if not student_id and provided_student_id:
+        student_id = provided_student_id
+    if not student_id and provided_key:
+        extracted_id = extract_student_id_from_key(provided_key)
+        if extracted_id:
+            student_id = extracted_id
+    if not student_id and normalized_ids:
+        student_id = normalized_ids[0]
+
+    preferred_name = preferred_name or ''
+    last_name = last_name or ''
+    grade = grade or ''
+    advisor = advisor or ''
+    house = house or ''
+    clan = clan or ''
+    student_id = student_id or ''
+
+    student_key = make_student_key(preferred_name, last_name, student_id) or provided_key or None
+    if student_key:
+        student_key = student_key.lower()
+
+    is_manual_entry = not dataset_match
 
     student_records = session_info['clean_records'] + session_info['red_records']
 
+    def normalize_field(value):
+        return str(value or '').strip().lower()
+
+    student_key = student_key or ''
+
+    target_student_id = normalize_field(student_id)
+    target_preferred = normalize_field(preferred_name)
+    target_last = normalize_field(last_name)
+    target_grade = normalize_field(grade)
+    target_advisor = normalize_field(advisor)
+    target_house = normalize_field(house)
+    target_clan = normalize_field(clan)
+    target_key = normalize_field(student_key)
+
+    def is_duplicate(existing_record):
+        existing_student_id = normalize_field(existing_record.get('student_id'))
+
+        if target_student_id and existing_student_id:
+            return existing_student_id == target_student_id
+
+        if target_student_id and not existing_student_id:
+            return False
+
+        if not target_student_id and existing_student_id:
+            return False
+
+        existing_key = normalize_field(existing_record.get('student_key'))
+        if target_key and existing_key:
+            return existing_key == target_key
+
+        existing_preferred = normalize_field(existing_record.get('preferred_name') or existing_record.get('first_name'))
+        existing_last = normalize_field(existing_record.get('last_name'))
+        existing_grade = normalize_field(existing_record.get('grade'))
+        existing_advisor = normalize_field(existing_record.get('advisor'))
+        existing_house = normalize_field(existing_record.get('house'))
+        existing_clan = normalize_field(existing_record.get('clan'))
+
+        return (
+            existing_preferred == target_preferred and
+            existing_last == target_last and
+            existing_grade == target_grade and
+            existing_advisor == target_advisor and
+            existing_house == target_house and
+            existing_clan == target_clan
+        )
+
     duplicate_check = any(
-        (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
-        record.get('last_name', '').lower() == last_name.lower()
+        is_duplicate(record)
         for record in student_records
     )
 
@@ -1192,8 +1671,7 @@ def record_student(category):
         existing_category = None
         for cat in ['clean', 'red']:
             if any(
-                (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
-                record.get('last_name', '').lower() == last_name.lower()
+                is_duplicate(record)
                 for record in session_info[f'{cat}_records']
             ):
                 existing_category = cat
@@ -1212,6 +1690,8 @@ def record_student(category):
         'advisor': advisor,
         'house': house,
         'clan': clan,
+        'student_id': student_id,
+        'student_key': student_key,
         'category': category,
         'timestamp': datetime.now().isoformat(),
         'recorded_by': session['user_id'],
@@ -1231,6 +1711,8 @@ def record_student(category):
         'advisor': advisor,
         'house': house,
         'clan': clan,
+        'student_id': student_id,
+        'student_key': student_key,
         'category': category,
         'is_manual_entry': is_manual_entry,
         'recorded_by': session['user_id']
@@ -1275,7 +1757,9 @@ def get_session_status():
         'total_recorded': total_recorded,
         'clean_percentage': round(clean_percentage, 1),
         'dirty_percentage': round(dirty_percentage, 1),
-        'scan_history_count': len(data['scan_history'])
+        'scan_history_count': len(data['scan_history']),
+        'is_discarded': data.get('is_discarded', False),
+        'draw_info': serialize_draw_info(data.get('draw_info', {}))
     }), 200
 
 @recorder_bp.route('/session/history', methods=['GET'])
@@ -1424,6 +1908,477 @@ def export_detailed_csv():
     )
 
 
+
+@recorder_bp.route('/session/<session_id>/draw/summary', methods=['GET'])
+def get_draw_summary(session_id):
+    """Return draw summary for a session."""
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    if is_guest() and not session_info.get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
+
+    ensure_session_structure(session_info)
+    summary, _ = get_ticket_summary_for_session(session_id)
+    if not summary:
+        summary = {
+            'session_id': session_id,
+            'session_name': session_info.get('session_name', ''),
+            'created_at': session_info.get('created_at'),
+            'is_discarded': session_info.get('is_discarded', False),
+            'tickets_snapshot': {},
+            'total_tickets': 0.0,
+            'candidates': [],
+            'top_candidates': [],
+            'eligible_count': 0,
+            'excluded_records': 0,
+            'generated_at': datetime.now().isoformat()
+        }
+
+    response = {
+        'session_id': session_id,
+        'session_name': session_info.get('session_name', ''),
+        'created_at': session_info.get('created_at'),
+        'is_discarded': session_info.get('is_discarded', False),
+        'total_tickets': summary.get('total_tickets', 0.0),
+        'eligible_count': summary.get('eligible_count', 0),
+        'excluded_records': summary.get('excluded_records', 0),
+        'top_candidates': summary.get('top_candidates', []),
+        'candidates': summary.get('candidates', []),
+        'ticket_snapshot': summary.get('tickets_snapshot', {}),
+        'generated_at': summary.get('generated_at', datetime.now().isoformat()),
+        'draw_info': serialize_draw_info(session_info.get('draw_info', {}))
+    }
+    return jsonify(response), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/start', methods=['POST'])
+def start_draw(session_id):
+    """Start a weighted random draw for a session."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+
+    if session_info.get('is_discarded'):
+        return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    student_records_count = len(session_info.get('clean_records', [])) + len(session_info.get('red_records', []))
+    if student_records_count <= 0:
+        return jsonify({'error': 'No student records available for this session'}), 400
+
+    summary, _ = get_ticket_summary_for_session(session_id)
+    if not summary or summary.get('total_tickets', 0.0) <= 0:
+        return jsonify({'error': 'No eligible tickets available for drawing'}), 400
+
+    tickets_snapshot = summary.get('tickets_snapshot') or {}
+    total_tickets = summary.get('total_tickets', 0.0)
+    profiles = summary.get('profiles') or {}
+
+    cumulative = 0.0
+    target = secure_random.random() * total_tickets
+    chosen_key = None
+    for key, value in tickets_snapshot.items():
+        cumulative += value
+        if target <= cumulative:
+            chosen_key = key
+            break
+    if chosen_key is None and tickets_snapshot:
+        chosen_key = next(iter(tickets_snapshot))
+
+    if chosen_key is None:
+        return jsonify({'error': 'Unable to determine a winner'}), 400
+
+    profile = profiles.get(chosen_key, {}).copy()
+    if not profile:
+        preferred, last = split_student_key(chosen_key)
+        fallback_id = extract_student_id_from_key(chosen_key)
+        profile = {
+            'preferred_name': preferred.title() if preferred else '',
+            'last_name': last.title() if last else '',
+            'grade': '',
+            'advisor': '',
+            'house': '',
+            'clan': '',
+            'student_id': fallback_id
+        }
+    display_name = profile.get('display_name') or format_display_name(profile)
+    winner_tickets = tickets_snapshot.get(chosen_key, 0.0)
+    probability = (winner_tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
+
+    winner_data = {
+        'key': chosen_key,
+        'preferred_name': profile.get('preferred_name', ''),
+        'last_name': profile.get('last_name', ''),
+        'display_name': display_name,
+        'grade': profile.get('grade', ''),
+        'advisor': profile.get('advisor', ''),
+        'house': profile.get('house', ''),
+        'clan': profile.get('clan', ''),
+        'student_id': profile.get('student_id', ''),
+        'tickets': winner_tickets,
+        'probability': probability
+    }
+
+    timestamp = datetime.now().isoformat()
+    draw_info = session_info['draw_info']
+    draw_info['winner'] = winner_data
+    draw_info['winner_timestamp'] = timestamp
+    draw_info['selected_by'] = session.get('user_id')
+    draw_info['method'] = 'random'
+    draw_info['finalized'] = False
+    draw_info['finalized_at'] = None
+    draw_info['finalized_by'] = None
+    draw_info['override'] = False
+    draw_info['tickets_at_selection'] = total_tickets
+    draw_info['probability_at_selection'] = probability
+    draw_info['eligible_pool_size'] = summary.get('eligible_count', 0)
+
+    history_entry = {
+        'action': 'random_draw',
+        'performed_by': session.get('user_id'),
+        'timestamp': timestamp,
+        'winner_key': chosen_key,
+        'winner_display_name': display_name,
+        'total_tickets': total_tickets,
+        'winner_tickets': winner_tickets,
+        'probability': probability
+    }
+    draw_info['history'].append(history_entry)
+
+    save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'winner': winner_data,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/finalize', methods=['POST'])
+def finalize_draw(session_id):
+    """Finalize the current draw winner for a session."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+    draw_info = session_info.get('draw_info', {})
+    winner = draw_info.get('winner')
+    if not winner:
+        return jsonify({'error': 'No winner to finalize'}), 400
+
+    if not draw_info.get('finalized'):
+        timestamp = datetime.now().isoformat()
+        draw_info['finalized'] = True
+        draw_info['finalized_at'] = timestamp
+        draw_info['finalized_by'] = session.get('user_id')
+        draw_info['history'].append({
+            'action': 'finalized',
+            'performed_by': session.get('user_id'),
+            'timestamp': timestamp,
+            'winner_key': winner.get('key'),
+            'winner_display_name': winner.get('display_name')
+        })
+        save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'finalized': True,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/reset', methods=['POST'])
+def reset_draw(session_id):
+    """Reset the draw for a session."""
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+    draw_info = session_info.get('draw_info', {})
+    winner = draw_info.get('winner')
+
+    if not winner:
+        return jsonify({'error': 'No draw to reset'}), 400
+
+    if draw_info.get('finalized') and not require_superadmin():
+        return jsonify({'error': 'Only super admins can reset a finalized draw'}), 403
+
+    timestamp = datetime.now().isoformat()
+    draw_info['history'].append({
+        'action': 'reset',
+        'performed_by': session.get('user_id'),
+        'timestamp': timestamp,
+        'previous_winner_key': winner.get('key'),
+        'previous_winner_display_name': winner.get('display_name')
+    })
+
+    draw_info['winner'] = None
+    draw_info['winner_timestamp'] = None
+    draw_info['selected_by'] = None
+    draw_info['method'] = None
+    draw_info['finalized'] = False
+    draw_info['finalized_at'] = None
+    draw_info['finalized_by'] = None
+    draw_info['override'] = False
+    draw_info['tickets_at_selection'] = None
+    draw_info['probability_at_selection'] = None
+    draw_info['eligible_pool_size'] = None
+
+    save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'reset': True,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/override', methods=['POST'])
+def override_draw(session_id):
+    """Allow a super admin to override the draw winner."""
+    if not require_superadmin():
+        return jsonify({'error': 'Super admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+
+    if session_info.get('is_discarded'):
+        return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    student_records_count = len(session_info.get('clean_records', [])) + len(session_info.get('red_records', []))
+    if student_records_count <= 0:
+        return jsonify({'error': 'No student records available for this session'}), 400
+
+    data = request.get_json(silent=True) or {}
+    summary, _ = get_ticket_summary_for_session(session_id)
+    if not summary:
+        return jsonify({'error': 'Unable to load draw summary for this session'}), 400
+
+    candidates = summary.get('candidates') or []
+    tickets_snapshot = summary.get('tickets_snapshot') or {}
+    profiles = summary.get('profiles') or {}
+
+    all_profiles = {}
+    for key, profile in profiles.items():
+        if isinstance(profile, dict):
+            copied = profile.copy()
+            copied.setdefault('key', key)
+            copied.setdefault('display_name', format_display_name(copied))
+            all_profiles[key] = copied
+
+    for record in session_info.get('clean_records', []):
+        profile = build_profile_from_record(record)
+        key = profile.get('key')
+        if key and key not in all_profiles:
+            all_profiles[key] = profile
+
+    for record in session_info.get('red_records', []):
+        profile = build_profile_from_record(record)
+        key = profile.get('key')
+        if key and key not in all_profiles:
+            all_profiles[key] = profile
+
+    for key, info in student_lookup.items():
+        if key not in all_profiles:
+            profile = info.copy()
+            profile['key'] = key
+            profile['display_name'] = format_display_name(profile)
+            all_profiles[key] = profile
+
+    override_key_raw = data.get('student_key')
+    override_key = str(override_key_raw or '').strip().lower()
+    student_id = str(data.get('student_id', '')).strip()
+    input_value = str(data.get('input_value', '')).strip()
+    preferred = data.get('preferred_name')
+    last = data.get('last_name')
+
+    if not override_key and student_id:
+        normalized_id = student_id.lower()
+        match = next(
+            (
+                profile
+                for profile in all_profiles.values()
+                if str(profile.get('student_id', '')).strip().lower() == normalized_id
+            ),
+            None
+        )
+        if match:
+            override_key = match.get('key')
+
+    if not override_key and input_value:
+        normalized_input = input_value.lower()
+        match = next(
+            (
+                profile
+                for profile in all_profiles.values()
+                if (profile.get('display_name') or '').lower() == normalized_input
+            ),
+            None
+        )
+        if not match and input_value.isdigit():
+            match = next(
+                (
+                    profile
+                    for profile in all_profiles.values()
+                    if str(profile.get('student_id', '')).strip() == input_value
+                ),
+                None
+            )
+        if match:
+            override_key = match.get('key')
+
+    if not override_key and (preferred and last or student_id):
+        override_key = make_student_key(preferred, last, student_id)
+
+    if not override_key:
+        return jsonify({'error': 'Unable to determine the override candidate from the provided input'}), 400
+
+    if override_key not in all_profiles:
+        return jsonify({'error': 'Specified student was not found in the uploaded CSV'}), 400
+
+    profile = all_profiles.get(override_key, {}).copy()
+    if not profile:
+        preferred, last = split_student_key(override_key)
+        fallback_id = extract_student_id_from_key(override_key)
+        profile = {
+            'preferred_name': preferred.title() if preferred else '',
+            'last_name': last.title() if last else '',
+            'grade': '',
+            'advisor': '',
+            'house': '',
+            'clan': '',
+            'student_id': fallback_id
+        }
+    display_name = profile.get('display_name') or format_display_name(profile)
+    winner_tickets = tickets_snapshot.get(override_key, 0.0)
+    total_tickets = summary.get('total_tickets', 0.0)
+    probability = (winner_tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
+
+    winner_data = {
+        'key': override_key,
+        'preferred_name': profile.get('preferred_name', ''),
+        'last_name': profile.get('last_name', ''),
+        'display_name': display_name,
+        'grade': profile.get('grade', ''),
+        'advisor': profile.get('advisor', ''),
+        'house': profile.get('house', ''),
+        'clan': profile.get('clan', ''),
+        'student_id': profile.get('student_id', ''),
+        'tickets': winner_tickets,
+        'probability': probability
+    }
+
+    timestamp = datetime.now().isoformat()
+    draw_info = session_info['draw_info']
+    draw_info['winner'] = winner_data
+    draw_info['winner_timestamp'] = timestamp
+    draw_info['selected_by'] = session.get('user_id')
+    draw_info['method'] = 'random'
+    draw_info['finalized'] = True
+    draw_info['finalized_at'] = timestamp
+    draw_info['finalized_by'] = session.get('user_id')
+    draw_info['override'] = True
+    draw_info['tickets_at_selection'] = summary.get('total_tickets', 0.0)
+    draw_info['probability_at_selection'] = probability
+    draw_info['eligible_pool_size'] = summary.get('eligible_count', 0)
+
+    draw_info['history'].append({
+        'action': 'override',
+        'performed_by': session.get('user_id'),
+        'timestamp': timestamp,
+        'winner_key': override_key,
+        'winner_display_name': display_name,
+        'winner_tickets': winner_tickets,
+        'probability': probability
+    })
+
+    save_session_data()
+
+    updated_summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'override': True,
+        'winner': winner_data,
+        'draw_info': serialize_draw_info(draw_info),
+        'summary': updated_summary
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/draw/discard', methods=['POST'])
+def toggle_discard(session_id):
+    """Toggle whether a session is included in ticket calculations."""
+    if not require_superadmin():
+        return jsonify({'error': 'Super admin access required'}), 403
+
+    if session_id not in session_data:
+        return jsonify({'error': 'Session not found'}), 404
+
+    session_info = session_data[session_id]
+    ensure_session_structure(session_info)
+
+    data = request.get_json(silent=True) or {}
+    discard = bool(data.get('discarded'))
+
+    timestamp = datetime.now().isoformat()
+    message = 'Session state unchanged'
+    if session_info.get('is_discarded') != discard:
+        session_info['is_discarded'] = discard
+        metadata = session_info.get('discard_metadata')
+        if not isinstance(metadata, dict):
+            metadata = {}
+        if discard:
+            metadata['discarded_by'] = session.get('user_id')
+            metadata['discarded_at'] = timestamp
+            message = 'Session discarded from draw calculations'
+        else:
+            metadata['restored_by'] = session.get('user_id')
+            metadata['restored_at'] = timestamp
+            message = 'Session reinstated for draw calculations'
+        session_info['discard_metadata'] = metadata
+        session_info['draw_info']['history'].append({
+            'action': 'session_discarded' if discard else 'session_restored',
+            'performed_by': session.get('user_id'),
+            'timestamp': timestamp
+        })
+        save_session_data()
+
+    summary, _ = get_ticket_summary_for_session(session_id)
+    return jsonify({
+        'status': 'success',
+        'discarded': session_info.get('is_discarded', False),
+        'message': message,
+        'draw_info': serialize_draw_info(session_info.get('draw_info', {})),
+        'summary': summary,
+        'discard_metadata': session_info.get('discard_metadata', {})
+    }), 200
+
+
 @recorder_bp.route('/admin/overview', methods=['GET'])
 def admin_overview():
     """Get admin overview data"""
@@ -1450,7 +2405,9 @@ def admin_overview():
             'owner': session_info['owner'],
             'total_records': total_records,
             'created_at': session_info['created_at'],
-            'faculty_clean_count': len(session_info.get('faculty_clean_records', []))
+            'faculty_clean_count': len(session_info.get('faculty_clean_records', [])),
+            'is_discarded': session_info.get('is_discarded', False),
+            'draw_info': serialize_draw_info(session_info.get('draw_info', {}))
         })
     
     return jsonify({
