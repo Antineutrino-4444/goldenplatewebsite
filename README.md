@@ -13,7 +13,7 @@ Golden Plate Recorder is a web application for tracking student attendance and c
 - Administrative panel for user, invite code, and session management
 
 ## Architecture
-- **Backend:** Flask 3 with SQLAlchemy and SQLite located in `src/`
+- **Backend:** Flask 3 with SQLAlchemy and SQLite located in `src/` ([detailed documentation](BACKEND.md))
 - **Frontend:** React 19 with Vite and Tailwind CSS located in `frontend/`
 - **Tests:** Pytest suite in `tests/`
 
@@ -55,6 +55,9 @@ npm run dev
 ```bash
 pytest
 ```
+
+## Documentation
+- **[Backend Documentation](BACKEND.md)**: Comprehensive guide to the Flask backend architecture, API endpoints, authentication system, drawing/lottery logic, and data storage
 
 ## License
 This project is released under the MIT License.
