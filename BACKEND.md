@@ -1,10 +1,116 @@
 # Backend Documentation
 
+## Quick Start
+
+To understand the backend quickly:
+
+1. **Entry Point**: Start at [`src/main.py`](src/main.py) - Flask app initialization
+2. **Main Logic**: Review [`src/routes/golden_plate_recorder.py`](src/routes/golden_plate_recorder.py) - Core application endpoints
+3. **Authentication**: See [Authentication System](#authentication-system) section below
+4. **Drawing System**: See [Drawing/Lottery System](#drawinglottery-system) for the weighted random selection logic
+5. **API Reference**: Jump to [API Endpoints](#api-endpoints) table for quick endpoint lookup
+
+### Key Concepts
+- **Sessions**: Recording events for a specific date/time period
+- **Categories**: CLEAN (returned clean), DIRTY (anonymous dirty), RED (very dirty), FACULTY (teacher clean)
+- **Tickets**: Weighted lottery system where clean plates earn tickets, red plates reset tickets
+- **Roles**: Guest (view), User (record), Admin (manage), Super Admin (full control)
+
+## Table of Contents
+- [Overview](#overview)
+- [Architecture](#architecture)
+  - [Technology Stack](#technology-stack)
+  - [Project Structure](#project-structure)
+- [Application Setup](#application-setup)
+- [Data Storage](#data-storage)
+  - [SQLite Database](#sqlite-database)
+  - [JSON File Storage](#json-file-storage)
+  - [File Storage Functions](#file-storage-functions)
+- [Authentication System](#authentication-system)
+  - [User Roles](#user-roles)
+  - [Authentication Flow](#authentication-flow)
+  - [Authorization Helpers](#authorization-helpers)
+- [Session Management](#session-management)
+  - [Session Data Structure](#session-data-structure)
+  - [StudentRecord Structure](#studentrecord-structure)
+  - [Key Operations](#key-operations)
+- [Recording System](#recording-system)
+  - [Categories](#categories)
+  - [Recording Flow](#recording-flow)
+  - [Student Lookup System](#student-lookup-system)
+- [CSV Upload System](#csv-upload-system)
+  - [Student Roster Upload](#student-roster-upload)
+  - [Student Names API](#student-names-api)
+  - [CSV Preview](#csv-preview)
+  - [Teacher List Upload](#teacher-list-upload)
+- [Drawing/Lottery System](#drawinglottery-system)
+  - [Ticket System](#ticket-system)
+  - [Ticket Rollup Calculation](#ticket-rollup-calculation)
+  - [Draw Operations](#draw-operations)
+  - [Draw Info Structure](#draw-info-structure)
+- [API Endpoints](#api-endpoints)
+- [Database Models](#database-models)
+- [Security Considerations](#security-considerations)
+- [Data Flow Examples](#data-flow-examples)
+- [Error Handling](#error-handling)
+- [Performance Considerations](#performance-considerations)
+- [Configuration](#configuration)
+- [Testing](#testing)
+- [Development Notes](#development-notes)
+- [Deployment](#deployment)
+- [Troubleshooting](#troubleshooting)
+- [Future Enhancements](#future-enhancements)
+- [Support and Maintenance](#support-and-maintenance)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Overview
 
 The Golden Plate Recorder backend is built using **Flask 3** with **SQLAlchemy** and provides a RESTful API for tracking student attendance and managing a weighted lottery system for clean/dirty plate recording. The backend uses JSON file-based persistent storage for sessions and user data.
 
 ## Architecture
+
+### System Architecture Diagram
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Frontend (React)                        │
+│                   Served from /static                        │
+└────────────────────────┬────────────────────────────────────┘
+                         │ HTTP/REST API
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                    Flask Application                         │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              main.py (Entry Point)                   │   │
+│  │  - CORS Configuration                                │   │
+│  │  - Blueprint Registration                            │   │
+│  │  - Database Initialization                           │   │
+│  └───────────┬──────────────────────┬───────────────────┘   │
+│              │                      │                        │
+│  ┌───────────▼──────────┐  ┌───────▼──────────────────┐    │
+│  │   user_bp Blueprint  │  │ recorder_bp Blueprint     │    │
+│  │   (User CRUD)        │  │ (Main Application Logic)  │    │
+│  └──────────────────────┘  └───────┬──────────────────┘    │
+│                                     │                        │
+│  ┌──────────────────────────────────▼──────────────────┐   │
+│  │              Authentication Layer                    │   │
+│  │  - Session-based auth                                │   │
+│  │  - Role checks (Guest/User/Admin/SuperAdmin)         │   │
+│  └──────────────────────────────────┬──────────────────┘   │
+└────────────────────────────────────┬┴──────────────────────┘
+                                     │
+        ┌────────────────────────────┼────────────────────────┐
+        │                            │                         │
+┌───────▼────────┐        ┌──────────▼─────────┐   ┌─────────▼────────┐
+│ SQLite DB      │        │ JSON File Storage   │   │ In-Memory Cache  │
+│ (user model)   │        │ - sessions.json     │   │ - student_lookup │
+│ app.db         │        │ - users.json        │   │ - ticket_rollups │
+└────────────────┘        │ - invite_codes.json │   └──────────────────┘
+                          │ - delete_requests.json│
+                          │ - global_csv_data.json│
+                          │ - teacher_list.json   │
+                          └─────────────────────────┘
+```
 
 ### Technology Stack
 - **Framework**: Flask 3.1.1
