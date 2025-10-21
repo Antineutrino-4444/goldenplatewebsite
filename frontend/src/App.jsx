@@ -48,9 +48,6 @@ const sanitizeSelection = (entry) => {
 }
 
 function App() {
-  // Startup animation state
-  const [showStartupAnimation, setShowStartupAnimation] = useState(true)
-  
   // Authentication state
   const [user, setUser] = useState(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -242,14 +239,7 @@ function App() {
 
   // Check authentication status on load
   useEffect(() => {
-    // Startup animation timer
-    const animationTimer = setTimeout(() => {
-      setShowStartupAnimation(false)
-    }, 3000) // 3 second animation
-
     checkAuthStatus()
-
-    return () => clearTimeout(animationTimer)
   }, [])
 
   const checkAuthStatus = async () => {
@@ -1540,34 +1530,6 @@ function App() {
     } catch (error) {
       showMessage('Failed to delete user account', 'error')
     }
-  }
-
-  // Startup Animation
-  if (showStartupAnimation) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-bounce mb-8">
-            <div className="text-8xl mb-4">🍽️</div>
-          </div>
-          <div className="animate-pulse">
-            <h1 className="text-6xl font-bold bg-gradient-to-r from-amber-600 via-yellow-600 to-orange-600 bg-clip-text text-transparent mb-4">
-              PLATE
-            </h1>
-            <p className="text-xl text-gray-600 font-medium">
-              Prevention, Logging & Assessment of Tossed Edibles
-            </p>
-          </div>
-          <div className="mt-8">
-            <div className="inline-flex items-center space-x-2">
-              <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
-              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
-              <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   // Login Screen
