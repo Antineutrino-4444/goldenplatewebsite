@@ -1,0 +1,163 @@
+CREATE TABLE schools (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    time_zone   TEXT,
+    status      TEXT NOT NULL DEFAULT 'active'
+                  CHECK (status IN ('active','suspended','archived')),
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE users (
+    id              TEXT PRIMARY KEY,
+    school_id       TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    username        TEXT NOT NULL UNIQUE,
+    password_hash   TEXT NOT NULL,
+    display_name    TEXT NOT NULL,
+    role            TEXT NOT NULL
+                      CHECK (role IN ('user','admin','superadmin')),
+    last_login_at   DATETIME,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_users_school ON users (school_id);
+
+CREATE TABLE school_invite_codes (
+    id          TEXT PRIMARY KEY,
+    school_id   TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    code        TEXT NOT NULL UNIQUE,
+    issued_by   TEXT NOT NULL REFERENCES users(id),
+    issued_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at  DATETIME,
+    used_by     TEXT REFERENCES users(id),
+    used_at     DATETIME,
+    status      TEXT NOT NULL DEFAULT 'unused'
+                  CHECK (status IN ('unused','used','revoked'))
+);
+CREATE INDEX idx_invite_codes_school ON school_invite_codes (school_id, status);
+
+CREATE TABLE students (
+    id                  TEXT PRIMARY KEY,
+    school_id           TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    student_identifier  TEXT NOT NULL,
+    preferred_name      TEXT NOT NULL,
+    last_name           TEXT NOT NULL,
+    grade               TEXT,
+    advisor             TEXT,
+    house               TEXT,
+    clan                TEXT,
+    UNIQUE (school_id, student_identifier)
+);
+CREATE INDEX idx_students_school_last ON students (school_id, last_name COLLATE NOCASE);
+
+CREATE TABLE teachers (
+    id          TEXT PRIMARY KEY,
+    school_id   TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    display_name TEXT
+);
+CREATE INDEX idx_teachers_school_name ON teachers (school_id, name COLLATE NOCASE);
+
+CREATE TABLE sessions (
+    id             TEXT PRIMARY KEY,
+    school_id      TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    created_by     TEXT NOT NULL REFERENCES users(id),
+    session_name   TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'active'
+                     CHECK (status IN ('active','archived','discarded')),
+    is_public      INTEGER NOT NULL DEFAULT 1,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    discarded_at   DATETIME,
+    discarded_by   TEXT REFERENCES users(id),
+    UNIQUE (school_id, session_name)
+);
+CREATE INDEX idx_sessions_school_status ON sessions (school_id, status);
+
+CREATE TABLE session_records (
+    id                TEXT PRIMARY KEY,
+    school_id         TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    session_id        TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    student_id        TEXT REFERENCES students(id),
+    category          TEXT NOT NULL
+                         CHECK (category IN ('clean','dirty','red','faculty')),
+    student_identifier TEXT,
+    preferred_name    TEXT,
+    last_name         TEXT,
+    grade             TEXT,
+    advisor           TEXT,
+    house             TEXT,
+    clan              TEXT,
+    student_key       TEXT,
+    is_manual_entry   INTEGER NOT NULL DEFAULT 0,
+    recorded_by       TEXT NOT NULL REFERENCES users(id),
+    recorded_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source            TEXT,
+    dedupe_key        TEXT NOT NULL,
+    UNIQUE (session_id, dedupe_key)
+);
+CREATE INDEX idx_records_session_category ON session_records (session_id, category);
+CREATE INDEX idx_records_school_category ON session_records (school_id, category);
+
+CREATE TABLE session_draws (
+    id                    TEXT PRIMARY KEY,
+    school_id             TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    session_id            TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+    winner_record_id      TEXT REFERENCES session_records(id),
+    winner_student_id     TEXT REFERENCES students(id),
+    method                TEXT,
+    selected_by           TEXT REFERENCES users(id),
+    selected_at           DATETIME,
+    finalized             INTEGER NOT NULL DEFAULT 0,
+    finalized_by          TEXT REFERENCES users(id),
+    finalized_at          DATETIME,
+    tickets_at_selection  REAL,
+    probability_at_selection REAL,
+    eligible_pool_size    INTEGER,
+    override_applied      INTEGER NOT NULL DEFAULT 0,
+    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE draft_pool (
+    id             TEXT PRIMARY KEY,
+    school_id      TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    session_id     TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+    student_id     TEXT REFERENCES students(id),
+    ticket_number  REAL NOT NULL,
+    created_by     TEXT REFERENCES users(id),
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_draft_pool_school ON draft_pool (school_id);
+CREATE INDEX idx_draft_pool_session ON draft_pool (session_id);
+
+CREATE TABLE session_delete_requests (
+    id                       TEXT PRIMARY KEY,
+    school_id                TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    session_id               TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    requested_by             TEXT NOT NULL REFERENCES users(id),
+    requested_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status                   TEXT NOT NULL DEFAULT 'pending'
+                               CHECK (status IN ('pending','approved','rejected','completed')),
+    total_records            INTEGER NOT NULL DEFAULT 0,
+    clean_records            INTEGER NOT NULL DEFAULT 0,
+    dirty_records            INTEGER NOT NULL DEFAULT 0,
+    red_records              INTEGER NOT NULL DEFAULT 0,
+    faculty_clean_records    INTEGER NOT NULL DEFAULT 0,
+    reviewed_by              TEXT REFERENCES users(id),
+    reviewed_at              DATETIME,
+    rejection_reason         TEXT
+);
+CREATE INDEX idx_delete_requests_school_status ON session_delete_requests (school_id, status);
+
+CREATE TABLE audit_log (
+    id           TEXT PRIMARY KEY,
+    school_id    TEXT REFERENCES schools(id) ON DELETE SET NULL,
+    user_id      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    action       TEXT NOT NULL,
+    entity_type  TEXT NOT NULL,
+    entity_id    TEXT,
+    metadata     TEXT,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_audit_school_time ON audit_log (school_id, created_at DESC);
