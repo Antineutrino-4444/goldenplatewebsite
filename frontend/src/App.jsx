@@ -48,9 +48,6 @@ const sanitizeSelection = (entry) => {
 }
 
 function App() {
-  // Startup animation state
-  const [showStartupAnimation, setShowStartupAnimation] = useState(true)
-  
   // Authentication state
   const [user, setUser] = useState(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -194,16 +191,55 @@ function App() {
     return Array.from(combined.values())
   }, [drawSummary, studentNames])
 
+  const sessionDashboardStats = useMemo(() => {
+    const studentCleanCount = Number(sessionStats.clean_count ?? 0)
+    const dirtyCount = Number(sessionStats.dirty_count ?? 0)
+    const redCount = Number(sessionStats.red_count ?? 0)
+  const combinedDirty = Number(sessionStats.combined_dirty_count ?? (dirtyCount + redCount))
+    const facultyCount = Number(sessionStats.faculty_clean_count ?? 0)
+    const cleanCount = studentCleanCount + facultyCount
+    const totalRecorded = studentCleanCount + dirtyCount + redCount + facultyCount
+    const cleanPercentage = totalRecorded ? (cleanCount / totalRecorded) * 100 : 0
+    const dirtyPercentage = totalRecorded ? (combinedDirty / totalRecorded) * 100 : 0
+
+    return {
+      cleanCount,
+      dirtyCount,
+      redCount,
+      combinedDirty,
+      facultyCount,
+      totalRecorded,
+      cleanPercentage,
+      dirtyPercentage
+    }
+  }, [sessionStats])
+
+  const dashboardWinner = useMemo(() => {
+    const drawInfo = drawSummary?.draw_info ?? sessionStats.draw_info ?? null
+    if (!drawInfo) {
+      return {
+        winner: null,
+        finalized: false,
+        override: false,
+        timestamp: null,
+        tickets: null,
+        probability: null
+      }
+    }
+
+    return {
+      winner: drawInfo.winner ?? null,
+      finalized: Boolean(drawInfo.finalized),
+      override: Boolean(drawInfo.override),
+      timestamp: drawInfo.winner_timestamp ? new Date(drawInfo.winner_timestamp) : null,
+      tickets: drawInfo.tickets_at_selection ?? null,
+      probability: drawInfo.probability_at_selection ?? null
+    }
+  }, [drawSummary, sessionStats])
+
   // Check authentication status on load
   useEffect(() => {
-    // Startup animation timer
-    const animationTimer = setTimeout(() => {
-      setShowStartupAnimation(false)
-    }, 3000) // 3 second animation
-
     checkAuthStatus()
-
-    return () => clearTimeout(animationTimer)
   }, [])
 
   const checkAuthStatus = async () => {
@@ -1496,34 +1532,6 @@ function App() {
     }
   }
 
-  // Startup Animation
-  if (showStartupAnimation) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-bounce mb-8">
-            <div className="text-8xl mb-4">🍽️</div>
-          </div>
-          <div className="animate-pulse">
-            <h1 className="text-6xl font-bold bg-gradient-to-r from-amber-600 via-yellow-600 to-orange-600 bg-clip-text text-transparent mb-4">
-              PLATE
-            </h1>
-            <p className="text-xl text-gray-600 font-medium">
-              Prevention, Logging & Assessment of Tossed Edibles
-            </p>
-          </div>
-          <div className="mt-8">
-            <div className="inline-flex items-center space-x-2">
-              <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
-              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
-              <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   // Login Screen
   if (!isAuthenticated) {
     return (
@@ -2792,6 +2800,139 @@ function App() {
           </DialogContent>
         </Dialog>
         )}
+
+      {/* Dashboard Dialog */}
+      <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
+        <DialogContent
+          className="w-full sm:max-w-2xl lg:max-w-4xl max-h-[82vh] overflow-y-auto"
+          dismissOnOverlayClick={false}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-purple-600">Session Dashboard</DialogTitle>
+            <DialogDescription>
+              Key metrics for the currently selected session.
+            </DialogDescription>
+          </DialogHeader>
+          {!sessionId ? (
+            <div className="py-12 text-center text-gray-500">
+              No active session selected. Switch to a session to view dashboard insights.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {isSessionDiscarded && (
+                <Alert variant="destructive">
+                  <Ban className="h-4 w-4" />
+                  <AlertDescription>
+                    This session is discarded from draw calculations. Reinstate it to include ticket updates.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:col-span-2 lg:col-span-3">
+                  <div className="text-sm text-gray-500">Session</div>
+                  <div className="text-2xl font-semibold text-gray-900">{sessionName || 'Untitled session'}</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <Badge variant={isSessionDiscarded ? 'destructive' : 'outline'}>
+                      {isSessionDiscarded ? 'Discarded' : 'Active'}
+                    </Badge>
+                    {drawSummary?.generated_at && (
+                      <span>Updated {new Date(drawSummary.generated_at).toLocaleString()}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm text-gray-500">Total records</div>
+                  <div className="text-2xl font-semibold text-gray-900">
+                    {sessionDashboardStats.totalRecorded.toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    Includes faculty clean plates
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm text-gray-500">Clean plates</div>
+                  <div className="text-2xl font-semibold text-emerald-700">
+                    {sessionDashboardStats.cleanCount.toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    Clean rate {sessionDashboardStats.cleanPercentage.toFixed(1)}% • Includes faculty clean
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm text-gray-500">Dirty plates</div>
+                  <div className="text-2xl font-semibold text-orange-700">
+                    {sessionDashboardStats.combinedDirty.toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    Dirty rate {sessionDashboardStats.dirtyPercentage.toFixed(1)}% • Standard dirty {sessionDashboardStats.dirtyCount.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm text-gray-500">Very dirty plates</div>
+                  <div className="text-2xl font-semibold text-red-700">
+                    {sessionDashboardStats.redCount.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm text-gray-500">Faculty clean plates</div>
+                  <div className="text-2xl font-semibold text-gray-900">
+                    {sessionDashboardStats.facultyCount.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <Trophy className="h-4 w-4" />
+                  Current winner
+                </div>
+                <div className="mt-3 text-sm text-gray-700">
+                  {dashboardWinner.winner ? (
+                    <div className="space-y-2">
+                      <div className="text-lg font-semibold text-gray-900">{dashboardWinner.winner.display_name}</div>
+                      {dashboardWinner.winner.student_id && (
+                        <div className="text-xs text-gray-500">Student ID: {dashboardWinner.winner.student_id}</div>
+                      )}
+                      <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                        {dashboardWinner.winner.grade && <span>Grade: {dashboardWinner.winner.grade}</span>}
+                        {dashboardWinner.winner.house && <span>House: {dashboardWinner.winner.house}</span>}
+                        {dashboardWinner.winner.clan && <span>Clan: {dashboardWinner.winner.clan}</span>}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Status:{' '}
+                        <Badge variant={dashboardWinner.finalized ? 'default' : 'outline'}>
+                          {dashboardWinner.finalized ? 'Finalized' : 'Pending finalization'}
+                        </Badge>
+                        {dashboardWinner.override && (
+                          <span className="ml-2 text-orange-600">Override</span>
+                        )}
+                      </div>
+                      {dashboardWinner.timestamp && (
+                        <div className="flex items-center gap-1 text-xs text-gray-500">
+                          <Clock className="h-3 w-3" />
+                          {dashboardWinner.timestamp.toLocaleString()}
+                        </div>
+                      )}
+                      {(dashboardWinner.tickets !== null || dashboardWinner.probability !== null) && (
+                        <div className="text-xs text-gray-500">
+                          Tickets at selection: {dashboardWinner.tickets !== null ? Number(dashboardWinner.tickets).toFixed(2) : '—'} • Chance: {dashboardWinner.probability !== null ? Number(dashboardWinner.probability).toFixed(2) : '—'}%
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-gray-500">No winner selected yet.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <Button onClick={() => setShowDashboard(false)} className="w-full">
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
 
         </>
         )}
