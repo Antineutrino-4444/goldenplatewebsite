@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session, render_template
+from flask import Blueprint, request, jsonify, session
 from datetime import datetime, timezone
 import uuid
 import csv
@@ -7,9 +7,16 @@ import os
 import json
 import random
 import re
-import copy
 
-from sqlalchemy import create_engine, Column, String, Text, DateTime
+from sqlalchemy import (
+    create_engine,
+    Column,
+    String,
+    Text,
+    DateTime,
+    ForeignKey,
+    Index,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 
 recorder_bp = Blueprint('recorder', __name__)
@@ -40,6 +47,37 @@ class KeyValueStore(Base):
     key = Column(String(128), primary_key=True)
     value = Column(Text, nullable=False, default='{}')
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+
+
+class User(Base):
+    __tablename__ = 'users'
+    __table_args__ = (Index('idx_users_username', 'username'),)
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String, unique=True, nullable=False)
+    password_hash = Column(Text, nullable=False)
+    display_name = Column(String, nullable=False)
+    role = Column(String, nullable=False)
+    last_login_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=_now_utc)
+    updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+    status = Column(String, nullable=False, default='active')
+
+
+class UserInviteCode(Base):
+    __tablename__ = 'user_invite_codes'
+    __table_args__ = (Index('idx_invite_codes_user', 'user_id', 'status'),)
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    code = Column(String, unique=True, nullable=False)
+    issued_by = Column(String, ForeignKey('users.id'), nullable=False)
+    issued_at = Column(DateTime(timezone=True), default=_now_utc)
+    expires_at = Column(DateTime(timezone=True))
+    used_by = Column(String, ForeignKey('users.id'))
+    used_at = Column(DateTime(timezone=True))
+    status = Column(String, nullable=False, default='unused')
+    role = Column(String, nullable=False, default='user')
 
 
 Base.metadata.create_all(bind=engine)
@@ -94,6 +132,231 @@ def save_data_to_file(store_key, data):
         db_session.rollback()
         print(f"Error saving {store_key}: {exc}")
         return False
+
+
+DEFAULT_SUPERADMIN = {
+    'username': 'antineutrino',
+    'password': 'b-decay',
+    'role': 'superadmin',
+    'display_name': 'Lead Admin',
+    'status': 'active',
+}
+
+
+def _serialize_user_model(user):
+    if not user:
+        return None
+    return {
+        'id': user.id,
+        'username': user.username,
+        'name': user.display_name,
+        'role': user.role,
+        'status': user.status,
+        'last_login_at': user.last_login_at.isoformat() if user.last_login_at else None,
+    }
+
+
+def get_user_by_username(username):
+    if not username:
+        return None
+    return db_session.query(User).filter(User.username == username).first()
+
+
+def list_all_users():
+    users = db_session.query(User).order_by(User.username.asc()).all()
+    return [_serialize_user_model(user) for user in users]
+
+
+def create_user_record(username, password, display_name, role='user', status='active'):
+    existing = get_user_by_username(username)
+    if existing:
+        return existing
+    user = User(
+        id=str(uuid.uuid4()),
+        username=username,
+        password_hash=password,
+        display_name=display_name,
+        role=role,
+        status=status,
+        created_at=_now_utc(),
+        updated_at=_now_utc(),
+    )
+    try:
+        db_session.add(user)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    return user
+
+
+def update_user_credentials(user, *, password=None, display_name=None, role=None, status=None):
+    updated = False
+    if password is not None and user.password_hash != password:
+        user.password_hash = password
+        updated = True
+    if display_name is not None and user.display_name != display_name:
+        user.display_name = display_name
+        updated = True
+    if role is not None and user.role != role:
+        user.role = role
+        updated = True
+    if status is not None and user.status != status:
+        user.status = status
+        updated = True
+    if updated:
+        user.updated_at = _now_utc()
+        try:
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+    return user
+
+
+def ensure_default_superadmin():
+    user = get_user_by_username(DEFAULT_SUPERADMIN['username'])
+    if not user:
+        return create_user_record(
+            DEFAULT_SUPERADMIN['username'],
+            DEFAULT_SUPERADMIN['password'],
+            DEFAULT_SUPERADMIN['display_name'],
+            role=DEFAULT_SUPERADMIN['role'],
+            status=DEFAULT_SUPERADMIN['status'],
+        )
+    return update_user_credentials(
+        user,
+        password=DEFAULT_SUPERADMIN['password'],
+        display_name=DEFAULT_SUPERADMIN['display_name'],
+        role=DEFAULT_SUPERADMIN['role'],
+        status=DEFAULT_SUPERADMIN['status'],
+    )
+
+
+def migrate_legacy_users(legacy_users):
+    if not isinstance(legacy_users, dict):
+        return
+    for username, payload in legacy_users.items():
+        if not isinstance(payload, dict):
+            continue
+        print(f"Migrating legacy user: {username}")
+        password = payload.get('password') or DEFAULT_SUPERADMIN['password']
+        role = payload.get('role', 'user')
+        name = payload.get('name') or username
+        status = payload.get('status', 'active')
+        user = get_user_by_username(username)
+        if user:
+            update_user_credentials(
+                user,
+                password=password,
+                display_name=name,
+                role=role,
+                status=status,
+            )
+        else:
+            create_user_record(
+                username,
+                password,
+                name,
+                role=role,
+                status=status,
+            )
+
+
+def create_invite_code_record(owner_user, issued_by_user, role='user'):
+    code = str(uuid.uuid4())
+    owner = owner_user or issued_by_user
+    invite = UserInviteCode(
+        id=str(uuid.uuid4()),
+        user_id=owner.id,
+        code=code,
+        issued_by=issued_by_user.id,
+        issued_at=_now_utc(),
+        status='unused',
+        role=role,
+    )
+    try:
+        db_session.add(invite)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    return invite
+
+
+def get_invite_code_record(code):
+    if not code:
+        return None
+    return db_session.query(UserInviteCode).filter(UserInviteCode.code == code).first()
+
+
+def mark_invite_code_used(invite, used_by_user):
+    invite.status = 'used'
+    invite.user_id = used_by_user.id
+    invite.used_by = used_by_user.id
+    invite.used_at = _now_utc()
+    invite.updated_at = _now_utc()
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+
+
+def migrate_legacy_invite_codes(legacy_invites, default_owner):
+    if not isinstance(legacy_invites, dict):
+        return
+    for code, payload in legacy_invites.items():
+        if get_invite_code_record(code):
+            continue
+        role = 'user'
+        status = 'unused'
+        issued_by_username = DEFAULT_SUPERADMIN['username']
+        used_by_username = None
+        if isinstance(payload, dict):
+            role = payload.get('role', 'user')
+            status = 'used' if payload.get('used') else payload.get('status', 'unused')
+            issued_by_username = payload.get('issued_by', DEFAULT_SUPERADMIN['username'])
+            used_by_username = payload.get('used_by')
+        issued_by_user = get_user_by_username(issued_by_username) or default_owner
+        invite = UserInviteCode(
+            id=str(uuid.uuid4()),
+            user_id=default_owner.id,
+            code=code,
+            issued_by=issued_by_user.id,
+            issued_at=_now_utc(),
+            status=status,
+            role=role,
+        )
+        if status == 'used' and used_by_username:
+            used_user = get_user_by_username(used_by_username)
+            if used_user:
+                invite.used_by = used_user.id
+                invite.used_at = _now_utc()
+        try:
+            db_session.add(invite)
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+
+
+def reset_user_store():
+    default_user = ensure_default_superadmin()
+    try:
+        db_session.query(UserInviteCode).delete()
+        db_session.query(User).filter(User.username != default_user.username).delete()
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    update_user_credentials(
+        default_user,
+        password=DEFAULT_SUPERADMIN['password'],
+        display_name=DEFAULT_SUPERADMIN['display_name'],
+        role=DEFAULT_SUPERADMIN['role'],
+        status=DEFAULT_SUPERADMIN['status'],
+    )
 
 
 # Student lookup cache built from the global CSV data for fast eligibility checks
@@ -167,9 +430,7 @@ def save_all_data():
     """Save all data to the database-backed store."""
     try:
         save_data_to_file(SESSIONS_FILE, session_data)
-        save_data_to_file(USERS_FILE, users_db)
         save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-        save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
         save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
         print("All data saved successfully")
         return True
@@ -183,19 +444,9 @@ def save_session_data():
     return save_data_to_file(SESSIONS_FILE, session_data)
 
 
-def save_users_db():
-    """Save users database to the database-backed store."""
-    return save_data_to_file(USERS_FILE, users_db)
-
-
 def save_delete_requests():
     """Save delete requests to the database-backed store."""
     return save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-
-
-def save_invite_codes_db():
-    """Save invite codes database to the database-backed store."""
-    return save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 
 
 def save_global_csv_data():
@@ -214,52 +465,50 @@ def save_global_teacher_data():
 print("Initializing persistent storage (database-backed)...")
 session_data = load_data_from_file(SESSIONS_FILE, {})
 delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
-invite_codes_db = load_data_from_file(INVITE_CODES_FILE, {})
+legacy_invites = load_data_from_file(INVITE_CODES_FILE, {})
 
 global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, {})
 update_student_lookup()
 
 global_teacher_data = load_data_from_file(TEACHER_LIST_FILE, {})
 
-default_users = {
-    'antineutrino': {
-        'password': 'b-decay',
-        'role': 'superadmin',
-        'name': 'Lead Admin',
-        'status': 'active'
+legacy_users = load_data_from_file(USERS_FILE, {
+    DEFAULT_SUPERADMIN['username']: {
+        'password': DEFAULT_SUPERADMIN['password'],
+        'role': DEFAULT_SUPERADMIN['role'],
+        'name': DEFAULT_SUPERADMIN['display_name'],
+        'status': DEFAULT_SUPERADMIN['status'],
     }
-}
-users_db = load_data_from_file(USERS_FILE, default_users)
+})
+
+default_user = ensure_default_superadmin()
+migrate_legacy_users(legacy_users)
+migrate_legacy_invite_codes(legacy_invites, default_user)
 
 print("Saving initial data to ensure tables are seeded...")
 save_data_to_file(SESSIONS_FILE, session_data)
-save_data_to_file(USERS_FILE, users_db)
 save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
 save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
 save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
 
-print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(users_db)}")
+print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(list_all_users())}")
 
 
 def reset_storage_for_testing():
     """Reset all persistent stores to defaults to keep pytest runs isolated."""
-    global session_data, delete_requests, invite_codes_db, global_csv_data, global_teacher_data, users_db, student_lookup
+    global session_data, delete_requests, global_csv_data, global_teacher_data, student_lookup
 
     session_data = {}
     delete_requests = []
-    invite_codes_db = {}
     global_csv_data = {}
     global_teacher_data = {}
-    users_db = copy.deepcopy(default_users)
     student_lookup = {}
 
     save_data_to_file(SESSIONS_FILE, session_data)
     save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-    save_data_to_file(INVITE_CODES_FILE, invite_codes_db)
     save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
     save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
-    save_data_to_file(USERS_FILE, users_db)
+    reset_user_store()
     update_student_lookup()
 
 
@@ -579,14 +828,19 @@ def serialize_draw_info(draw_info):
 
 def get_current_user():
     """Get current logged in user"""
-    if 'user_id' in session:
-        return users_db.get(session['user_id'])
-    return None
+    username = session.get('user_id')
+    if not username:
+        return None
+    user = get_user_by_username(username)
+    return _serialize_user_model(user)
 
 
 def require_auth():
     """Check if user is authenticated"""
-    return 'user_id' in session and session['user_id'] in users_db
+    username = session.get('user_id')
+    if not username:
+        return False
+    return get_user_by_username(username) is not None
 
 
 def require_auth_or_guest():
@@ -618,25 +872,30 @@ def login():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
 
-    if username in users_db and users_db[username]['password'] == password:
-        user = users_db[username]
-
-        # Check account status
-        if user.get('status', 'active') != 'active':
-            return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
-
-        session['user_id'] = username
-
-        return jsonify({
-            'status': 'success',
-            'user': {
-                'username': username,
-                'name': user['name'],
-                'role': user['role']
-            }
-        }), 200
-    else:
+    user = get_user_by_username(username)
+    if not user or user.password_hash != password:
         return jsonify({'error': 'Invalid username or password'}), 401
+
+    if user.status != 'active':
+        return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
+
+    session['user_id'] = username
+    user.last_login_at = _now_utc()
+    user.updated_at = _now_utc()
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Unable to update login information'}), 500
+
+    return jsonify({
+        'status': 'success',
+        'user': {
+            'username': username,
+            'name': user.display_name,
+            'role': user.role
+        }
+    }), 200
 
 
 @recorder_bp.route('/auth/logout', methods=['POST'])
@@ -681,28 +940,40 @@ def signup():
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters long'}), 400
 
-    if username in users_db:
+    if get_user_by_username(username):
         return jsonify({'error': 'Username already exists'}), 409
 
     # Validate invite code
-    code_data = invite_codes_db.get(invite_code)
-    if not code_data or code_data.get('used'):
+    invite = get_invite_code_record(invite_code)
+    if not invite or invite.status != 'unused':
         return jsonify({'error': 'Invalid invite code'}), 403
 
-    # Create new user with role from invite code (default to 'user')
-    users_db[username] = {
-        'password': password,
-        'role': code_data.get('role', 'user'),
-        'name': name,
-        'status': 'active'
-    }
+    if invite.expires_at and invite.expires_at < _now_utc():
+        return jsonify({'error': 'Invite code has expired'}), 403
 
-    # Mark invite code as used
-    code_data['used'] = True
-    save_invite_codes_db()
+    try:
+        new_user = create_user_record(
+            username,
+            password,
+            name,
+            role=invite.role or 'user',
+            status='active'
+        )
+    except Exception:
+        return jsonify({'error': 'Could not create user'}), 500
 
-    # Save users database to store
-    save_users_db()
+    try:
+        mark_invite_code_used(invite, new_user)
+    except Exception:
+        # Roll back user creation if invite update fails
+        user_to_delete = get_user_by_username(username)
+        if user_to_delete:
+            try:
+                db_session.delete(user_to_delete)
+                db_session.commit()
+            except Exception:
+                db_session.rollback()
+        return jsonify({'error': 'Could not update invite code'}), 500
 
     return jsonify({
         'status': 'success',
@@ -750,10 +1021,11 @@ def manage_account_status():
     if not target_username or not new_status:
         return jsonify({'error': 'Username and status are required'}), 400
 
-    if target_username not in users_db:
+    target_user_model = get_user_by_username(target_username)
+    if not target_user_model:
         return jsonify({'error': 'User not found'}), 404
 
-    target_user = users_db[target_username]
+    target_user = _serialize_user_model(target_user_model)
 
     # Permission checks
     if current_user['role'] == 'superadmin':
@@ -768,8 +1040,10 @@ def manage_account_status():
         return jsonify({'error': 'Insufficient permissions'}), 403
 
     # Update status
-    users_db[target_username]['status'] = new_status
-    save_users_db()
+    try:
+        update_user_credentials(target_user_model, status=new_status)
+    except Exception:
+        return jsonify({'error': 'Failed to update user status'}), 500
 
     return jsonify({
         'status': 'success',
@@ -873,11 +1147,11 @@ def admin_get_users():
         return jsonify({'error': 'Admin access required'}), 403
 
     users_list = []
-    for username, user_data in users_db.items():
+    for user in list_all_users():
         users_list.append({
-            'username': username,
-            'name': user_data['name'],
-            'role': user_data['role']
+            'username': user['username'],
+            'name': user['name'],
+            'role': user['role']
         })
 
     return jsonify({'users': users_list}), 200
@@ -889,14 +1163,12 @@ def admin_create_invite():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    code = str(uuid.uuid4())
-    invite_codes_db[code] = {
-        'issued_by': session.get('user_id'),
-        'used': False,
-        'role': 'user'
-    }
-    save_invite_codes_db()
-    return jsonify({'status': 'success', 'invite_code': code}), 201
+    issuer = get_user_by_username(session.get('user_id'))
+    if not issuer:
+        return jsonify({'error': 'Unable to locate issuing user'}), 500
+
+    invite = create_invite_code_record(issuer, issuer, role='user')
+    return jsonify({'status': 'success', 'invite_code': invite.code}), 201
 
 
 @recorder_bp.route('/admin/sessions', methods=['GET'])
@@ -2509,11 +2781,11 @@ def admin_overview():
 
     # Get all users
     users = []
-    for username, user_data in users_db.items():
+    for user in list_all_users():
         users.append({
-            'username': username,
-            'name': user_data['name'],
-            'role': user_data['role']
+            'username': user['username'],
+            'name': user['name'],
+            'role': user['role']
         })
 
     # Get all sessions
@@ -2588,7 +2860,7 @@ def change_user_role():
     if 'user_id' not in session:
         return jsonify({'error': 'Authentication required'}), 401
 
-    current_user = users_db.get(session['user_id'])
+    current_user = get_current_user()
     if not current_user or current_user['role'] != 'superadmin':
         return jsonify({'error': 'Super admin access required'}), 403
 
@@ -2606,11 +2878,14 @@ def change_user_role():
     if target_username == session['user_id']:
         return jsonify({'error': 'Cannot change your own role'}), 400
 
-    if target_username not in users_db:
+    target_user_model = get_user_by_username(target_username)
+    if not target_user_model:
         return jsonify({'error': 'User not found'}), 404
 
-    users_db[target_username]['role'] = new_role
-    save_users_db()
+    try:
+        update_user_credentials(target_user_model, role=new_role)
+    except Exception:
+        return jsonify({'error': 'Failed to update user role'}), 500
 
     return jsonify({
         'status': 'success',
@@ -2624,7 +2899,7 @@ def delete_user_account():
     if 'user_id' not in session:
         return jsonify({'error': 'Authentication required'}), 401
 
-    current_user = users_db.get(session['user_id'])
+    current_user = get_current_user()
     if not current_user or current_user['role'] != 'superadmin':
         return jsonify({'error': 'Super admin access required'}), 403
 
@@ -2638,12 +2913,17 @@ def delete_user_account():
     if target_username == session['user_id']:
         return jsonify({'error': 'Cannot delete your own account'}), 400
 
-    if target_username not in users_db:
+    target_user_model = get_user_by_username(target_username)
+    if not target_user_model:
         return jsonify({'error': 'User not found'}), 404
 
     # Delete user account
-    del users_db[target_username]
-    save_users_db()
+    try:
+        db_session.delete(target_user_model)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Failed to delete user account'}), 500
 
     # Clean up user's CSV data file (legacy compatibility)
     user_csv_file = f"user_csv_{target_username}.json"
