@@ -157,6 +157,7 @@ def sync_students_table_from_csv_rows(rows):
     if result['processed']:
         try:
             db_session.commit()
+            update_student_lookup()
         except Exception:
             db_session.rollback()
             raise
@@ -222,27 +223,31 @@ def sync_teacher_table_from_list(teachers):
 
 
 def update_student_lookup():
+    """Hydrate the student lookup cache from the students table."""
     global student_lookup
     student_lookup = {}
-    data = []
-    if isinstance(global_csv_data, dict):
-        data = global_csv_data.get('data') or []
-    if not isinstance(data, list):
-        data = []
-    for row in data:
-        preferred = normalize_name(row.get('Preferred', ''))
-        last = normalize_name(row.get('Last', ''))
-        student_id = normalize_name(row.get('Student ID', ''))
+
+    try:
+        students = db_session.query(Student).all()
+    except Exception as exc:
+        db_session.rollback()
+        print(f"Error building student lookup: {exc}")
+        return
+
+    for student in students:
+        preferred = normalize_name(student.preferred_name)
+        last = normalize_name(student.last_name)
+        student_id = normalize_name(student.student_identifier)
         key = make_student_key(preferred, last, student_id)
         if not key:
             continue
         student_lookup[key] = {
             'preferred_name': preferred,
             'last_name': last,
-            'grade': normalize_name(row.get('Grade', '')),
-            'advisor': normalize_name(row.get('Advisor', '')),
-            'house': normalize_name(row.get('House', '')),
-            'clan': normalize_name(row.get('Clan', '')),
+            'grade': normalize_name(student.grade),
+            'advisor': normalize_name(student.advisor),
+            'house': normalize_name(student.house),
+            'clan': normalize_name(student.clan),
             'student_id': student_id,
             'key': key
         }

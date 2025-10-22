@@ -1,8 +1,10 @@
 from datetime import datetime
 
 from flask import jsonify, request, session
+from sqlalchemy import func
 
 from . import recorder_bp, storage
+from .db import Teacher, db_session
 from .security import require_admin, require_auth
 from .storage import save_global_teacher_data, sync_teacher_table_from_list
 
@@ -74,18 +76,30 @@ def get_teacher_names():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
-    teacher_data = storage.global_teacher_data
-    if not teacher_data or 'teachers' not in teacher_data:
+    teachers = (
+        db_session.query(Teacher)
+        .order_by(func.lower(Teacher.display_name), func.lower(Teacher.name))
+        .all()
+    )
+
+    if not teachers:
         return jsonify({
             'status': 'no_data',
             'names': []
         }), 200
 
-    teachers = sorted(teacher_data['teachers'], key=lambda x: x['display_name'].lower())
+    teacher_list = []
+    for teacher in teachers:
+        display_name = str(teacher.display_name or teacher.name or '').strip()
+        name_value = str(teacher.name or '').strip()
+        teacher_list.append({
+            'name': name_value,
+            'display_name': display_name or name_value
+        })
 
     return jsonify({
         'status': 'success',
-        'names': teachers
+        'names': teacher_list
     }), 200
 
 
@@ -95,24 +109,34 @@ def preview_teachers():
     if not require_admin():
         return jsonify({'error': 'Admin or super admin access required'}), 403
 
-    teacher_data = storage.global_teacher_data
-
-    if not teacher_data:
-        return jsonify({
-            'status': 'no_data',
-            'message': 'No teacher list uploaded yet'
-        }), 200
-
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
 
-    teachers = teacher_data.get('teachers', [])
+    base_query = db_session.query(Teacher)
+    total_records = base_query.count()
 
-    total_records = len(teachers)
+    if total_records == 0:
+        return jsonify({
+            'status': 'no_data',
+            'message': 'No teacher records found in database'
+        }), 200
+
     start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
 
-    paginated_teachers = teachers[start_idx:end_idx]
+    teachers = (
+        base_query
+        .order_by(func.lower(Teacher.display_name), func.lower(Teacher.name))
+        .offset(start_idx)
+        .limit(per_page)
+        .all()
+    )
+
+    paginated_teachers = [{
+        'name': str(teacher.name or '').strip(),
+        'display_name': str(teacher.display_name or teacher.name or '').strip()
+    } for teacher in teachers]
+
+    teacher_data = storage.global_teacher_data
 
     return jsonify({
         'status': 'success',
@@ -122,12 +146,12 @@ def preview_teachers():
             'per_page': per_page,
             'total_records': total_records,
             'total_pages': (total_records + per_page - 1) // per_page,
-            'has_next': end_idx < total_records,
+            'has_next': (start_idx + per_page) < total_records,
             'has_prev': page > 1
         },
         'metadata': {
-            'uploaded_by': teacher_data.get('uploaded_by', 'unknown'),
-            'uploaded_at': teacher_data.get('uploaded_at', 'unknown')
+            'uploaded_by': teacher_data.get('uploaded_by', 'unknown') if teacher_data else 'unknown',
+            'uploaded_at': teacher_data.get('uploaded_at', 'unknown') if teacher_data else 'unknown'
         }
     }), 200
 

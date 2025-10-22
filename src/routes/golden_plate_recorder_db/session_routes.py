@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 
 from flask import Response, jsonify, request, session
+from sqlalchemy import func
 
 from . import recorder_bp
 from .db import Session as SessionModel, SessionRecord, Student, _now_utc, db_session
@@ -14,11 +15,11 @@ from .storage import (
     delete_requests,
     ensure_session_structure,
     get_dirty_count,
-    global_csv_data,
     save_delete_requests,
     save_session_data,
     session_data,
     student_lookup,
+    update_student_lookup,
 )
 from .utils import (
     extract_student_id_from_key,
@@ -242,7 +243,7 @@ def list_sessions():
 
     return jsonify({
         'sessions': user_sessions,
-        'has_global_csv': bool(global_csv_data.get('data'))
+        'has_global_csv': db_session.query(Student.id).first() is not None
     }), 200
 
 
@@ -578,15 +579,24 @@ def record_student(category):
     if not has_reference:
         return jsonify({'error': 'Student ID or Name is required'}), 400
 
-    csv_rows = []
-    if isinstance(global_csv_data, dict):
-        csv_rows = global_csv_data.get('data') or []
-    if not isinstance(csv_rows, list):
-        csv_rows = []
-
     student_record = None
     lookup_profile = None
     dataset_match = False
+
+    def build_student_record(student_obj):
+        if not student_obj:
+            return None
+        preferred_val = str(student_obj.preferred_name or '').strip()
+        last_val = str(student_obj.last_name or '').strip()
+        return {
+            'Preferred': preferred_val,
+            'Last': last_val,
+            'Grade': str(student_obj.grade or '').strip(),
+            'Advisor': str(student_obj.advisor or '').strip(),
+            'House': str(student_obj.house or '').strip(),
+            'Clan': str(student_obj.clan or '').strip(),
+            'Student ID': str(student_obj.student_identifier or '').strip()
+        }
 
     candidate_ids = []
     if provided_student_id:
@@ -607,19 +617,15 @@ def record_student(category):
         if norm_id and norm_id not in normalized_ids:
             normalized_ids.append(norm_id)
 
-    for candidate_id in normalized_ids:
-        match = next(
-            (
-                row
-                for row in csv_rows
-                if normalize_name(row.get('Student ID', '')) == candidate_id
-            ),
-            None
+    student_obj = None
+    if normalized_ids:
+        student_obj = (
+            db_session.query(Student)
+            .filter(Student.student_identifier.in_(normalized_ids))
+            .first()
         )
-        if match:
-            student_record = match
+        if student_obj:
             dataset_match = True
-            break
 
     cleaned_input = input_value
     if cleaned_input:
@@ -644,20 +650,17 @@ def record_student(category):
             candidate_preferred = candidate_preferred or name_parts[0]
             candidate_last = candidate_last or ''
 
-    if not student_record and csv_rows and candidate_preferred and candidate_last:
-        input_first = candidate_preferred.lower()
-        input_last = candidate_last.lower()
-        student_record = next(
-            (
-                row
-                for row in csv_rows
-                if str(row.get('Preferred', '')).strip().lower() == input_first
-                and str(row.get('Last', '')).strip().lower() == input_last
-            ),
-            None
+    if not student_obj and candidate_preferred and candidate_last:
+        student_obj = (
+            db_session.query(Student)
+            .filter(func.lower(Student.preferred_name) == candidate_preferred.lower())
+            .filter(func.lower(Student.last_name) == candidate_last.lower())
+            .first()
         )
-        if student_record:
+        if student_obj:
             dataset_match = True
+
+    student_record = build_student_record(student_obj)
 
     if not student_record and provided_key and provided_key in student_lookup:
         lookup_profile = student_lookup.get(provided_key)
@@ -834,6 +837,7 @@ def record_student(category):
     # Save to database
     # Look up or create student in database
     db_student = None
+    lookup_refresh_needed = False
     if student_id:
         db_student = db_session.query(Student).filter_by(student_identifier=student_id).first()
         if not db_student:
@@ -848,6 +852,7 @@ def record_student(category):
             )
             db_session.add(db_student)
             db_session.flush()  # Get the ID
+            lookup_refresh_needed = True
     
     # Create dedupe key from student info
     dedupe_key = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
@@ -878,6 +883,8 @@ def record_student(category):
         db_sess.updated_at = datetime.now()
     
     db_session.commit()
+    if lookup_refresh_needed:
+        update_student_lookup()
 
     return jsonify({
         'status': 'success',

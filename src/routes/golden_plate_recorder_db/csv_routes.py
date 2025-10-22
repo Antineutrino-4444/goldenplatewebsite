@@ -3,8 +3,10 @@ import io
 from datetime import datetime
 
 from flask import jsonify, request, session
+from sqlalchemy import func
 
 from . import recorder_bp, storage
+from .db import Student, db_session
 from .security import require_admin, require_auth
 from .storage import save_global_csv_data, sync_students_table_from_csv_rows
 from .utils import make_student_key
@@ -74,30 +76,38 @@ def preview_csv():
     if not require_admin():
         return jsonify({'error': 'Admin or super admin access required'}), 403
 
-    csv_data = storage.global_csv_data
-
-    if not csv_data:
-        return jsonify({
-            'status': 'no_data',
-            'message': 'No student database uploaded yet'
-        }), 200
-
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
 
-    total_records = len(csv_data['data'])
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
+    base_query = db_session.query(Student)
+    total_records = base_query.count()
 
-    paginated_rows = csv_data['data'][start_idx:end_idx]
+    if total_records == 0:
+        return jsonify({
+            'status': 'no_data',
+            'message': 'No student records found in database'
+        }), 200
+
+    start_idx = (page - 1) * per_page
+
+    students = (
+        base_query
+        .order_by(func.lower(Student.preferred_name), func.lower(Student.last_name))
+        .offset(start_idx)
+        .limit(per_page)
+        .all()
+    )
+
     sanitized_rows = [{
-        'Preferred': str(row.get('Preferred', '') or '').strip(),
-        'Last': str(row.get('Last', '') or '').strip(),
-        'Grade': str(row.get('Grade', '') or '').strip(),
-        'Advisor': str(row.get('Advisor', '') or '').strip(),
-        'House': str(row.get('House', '') or '').strip(),
-        'Clan': str(row.get('Clan', '') or '').strip()
-    } for row in paginated_rows]
+        'Preferred': str(student.preferred_name or '').strip(),
+        'Last': str(student.last_name or '').strip(),
+        'Grade': str(student.grade or '').strip(),
+        'Advisor': str(student.advisor or '').strip(),
+        'House': str(student.house or '').strip(),
+        'Clan': str(student.clan or '').strip()
+    } for student in students]
+
+    csv_data = storage.global_csv_data
 
     return jsonify({
         'status': 'success',
@@ -108,12 +118,12 @@ def preview_csv():
             'per_page': per_page,
             'total_records': total_records,
             'total_pages': (total_records + per_page - 1) // per_page,
-            'has_next': end_idx < total_records,
+            'has_next': (start_idx + per_page) < total_records,
             'has_prev': page > 1
         },
         'metadata': {
-            'uploaded_by': csv_data.get('uploaded_by', 'unknown'),
-            'uploaded_at': csv_data.get('uploaded_at', 'unknown')
+            'uploaded_by': csv_data.get('uploaded_by', 'unknown') if csv_data else 'unknown',
+            'uploaded_at': csv_data.get('uploaded_at', 'unknown') if csv_data else 'unknown'
         }
     }), 200
 
@@ -124,43 +134,35 @@ def get_student_names():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
-    csv_data = storage.global_csv_data
-    if not csv_data or 'data' not in csv_data:
+    students = (
+        db_session.query(Student)
+        .order_by(func.lower(Student.preferred_name), func.lower(Student.last_name))
+        .all()
+    )
+
+    if not students:
         return jsonify({
             'status': 'no_data',
             'names': []
         }), 200
 
     names = []
-    for row in csv_data['data']:
-        preferred = str(row.get('Preferred', '') or '').strip()
-        last = str(row.get('Last', '') or '').strip()
-        student_id = str(row.get('Student ID', '') or '').strip()
+    for student in students:
+        preferred = str(student.preferred_name or '').strip()
+        last = str(student.last_name or '').strip()
+        student_id = str(student.student_identifier or '').strip()
         key = make_student_key(preferred, last, student_id)
+        display_name = f"{preferred} {last}".strip()
 
-        if preferred and last:
-            full_name = f"{preferred} {last}"
-            names.append({
-                'display_name': full_name,
-                'preferred': preferred,
-                'preferred_name': preferred,
-                'last': last,
-                'last_name': last,
-                'student_id': student_id,
-                'key': key
-            })
-        elif preferred:
-            names.append({
-                'display_name': preferred,
-                'preferred': preferred,
-                'preferred_name': preferred,
-                'last': '',
-                'last_name': '',
-                'student_id': student_id,
-                'key': key
-            })
-
-    names.sort(key=lambda x: x['display_name'].lower())
+        names.append({
+            'display_name': display_name or preferred or last,
+            'preferred': preferred,
+            'preferred_name': preferred,
+            'last': last,
+            'last_name': last,
+            'student_id': student_id,
+            'key': key
+        })
 
     return jsonify({
         'status': 'success',
