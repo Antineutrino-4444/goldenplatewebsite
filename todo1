@@ -71,22 +71,12 @@ CREATE TABLE session_records (
     student_id        TEXT REFERENCES students(id),
     category          TEXT NOT NULL
                          CHECK (category IN ('clean','dirty','red','faculty')),
-    student_identifier TEXT,
-    preferred_name    TEXT,
-    last_name         TEXT,
     grade             TEXT,
-    advisor           TEXT,
     house             TEXT,
-    clan              TEXT,
-    student_key       TEXT,
     is_manual_entry   INTEGER NOT NULL DEFAULT 0,
     recorded_by       TEXT NOT NULL REFERENCES users(id),
     recorded_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    source            TEXT,
     dedupe_key        TEXT NOT NULL,
-    
-    
-
     UNIQUE (session_id, dedupe_key)
 );
 CREATE INDEX idx_records_session_category ON session_records (session_id, category);
@@ -94,11 +84,10 @@ CREATE INDEX idx_records_session_category ON session_records (session_id, catego
 CREATE TABLE session_draws (
     id                    TEXT PRIMARY KEY,
     session_id            TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
-    winner_record_id      TEXT REFERENCES session_records(id),
+    draw_number           INTEGER NOT NULL,
+
     winner_student_id     TEXT REFERENCES students(id),
     method                TEXT,
-    selected_by           TEXT REFERENCES users(id),
-    selected_at           DATETIME,
     finalized             INTEGER NOT NULL DEFAULT 0,
     finalized_by          TEXT REFERENCES users(id),
     finalized_at          DATETIME,
@@ -107,16 +96,48 @@ CREATE TABLE session_draws (
     eligible_pool_size    INTEGER,
     override_applied      INTEGER NOT NULL DEFAULT 0,
     created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (session_id, draw_number)
 );
+
+CREATE TABLE session_draw_events (
+    id                    TEXT PRIMARY KEY,
+    session_draw_id       TEXT NOT NULL REFERENCES session_draws(id) ON DELETE CASCADE,
+    session_id            TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    event_type            TEXT NOT NULL
+                             CHECK (event_type IN ('select','draw','override','finalize','reset')),
+    selected_record_id    TEXT REFERENCES session_records(id),
+    selected_student_id   TEXT REFERENCES students(id),
+    tickets_at_event      REAL,
+    probability_at_event  REAL,
+    eligible_pool_size    INTEGER,
+    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by            TEXT REFERENCES users(id)
+);
+CREATE INDEX idx_draw_events_session ON session_draw_events (session_id, created_at);
+CREATE INDEX idx_draw_events_draw ON session_draw_events (session_draw_id, created_at);
+
+
+CREATE TABLE session_ticket_events (
+    id                    TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    session_record_id     TEXT REFERENCES session_records(id) ON DELETE SET NULL,
+    student_id            TEXT REFERENCES students(id),
+    event_type            TEXT NOT NULL
+                             CHECK (event_type IN ('earn','reset','manual_adjust')),
+    tickets_delta         REAL NOT NULL,
+    ticket_balance_after  REAL,
+    occurred_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    occurred_by           TEXT REFERENCES users(id),
+    metadata              TEXT
+);
+CREATE INDEX idx_ticket_events_session ON session_ticket_events (session_id, occurred_at);
 
 CREATE TABLE draft_pool (
     id             TEXT PRIMARY KEY,
     session_id     TEXT REFERENCES sessions(id) ON DELETE CASCADE,
     student_id     TEXT REFERENCES students(id),
     ticket_number  REAL NOT NULL,
-    created_by     TEXT REFERENCES users(id),
-    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_draft_pool_session ON draft_pool (session_id);
 
