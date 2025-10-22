@@ -54,6 +54,15 @@ CREATE TABLE sessions (
     updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     discarded_at   DATETIME,
     discarded_by   TEXT REFERENCES users(id),
+
+    clean_number     INTEGER,
+    dirty_number     INTEGER,
+    red_number       INTEGER,
+    faculty_number   INTEGER,
+
+    total_records   INTEGER,
+    total_clean     INTEGER,
+    total_dirty     INTEGER,
 );
 
 CREATE TABLE session_records (
@@ -76,14 +85,7 @@ CREATE TABLE session_records (
     source            TEXT,
     dedupe_key        TEXT NOT NULL,
     
-    clean_number     INTEGER,
-    dirty_number     INTEGER,
-    red_number       INTEGER,
-    faculty_number   INTEGER,
-
-    total_records   INTEGER,
-    total_clean     INTEGER,
-    total_dirty     INTEGER,
+    
 
     UNIQUE (session_id, dedupe_key)
 );

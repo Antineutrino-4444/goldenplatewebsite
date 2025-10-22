@@ -80,6 +80,27 @@ class UserInviteCode(Base):
     role = Column(String, nullable=False, default='user')
 
 
+class Student(Base):
+    __tablename__ = 'students'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    student_identifier = Column(String, unique=True, nullable=False)
+    preferred_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    grade = Column(String)
+    advisor = Column(String)
+    house = Column(String)
+    clan = Column(String)
+
+
+class Teacher(Base):
+    __tablename__ = 'teachers'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    display_name = Column(String)
+
+
 Base.metadata.create_all(bind=engine)
 
 # Persistent storage keys used in the key-value store
@@ -367,6 +388,152 @@ secure_random = random.SystemRandom()
 
 def normalize_name(value):
     return str(value or '').strip()
+
+
+def sync_students_table_from_csv_rows(rows):
+    """Persist uploaded student roster into the students table."""
+    result = {'processed': 0, 'created': 0, 'updated': 0}
+    if not isinstance(rows, list) or not rows:
+        return result
+
+    unique_rows = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        identifier = normalize_name(row.get('Student ID'))
+        if not identifier:
+            continue
+        key = identifier.lower()
+        if key not in unique_rows:
+            unique_rows[key] = (identifier, row)
+
+    if not unique_rows:
+        return result
+
+    identifiers = [item[0] for item in unique_rows.values()]
+    existing_students = db_session.query(Student).filter(Student.student_identifier.in_(identifiers)).all()
+    existing_map = {student.student_identifier.lower(): student for student in existing_students}
+
+    for key, (identifier, row) in unique_rows.items():
+        preferred = normalize_name(row.get('Preferred'))
+        last = normalize_name(row.get('Last'))
+        if not preferred or not last:
+            continue
+
+        grade = normalize_name(row.get('Grade'))
+        advisor = normalize_name(row.get('Advisor'))
+        house = normalize_name(row.get('House'))
+        clan = normalize_name(row.get('Clan'))
+
+        student = existing_map.get(key)
+        if student:
+            changes = False
+            if student.preferred_name != preferred:
+                student.preferred_name = preferred
+                changes = True
+            if student.last_name != last:
+                student.last_name = last
+                changes = True
+            new_grade = grade or None
+            if student.grade != new_grade:
+                student.grade = new_grade
+                changes = True
+            new_advisor = advisor or None
+            if student.advisor != new_advisor:
+                student.advisor = new_advisor
+                changes = True
+            new_house = house or None
+            if student.house != new_house:
+                student.house = new_house
+                changes = True
+            new_clan = clan or None
+            if student.clan != new_clan:
+                student.clan = new_clan
+                changes = True
+            if changes:
+                result['updated'] += 1
+        else:
+            student = Student(
+                id=str(uuid.uuid4()),
+                student_identifier=identifier,
+                preferred_name=preferred,
+                last_name=last,
+                grade=grade or None,
+                advisor=advisor or None,
+                house=house or None,
+                clan=clan or None,
+            )
+            db_session.add(student)
+            existing_map[key] = student
+            result['created'] += 1
+
+        result['processed'] += 1
+
+    if result['processed']:
+        try:
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+
+    return result
+
+
+def sync_teacher_table_from_list(teachers):
+    """Persist uploaded teacher roster into the teachers table."""
+    result = {'processed': 0, 'created': 0, 'updated': 0}
+    if not isinstance(teachers, list) or not teachers:
+        return result
+
+    unique_entries = {}
+    for entry in teachers:
+        if isinstance(entry, dict):
+            name = normalize_name(entry.get('name'))
+            display = normalize_name(entry.get('display_name') or entry.get('name'))
+        else:
+            name = normalize_name(entry)
+            display = name
+        if not name:
+            continue
+        key = name.lower()
+        if key not in unique_entries:
+            unique_entries[key] = (name, display)
+
+    if not unique_entries:
+        return result
+
+    names = [item[0] for item in unique_entries.values()]
+    existing_teachers = db_session.query(Teacher).filter(Teacher.name.in_(names)).all()
+    existing_map = {teacher.name.lower(): teacher for teacher in existing_teachers}
+
+    for key, (name, display) in unique_entries.items():
+        teacher = existing_map.get(key)
+        desired_display = display or None
+
+        if teacher:
+            if teacher.display_name != desired_display:
+                teacher.display_name = desired_display
+                result['updated'] += 1
+        else:
+            teacher = Teacher(
+                id=str(uuid.uuid4()),
+                name=name,
+                display_name=desired_display,
+            )
+            db_session.add(teacher)
+            existing_map[key] = teacher
+            result['created'] += 1
+
+        result['processed'] += 1
+
+    if result['processed']:
+        try:
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+
+    return result
 
 
 def make_student_key(preferred_name, last_name, student_id=None):
@@ -1516,10 +1683,20 @@ def upload_csv():
         # Save to persistent storage
         save_global_csv_data()
 
+        try:
+            sync_result = sync_students_table_from_csv_rows(rows)
+            print(f"Student roster sync complete: {sync_result}")
+        except Exception as e:
+            print(f"Error syncing students table: {e}")
+            return jsonify({'error': 'Student roster could not be stored in the database'}), 500
+
         return jsonify({
             'status': 'success',
             'rows_count': len(rows),
-            'uploaded_by': user_id
+            'uploaded_by': user_id,
+            'students_processed': sync_result['processed'],
+            'students_created': sync_result['created'],
+            'students_updated': sync_result['updated']
         }), 200
 
     except Exception as e:
@@ -1677,10 +1854,20 @@ def upload_teachers():
         # Save to persistent storage
         save_global_teacher_data()
 
+        try:
+            teacher_sync = sync_teacher_table_from_list(teachers)
+            print(f"Teacher roster sync complete: {teacher_sync}")
+        except Exception as e:
+            print(f"Error syncing teachers table: {e}")
+            return jsonify({'error': 'Teacher roster could not be stored in the database'}), 500
+
         return jsonify({
             'status': 'success',
             'count': len(teachers),
-            'uploaded_by': user_id
+            'uploaded_by': user_id,
+            'teachers_processed': teacher_sync['processed'],
+            'teachers_created': teacher_sync['created'],
+            'teachers_updated': teacher_sync['updated']
         }), 200
 
     except Exception as e:
