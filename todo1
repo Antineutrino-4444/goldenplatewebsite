@@ -1,4 +1,4 @@
-
+implement the draw system based on schmas in #file:todo1 . When student get clean plate record, they gain one ticket. Admin can perform following options: draw(amongest students who got clean plate in a session, draw based on the amount of ticket they have), override(appoint a student), finalize(finalize the current winner). When a student is chosen for winner, its ticket becomes zero.
 CREATE TABLE users (
     id              TEXT PRIMARY KEY,
     username        TEXT NOT NULL UNIQUE,
@@ -105,7 +105,7 @@ CREATE TABLE session_draw_events (
     session_draw_id       TEXT NOT NULL REFERENCES session_draws(id) ON DELETE CASCADE,
     session_id            TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     event_type            TEXT NOT NULL
-                             CHECK (event_type IN ('select','draw','override','finalize','reset')),
+                             CHECK (event_type IN ('draw','override','finalize','restore')),
     selected_record_id    TEXT REFERENCES session_records(id),
     selected_student_id   TEXT REFERENCES students(id),
     tickets_at_event      REAL,

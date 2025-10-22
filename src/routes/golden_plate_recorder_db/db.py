@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     create_engine,
@@ -20,9 +21,19 @@ if DATABASE_URL.startswith('sqlite:///'):
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
+# Configure SQLite-specific settings for better concurrency
+connect_args = {}
+if DATABASE_URL.startswith('sqlite'):
+    connect_args = {
+        'check_same_thread': False,
+        'timeout': 30,  # Wait up to 30 seconds for locks to clear
+    }
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args={'check_same_thread': False} if DATABASE_URL.startswith('sqlite') else {}
+    connect_args=connect_args,
+    pool_pre_ping=True,  # Verify connections before using them
+    pool_recycle=3600,  # Recycle connections after 1 hour
 )
 SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 db_session = scoped_session(SessionFactory)
@@ -93,12 +104,55 @@ class Teacher(Base):
     display_name = Column(String)
 
 
+class Session(Base):
+    __tablename__ = 'sessions'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_by = Column(String, ForeignKey('users.id'), nullable=False)
+    session_name = Column(String, unique=True, nullable=False)
+    status = Column(String, nullable=False, default='active')
+    is_public = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), default=_now_utc)
+    updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+    discarded_at = Column(DateTime(timezone=True))
+    discarded_by = Column(String, ForeignKey('users.id'))
+
+    clean_number = Column(Integer)
+    dirty_number = Column(Integer)
+    red_number = Column(Integer)
+    faculty_number = Column(Integer)
+
+    total_records = Column(Integer)
+    total_clean = Column(Integer)
+    total_dirty = Column(Integer)
+
+
+class SessionRecord(Base):
+    __tablename__ = 'session_records'
+    __table_args__ = (
+        Index('idx_records_session_category', 'session_id', 'category'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    student_id = Column(String, ForeignKey('students.id'))
+    category = Column(String, nullable=False)
+    grade = Column(String)
+    house = Column(String)
+    is_manual_entry = Column(Integer, nullable=False, default=0)
+    recorded_by = Column(String, ForeignKey('users.id'), nullable=False)
+    recorded_at = Column(DateTime(timezone=True), default=_now_utc)
+    dedupe_key = Column(String, nullable=False)
+
+
 Base.metadata.create_all(bind=engine)
 
 __all__ = [
     'DATABASE_URL',
     'Base',
     'KeyValueStore',
+    'Session',
+    'SessionRecord',
     'Student',
     'Teacher',
     'User',

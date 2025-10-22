@@ -58,7 +58,7 @@ def create_user_record(username, password, display_name, role='user', status='ac
     return user
 
 
-def update_user_credentials(user, *, password=None, display_name=None, role=None, status=None):
+def update_user_credentials(user, *, password=None, display_name=None, role=None, status=None, auto_commit=True):
     updated = False
     if password is not None and user.password_hash != password:
         user.password_hash = password
@@ -74,11 +74,12 @@ def update_user_credentials(user, *, password=None, display_name=None, role=None
         updated = True
     if updated:
         user.updated_at = _now_utc()
-        try:
-            db_session.commit()
-        except Exception:
-            db_session.rollback()
-            raise
+        if auto_commit:
+            try:
+                db_session.commit()
+            except Exception:
+                db_session.rollback()
+                raise
     return user
 
 
@@ -104,31 +105,44 @@ def ensure_default_superadmin():
 def migrate_legacy_users(legacy_users):
     if not isinstance(legacy_users, dict):
         return
-    for username, payload in legacy_users.items():
-        if not isinstance(payload, dict):
-            continue
-        print(f"Migrating legacy user: {username}")
-        password = payload.get('password') or DEFAULT_SUPERADMIN['password']
-        role = payload.get('role', 'user')
-        name = payload.get('name') or username
-        status = payload.get('status', 'active')
-        user = get_user_by_username(username)
-        if user:
-            update_user_credentials(
-                user,
-                password=password,
-                display_name=name,
-                role=role,
-                status=status,
-            )
-        else:
-            create_user_record(
-                username,
-                password,
-                name,
-                role=role,
-                status=status,
-            )
+    
+    try:
+        for username, payload in legacy_users.items():
+            if not isinstance(payload, dict):
+                continue
+            print(f"Migrating legacy user: {username}")
+            password = payload.get('password') or DEFAULT_SUPERADMIN['password']
+            role = payload.get('role', 'user')
+            name = payload.get('name') or username
+            status = payload.get('status', 'active')
+            user = get_user_by_username(username)
+            if user:
+                update_user_credentials(
+                    user,
+                    password=password,
+                    display_name=name,
+                    role=role,
+                    status=status,
+                    auto_commit=False,  # Don't commit yet
+                )
+            else:
+                user = User(
+                    id=str(uuid.uuid4()),
+                    username=username,
+                    password_hash=password,
+                    display_name=name,
+                    role=role,
+                    status=status,
+                    created_at=_now_utc(),
+                    updated_at=_now_utc(),
+                )
+                db_session.add(user)
+        
+        # Commit all changes at once
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
 
 
 def create_invite_code_record(owner_user, issued_by_user, role='user'):
@@ -174,39 +188,42 @@ def mark_invite_code_used(invite, used_by_user):
 def migrate_legacy_invite_codes(legacy_invites, default_owner):
     if not isinstance(legacy_invites, dict):
         return
-    for code, payload in legacy_invites.items():
-        if get_invite_code_record(code):
-            continue
-        role = 'user'
-        status = 'unused'
-        issued_by_username = DEFAULT_SUPERADMIN['username']
-        used_by_username = None
-        if isinstance(payload, dict):
-            role = payload.get('role', 'user')
-            status = 'used' if payload.get('used') else payload.get('status', 'unused')
-            issued_by_username = payload.get('issued_by', DEFAULT_SUPERADMIN['username'])
-            used_by_username = payload.get('used_by')
-        issued_by_user = get_user_by_username(issued_by_username) or default_owner
-        invite = UserInviteCode(
-            id=str(uuid.uuid4()),
-            user_id=default_owner.id,
-            code=code,
-            issued_by=issued_by_user.id,
-            issued_at=_now_utc(),
-            status=status,
-            role=role,
-        )
-        if status == 'used' and used_by_username:
-            used_user = get_user_by_username(used_by_username)
-            if used_user:
-                invite.used_by = used_user.id
-                invite.used_at = _now_utc()
-        try:
+    
+    try:
+        for code, payload in legacy_invites.items():
+            if get_invite_code_record(code):
+                continue
+            role = 'user'
+            status = 'unused'
+            issued_by_username = DEFAULT_SUPERADMIN['username']
+            used_by_username = None
+            if isinstance(payload, dict):
+                role = payload.get('role', 'user')
+                status = 'used' if payload.get('used') else payload.get('status', 'unused')
+                issued_by_username = payload.get('issued_by', DEFAULT_SUPERADMIN['username'])
+                used_by_username = payload.get('used_by')
+            issued_by_user = get_user_by_username(issued_by_username) or default_owner
+            invite = UserInviteCode(
+                id=str(uuid.uuid4()),
+                user_id=default_owner.id,
+                code=code,
+                issued_by=issued_by_user.id,
+                issued_at=_now_utc(),
+                status=status,
+                role=role,
+            )
+            if status == 'used' and used_by_username:
+                used_user = get_user_by_username(used_by_username)
+                if used_user:
+                    invite.used_by = used_user.id
+                    invite.used_at = _now_utc()
             db_session.add(invite)
-            db_session.commit()
-        except Exception:
-            db_session.rollback()
-            raise
+        
+        # Commit all invite codes at once
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
 
 
 def reset_user_store():

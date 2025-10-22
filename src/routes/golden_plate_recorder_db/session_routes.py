@@ -7,6 +7,7 @@ from datetime import datetime
 from flask import Response, jsonify, request, session
 
 from . import recorder_bp
+from .db import Session as SessionModel, SessionRecord, Student, _now_utc, db_session
 from .domain import serialize_draw_info
 from .security import get_current_user, is_guest, require_admin, require_auth, require_auth_or_guest
 from .storage import (
@@ -40,17 +41,27 @@ def request_delete_session():
     if not session_id:
         return jsonify({'error': 'Session ID is required'}), 400
 
-    if session_id not in session_data:
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
     current_user = get_current_user()
 
     if current_user['role'] in ['admin', 'superadmin']:
-        session_name = session_data[session_id]['session_name']
-        del session_data[session_id]
-        save_session_data()
+        session_name = db_sess.session_name
+        
+        # Delete from database
+        db_session.delete(db_sess)
+        db_session.commit()
+        
+        # Delete from JSON storage
+        if session_id in session_data:
+            del session_data[session_id]
+            save_session_data()
+        
         if session.get('session_id') == session_id:
             session.pop('session_id', None)
+        
         return jsonify({
             'status': 'success',
             'message': f'Session "{session_name}" deleted successfully',
@@ -62,20 +73,17 @@ def request_delete_session():
     if existing:
         return jsonify({'error': 'Delete request already submitted for this session'}), 400
 
-    session_info = session_data[session_id]
-    ensure_session_structure(session_info)
-    session_name = session_info['session_name']
-
-    clean_count = len(session_info.get('clean_records', []))
-    dirty_count = get_dirty_count(session_info)
-    red_count = len(session_info.get('red_records', []))
-    faculty_clean_count = len(session_info.get('faculty_clean_records', []))
-    total_records = clean_count + dirty_count + red_count
+    # Use cached counts from session table
+    clean_count = db_sess.clean_number or 0
+    dirty_count = db_sess.dirty_number or 0
+    red_count = db_sess.red_number or 0
+    faculty_clean_count = db_sess.faculty_number or 0
+    total_records = db_sess.total_records or 0
 
     request_obj = {
         'id': str(uuid.uuid4()),
         'session_id': session_id,
-        'session_name': session_name,
+        'session_name': db_sess.session_name,
         'requester': session['user_id'],
         'requester_name': current_user['name'],
         'requested_at': datetime.now().isoformat(),
@@ -92,7 +100,7 @@ def request_delete_session():
 
     return jsonify({
         'status': 'success',
-        'message': f'Delete request submitted for "{session_name}"',
+        'message': f'Delete request submitted for "{db_sess.session_name}"',
         'request': request_obj
     }), 200
 
@@ -108,10 +116,10 @@ def create_session():
     is_public = data.get('is_public', True)
 
     session_id = str(uuid.uuid4())
-    existing_names = {d['session_name'] for d in session_data.values()}
 
     if custom_name:
-        if custom_name in existing_names:
+        existing = db_session.query(SessionModel).filter_by(session_name=custom_name).first()
+        if existing:
             return jsonify({'error': 'Session name already exists'}), 400
         session_name = custom_name
     else:
@@ -119,14 +127,33 @@ def create_session():
         base_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
         session_name = base_name
         counter = 1
-        while session_name in existing_names:
+        while db_session.query(SessionModel).filter_by(session_name=session_name).first():
             session_name = f"{base_name}_{counter}"
             counter += 1
 
+    new_session = SessionModel(
+        id=session_id,
+        session_name=session_name,
+        created_by=session['user_id'],
+        is_public=1 if is_public else 0,
+        status='active',
+        clean_number=0,
+        dirty_number=0,
+        red_number=0,
+        faculty_number=0,
+        total_records=0,
+        total_clean=0,
+        total_dirty=0
+    )
+
+    db_session.add(new_session)
+    db_session.commit()
+
+    # Keep backward compatibility with JSON storage for draw_info and other features
     session_data[session_id] = {
         'session_name': session_name,
         'owner': session['user_id'],
-        'created_at': datetime.now().isoformat(),
+        'created_at': new_session.created_at.isoformat(),
         'clean_records': [],
         'dirty_count': 0,
         'red_records': [],
@@ -167,37 +194,50 @@ def list_sessions():
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    user_sessions = []
-    for session_id, data in session_data.items():
-        ensure_session_structure(data)
-        if is_guest() and not data.get('is_public', True):
-            continue
-        total_records = len(data['clean_records']) + get_dirty_count(data) + len(data['red_records'])
-        clean_count = len(data['clean_records'])
-        dirty_count = get_dirty_count(data) + len(data['red_records'])
-        faculty_clean_count = len(data.get('faculty_clean_records', []))
+    query = db_session.query(SessionModel)
+    
+    # Filter out non-public sessions for guests
+    if is_guest():
+        query = query.filter(SessionModel.is_public == 1)
+    
+    db_sessions = query.order_by(SessionModel.created_at.desc()).all()
 
+    user_sessions = []
+    for db_sess in db_sessions:
+        # Use cached counts from session table
+        clean_count = db_sess.clean_number or 0
+        dirty_count = db_sess.dirty_number or 0
+        red_count = db_sess.red_number or 0
+        faculty_clean_count = db_sess.faculty_number or 0
+
+        total_records = clean_count + dirty_count + red_count
         combined_clean_count = clean_count + faculty_clean_count
         total_for_ratio = total_records + faculty_clean_count
+        
         clean_percentage = (combined_clean_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
-        dirty_percentage = (dirty_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
+        dirty_percentage = ((dirty_count + red_count) / total_for_ratio * 100) if total_for_ratio > 0 else 0
 
-        pending = any(req['session_id'] == session_id and req['status'] == 'pending'
+        # Get draw_info from JSON storage for backward compatibility
+        json_data = session_data.get(db_sess.id, {})
+        draw_info = serialize_draw_info(json_data.get('draw_info', {}))
+        
+        pending = any(req['session_id'] == db_sess.id and req['status'] == 'pending'
                        for req in delete_requests)
+        
         user_sessions.append({
-            'session_id': session_id,
-            'session_name': data['session_name'],
-            'owner': data.get('owner', 'unknown'),
+            'session_id': db_sess.id,
+            'session_name': db_sess.session_name,
+            'owner': db_sess.created_by,
             'total_records': total_records,
             'clean_count': clean_count,
-            'dirty_count': dirty_count,
+            'dirty_count': dirty_count + red_count,
             'faculty_clean_count': faculty_clean_count,
             'clean_percentage': round(clean_percentage, 1),
             'dirty_percentage': round(dirty_percentage, 1),
-            'is_public': data.get('is_public', True),
+            'is_public': bool(db_sess.is_public),
             'delete_requested': pending,
-            'is_discarded': data.get('is_discarded', False),
-            'draw_info': serialize_draw_info(data.get('draw_info', {}))
+            'is_discarded': db_sess.status == 'discarded',
+            'draw_info': draw_info
         })
 
     return jsonify({
@@ -212,17 +252,18 @@ def switch_session(session_id):
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    if session_id not in session_data:
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
-    if is_guest() and not session_data[session_id].get('is_public', True):
+    if is_guest() and not db_sess.is_public:
         return jsonify({'error': 'Access denied'}), 403
 
     session['session_id'] = session_id
 
     return jsonify({
         'session_id': session_id,
-        'session_name': session_data[session_id]['session_name']
+        'session_name': db_sess.session_name
     }), 200
 
 
@@ -232,18 +273,26 @@ def delete_session(session_id):
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
-    if session_id not in session_data:
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
     current_user = get_current_user()
-    session_owner = session_data[session_id].get('owner')
 
-    if current_user['role'] == 'user' and session_owner != session['user_id']:
+    if current_user['role'] == 'user' and db_sess.created_by != session['user_id']:
         return jsonify({'error': 'You can only delete sessions that you created'}), 403
 
-    session_name = session_data[session_id]['session_name']
-    del session_data[session_id]
-    save_session_data()
+    session_name = db_sess.session_name
+    
+    # Delete from database (cascade will delete session_records)
+    db_session.delete(db_sess)
+    db_session.commit()
+    
+    # Delete from JSON storage
+    if session_id in session_data:
+        del session_data[session_id]
+        save_session_data()
+    
     if session.get('session_id') == session_id:
         session.pop('session_id', None)
 
@@ -260,20 +309,25 @@ def get_session_status():
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    if 'session_id' not in session or session['session_id'] not in session_data:
+    if 'session_id' not in session:
         return jsonify({'error': 'No active session'}), 400
-
+    
     session_id = session['session_id']
-    data = session_data[session_id]
-    if is_guest() and not data.get('is_public', True):
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
+    if is_guest() and not db_sess.is_public:
         return jsonify({'error': 'Access denied'}), 403
 
-    ensure_session_structure(data)
-    clean_count = len(data['clean_records'])
-    dirty_count = get_dirty_count(data)
-    red_count = len(data['red_records'])
+    # Use cached counts from session table
+    clean_count = db_sess.clean_number or 0
+    dirty_count = db_sess.dirty_number or 0
+    red_count = db_sess.red_number or 0
+    faculty_clean_count = db_sess.faculty_number or 0
+    
     combined_dirty_count = dirty_count + red_count
-    faculty_clean_count = len(data.get('faculty_clean_records', []))
     total_recorded = clean_count + dirty_count + red_count
 
     combined_clean_count = clean_count + faculty_clean_count
@@ -281,9 +335,15 @@ def get_session_status():
     clean_percentage = (combined_clean_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
     dirty_percentage = (combined_dirty_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
 
+    # Get scan history count and draw_info from JSON storage for backward compatibility
+    json_data = session_data.get(session_id, {})
+    ensure_session_structure(json_data)
+    scan_history_count = len(json_data.get('scan_history', []))
+    draw_info = serialize_draw_info(json_data.get('draw_info', {}))
+
     return jsonify({
         'session_id': session_id,
-        'session_name': data['session_name'],
+        'session_name': db_sess.session_name,
         'clean_count': clean_count,
         'dirty_count': dirty_count,
         'red_count': red_count,
@@ -292,9 +352,9 @@ def get_session_status():
         'total_recorded': total_recorded,
         'clean_percentage': round(clean_percentage, 1),
         'dirty_percentage': round(dirty_percentage, 1),
-        'scan_history_count': len(data['scan_history']),
-        'is_discarded': data.get('is_discarded', False),
-        'draw_info': serialize_draw_info(data.get('draw_info', {}))
+        'scan_history_count': scan_history_count,
+        'is_discarded': db_sess.status == 'discarded',
+        'draw_info': draw_info
     }), 200
 
 
@@ -394,6 +454,28 @@ def record_student(category):
         }
         session_info['scan_history'].append(record)
         save_session_data()
+        
+        # Save to database
+        dedupe_key = f"dirty_{new_count}_{datetime.now().isoformat()}"
+        db_record = SessionRecord(
+            session_id=session_id,
+            category='dirty',
+            recorded_by=session['user_id'],
+            is_manual_entry=0,
+            dedupe_key=dedupe_key
+        )
+        db_session.add(db_record)
+        
+        # Update session counts
+        db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+        if db_sess:
+            db_sess.dirty_number = (db_sess.dirty_number or 0) + 1
+            db_sess.total_dirty = (db_sess.total_dirty or 0) + 1
+            db_sess.total_records = (db_sess.total_records or 0) + 1
+            db_sess.updated_at = datetime.now()
+        
+        db_session.commit()
+        
         return jsonify({
             'status': 'success',
             'category': 'dirty',
@@ -421,6 +503,16 @@ def record_student(category):
             record.get('last_name', '').lower() == last_name.lower()
             for record in session_info['faculty_clean_records']
         )
+        
+        # Also check database for duplicates
+        if not duplicate_check:
+            dedupe_key_to_check = f"faculty_{preferred_name.lower()}_{last_name.lower()}"
+            existing_db_record = db_session.query(SessionRecord).filter_by(
+                session_id=session_id,
+                dedupe_key=dedupe_key_to_check
+            ).first()
+            if existing_db_record:
+                duplicate_check = True
 
         if duplicate_check:
             return jsonify({
@@ -444,6 +536,29 @@ def record_student(category):
         session_info['faculty_clean_records'].append(record)
         session_info['scan_history'].append(record)
         save_session_data()
+        
+        # Save to database
+        dedupe_key = f"faculty_{preferred_name.lower()}_{last_name.lower()}"
+        db_record = SessionRecord(
+            session_id=session_id,
+            category='faculty',
+            grade='',
+            house='',
+            recorded_by=session['user_id'],
+            is_manual_entry=1,
+            dedupe_key=dedupe_key
+        )
+        db_session.add(db_record)
+        
+        # Update session counts
+        db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+        if db_sess:
+            db_sess.faculty_number = (db_sess.faculty_number or 0) + 1
+            db_sess.total_clean = (db_sess.total_clean or 0) + 1
+            db_sess.updated_at = datetime.now()
+        
+        db_session.commit()
+        
         return jsonify({
             'status': 'success',
             'preferred_name': preferred_name,
@@ -660,6 +775,16 @@ def record_student(category):
         is_duplicate(record)
         for record in student_records
     )
+    
+    # Also check database for duplicates
+    if not duplicate_check:
+        dedupe_key_to_check = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
+        existing_db_record = db_session.query(SessionRecord).filter_by(
+            session_id=session_id,
+            dedupe_key=dedupe_key_to_check
+        ).first()
+        if existing_db_record:
+            duplicate_check = True
 
     if duplicate_check:
         existing_category = None
@@ -670,10 +795,20 @@ def record_student(category):
             ):
                 existing_category = cat
                 break
+        
+        # If not found in JSON, check database
+        if not existing_category:
+            dedupe_key_to_check = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
+            db_record = db_session.query(SessionRecord).filter_by(
+                session_id=session_id,
+                dedupe_key=dedupe_key_to_check
+            ).first()
+            if db_record:
+                existing_category = db_record.category
 
         return jsonify({
             'error': 'duplicate',
-            'message': f'Student already recorded as {existing_category.upper()} in this session'
+            'message': f'Student already recorded as {existing_category.upper() if existing_category else "UNKNOWN"} in this session'
         }), 409
 
     record = {
@@ -695,6 +830,54 @@ def record_student(category):
     session_info[f'{category}_records'].append(record)
     session_info['scan_history'].append(record)
     save_session_data()
+
+    # Save to database
+    # Look up or create student in database
+    db_student = None
+    if student_id:
+        db_student = db_session.query(Student).filter_by(student_identifier=student_id).first()
+        if not db_student:
+            db_student = Student(
+                student_identifier=student_id,
+                preferred_name=preferred_name,
+                last_name=last_name,
+                grade=grade,
+                advisor=advisor,
+                house=house,
+                clan=clan
+            )
+            db_session.add(db_student)
+            db_session.flush()  # Get the ID
+    
+    # Create dedupe key from student info
+    dedupe_key = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
+    
+    db_record = SessionRecord(
+        session_id=session_id,
+        student_id=db_student.id if db_student else None,
+        category=category,
+        grade=grade,
+        house=house,
+        recorded_by=session['user_id'],
+        is_manual_entry=1 if is_manual_entry else 0,
+        dedupe_key=dedupe_key
+    )
+    db_session.add(db_record)
+    
+    # Update session counts
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    if db_sess:
+        if category == 'clean':
+            db_sess.clean_number = (db_sess.clean_number or 0) + 1
+            db_sess.total_clean = (db_sess.total_clean or 0) + 1
+            db_sess.total_records = (db_sess.total_records or 0) + 1
+        elif category == 'red':
+            db_sess.red_number = (db_sess.red_number or 0) + 1
+            db_sess.total_dirty = (db_sess.total_dirty or 0) + 1
+            db_sess.total_records = (db_sess.total_records or 0) + 1
+        db_sess.updated_at = datetime.now()
+    
+    db_session.commit()
 
     return jsonify({
         'status': 'success',

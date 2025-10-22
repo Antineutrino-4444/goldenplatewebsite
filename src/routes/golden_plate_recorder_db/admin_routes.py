@@ -3,6 +3,7 @@ from datetime import datetime
 from flask import jsonify, request, session
 
 from . import recorder_bp
+from .db import Session as SessionModel, db_session as db
 from .domain import serialize_draw_info
 from .security import get_current_user, require_admin, require_auth
 from .storage import (
@@ -244,19 +245,24 @@ def admin_overview():
             'role': user['role']
         })
 
+    # Get sessions from database with cached counts
+    db_sessions = db.query(SessionModel).order_by(SessionModel.created_at.desc()).all()
+    
     sessions_overview = []
-    for session_id, session_info in session_data.items():
-        ensure_session_structure(session_info)
-        total_records = len(session_info['clean_records']) + get_dirty_count(session_info) + len(session_info['red_records'])
+    for db_sess in db_sessions:
+        # Get draw_info from JSON storage for backward compatibility
+        json_data = session_data.get(db_sess.id, {})
+        draw_info = serialize_draw_info(json_data.get('draw_info', {}))
+        
         sessions_overview.append({
-            'session_id': session_id,
-            'session_name': session_info['session_name'],
-            'owner': session_info['owner'],
-            'total_records': total_records,
-            'created_at': session_info['created_at'],
-            'faculty_clean_count': len(session_info.get('faculty_clean_records', [])),
-            'is_discarded': session_info.get('is_discarded', False),
-            'draw_info': serialize_draw_info(session_info.get('draw_info', {}))
+            'session_id': db_sess.id,
+            'session_name': db_sess.session_name,
+            'owner': db_sess.created_by,
+            'total_records': db_sess.total_records or 0,
+            'created_at': db_sess.created_at.isoformat() if db_sess.created_at else None,
+            'faculty_clean_count': db_sess.faculty_number or 0,
+            'is_discarded': db_sess.status == 'discarded',
+            'draw_info': draw_info
         })
 
     return jsonify({
