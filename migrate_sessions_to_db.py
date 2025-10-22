@@ -136,7 +136,7 @@ def migrate_sessions():
         dirty_count = session_info.get('dirty_count', 0)
         
         # Calculate totals
-        total_records = clean_count + dirty_count + red_count
+        total_records = clean_count + dirty_count + red_count + faculty_count
         total_clean = clean_count + faculty_count
         total_dirty = dirty_count + red_count
         

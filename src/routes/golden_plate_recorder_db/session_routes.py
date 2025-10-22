@@ -210,10 +210,10 @@ def list_sessions():
         red_count = db_sess.red_number or 0
         faculty_clean_count = db_sess.faculty_number or 0
 
-        total_records = clean_count + dirty_count + red_count
+        total_records = clean_count + dirty_count + red_count + faculty_clean_count
         combined_clean_count = clean_count + faculty_clean_count
-        total_for_ratio = total_records + faculty_clean_count
-        
+        total_for_ratio = total_records
+
         clean_percentage = (combined_clean_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
         dirty_percentage = ((dirty_count + red_count) / total_for_ratio * 100) if total_for_ratio > 0 else 0
 
@@ -328,12 +328,11 @@ def get_session_status():
     faculty_clean_count = db_sess.faculty_number or 0
     
     combined_dirty_count = dirty_count + red_count
-    total_recorded = clean_count + dirty_count + red_count
-
     combined_clean_count = clean_count + faculty_clean_count
-    total_for_ratio = total_recorded + faculty_clean_count
-    clean_percentage = (combined_clean_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
-    dirty_percentage = (combined_dirty_count / total_for_ratio * 100) if total_for_ratio > 0 else 0
+    total_recorded = combined_clean_count + combined_dirty_count
+
+    clean_percentage = (combined_clean_count / total_recorded * 100) if total_recorded > 0 else 0
+    dirty_percentage = (combined_dirty_count / total_recorded * 100) if total_recorded > 0 else 0
 
     # Get scan history count and draw_info from JSON storage for backward compatibility
     json_data = session_data.get(session_id, {})
@@ -555,6 +554,7 @@ def record_student(category):
         if db_sess:
             db_sess.faculty_number = (db_sess.faculty_number or 0) + 1
             db_sess.total_clean = (db_sess.total_clean or 0) + 1
+            db_sess.total_records = (db_sess.total_records or 0) + 1
             db_sess.updated_at = datetime.now()
         
         db_session.commit()
