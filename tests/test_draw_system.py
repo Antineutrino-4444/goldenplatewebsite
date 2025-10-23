@@ -45,7 +45,7 @@ class TestTicketEarning:
         assert candidates[0]['probability'] == 100.0
 
     def test_multiple_clean_plates_accumulate_tickets(self, client, login):
-        """Students accumulate tickets with multiple clean plates."""
+        """Students accumulate tickets with multiple clean plates across sessions."""
         login()
         upload_csv(client)
         client.post('/api/session/create', json={'session_name': 'ticket_test_2'})
@@ -67,11 +67,11 @@ class TestTicketEarning:
         draw_summary = client.get(f'/api/session/{session_id_2}/draw/summary')
         data = draw_summary.get_json()
         
-        # In this session, student should have 1 ticket (per session tracking)
+        # Student should have 2 tickets (cumulative across sessions)
         candidates = data['candidates']
         alice = next((c for c in candidates if c['student_identifier'] == '101'), None)
         assert alice is not None
-        assert alice['tickets'] == 1.0
+        assert alice['tickets'] == 2.0
 
     def test_red_plate_resets_tickets_to_zero(self, client, login):
         """Red plate resets a student's tickets to 0."""

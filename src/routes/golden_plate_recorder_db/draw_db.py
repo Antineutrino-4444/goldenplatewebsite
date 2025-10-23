@@ -7,6 +7,7 @@ from sqlalchemy import func
 
 from .db import (
     DraftPool,
+    Session,
     SessionDraw,
     SessionDrawEvent,
     SessionRecord,
@@ -36,20 +37,20 @@ def get_or_create_session_draw(session_id: str) -> SessionDraw:
 
 def calculate_ticket_balances(session_id: str) -> Dict[str, float]:
     """
-    Calculate current ticket balances for all students from draft_pool.
+    Calculate current cumulative ticket balances for all students.
+    Gets the most recent ticket balance for each student across all sessions.
     Returns dict mapping student_id to ticket count.
     """
-    # Get all entries from draft_pool for this session
-    pool_entries = (
-        db_session.query(DraftPool)
-        .filter(DraftPool.session_id == session_id)
-        .all()
-    )
+    # Get all unique students
+    all_students = db_session.query(DraftPool.student_id).distinct().all()
     
     ticket_balances = {}
-    for entry in pool_entries:
-        if entry.student_id and entry.ticket_number > 0:
-            ticket_balances[entry.student_id] = float(entry.ticket_number)
+    for (student_id,) in all_students:
+        if student_id:
+            # Get the most recent ticket balance for this student
+            balance = get_student_ticket_balance(session_id, student_id)
+            if balance > 0:
+                ticket_balances[student_id] = balance
     
     return ticket_balances
 
@@ -264,10 +265,16 @@ def get_draw_history(session_id: str) -> List[Dict]:
 
 
 def get_student_ticket_balance(session_id: str, student_id: str) -> float:
-    """Get current ticket balance for a student from draft_pool."""
+    """
+    Get current cumulative ticket balance for a student.
+    Looks across all sessions to find the most recent ticket balance.
+    """
+    # Get the most recent draft_pool entry for this student across all sessions
     pool_entry = (
         db_session.query(DraftPool)
-        .filter_by(session_id=session_id, student_id=student_id)
+        .join(Session, DraftPool.session_id == Session.id)
+        .filter(DraftPool.student_id == student_id)
+        .order_by(Session.created_at.desc())
         .first()
     )
     return float(pool_entry.ticket_number) if pool_entry else 0.0
