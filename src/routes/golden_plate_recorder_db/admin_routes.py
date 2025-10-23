@@ -10,6 +10,7 @@ from .storage import (
     delete_requests,
     ensure_session_structure,
     get_dirty_count,
+    get_session_entry,
     save_delete_requests,
     save_session_data,
     session_data,
@@ -137,11 +138,12 @@ def admin_delete_session(session_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    if session_id not in session_data:
+    data = get_session_entry(session_id)
+    if not data:
         return jsonify({'error': 'Session not found'}), 404
 
-    session_name = session_data[session_id]['session_name']
-    del session_data[session_id]
+    session_name = data['session_name']
+    session_data.pop(session_id, None)
     save_session_data()
     if session.get('session_id') == session_id:
         session.pop('session_id', None)
@@ -168,15 +170,16 @@ def approve_delete_request(request_id):
 
     session_id = request_obj['session_id']
 
-    if session_id not in session_data:
+    data = get_session_entry(session_id)
+    if not data:
         request_obj['status'] = 'completed'
         request_obj['approved_by'] = session['user_id']
         request_obj['approved_at'] = datetime.now().isoformat()
         save_delete_requests()
         return jsonify({'message': 'Session no longer exists, request marked as completed'}), 200
 
-    session_name = session_data[session_id]['session_name']
-    del session_data[session_id]
+    session_name = data['session_name']
+    session_data.pop(session_id, None)
     save_session_data()
     if session.get('session_id') == session_id:
         session.pop('session_id', None)
