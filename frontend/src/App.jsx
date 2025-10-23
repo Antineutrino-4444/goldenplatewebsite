@@ -975,7 +975,8 @@ function App() {
           candidates: data.candidates ?? [],
           ticket_snapshot: data.ticket_snapshot ?? {},
           generated_at: data.generated_at ?? new Date().toISOString(),
-          draw_info: data.draw_info ?? null
+          draw_info: data.draw_info ?? null,
+          history: data.history ?? []
         }
         updateDrawSummaryState(summaryPayload)
         setSessionStats(prev => ({
@@ -2233,26 +2234,26 @@ function App() {
                         Draw History
                       </div>
                       <div className="mt-3 text-sm">
-                        {currentDrawInfo?.history && currentDrawInfo.history.length > 0 ? (
+                        {drawSummary?.history && drawSummary.history.length > 0 ? (
                           <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-gray-600">
-                            {currentDrawInfo.history
+                            {drawSummary.history
                               .slice()
                               .reverse()
                               .map((entry, index) => (
                                 <div key={`${entry.timestamp}-${index}`} className="rounded border p-2">
-                                  <div className="font-semibold uppercase">{entry.action.replace(/_/g, ' ')}</div>
+                                  <div className="font-semibold uppercase">{entry.event_type.replace(/_/g, ' ')}</div>
                                   <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
-                                  {entry.winner_display_name && <div>Winner: {entry.winner_display_name}</div>}
-                                  {entry.total_tickets !== undefined && (
-                                    <div>Total tickets: {Number(entry.total_tickets ?? 0).toFixed(2)}</div>
+                                  {entry.student_name && <div>Student: {entry.student_name}</div>}
+                                  {entry.tickets !== null && entry.tickets !== undefined && (
+                                    <div>Student tickets: {Number(entry.tickets ?? 0).toFixed(2)}</div>
                                   )}
-                                  {entry.winner_tickets !== undefined && (
-                                    <div>Winner tickets: {Number(entry.winner_tickets ?? 0).toFixed(2)}</div>
-                                  )}
-                                  {entry.probability !== undefined && (
+                                  {entry.probability !== null && entry.probability !== undefined && (
                                     <div>Probability: {Number(entry.probability ?? 0).toFixed(2)}%</div>
                                   )}
-                                  {entry.performed_by && <div>By: {entry.performed_by}</div>}
+                                  {entry.pool_size !== null && entry.pool_size !== undefined && (
+                                    <div>Eligible pool: {entry.pool_size}</div>
+                                  )}
+                                  {entry.created_by && <div>By: {entry.created_by}</div>}
                                 </div>
                               ))}
                           </div>
