@@ -139,13 +139,87 @@ class SessionRecord(Base):
     last_name = Column(String)
 
 
+class SessionDraw(Base):
+    __tablename__ = 'session_draws'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False, unique=True)
+    draw_number = Column(Integer, nullable=False)
+
+    winner_student_id = Column(String, ForeignKey('students.id'))
+    method = Column(String)
+    finalized = Column(Integer, nullable=False, default=0)
+    finalized_by = Column(String, ForeignKey('users.id'))
+    finalized_at = Column(DateTime(timezone=True))
+    tickets_at_selection = Column(Integer)
+    probability_at_selection = Column(Integer)
+    eligible_pool_size = Column(Integer)
+    override_applied = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=_now_utc)
+    updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+
+
+class SessionDrawEvent(Base):
+    __tablename__ = 'session_draw_events'
+    __table_args__ = (
+        Index('idx_draw_events_session', 'session_id', 'created_at'),
+        Index('idx_draw_events_draw', 'session_draw_id', 'created_at'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_draw_id = Column(String, ForeignKey('session_draws.id', ondelete='CASCADE'), nullable=False)
+    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    event_type = Column(String, nullable=False)
+    selected_record_id = Column(String, ForeignKey('session_records.id'))
+    selected_student_id = Column(String, ForeignKey('students.id'))
+    tickets_at_event = Column(Integer)
+    probability_at_event = Column(Integer)
+    eligible_pool_size = Column(Integer)
+    created_at = Column(DateTime(timezone=True), default=_now_utc)
+    created_by = Column(String, ForeignKey('users.id'))
+
+
+class SessionTicketEvent(Base):
+    __tablename__ = 'session_ticket_events'
+    __table_args__ = (
+        Index('idx_ticket_events_session', 'session_id', 'occurred_at'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    session_record_id = Column(String, ForeignKey('session_records.id', ondelete='SET NULL'))
+    student_id = Column(String, ForeignKey('students.id'))
+    event_type = Column(String, nullable=False)
+    tickets_delta = Column(Integer, nullable=False)
+    ticket_balance_after = Column(Integer)
+    occurred_at = Column(DateTime(timezone=True), default=_now_utc)
+    occurred_by = Column(String, ForeignKey('users.id'))
+    event_metadata = Column(Text)
+
+
+class DraftPool(Base):
+    __tablename__ = 'draft_pool'
+    __table_args__ = (
+        Index('idx_draft_pool_session', 'session_id'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'))
+    student_id = Column(String, ForeignKey('students.id'))
+    ticket_number = Column(Integer, nullable=False)
+
+
 Base.metadata.create_all(bind=engine)
 
 __all__ = [
     'DATABASE_URL',
     'Base',
+    'DraftPool',
     'Session',
+    'SessionDraw',
+    'SessionDrawEvent',
     'SessionRecord',
+    'SessionTicketEvent',
     'Student',
     'Teacher',
     'User',

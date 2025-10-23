@@ -899,6 +899,7 @@ def record_student(category):
         last_name=last_name
     )
     db_session.add(db_record)
+    db_session.flush()  # Flush to get db_record.id
     
     # Update session counts
     db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
@@ -912,6 +913,17 @@ def record_student(category):
             db_sess.total_dirty = (db_sess.total_dirty or 0) + 1
             db_sess.total_records = (db_sess.total_records or 0) + 1
         db_sess.updated_at = datetime.now()
+    
+    # Handle ticket events and draft_pool updates
+    if db_student and db_student.id:
+        from .draw_db import update_tickets_for_record
+        update_tickets_for_record(
+            session_id=session_id,
+            student_id=db_student.id,
+            category=category,
+            session_record_id=db_record.id,
+            user_id=session['user_id']
+        )
     
     db_session.commit()
     if lookup_refresh_needed:

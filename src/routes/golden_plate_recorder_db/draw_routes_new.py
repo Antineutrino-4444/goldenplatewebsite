@@ -317,8 +317,7 @@ def override_draw(session_id):
     draw.override_applied = 1
     draw.finalized = 1  # Auto-finalize overrides
     draw.finalized_by = session.get('user_id')
-    from .db import _now_utc
-    draw.finalized_at = _now_utc()
+    draw.finalized_at = datetime.utcnow()
     
     # Record the override event
     record_draw_event(
