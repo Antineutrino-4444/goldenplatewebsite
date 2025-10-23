@@ -1,4 +1,16 @@
-"""Utility to migrate persistent JSON files into the key-value SQLite store."""
+"""OBSOLETE: This migration utility is no longer needed.
+
+The application has been refactored to remove the key-value store (kv_store table).
+All data is now stored directly in relational database tables:
+- Users are stored in the 'users' table
+- Sessions are stored in the 'sessions' table
+- Session records are stored in the 'session_records' table
+- Students are stored in the 'students' table
+- Teachers are stored in the 'teachers' table
+- Invite codes are stored in the 'user_invite_codes' table
+
+This file is kept for historical reference only.
+"""
 from __future__ import annotations
 
 import argparse

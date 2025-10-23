@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime
 
-from .db import KeyValueStore, Session as SessionModel, SessionRecord, Student, Teacher, db_session
+from .db import Session as SessionModel, SessionRecord, Student, Teacher, db_session
 from .users import (
     DEFAULT_SUPERADMIN,
     ensure_default_superadmin,
@@ -14,65 +14,14 @@ from .users import (
 )
 from .utils import extract_student_id_from_key, make_student_key, normalize_name, split_student_key
 
-# Persistent storage keys used in the key-value store
-SESSIONS_FILE = 'sessions'
-USERS_FILE = 'users'
-DELETE_REQUESTS_FILE = 'delete_requests'
-INVITE_CODES_FILE = 'invite_codes'
-GLOBAL_CSV_FILE = 'global_csv_data'
-TEACHER_LIST_FILE = 'teacher_list'
-
 # Student lookup cache built from the global CSV data for fast eligibility checks
 student_lookup = {}
 
-# Global in-memory state hydrated from the persistent store
+# Global in-memory state
 session_data = {}
 delete_requests = []
 global_csv_data = {}
 global_teacher_data = {}
-
-
-def load_data_from_file(store_key, default_data):
-    """Load JSON data from the database, falling back to a default."""
-    try:
-        entry = db_session.query(KeyValueStore).filter_by(key=store_key).first()
-        if entry:
-            try:
-                data = json.loads(entry.value)
-                if (isinstance(data, (dict, list)) and not data) and default_data:
-                    return default_data
-                return data
-            except json.JSONDecodeError:
-                print(f"Corrupted data for key {store_key}, resetting to default")
-        serialized = json.dumps(default_data, indent=2)
-        if entry:
-            entry.value = serialized
-        else:
-            db_session.add(KeyValueStore(key=store_key, value=serialized))
-        db_session.commit()
-    except Exception as exc:
-        db_session.rollback()
-        print(f"Error loading {store_key}: {exc}")
-        return default_data
-    return default_data
-
-
-def save_data_to_file(store_key, data):
-    """Persist JSON data to the database-backed key-value store."""
-    try:
-        serialized = json.dumps(data, indent=2)
-        entry = db_session.query(KeyValueStore).filter_by(key=store_key).first()
-        if entry:
-            entry.value = serialized
-        else:
-            db_session.add(KeyValueStore(key=store_key, value=serialized))
-        db_session.commit()
-        print(f"Successfully saved data to {store_key}")
-        return True
-    except Exception as exc:
-        db_session.rollback()
-        print(f"Error saving {store_key}: {exc}")
-        return False
 
 
 def sync_students_table_from_csv_rows(rows):
@@ -254,39 +203,30 @@ def update_student_lookup():
 
 
 def save_all_data():
-    """Save all data to the database-backed store."""
-    try:
-        save_data_to_file(SESSIONS_FILE, session_data)
-        save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-        save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
-        print("All data saved successfully")
-        return True
-    except Exception as e:
-        print(f"Error saving all data: {e}")
-        return False
+    """Save all data - now a no-op as data persists in database tables."""
+    print("All data is persisted in database tables")
+    return True
 
 
 def save_session_data():
-    """Save session data to the database-backed store."""
-    return save_data_to_file(SESSIONS_FILE, session_data)
+    """Save session data - now a no-op as sessions persist in database tables."""
+    return True
 
 
 def save_delete_requests():
-    """Save delete requests to the database-backed store."""
-    return save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
+    """Save delete requests - now a no-op."""
+    return True
 
 
 def save_global_csv_data():
-    """Save global CSV data to the database-backed store."""
-    result = save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
-    if result:
-        update_student_lookup()
-    return result
+    """Save global CSV data - now handled by students table."""
+    update_student_lookup()
+    return True
 
 
 def save_global_teacher_data():
-    """Save global teacher data to the database-backed store."""
-    return save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
+    """Save global teacher data - now handled by teachers table."""
+    return True
 
 
 def ensure_session_structure(session_info):
@@ -593,55 +533,31 @@ def reset_storage_for_testing():
     global_teacher_data = {}
     student_lookup = {}
 
-    save_data_to_file(SESSIONS_FILE, session_data)
-    save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-    save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
-    save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
     reset_user_store()
     update_student_lookup()
 
 
 print("Initializing persistent storage (database-backed)...")
-session_data = load_data_from_file(SESSIONS_FILE, {})
-delete_requests = load_data_from_file(DELETE_REQUESTS_FILE, [])
-legacy_invites = load_data_from_file(INVITE_CODES_FILE, {})
+# Initialize empty in-memory caches
+session_data = {}
+delete_requests = []
+global_csv_data = {}
+global_teacher_data = {}
 
-global_csv_data = load_data_from_file(GLOBAL_CSV_FILE, {})
+# Build student lookup from database
 update_student_lookup()
 
-global_teacher_data = load_data_from_file(TEACHER_LIST_FILE, {})
-
-legacy_users = load_data_from_file(USERS_FILE, {
-    DEFAULT_SUPERADMIN['username']: {
-        'password': DEFAULT_SUPERADMIN['password'],
-        'role': DEFAULT_SUPERADMIN['role'],
-        'name': DEFAULT_SUPERADMIN['display_name'],
-        'status': DEFAULT_SUPERADMIN['status'],
-    }
-})
-
+# Ensure default superadmin exists
 default_user = ensure_default_superadmin()
-migrate_legacy_users(legacy_users)
-migrate_legacy_invite_codes(legacy_invites, default_user)
 
-print("Saving initial data to ensure tables are seeded...")
-save_data_to_file(SESSIONS_FILE, session_data)
-save_data_to_file(DELETE_REQUESTS_FILE, delete_requests)
-save_data_to_file(GLOBAL_CSV_FILE, global_csv_data)
-save_data_to_file(TEACHER_LIST_FILE, global_teacher_data)
-
-backfill_session_data_from_db()
+# Backfill session data from database
+#backfill_session_data_from_db()
 normalize_loaded_sessions()
 
 print(f"Initialization complete. Session count: {len(session_data)}, Users: {len(list_all_users())}")
 
 
 __all__ = [
-    'DELETE_REQUESTS_FILE',
-    'GLOBAL_CSV_FILE',
-    'INVITE_CODES_FILE',
-    'SESSIONS_FILE',
-    'TEACHER_LIST_FILE',
     'backfill_session_data_from_db',
     'delete_requests',
     'ensure_session_structure',
@@ -650,7 +566,6 @@ __all__ = [
     'global_csv_data',
     'global_teacher_data',
     'hydrate_session_from_db',
-    'load_data_from_file',
     'normalize_loaded_sessions',
     'reset_storage_for_testing',
     'save_all_data',

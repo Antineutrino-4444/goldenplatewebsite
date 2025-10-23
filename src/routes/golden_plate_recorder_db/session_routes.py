@@ -379,40 +379,67 @@ def get_session_history():
 
 @recorder_bp.route('/session/scan-history', methods=['GET'])
 def get_scan_history():
-    """Get scan history for current session (formatted)."""
+    """Get scan history for current session (formatted) from session_records table."""
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    if 'session_id' not in session or session['session_id'] not in session_data:
+    if 'session_id' not in session:
         return jsonify({'error': 'No active session'}), 400
 
     session_id = session['session_id']
-    data = session_data[session_id]
-    ensure_session_structure(data)
+    
+    # Verify session exists
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    # Check guest access
+    if is_guest() and not db_sess.is_public:
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Get all records from session_records table
+    records = (
+        db_session.query(SessionRecord, Student)
+        .outerjoin(Student, SessionRecord.student_id == Student.id)
+        .filter(SessionRecord.session_id == session_id)
+        .order_by(SessionRecord.recorded_at.desc())
+        .all()
+    )
 
     formatted_history = []
-    for record in data['scan_history']:
-        name = (record.get('display_name') or '').strip()
-        if not name:
-            preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
-            last = (record.get('last_name') or '').strip()
+    dirty_count = 0
+    
+    for session_record, student in records:
+        category = session_record.category.lower()
+        
+        # Build the name - prioritize names stored in session_record
+        name = ''
+        if session_record.preferred_name or session_record.last_name:
+            # Use names directly from session_record (for faculty and manual entries)
+            preferred = (session_record.preferred_name or '').strip()
+            last = (session_record.last_name or '').strip()
             name = f"{preferred} {last}".strip()
-
-        category = record.get('category', '').lower()
-        if not name:
-            if category == 'dirty':
-                name = 'Dirty Plate'
-            elif category == 'faculty':
-                name = 'Faculty Clean Plate'
+        elif student:
+            # Fall back to student record if available
+            preferred = (student.preferred_name or '').strip()
+            last = (student.last_name or '').strip()
+            name = f"{preferred} {last}".strip()
+        
+        # Handle special categories
+        if category == 'dirty':
+            dirty_count += 1
+            name = f'Dirty Plate #{dirty_count}'
+        elif not name and category == 'faculty':
+            name = 'Faculty Clean Plate'
+        elif not name:
+            name = 'Unknown'
 
         formatted_history.append({
-            'timestamp': record.get('timestamp'),
+            'timestamp': session_record.recorded_at.isoformat() if session_record.recorded_at else '',
             'name': name,
             'category': category.upper(),
-            'is_manual_entry': record.get('is_manual_entry', False)
+            'is_manual_entry': bool(session_record.is_manual_entry)
         })
-
-    formatted_history.sort(key=lambda x: x['timestamp'], reverse=True)
 
     return jsonify({
         'scan_history': formatted_history
@@ -546,7 +573,9 @@ def record_student(category):
             house='',
             recorded_by=session['user_id'],
             is_manual_entry=1,
-            dedupe_key=dedupe_key
+            dedupe_key=dedupe_key,
+            preferred_name=preferred_name,
+            last_name=last_name
         )
         db_session.add(db_record)
         
@@ -865,7 +894,9 @@ def record_student(category):
         house=house,
         recorded_by=session['user_id'],
         is_manual_entry=1 if is_manual_entry else 0,
-        dedupe_key=dedupe_key
+        dedupe_key=dedupe_key,
+        preferred_name=preferred_name,
+        last_name=last_name
     )
     db_session.add(db_record)
     

@@ -44,14 +44,6 @@ def _now_utc():
     return datetime.now(timezone.utc)
 
 
-class KeyValueStore(Base):
-    __tablename__ = 'kv_store'
-
-    key = Column(String(128), primary_key=True)
-    value = Column(Text, nullable=False, default='{}')
-    updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
-
-
 class User(Base):
     __tablename__ = 'users'
     __table_args__ = (Index('idx_users_username', 'username'),)
@@ -143,6 +135,8 @@ class SessionRecord(Base):
     recorded_by = Column(String, ForeignKey('users.id'), nullable=False)
     recorded_at = Column(DateTime(timezone=True), default=_now_utc)
     dedupe_key = Column(String, nullable=False)
+    preferred_name = Column(String)
+    last_name = Column(String)
 
 
 Base.metadata.create_all(bind=engine)
@@ -150,7 +144,6 @@ Base.metadata.create_all(bind=engine)
 __all__ = [
     'DATABASE_URL',
     'Base',
-    'KeyValueStore',
     'Session',
     'SessionRecord',
     'Student',
