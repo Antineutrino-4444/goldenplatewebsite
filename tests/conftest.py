@@ -80,6 +80,35 @@ _DB_CLEANUP_CALLBACK = _prepare_test_database()
 from src.main import app
 
 
+def _clear_ticket_tables():
+    """Remove ticket-related rows so tests start from a clean slate."""
+    # Import lazily to avoid circular imports during module load.
+    from src.routes.golden_plate_recorder_db.db import (
+        DraftPool,
+        SessionDraw,
+        SessionDrawEvent,
+        SessionRecord,
+        SessionTicketEvent,
+        db_session,
+    )
+
+    # Delete in dependency order to avoid FK constraint issues.
+    for model in (SessionTicketEvent, SessionDrawEvent, SessionRecord, SessionDraw, DraftPool):
+        db_session.query(model).delete()
+
+    db_session.commit()
+
+
+@pytest.fixture(autouse=True)
+def _reset_ticket_state():
+    """Ensure each test sees an empty ticket state."""
+    _clear_ticket_tables()
+    try:
+        yield
+    finally:
+        _clear_ticket_tables()
+
+
 @pytest.fixture(scope='session', autouse=True)
 def _restore_database_after_tests():
     """Ensure the production database is restored after the pytest session."""
