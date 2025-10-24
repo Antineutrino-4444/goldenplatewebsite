@@ -502,6 +502,12 @@ function App() {
           clean_percentage: 0,
           dirty_percentage: 0
         })
+        await refreshSessionStatus({
+          sessionIdOverride: data.session_id,
+          sessionNameOverride: data.session_name,
+          isDiscardedOverride: data.is_discarded
+        })
+        await loadSessions()
         showMessage(`Session "${data.session_name}" created successfully`, 'success')
         setShowNewSessionDialog(false)
         setCustomSessionName('')
@@ -1068,6 +1074,7 @@ function App() {
         } else {
           showMessage('Winner selected', 'success')
         }
+        await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to start draw', 'error')
       }
@@ -1097,6 +1104,7 @@ function App() {
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner finalized', 'success')
+        await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to finalize draw', 'error')
       }
@@ -1130,6 +1138,7 @@ function App() {
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Draw reset successfully', 'success')
+        await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to reset draw', 'error')
       }
@@ -1214,6 +1223,7 @@ function App() {
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner overridden successfully', 'success')
+        await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to override draw', 'error')
       }
@@ -1247,6 +1257,7 @@ function App() {
         if (typeof data.discarded === 'boolean') {
           showMessage(data.message || (data.discarded ? 'Session removed from draw calculations' : 'Session reinstated for draw calculations'), 'success')
         }
+        await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to update discard status', 'error')
       }
