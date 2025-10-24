@@ -297,7 +297,7 @@ def override_draw(session_id):
         return jsonify({'error': 'Student has no records in this session'}), 400
 
     # Calculate tickets for this student
-    ticket_balances = calculate_ticket_balances(session_id)
+    ticket_balances = calculate_ticket_balances()
     winner_tickets = ticket_balances.get(student.id, 0.0)
     
     # Calculate probability

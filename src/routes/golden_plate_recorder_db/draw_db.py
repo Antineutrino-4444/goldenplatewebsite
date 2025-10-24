@@ -7,7 +7,6 @@ from sqlalchemy import func
 
 from .db import (
     DraftPool,
-    Session,
     SessionDraw,
     SessionDrawEvent,
     SessionRecord,
@@ -35,24 +34,19 @@ def get_or_create_session_draw(session_id: str) -> SessionDraw:
     return draw
 
 
-def calculate_ticket_balances(session_id: str) -> Dict[str, float]:
-    """
-    Calculate current cumulative ticket balances for all students.
-    Gets the most recent ticket balance for each student across all sessions.
-    Returns dict mapping student_id to ticket count.
-    """
-    # Get all unique students
-    all_students = db_session.query(DraftPool.student_id).distinct().all()
-    
-    ticket_balances = {}
-    for (student_id,) in all_students:
-        if student_id:
-            # Get the most recent ticket balance for this student
-            balance = get_student_ticket_balance(session_id, student_id)
-            if balance > 0:
-                ticket_balances[student_id] = balance
-    
-    return ticket_balances
+def calculate_ticket_balances() -> Dict[str, float]:
+    """Return current ticket balances for all students with positive tickets."""
+    pool_entries = (
+        db_session.query(DraftPool.student_id, DraftPool.ticket_number)
+        .filter(DraftPool.ticket_number > 0)
+        .all()
+    )
+
+    return {
+        student_id: float(ticket_number)
+        for student_id, ticket_number in pool_entries
+        if student_id
+    }
 
 
 def get_clean_student_ids_for_session(session_id: str) -> Set[str]:
@@ -76,7 +70,7 @@ def get_eligible_students_with_tickets(
     """
     Get list of (student, ticket_count) for students eligible for draw.
     """
-    ticket_balances = calculate_ticket_balances(session_id)
+    ticket_balances = calculate_ticket_balances()
     
     if not ticket_balances:
         return []
@@ -203,7 +197,7 @@ def reset_student_tickets(
 
     Returns True if a reset occurred, False if balance already zero.
     """
-    current_tickets = get_student_ticket_balance(session_id, student_id)
+    current_tickets = get_student_ticket_balance(student_id)
     if current_tickets <= 0:
         return False
 
@@ -217,7 +211,7 @@ def reset_student_tickets(
         event_metadata=reason,
     )
 
-    update_draft_pool(session_id, student_id, 0.0)
+    update_draft_pool(student_id, 0.0)
     return True
 
 
@@ -307,27 +301,21 @@ def get_draw_history(session_id: str) -> List[Dict]:
     return result
 
 
-def get_student_ticket_balance(session_id: str, student_id: str) -> float:
-    """
-    Get current cumulative ticket balance for a student.
-    Looks across all sessions to find the most recent ticket balance.
-    """
-    # Get the most recent draft_pool entry for this student across all sessions
+def get_student_ticket_balance(student_id: str) -> float:
+    """Return the current ticket balance for a student across sessions."""
     pool_entry = (
         db_session.query(DraftPool)
-        .join(Session, DraftPool.session_id == Session.id)
-        .filter(DraftPool.student_id == student_id)
-        .order_by(Session.created_at.desc())
+        .filter_by(student_id=student_id)
         .first()
     )
     return float(pool_entry.ticket_number) if pool_entry else 0.0
 
 
-def update_draft_pool(session_id: str, student_id: str, new_balance: float) -> None:
-    """Update or create draft_pool entry for a student."""
+def update_draft_pool(student_id: str, new_balance: float) -> None:
+    """Update or create the draft_pool entry for a student."""
     pool_entry = (
         db_session.query(DraftPool)
-        .filter_by(session_id=session_id, student_id=student_id)
+        .filter_by(student_id=student_id)
         .first()
     )
     
@@ -335,7 +323,6 @@ def update_draft_pool(session_id: str, student_id: str, new_balance: float) -> N
         pool_entry.ticket_number = int(new_balance)
     else:
         pool_entry = DraftPool(
-            session_id=session_id,
             student_id=student_id,
             ticket_number=int(new_balance),
         )
@@ -354,7 +341,7 @@ def update_tickets_for_record(
     - clean: +1 ticket
     - red: reset to 0 tickets
     """
-    current_balance = get_student_ticket_balance(session_id, student_id)
+    current_balance = get_student_ticket_balance(student_id)
     
     if category == 'clean':
         # Award 1 ticket for clean plate
@@ -375,7 +362,7 @@ def update_tickets_for_record(
         )
         
         # Update draft pool
-        update_draft_pool(session_id, student_id, new_balance)
+        update_draft_pool(student_id, new_balance)
         
     elif category == 'red':
         # Reset tickets for red plate
@@ -397,7 +384,7 @@ def update_tickets_for_record(
             )
             
             # Update draft pool
-            update_draft_pool(session_id, student_id, new_balance)
+            update_draft_pool(student_id, new_balance)
 
 
 __all__ = [

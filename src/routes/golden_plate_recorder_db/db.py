@@ -199,13 +199,9 @@ class SessionTicketEvent(Base):
 
 class DraftPool(Base):
     __tablename__ = 'draft_pool'
-    __table_args__ = (
-        Index('idx_draft_pool_session', 'session_id'),
-    )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'))
-    student_id = Column(String, ForeignKey('students.id'))
+    student_id = Column(String, ForeignKey('students.id'), nullable=False, unique=True)
     ticket_number = Column(Integer, nullable=False)
 
 
