@@ -8,7 +8,7 @@ from flask import Response, jsonify, request, session
 from sqlalchemy import func
 
 from . import recorder_bp
-from .db import Session as SessionModel, SessionRecord, Student, _now_utc, db_session
+from .db import Session as SessionModel, SessionDrawEvent, SessionRecord, Student, _now_utc, db_session
 from .domain import serialize_draw_info
 from .security import get_current_user, is_guest, require_admin, require_auth, require_auth_or_guest
 from .storage import (
@@ -30,6 +30,29 @@ from .utils import (
 )
 
 
+def _delete_session_with_dependencies(db_sess):
+    """Remove a session and any dependent draw and record rows."""
+    session_id = db_sess.id
+    session_name = db_sess.session_name
+
+    # Explicitly delete dependents because SQLite foreign key cascades
+    # are easy to disable accidentally and we do not want orphan rows.
+    db_session.query(SessionRecord).filter_by(session_id=session_id).delete(synchronize_session=False)
+    db_session.query(SessionDrawEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
+
+    db_session.delete(db_sess)
+    db_session.commit()
+
+    if session_id in session_data:
+        del session_data[session_id]
+        save_session_data()
+
+    if session.get('session_id') == session_id:
+        session.pop('session_id', None)
+
+    return session_name
+
+
 @recorder_bp.route('/session/request-delete', methods=['POST'])
 def request_delete_session():
     """Submit a delete request for a session."""
@@ -49,20 +72,8 @@ def request_delete_session():
     current_user = get_current_user()
 
     if current_user['role'] in ['admin', 'superadmin']:
-        session_name = db_sess.session_name
-        
-        # Delete from database
-        db_session.delete(db_sess)
-        db_session.commit()
-        
-        # Delete from JSON storage
-        if session_id in session_data:
-            del session_data[session_id]
-            save_session_data()
-        
-        if session.get('session_id') == session_id:
-            session.pop('session_id', None)
-        
+        session_name = _delete_session_with_dependencies(db_sess)
+
         return jsonify({
             'status': 'success',
             'message': f'Session "{session_name}" deleted successfully',
@@ -283,19 +294,7 @@ def delete_session(session_id):
     if current_user['role'] == 'user' and db_sess.created_by != session['user_id']:
         return jsonify({'error': 'You can only delete sessions that you created'}), 403
 
-    session_name = db_sess.session_name
-    
-    # Delete from database (cascade will delete session_records)
-    db_session.delete(db_sess)
-    db_session.commit()
-    
-    # Delete from JSON storage
-    if session_id in session_data:
-        del session_data[session_id]
-        save_session_data()
-    
-    if session.get('session_id') == session_id:
-        session.pop('session_id', None)
+    session_name = _delete_session_with_dependencies(db_sess)
 
     return jsonify({
         'status': 'success',
