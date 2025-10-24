@@ -7,7 +7,7 @@ from sqlalchemy import func
 
 from .db import (
     DraftPool,
-    SessionDraw,
+    Session as SessionModel,
     SessionDrawEvent,
     SessionRecord,
     SessionTicketEvent,
@@ -19,19 +19,29 @@ from .db import (
 secure_random = random.SystemRandom()
 
 
-def get_or_create_session_draw(session_id: str) -> SessionDraw:
-    """Get existing draw or create new one for session."""
-    draw = db_session.query(SessionDraw).filter_by(session_id=session_id).first()
-    if not draw:
-        # Get the next draw number for this session
-        draw_number = 1
-        draw = SessionDraw(
-            session_id=session_id,
-            draw_number=draw_number,
-        )
-        db_session.add(draw)
-        db_session.commit()
-    return draw
+def get_or_create_session_draw(session_id: str) -> SessionModel:
+    """Return the session row that holds draw state."""
+    session = db_session.query(SessionModel).filter_by(id=session_id).first()
+    if session is None:
+        raise ValueError(f'Session {session_id} not found')
+
+    # Ensure draw-related defaults are populated without forcing a commit.
+    updated = False
+    if session.draw_number is None:
+        session.draw_number = 1
+        updated = True
+    if session.finalized is None:
+        session.finalized = 0
+        updated = True
+    if session.override_applied is None:
+        session.override_applied = 0
+        updated = True
+
+    if updated:
+        session.updated_at = _now_utc()
+        db_session.flush()
+
+    return session
 
 
 def calculate_ticket_balances() -> Dict[str, float]:
@@ -139,7 +149,7 @@ def perform_weighted_draw(
 
 
 def record_draw_event(
-    draw: SessionDraw,
+    draw: SessionModel,
     event_type: str,
     user_id: str,
     selected_student_id: Optional[str] = None,
@@ -149,8 +159,8 @@ def record_draw_event(
 ) -> SessionDrawEvent:
     """Record a draw event in the database."""
     event = SessionDrawEvent(
-        session_draw_id=draw.id,
-        session_id=draw.session_id,
+        session_id=draw.id,
+        draw_number=draw.draw_number,
         event_type=event_type,
         selected_student_id=selected_student_id,
         tickets_at_event=int(tickets_at_event) if tickets_at_event is not None else None,
@@ -215,7 +225,7 @@ def reset_student_tickets(
     return True
 
 
-def finalize_draw(draw: SessionDraw, user_id: str) -> None:
+def finalize_draw(draw: SessionModel, user_id: str) -> None:
     """Finalize a draw and reset winner's tickets."""
     if draw.finalized:
         return
@@ -223,6 +233,7 @@ def finalize_draw(draw: SessionDraw, user_id: str) -> None:
     draw.finalized = 1
     draw.finalized_by = user_id
     draw.finalized_at = _now_utc()
+    draw.updated_at = _now_utc()
     
     # Record finalize event
     record_draw_event(
@@ -235,7 +246,7 @@ def finalize_draw(draw: SessionDraw, user_id: str) -> None:
     # Reset winner's tickets to 0
     if draw.winner_student_id:
         reset_student_tickets(
-            session_id=draw.session_id,
+            session_id=draw.id,
             student_id=draw.winner_student_id,
             user_id=user_id,
             reason='Winner finalized - tickets reset',
@@ -244,7 +255,7 @@ def finalize_draw(draw: SessionDraw, user_id: str) -> None:
     db_session.commit()
 
 
-def reset_draw(draw: SessionDraw, user_id: str) -> None:
+def reset_draw(draw: SessionModel, user_id: str) -> None:
     """Reset a draw, clearing the winner."""
     # Record restore event before resetting
     record_draw_event(
@@ -270,13 +281,9 @@ def reset_draw(draw: SessionDraw, user_id: str) -> None:
 
 def get_draw_history(session_id: str) -> List[Dict]:
     """Get all draw events for a session."""
-    draw = db_session.query(SessionDraw).filter_by(session_id=session_id).first()
-    if not draw:
-        return []
-    
     events = (
         db_session.query(SessionDrawEvent)
-        .filter_by(session_draw_id=draw.id)
+        .filter_by(session_id=session_id)
         .order_by(SessionDrawEvent.created_at)
         .all()
     )

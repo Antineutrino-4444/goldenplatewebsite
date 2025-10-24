@@ -63,6 +63,17 @@ CREATE TABLE sessions (
     total_records   INTEGER,
     total_clean     INTEGER,
     total_dirty     INTEGER,
+
+    draw_number           INTEGER NOT NULL DEFAULT 1,
+    winner_student_id     TEXT REFERENCES students(id),
+    method                TEXT,
+    finalized             INTEGER NOT NULL DEFAULT 0,
+    finalized_by          TEXT REFERENCES users(id),
+    finalized_at          DATETIME,
+    tickets_at_selection  REAL,
+    probability_at_selection REAL,
+    eligible_pool_size    INTEGER,
+    override_applied      INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE session_records (
@@ -81,29 +92,10 @@ CREATE TABLE session_records (
 );
 CREATE INDEX idx_records_session_category ON session_records (session_id, category);
 
-CREATE TABLE session_draws (
-    id                    TEXT PRIMARY KEY,
-    session_id            TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
-    draw_number           INTEGER NOT NULL,
-
-    winner_student_id     TEXT REFERENCES students(id),
-    method                TEXT,
-    finalized             INTEGER NOT NULL DEFAULT 0,
-    finalized_by          TEXT REFERENCES users(id),
-    finalized_at          DATETIME,
-    tickets_at_selection  REAL,
-    probability_at_selection REAL,
-    eligible_pool_size    INTEGER,
-    override_applied      INTEGER NOT NULL DEFAULT 0,
-    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (session_id, draw_number)
-);
-
 CREATE TABLE session_draw_events (
     id                    TEXT PRIMARY KEY,
-    session_draw_id       TEXT NOT NULL REFERENCES session_draws(id) ON DELETE CASCADE,
     session_id            TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    draw_number           INTEGER,
     event_type            TEXT NOT NULL
                              CHECK (event_type IN ('draw','override','finalize','restore')),
     selected_record_id    TEXT REFERENCES session_records(id),
@@ -115,7 +107,6 @@ CREATE TABLE session_draw_events (
     created_by            TEXT REFERENCES users(id)
 );
 CREATE INDEX idx_draw_events_session ON session_draw_events (session_id, created_at);
-CREATE INDEX idx_draw_events_draw ON session_draw_events (session_draw_id, created_at);
 
 
 CREATE TABLE session_ticket_events (

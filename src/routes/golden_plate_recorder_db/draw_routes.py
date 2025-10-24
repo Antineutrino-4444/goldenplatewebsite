@@ -1,10 +1,9 @@
 """Draw routes for database-backed system."""
-from datetime import datetime
 
 from flask import jsonify, request, session
 
 from . import recorder_bp
-from .db import Session as SessionModel, SessionRecord, Student, db_session
+from .db import Session as SessionModel, SessionRecord, Student, _now_utc, db_session
 from .draw_db import (
     calculate_ticket_balances,
     finalize_draw as finalize_draw_db,
@@ -154,6 +153,7 @@ def start_draw(session_id):
     draw.finalized = 0
     draw.finalized_by = None
     draw.finalized_at = None
+    draw.updated_at = _now_utc()
     
     # Record the event
     record_draw_event(
@@ -326,8 +326,8 @@ def override_draw(session_id):
     draw.override_applied = 1
     draw.finalized = 1  # Auto-finalize overrides
     draw.finalized_by = session.get('user_id')
-    from .db import _now_utc
     draw.finalized_at = _now_utc()
+    draw.updated_at = _now_utc()
     
     # Record the override event
     record_draw_event(
