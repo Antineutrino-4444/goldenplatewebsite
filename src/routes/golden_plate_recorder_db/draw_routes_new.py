@@ -315,9 +315,9 @@ def override_draw(session_id):
     draw.probability_at_selection = int(probability)
     draw.eligible_pool_size = len(eligible)
     draw.override_applied = 1
-    draw.finalized = 1  # Auto-finalize overrides
-    draw.finalized_by = session.get('user_id')
-    draw.finalized_at = _now_utc()
+    draw.finalized = 0
+    draw.finalized_by = None
+    draw.finalized_at = None
     draw.updated_at = _now_utc()
     
     # Record the override event
@@ -331,7 +331,7 @@ def override_draw(session_id):
         eligible_pool_size=len(eligible),
     )
     
-    db_session.commit()
+    finalize_draw_db(draw, session.get('user_id'))
 
     winner_data = {
         'student_id': student.id,

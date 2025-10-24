@@ -12,7 +12,6 @@ from .draw_db import (
     get_or_create_session_draw,
     perform_weighted_draw,
     record_draw_event,
-    reset_student_tickets,
     reset_draw as reset_draw_db,
 )
 from .security import require_admin, require_auth_or_guest, require_superadmin
@@ -166,14 +165,6 @@ def start_draw(session_id):
         eligible_pool_size=pool_size,
     )
 
-    # Reset winner's tickets immediately after winning the draw
-    reset_student_tickets(
-        session_id=session_id,
-        student_id=winner.id,
-        user_id=session.get('user_id'),
-        reason='Winner selected - tickets reset',
-    )
-    
     db_session.commit()
 
     winner_data = {
@@ -324,9 +315,9 @@ def override_draw(session_id):
     draw.probability_at_selection = int(probability)
     draw.eligible_pool_size = len(eligible)
     draw.override_applied = 1
-    draw.finalized = 1  # Auto-finalize overrides
-    draw.finalized_by = session.get('user_id')
-    draw.finalized_at = _now_utc()
+    draw.finalized = 0
+    draw.finalized_by = None
+    draw.finalized_at = None
     draw.updated_at = _now_utc()
     
     # Record the override event
@@ -340,15 +331,8 @@ def override_draw(session_id):
         eligible_pool_size=len(eligible),
     )
 
-    # Reset winner's tickets on override selection
-    reset_student_tickets(
-        session_id=session_id,
-        student_id=student.id,
-        user_id=session.get('user_id'),
-        reason='Winner selected via override - tickets reset',
-    )
-    
-    db_session.commit()
+    # Finalize the override selection, recording the finalize event and clearing tickets
+    finalize_draw_db(draw, session.get('user_id'))
 
     winner_data = {
         'student_id': student.id,
