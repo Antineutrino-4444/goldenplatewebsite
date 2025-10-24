@@ -13,6 +13,7 @@ from .draw_db import (
     get_or_create_session_draw,
     perform_weighted_draw,
     record_draw_event,
+    reset_student_tickets,
     reset_draw as reset_draw_db,
 )
 from .security import require_admin, require_auth_or_guest, require_superadmin
@@ -163,6 +164,14 @@ def start_draw(session_id):
         tickets_at_event=winner_tickets,
         probability_at_event=probability,
         eligible_pool_size=pool_size,
+    )
+
+    # Reset winner's tickets immediately after winning the draw
+    reset_student_tickets(
+        session_id=session_id,
+        student_id=winner.id,
+        user_id=session.get('user_id'),
+        reason='Winner selected - tickets reset',
     )
     
     db_session.commit()
@@ -329,6 +338,14 @@ def override_draw(session_id):
         tickets_at_event=winner_tickets,
         probability_at_event=probability,
         eligible_pool_size=len(eligible),
+    )
+
+    # Reset winner's tickets on override selection
+    reset_student_tickets(
+        session_id=session_id,
+        student_id=student.id,
+        user_id=session.get('user_id'),
+        reason='Winner selected via override - tickets reset',
     )
     
     db_session.commit()

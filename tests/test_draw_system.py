@@ -131,6 +131,27 @@ class TestTicketEarning:
             assert candidate['tickets'] == 1.0
             assert abs(candidate['probability'] - 33.333) < 0.1
 
+    def test_student_without_clean_in_session_not_eligible(self, client, login):
+        """Students with no clean record in session are excluded even with tickets."""
+        login()
+        upload_csv(client)
+
+        # Session 1: Alice earns one ticket
+        client.post('/api/session/create', json={'session_name': 'eligibility_session_1'})
+        client.post('/api/record/clean', json={'input_value': '101'})
+
+        # Session 2: No clean entry for Alice
+        client.post('/api/session/create', json={'session_name': 'eligibility_session_2'})
+        status = client.get('/api/session/status').get_json()
+        session_id_2 = status['session_id']
+
+        draw_summary = client.get(f'/api/session/{session_id_2}/draw/summary').get_json()
+        candidates = draw_summary['candidates']
+
+        # Alice should not appear despite holding prior tickets
+        alice = next((c for c in candidates if c['student_identifier'] == '101'), None)
+        assert alice is None
+
 
 class TestDrawOperations:
     """Test draw, override, finalize, and restore operations."""
@@ -157,6 +178,25 @@ class TestDrawOperations:
         assert 'winner' in data
         assert data['winner']['student_identifier'] in ['101', '102']
         assert data['pool_size'] == 2
+
+    def test_draw_winner_removed_from_pool_after_win(self, client, login):
+        """Winner's tickets reset immediately after draw selection."""
+        login()
+        upload_csv(client)
+        client.post('/api/session/create', json={'session_name': 'winner_reset_test'})
+
+        status = client.get('/api/session/status').get_json()
+        session_id = status['session_id']
+
+        # Single candidate guarantees deterministic winner
+        client.post('/api/record/clean', json={'input_value': '101'})
+
+        draw_response = client.post(f'/api/session/{session_id}/draw/start')
+        assert draw_response.status_code == 200
+
+        # After winning, candidate list should now be empty (tickets reset)
+        summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
+        assert summary['candidates'] == []
 
     def test_draw_fails_without_eligible_students(self, client, login):
         """Draw fails when no students have tickets."""
@@ -196,6 +236,11 @@ class TestDrawOperations:
         assert data['status'] == 'success'
         assert data['override'] is True
         assert data['winner']['student_identifier'] == '101'
+
+        # Override winner should no longer hold tickets after reset
+        summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
+        print(summary)
+        assert summary['candidates'] == []
 
     def test_finalize_resets_winner_tickets(self, client, login):
         """Finalizing a draw resets winner's tickets to 0."""

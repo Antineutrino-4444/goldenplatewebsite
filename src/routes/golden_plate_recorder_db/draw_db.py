@@ -1,7 +1,7 @@
 """Database operations for draw system."""
 import random
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlalchemy import func
 
@@ -55,6 +55,21 @@ def calculate_ticket_balances(session_id: str) -> Dict[str, float]:
     return ticket_balances
 
 
+def get_clean_student_ids_for_session(session_id: str) -> Set[str]:
+    """Return student IDs with a clean-plate record in the session."""
+    rows = (
+        db_session.query(SessionRecord.student_id)
+        .filter(
+            SessionRecord.session_id == session_id,
+            SessionRecord.category == 'clean',
+            SessionRecord.student_id.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    return {student_id for (student_id,) in rows if student_id}
+
+
 def get_eligible_students_with_tickets(
     session_id: str
 ) -> List[Tuple[Student, float]]:
@@ -65,11 +80,22 @@ def get_eligible_students_with_tickets(
     
     if not ticket_balances:
         return []
+
+    clean_student_ids = get_clean_student_ids_for_session(session_id)
+    if not clean_student_ids:
+        return []
+
+    eligible_student_ids = [
+        student_id for student_id in ticket_balances.keys() if student_id in clean_student_ids
+    ]
+
+    if not eligible_student_ids:
+        return []
     
     # Get student records
     students = (
         db_session.query(Student)
-        .filter(Student.id.in_(ticket_balances.keys()))
+        .filter(Student.id.in_(eligible_student_ids))
         .all()
     )
     
@@ -167,6 +193,34 @@ def record_ticket_event(
     return event
 
 
+def reset_student_tickets(
+    session_id: str,
+    student_id: str,
+    user_id: Optional[str],
+    reason: str,
+) -> bool:
+    """Reset a student's tickets to zero, recording the event.
+
+    Returns True if a reset occurred, False if balance already zero.
+    """
+    current_tickets = get_student_ticket_balance(session_id, student_id)
+    if current_tickets <= 0:
+        return False
+
+    record_ticket_event(
+        session_id=session_id,
+        student_id=student_id,
+        event_type='reset',
+        tickets_delta=-current_tickets,
+        ticket_balance_after=0.0,
+        user_id=user_id,
+        event_metadata=reason,
+    )
+
+    update_draft_pool(session_id, student_id, 0.0)
+    return True
+
+
 def finalize_draw(draw: SessionDraw, user_id: str) -> None:
     """Finalize a draw and reset winner's tickets."""
     if draw.finalized:
@@ -186,23 +240,12 @@ def finalize_draw(draw: SessionDraw, user_id: str) -> None:
     
     # Reset winner's tickets to 0
     if draw.winner_student_id:
-        # Get current balance
-        current_tickets = get_student_ticket_balance(draw.session_id, draw.winner_student_id)
-        
-        if current_tickets > 0:
-            # Record ticket reset
-            record_ticket_event(
-                session_id=draw.session_id,
-                student_id=draw.winner_student_id,
-                event_type='reset',
-                tickets_delta=-current_tickets,
-                ticket_balance_after=0.0,
-                user_id=user_id,
-                event_metadata='Winner finalized - tickets reset',
-            )
-            
-            # Update draft pool
-            update_draft_pool(draw.session_id, draw.winner_student_id, 0.0)
+        reset_student_tickets(
+            session_id=draw.session_id,
+            student_id=draw.winner_student_id,
+            user_id=user_id,
+            reason='Winner finalized - tickets reset',
+        )
     
     db_session.commit()
 
@@ -360,6 +403,7 @@ def update_tickets_for_record(
 __all__ = [
     'calculate_ticket_balances',
     'finalize_draw',
+    'get_clean_student_ids_for_session',
     'get_draw_history',
     'get_eligible_students_with_tickets',
     'get_or_create_session_draw',
@@ -368,6 +412,7 @@ __all__ = [
     'record_draw_event',
     'record_ticket_event',
     'reset_draw',
+    'reset_student_tickets',
     'update_draft_pool',
     'update_tickets_for_record',
 ]
