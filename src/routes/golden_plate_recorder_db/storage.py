@@ -3,7 +3,15 @@ import os
 import uuid
 from datetime import datetime
 
-from .db import Session as SessionModel, SessionRecord, Student, Teacher, db_session
+from .db import (
+    Session as SessionModel,
+    SessionDeleteRequest,
+    SessionRecord,
+    Student,
+    Teacher,
+    User,
+    db_session,
+)
 from .users import (
     DEFAULT_SUPERADMIN,
     ensure_default_superadmin,
@@ -213,9 +221,99 @@ def save_session_data():
     return True
 
 
+def _refresh_delete_requests_cache():
+    """Refresh in-memory delete requests cache from the database."""
+    global delete_requests
+
+    try:
+        db_session.expire_all()
+    except Exception:
+        db_session.rollback()
+
+    try:
+        request_rows = (
+            db_session.query(SessionDeleteRequest)
+            .order_by(SessionDeleteRequest.requested_at.desc())
+            .all()
+        )
+    except Exception as exc:
+        db_session.rollback()
+        print(f"Error loading delete requests: {exc}")
+        delete_requests = []
+        return delete_requests
+
+    session_ids = {row.session_id for row in request_rows if row.session_id}
+    user_ids = set()
+    for row in request_rows:
+        if row.requested_by:
+            user_ids.add(row.requested_by)
+        if row.reviewed_by:
+            user_ids.add(row.reviewed_by)
+
+    sessions_map = {}
+    if session_ids:
+        try:
+            sessions = (
+                db_session.query(SessionModel)
+                .filter(SessionModel.id.in_(session_ids))
+                .all()
+            )
+            sessions_map = {sess.id: sess for sess in sessions}
+        except Exception as exc:
+            db_session.rollback()
+            print(f"Error loading sessions for delete request cache: {exc}")
+
+    users_map = {}
+    if user_ids:
+        try:
+            users = db_session.query(User).filter(User.id.in_(user_ids)).all()
+            users_map = {user.id: user for user in users}
+        except Exception as exc:
+            db_session.rollback()
+            print(f"Error loading users for delete request cache: {exc}")
+
+    serialized = []
+    for row in request_rows:
+        session_model = sessions_map.get(row.session_id)
+        requester_user = users_map.get(row.requested_by)
+        reviewer_user = users_map.get(row.reviewed_by)
+
+        approved_by = reviewer_user.username if reviewer_user and row.status == 'approved' else None
+        approved_at = _isoformat_timestamp(row.reviewed_at) if row.status == 'approved' else None
+        rejected_by = reviewer_user.username if reviewer_user and row.status == 'rejected' else None
+        rejected_at = _isoformat_timestamp(row.reviewed_at) if row.status == 'rejected' else None
+
+        serialized.append({
+            'id': row.id,
+            'session_id': row.session_id,
+            'session_name': session_model.session_name if session_model else None,
+            'requester_id': row.requested_by,
+            'requester': requester_user.username if requester_user else None,
+            'requester_name': requester_user.display_name if requester_user else None,
+            'requested_at': _isoformat_timestamp(row.requested_at),
+            'status': row.status,
+            'reviewed_by_id': row.reviewed_by,
+            'reviewed_by': reviewer_user.username if reviewer_user else None,
+            'reviewed_at': _isoformat_timestamp(row.reviewed_at),
+            'rejection_reason': row.rejection_reason,
+            'approved_by': approved_by,
+            'approved_at': approved_at,
+            'rejected_by': rejected_by,
+            'rejected_at': rejected_at,
+            'total_records': (session_model.total_records or 0) if session_model else 0,
+            'clean_records': (session_model.clean_number or 0) if session_model else 0,
+            'dirty_records': (session_model.dirty_number or 0) if session_model else 0,
+            'red_records': (session_model.red_number or 0) if session_model else 0,
+            'faculty_clean_records': (session_model.faculty_number or 0) if session_model else 0,
+        })
+
+    delete_requests = serialized
+    return delete_requests
+
+
 def save_delete_requests():
-    """Save delete requests - now a no-op."""
-    return True
+    """Refresh delete requests cache from the database."""
+    return _refresh_delete_requests_cache()
 
 
 def save_global_csv_data():
@@ -535,6 +633,13 @@ def reset_storage_for_testing():
 
     reset_user_store()
     update_student_lookup()
+    try:
+        db_session.query(SessionDeleteRequest).delete()
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    _refresh_delete_requests_cache()
 
 
 print("Initializing persistent storage (database-backed)...")
@@ -546,6 +651,9 @@ global_teacher_data = {}
 
 # Build student lookup from database
 update_student_lookup()
+
+# Load delete requests cache
+_refresh_delete_requests_cache()
 
 # Ensure default superadmin exists
 default_user = ensure_default_superadmin()

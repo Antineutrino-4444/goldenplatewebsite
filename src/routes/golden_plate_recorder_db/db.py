@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -369,6 +370,22 @@ class DraftPool(Base):
     ticket_number = Column(Integer, nullable=False)
 
 
+class SessionDeleteRequest(Base):
+    __tablename__ = 'session_delete_requests'
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','approved','rejected','completed')", name='ck_session_delete_requests_status'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    requested_by = Column(String, ForeignKey('users.id'), nullable=False)
+    requested_at = Column(DateTime(timezone=True), default=_now_utc)
+    status = Column(String, nullable=False, default='pending')
+    reviewed_by = Column(String, ForeignKey('users.id'))
+    reviewed_at = Column(DateTime(timezone=True))
+    rejection_reason = Column(Text)
+
+
 Base.metadata.create_all(bind=engine)
 
 __all__ = [
@@ -376,6 +393,7 @@ __all__ = [
     'Base',
     'DraftPool',
     'Session',
+    'SessionDeleteRequest',
     'SessionDrawEvent',
     'SessionRecord',
     'SessionTicketEvent',

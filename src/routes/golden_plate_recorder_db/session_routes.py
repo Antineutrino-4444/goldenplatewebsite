@@ -8,7 +8,15 @@ from flask import Response, jsonify, request, session
 from sqlalchemy import func
 
 from . import recorder_bp
-from .db import Session as SessionModel, SessionDrawEvent, SessionRecord, Student, _now_utc, db_session
+from .db import (
+    Session as SessionModel,
+    SessionDeleteRequest,
+    SessionDrawEvent,
+    SessionRecord,
+    Student,
+    _now_utc,
+    db_session,
+)
 from .domain import serialize_draw_info
 from .security import get_current_user, is_guest, require_admin, require_auth, require_auth_or_guest
 from .storage import (
@@ -44,6 +52,8 @@ def _delete_session_with_dependencies(db_sess):
 
     db_session.delete(db_sess)
     db_session.commit()
+
+    save_delete_requests()
 
     if session_id in session_data:
         del session_data[session_id]
@@ -82,35 +92,57 @@ def request_delete_session():
             'deleted_session_id': session_id
         }), 200
 
-    existing = next((req for req in delete_requests
-                     if req['session_id'] == session_id and req['status'] == 'pending'), None)
+    existing = (
+        db_session.query(SessionDeleteRequest)
+        .filter(
+            SessionDeleteRequest.session_id == session_id,
+            SessionDeleteRequest.status == 'pending'
+        )
+        .first()
+    )
     if existing:
         return jsonify({'error': 'Delete request already submitted for this session'}), 400
 
-    # Use cached counts from session table
-    clean_count = db_sess.clean_number or 0
-    dirty_count = db_sess.dirty_number or 0
-    red_count = db_sess.red_number or 0
-    faculty_clean_count = db_sess.faculty_number or 0
-    total_records = db_sess.total_records or 0
+    new_request = SessionDeleteRequest(
+        session_id=session_id,
+        requested_by=current_user['id'],
+        status='pending'
+    )
 
-    request_obj = {
-        'id': str(uuid.uuid4()),
-        'session_id': session_id,
-        'session_name': db_sess.session_name,
-        'requester': session['user_id'],
-        'requester_name': current_user['name'],
-        'requested_at': datetime.now().isoformat(),
-        'status': 'pending',
-        'total_records': total_records,
-        'clean_records': clean_count,
-        'dirty_records': dirty_count,
-        'red_records': red_count,
-        'faculty_clean_records': faculty_clean_count,
-    }
+    try:
+        db_session.add(new_request)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Failed to submit delete request'}), 500
 
-    delete_requests.append(request_obj)
-    save_delete_requests()
+    refreshed_requests = save_delete_requests()
+
+    request_obj = next((req for req in refreshed_requests if req['id'] == new_request.id), None)
+    if not request_obj:
+        request_obj = {
+            'id': new_request.id,
+            'session_id': session_id,
+            'session_name': db_sess.session_name,
+            'requester_id': current_user['id'],
+            'requester': current_user['username'],
+            'requester_name': current_user['name'],
+            'requested_at': new_request.requested_at.isoformat() if new_request.requested_at else _now_utc().isoformat(),
+            'status': new_request.status,
+            'reviewed_by_id': None,
+            'reviewed_by': None,
+            'reviewed_at': None,
+            'approved_by': None,
+            'approved_at': None,
+            'rejected_by': None,
+            'rejected_at': None,
+            'rejection_reason': None,
+            'total_records': db_sess.total_records or 0,
+            'clean_records': db_sess.clean_number or 0,
+            'dirty_records': db_sess.dirty_number or 0,
+            'red_records': db_sess.red_number or 0,
+            'faculty_clean_records': db_sess.faculty_number or 0,
+        }
 
     return jsonify({
         'status': 'success',
@@ -208,6 +240,8 @@ def list_sessions():
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
+    current_delete_requests = save_delete_requests()
+
     query = db_session.query(SessionModel)
     
     # Filter out non-public sessions for guests
@@ -234,9 +268,11 @@ def list_sessions():
         # Get draw_info from JSON storage for backward compatibility
         json_data = session_data.get(db_sess.id, {})
         draw_info = serialize_draw_info(json_data.get('draw_info', {}))
-        
-        pending = any(req['session_id'] == db_sess.id and req['status'] == 'pending'
-                       for req in delete_requests)
+
+        pending = any(
+            req['session_id'] == db_sess.id and req['status'] == 'pending'
+            for req in current_delete_requests
+        )
         
         user_sessions.append({
             'session_id': db_sess.id,

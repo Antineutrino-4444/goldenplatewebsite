@@ -1,9 +1,7 @@
-from datetime import datetime
-
 from flask import jsonify, request, session
 
 from . import recorder_bp
-from .db import Session as SessionModel, db_session as db
+from .db import Session as SessionModel, SessionDeleteRequest, db_session as db, _now_utc
 from .domain import serialize_draw_info
 from .security import get_current_user, require_admin, require_auth
 from .storage import (
@@ -12,9 +10,9 @@ from .storage import (
     get_dirty_count,
     get_session_entry,
     save_delete_requests,
-    save_session_data,
     session_data,
 )
+from .session_routes import _delete_session_with_dependencies
 from .users import (
     create_invite_code_record,
     get_user_by_username,
@@ -69,7 +67,8 @@ def get_delete_requests():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    pending_requests = [req for req in delete_requests if req.get('status') == 'pending']
+    refreshed_requests = save_delete_requests()
+    pending_requests = [req for req in refreshed_requests if req.get('status') == 'pending']
     return jsonify({
         'status': 'success',
         'requests': pending_requests
@@ -138,15 +137,11 @@ def admin_delete_session(session_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    data = get_session_entry(session_id)
-    if not data:
+    db_sess = db.query(SessionModel).filter_by(id=session_id).first()
+    if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
-    session_name = data['session_name']
-    session_data.pop(session_id, None)
-    save_session_data()
-    if session.get('session_id') == session_id:
-        session.pop('session_id', None)
+    session_name = _delete_session_with_dependencies(db_sess)
 
     return jsonify({
         'status': 'success',
@@ -161,32 +156,42 @@ def approve_delete_request(request_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    request_obj = next((req for req in delete_requests if req['id'] == request_id), None)
-    if not request_obj:
+    request_model = db.query(SessionDeleteRequest).filter_by(id=request_id).first()
+    if not request_model:
         return jsonify({'error': 'Delete request not found'}), 404
 
-    if request_obj['status'] != 'pending':
+    if request_model.status != 'pending':
         return jsonify({'error': 'Request is not pending'}), 400
 
-    session_id = request_obj['session_id']
+    session_id = request_model.session_id
+    current_user = get_current_user()
 
-    data = get_session_entry(session_id)
-    if not data:
-        request_obj['status'] = 'completed'
-        request_obj['approved_by'] = session['user_id']
-        request_obj['approved_at'] = datetime.now().isoformat()
+    db_sess = db.query(SessionModel).filter_by(id=session_id).first()
+    if not db_sess:
+        request_model.status = 'completed'
+        request_model.reviewed_by = current_user['id'] if current_user else None
+        request_model.reviewed_at = _now_utc()
+        request_model.rejection_reason = None
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            return jsonify({'error': 'Failed to update delete request'}), 500
         save_delete_requests()
         return jsonify({'message': 'Session no longer exists, request marked as completed'}), 200
 
-    session_name = data['session_name']
-    session_data.pop(session_id, None)
-    save_session_data()
-    if session.get('session_id') == session_id:
-        session.pop('session_id', None)
+    request_model.status = 'approved'
+    request_model.reviewed_by = current_user['id'] if current_user else None
+    request_model.reviewed_at = _now_utc()
+    request_model.rejection_reason = None
 
-    request_obj['status'] = 'approved'
-    request_obj['approved_by'] = session['user_id']
-    request_obj['approved_at'] = datetime.now().isoformat()
+    session_name = db_sess.session_name
+    try:
+        _delete_session_with_dependencies(db_sess)
+    except Exception:
+        db.rollback()
+        return jsonify({'error': 'Failed to delete session'}), 500
+
     save_delete_requests()
 
     return jsonify({
@@ -214,17 +219,25 @@ def reject_delete_request(request_id):
     data = request.get_json(silent=True) or {}
     rejection_reason = data.get('reason', 'No reason provided')
 
-    request_obj = next((req for req in delete_requests if req['id'] == request_id), None)
-    if not request_obj:
+    request_model = db.query(SessionDeleteRequest).filter_by(id=request_id).first()
+    if not request_model:
         return jsonify({'error': 'Delete request not found'}), 404
 
-    if request_obj['status'] != 'pending':
+    if request_model.status != 'pending':
         return jsonify({'error': 'Request is not pending'}), 400
 
-    request_obj['status'] = 'rejected'
-    request_obj['rejected_by'] = session['user_id']
-    request_obj['rejected_at'] = datetime.now().isoformat()
-    request_obj['rejection_reason'] = rejection_reason
+    current_user = get_current_user()
+    request_model.status = 'rejected'
+    request_model.reviewed_by = current_user['id'] if current_user else None
+    request_model.reviewed_at = _now_utc()
+    request_model.rejection_reason = rejection_reason
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        return jsonify({'error': 'Failed to update delete request'}), 500
+
     save_delete_requests()
 
     return jsonify({
