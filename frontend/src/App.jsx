@@ -2143,8 +2143,8 @@ function App() {
                         {currentDrawInfo?.winner ? (
                           <div className="space-y-2">
                             <div className="text-lg font-semibold">{currentDrawInfo.winner.display_name}</div>
-                            {currentDrawInfo.winner.student_id && (
-                              <div className="text-xs text-gray-500">Student ID: {currentDrawInfo.winner.student_id}</div>
+                            {currentDrawInfo.winner.student_identifier && (
+                              <div className="text-xs text-gray-500">Student ID: {currentDrawInfo.winner.student_identifier}</div>
                             )}
                             <div className="flex flex-wrap gap-2 text-xs text-gray-500">
                               {currentDrawInfo.winner.grade && <span>Grade: {currentDrawInfo.winner.grade}</span>}
@@ -2220,8 +2220,8 @@ function App() {
                           <div className="space-y-3">
                             <div>
                               <div className="text-lg font-semibold">{selectedCandidate.display_name}</div>
-                              {selectedCandidate.student_id && (
-                                <div className="text-xs text-gray-500">Student ID: {selectedCandidate.student_id}</div>
+                              {selectedCandidate.student_identifier && (
+                                <div className="text-xs text-gray-500">Student ID: {selectedCandidate.student_identifier}</div>
                               )}
                             </div>
                             <div className="grid grid-cols-1 gap-1 text-xs text-gray-600 sm:grid-cols-2">
@@ -2296,7 +2296,7 @@ function App() {
                                 <div>
                                   <div className="font-medium">{candidate.display_name}</div>
                                   <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                                    {candidate.student_id && <span>ID: {candidate.student_id}</span>}
+                                    {candidate.student_identifier && <span>ID: {candidate.student_identifier}</span>}
                                     <span>Tickets: {Number(candidate.tickets ?? 0).toFixed(2)}</span>
                                     <span>Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</span>
                                   </div>
@@ -2903,8 +2903,8 @@ function App() {
                   {dashboardWinner.winner ? (
                     <div className="space-y-2">
                       <div className="text-lg font-semibold text-gray-900">{dashboardWinner.winner.display_name}</div>
-                      {dashboardWinner.winner.student_id && (
-                        <div className="text-xs text-gray-500">Student ID: {dashboardWinner.winner.student_id}</div>
+                      {dashboardWinner.winner.student_identifier && (
+                        <div className="text-xs text-gray-500">Student ID: {dashboardWinner.winner.student_identifier}</div>
                       )}
                       <div className="flex flex-wrap gap-2 text-xs text-gray-500">
                         {dashboardWinner.winner.grade && <span>Grade: {dashboardWinner.winner.grade}</span>}

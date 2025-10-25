@@ -15,6 +15,8 @@ from .storage import (
     delete_requests,
     ensure_session_structure,
     get_dirty_count,
+    get_session_entry,
+    hydrate_session_from_db,
     save_delete_requests,
     save_session_data,
     session_data,
@@ -271,6 +273,9 @@ def switch_session(session_id):
     if is_guest() and not db_sess.is_public:
         return jsonify({'error': 'Access denied'}), 403
 
+    # Hydrate legacy session cache so subsequent calls can rely on it
+    hydrate_session_from_db(session_id, session_model=db_sess)
+
     session['session_id'] = session_id
 
     return jsonify({
@@ -363,11 +368,13 @@ def get_session_history():
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    if 'session_id' not in session or session['session_id'] not in session_data:
+    session_id = session.get('session_id')
+    if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
-    session_id = session['session_id']
-    data = session_data[session_id]
+    data = get_session_entry(session_id)
+    if data is None:
+        return jsonify({'error': 'Session not found'}), 404
     if is_guest() and not data.get('is_public', True):
         return jsonify({'error': 'Access denied'}), 403
 
@@ -451,8 +458,13 @@ def record_student(category):
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
-    if 'session_id' not in session or session['session_id'] not in session_data:
+    session_id = session.get('session_id')
+    if not session_id:
         return jsonify({'error': 'No active session'}), 400
+
+    session_info = get_session_entry(session_id)
+    if session_info is None:
+        return jsonify({'error': 'Session not found'}), 404
 
     if category not in ['clean', 'dirty', 'red', 'faculty']:
         return jsonify({'error': 'Invalid category'}), 400
@@ -465,8 +477,6 @@ def record_student(category):
     provided_preferred = normalize_name(data.get('preferred_name') or data.get('preferred'))
     provided_last = normalize_name(data.get('last_name') or data.get('last'))
 
-    session_id = session['session_id']
-    session_info = session_data[session_id]
     ensure_session_structure(session_info)
 
     if category == 'dirty':
@@ -951,11 +961,13 @@ def export_csv():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
-    if 'session_id' not in session or session['session_id'] not in session_data:
+    session_id = session.get('session_id')
+    if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
-    session_id = session['session_id']
-    data = session_data[session_id]
+    data = get_session_entry(session_id)
+    if data is None:
+        return jsonify({'error': 'Session not found'}), 404
 
     ensure_session_structure(data)
 
@@ -1004,11 +1016,13 @@ def export_detailed_csv():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
-    if 'session_id' not in session or session['session_id'] not in session_data:
+    session_id = session.get('session_id')
+    if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
-    session_id = session['session_id']
-    data = session_data[session_id]
+    data = get_session_entry(session_id)
+    if data is None:
+        return jsonify({'error': 'Session not found'}), 404
 
     ensure_session_structure(data)
 
