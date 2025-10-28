@@ -90,25 +90,48 @@ def ensure_global_admins_from_school(school: School) -> None:
             .all()
         )
         for user in super_admins:
-            existing = (
-                global_db_session.query(GlobalUser)
-                .filter(GlobalUser.username == user.username)
-                .first()
-            )
-            if existing:
-                continue
-            global_admin = GlobalUser(
-                username=user.username,
-                password_hash=user.password_hash,
-                display_name=user.display_name,
-                status='active',
-                created_at=_now(),
-                updated_at=_now(),
-            )
-            global_db_session.add(global_admin)
-        global_db_session.commit()
+            ensure_default_superadmin_global_user(user)
     finally:
         reset_current_school_id(token)
+
+
+def ensure_default_superadmin_global_user(user: Optional[User]) -> Optional[GlobalUser]:
+    if user is None:
+        return None
+
+    existing = (
+        global_db_session.query(GlobalUser)
+        .filter(GlobalUser.username == user.username)
+        .first()
+    )
+    if existing:
+        changed = False
+        if existing.password_hash != user.password_hash:
+            existing.password_hash = user.password_hash
+            changed = True
+        if existing.display_name != user.display_name:
+            existing.display_name = user.display_name
+            changed = True
+        if existing.status != (user.status or 'active'):
+            existing.status = user.status or 'active'
+            changed = True
+        if changed:
+            existing.updated_at = _now()
+            global_db_session.add(existing)
+            global_db_session.commit()
+        return existing
+
+    global_admin = GlobalUser(
+        username=user.username,
+        password_hash=user.password_hash,
+        display_name=user.display_name,
+        status=user.status or 'active',
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    global_db_session.add(global_admin)
+    global_db_session.commit()
+    return global_admin
 
 
 def register_user_directory_entry(

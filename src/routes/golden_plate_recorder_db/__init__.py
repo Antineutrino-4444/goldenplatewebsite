@@ -2,11 +2,19 @@ from flask import Blueprint
 
 recorder_bp = Blueprint('recorder', __name__)
 
-from .schools import bootstrap_global_state, ensure_global_admins_from_school
+from .schools import (
+    bootstrap_global_state,
+    ensure_default_superadmin_global_user,
+    ensure_global_admins_from_school,
+)
 from .db import set_default_school_id
+from .users import ensure_default_superadmin
 
 _default_school = bootstrap_global_state()
 set_default_school_id(_default_school.id)
+_default_superadmin = ensure_default_superadmin()
+if _default_superadmin is not None:
+    ensure_default_superadmin_global_user(_default_superadmin)
 ensure_global_admins_from_school(_default_school)
 
 # Ensure storage initialization happens after default context is configured
