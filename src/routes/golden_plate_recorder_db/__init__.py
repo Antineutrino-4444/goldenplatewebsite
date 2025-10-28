@@ -2,7 +2,14 @@ from flask import Blueprint
 
 recorder_bp = Blueprint('recorder', __name__)
 
-# Ensure storage initialization happens on import
+from .schools import bootstrap_global_state, ensure_global_admins_from_school
+from .db import set_default_school_id
+
+_default_school = bootstrap_global_state()
+set_default_school_id(_default_school.id)
+ensure_global_admins_from_school(_default_school)
+
+# Ensure storage initialization happens after default context is configured
 from . import storage  # noqa: F401
 
 # Register hooks and routes

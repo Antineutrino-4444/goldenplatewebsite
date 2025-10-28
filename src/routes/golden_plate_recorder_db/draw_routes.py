@@ -165,7 +165,7 @@ def start_draw(session_id):
         eligible_pool_size=pool_size,
     )
 
-    db_session.commit()
+    finalize_draw_db(draw, session.get('user_id'))
 
     winner_data = {
         'student_id': winner.id,
