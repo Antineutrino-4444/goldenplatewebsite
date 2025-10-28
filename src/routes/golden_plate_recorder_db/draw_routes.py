@@ -13,8 +13,22 @@ from .draw_db import (
     perform_weighted_draw,
     record_draw_event,
     reset_draw as reset_draw_db,
+    reset_student_tickets,
 )
 from .security import require_admin, require_auth_or_guest, require_superadmin
+
+
+def _reset_candidate_pool(session_id: str, user_id: str) -> None:
+    """Reset ticket balances for all eligible candidates in a session."""
+
+    eligible_students = get_eligible_students_with_tickets(session_id)
+    for student, _ in eligible_students:
+        reset_student_tickets(
+            session_id=session_id,
+            student_id=student.id,
+            user_id=user_id,
+            reason='Session draw completed - tickets reset',
+        )
 
 
 @recorder_bp.route('/session/<session_id>/draw/summary', methods=['GET'])
@@ -164,6 +178,8 @@ def start_draw(session_id):
         probability_at_event=probability,
         eligible_pool_size=pool_size,
     )
+
+    _reset_candidate_pool(session_id, session.get('user_id'))
 
     db_session.commit()
 
@@ -330,6 +346,9 @@ def override_draw(session_id):
         probability_at_event=probability,
         eligible_pool_size=len(eligible),
     )
+
+    # Reset all candidate tickets before finalizing the override selection
+    _reset_candidate_pool(session_id, session.get('user_id'))
 
     # Finalize the override selection, recording the finalize event and clearing tickets
     finalize_draw_db(draw, session.get('user_id'))
