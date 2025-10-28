@@ -6,13 +6,36 @@ import { Label } from '@/components/ui/label.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
+import { Switch } from '@/components/ui/switch.jsx'
 import { SearchableNameInput } from '@/components/SearchableNameInput.jsx'
 import Modal from '@/components/Modal.jsx'
 import { createPortal } from 'react-dom'
-import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle, Trophy, Wand2, CheckCircle, RefreshCcw, ShieldCheck, Ban, Clock, History, ListOrdered, ChevronDown, ChevronUp } from 'lucide-react'
+import { Upload, Scan, Download, FileText, Plus, Users, BarChart3, LogOut, Shield, Settings, Trash2, UserPlus, AlertCircle, XCircle, Trophy, Wand2, CheckCircle, RefreshCcw, ShieldCheck, Ban, Clock, History, ListOrdered, ChevronDown, ChevronUp, Globe2, Building2, School, Search, UserSearch, CircleSlash2 } from 'lucide-react'
 import './App.css'
 
 const API_BASE = '/api'
+const ADMIN_ROLES = ['admin', 'superadmin', 'school_super_admin', 'global_admin']
+const SUPERADMIN_ROLES = ['superadmin', 'school_super_admin', 'global_admin']
+const SCHOOL_FEATURES = [
+  { key: 'student_directory', label: 'Student Directory Search' },
+  { key: 'faculty_module', label: 'Faculty Management Module' },
+  { key: 'ticket_draws', label: 'Ticket Draw Center' }
+]
+
+const createDefaultSchoolSignupForm = () => ({
+  schoolName: '',
+  schoolAddress: '',
+  publicContact: '',
+  inviteCode: '',
+  ownerName: '',
+  ownerUsername: '',
+  ownerPassword: '',
+  featureToggles: SCHOOL_FEATURES.reduce((acc, feature) => {
+    acc[feature.key] = true
+    return acc
+  }, {}),
+  guestAccessEnabled: true
+})
 
 const normalizeName = (value) => (value ?? '').toString().trim()
 
@@ -140,11 +163,24 @@ function App() {
   const [notification, setNotification] = useState(null)
   const [modal, setModal] = useState(null)
   const [inviteCode, setInviteCode] = useState('')
+  const [globalAdminContext, setGlobalAdminContext] = useState(null)
+  const [showSchoolSignupDialog, setShowSchoolSignupDialog] = useState(false)
+  const [schoolSignupForm, setSchoolSignupForm] = useState(() => createDefaultSchoolSignupForm())
+  const [isSubmittingSchoolSignup, setIsSubmittingSchoolSignup] = useState(false)
+  const [directorySearchQuery, setDirectorySearchQuery] = useState('')
+  const [directorySearchResults, setDirectorySearchResults] = useState([])
+  const [directorySearchLoading, setDirectorySearchLoading] = useState(false)
 
   const isSessionDiscarded = drawSummary?.is_discarded ?? sessionStats.is_discarded
   const currentDrawInfo = drawSummary?.draw_info ?? sessionStats.draw_info
-  const canManageDraw = ['admin', 'superadmin'].includes(user?.role)
-  const canOverrideWinner = user?.role === 'superadmin'
+  const isGlobalAdmin = user?.role === 'global_admin'
+  const isSuperAdmin = SUPERADMIN_ROLES.includes(user?.role)
+  const isAdmin = ADMIN_ROLES.includes(user?.role)
+  const canAccessTenantData = !isGlobalAdmin || Boolean(globalAdminContext?.impersonating)
+  const canUseTenantAdminFeatures = canAccessTenantData && isAdmin
+  const canUseTenantSuperAdminFeatures = canAccessTenantData && isSuperAdmin
+  const canManageDraw = canUseTenantAdminFeatures
+  const canOverrideWinner = canUseTenantSuperAdminFeatures
   const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
   const hasStudentRecords = studentRecordCount > 0
   const showExportCard = user?.role !== 'guest'
@@ -242,19 +278,33 @@ function App() {
     checkAuthStatus()
   }, [])
 
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = async (options = {}) => {
     try {
       const response = await fetch(`${API_BASE}/auth/status`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.authenticated) {
-          setUser(data.user)
-          setIsAuthenticated(true)
-          await initializeSession()
-        }
+      if (!response.ok) {
+        setIsAuthenticated(false)
+        setUser(null)
+        setGlobalAdminContext(null)
+        return null
       }
+      const data = await response.json()
+      if (data.authenticated) {
+        const context = data.global_admin || null
+        setUser(data.user)
+        setIsAuthenticated(true)
+        setGlobalAdminContext(context)
+        if (!options.skipSessionInit) {
+          await initializeSession({ authUser: data.user, globalAdminContext: context })
+        }
+      } else {
+        setIsAuthenticated(false)
+        setUser(null)
+        setGlobalAdminContext(null)
+      }
+      return data
     } catch (error) {
       console.error('Auth check failed:', error)
+      return null
     }
   }
 
@@ -277,12 +327,10 @@ function App() {
 
       const data = await response.json()
       if (response.ok) {
-        setUser(data.user)
-        setIsAuthenticated(true)
         setLoginUsername('')
         setLoginPassword('')
         showMessage(`Welcome, ${data.user.name}!`, 'success')
-        await initializeSession()
+        await checkAuthStatus()
       } else {
         showMessage(data.error || 'Login failed', 'error')
       }
@@ -303,10 +351,8 @@ function App() {
 
       const data = await response.json()
       if (response.ok) {
-        setUser(data.user)
-        setIsAuthenticated(true)
         showMessage('Welcome, Guest! You can view sessions but cannot create or modify them.', 'info')
-        await initializeSession()
+        await checkAuthStatus()
       } else {
         showMessage(data.error || 'Guest login failed', 'error')
       }
@@ -393,13 +439,50 @@ function App() {
       setOverrideInput('')
       setOverrideCandidate(null)
       setSelectedCandidateKey(null)
+      setGlobalAdminContext(null)
+      setShowSchoolSignupDialog(false)
+      setIsSubmittingSchoolSignup(false)
+      setSchoolSignupForm(createDefaultSchoolSignupForm())
+      setDirectorySearchQuery('')
+      setDirectorySearchResults([])
+      setDirectorySearchLoading(false)
       showMessage('Logged out successfully', 'info')
     } catch (error) {
       showMessage('Logout failed', 'error')
     }
   }
 
-  const initializeSession = async () => {
+  const initializeSession = async (options = {}) => {
+    const authUser = options.authUser ?? user
+    const context = options.globalAdminContext ?? globalAdminContext
+    if (authUser?.role === 'global_admin' && !Boolean(context?.impersonating)) {
+      setSessionId(null)
+      setSessionName('')
+      setSessions([])
+      setCsvData(null)
+      setInputValue('')
+      setScanHistory([])
+      setSessionStats({
+        clean_count: 0,
+        dirty_count: 0,
+        red_count: 0,
+        combined_dirty_count: 0,
+        faculty_clean_count: 0,
+        total_recorded: 0,
+        clean_percentage: 0,
+        dirty_percentage: 0,
+        is_discarded: false,
+        draw_info: null
+      })
+      setDrawSummary(null)
+      setStudentNames([])
+      setTeacherNames([])
+      setOverrideInput('')
+      setOverrideCandidate(null)
+      setSelectedCandidateKey(null)
+      return
+    }
+
     try {
       const response = await fetch(`${API_BASE}/session/status`)
       if (response.ok) {
@@ -1314,7 +1397,7 @@ function App() {
   }
 
   const loadAdminData = async () => {
-    if (!user || !['admin', 'superadmin'].includes(user.role)) return
+    if (!user || !canUseTenantAdminFeatures) return
 
     try {
       const response = await fetch(`${API_BASE}/admin/overview`)
@@ -1333,6 +1416,452 @@ function App() {
     if (size === 'small') {
       setTimeout(() => setNotification(null), 3000)
     }
+  }
+
+  const handleSchoolSignupDialogChange = (open) => {
+    setShowSchoolSignupDialog(open)
+    if (!open) {
+      setIsSubmittingSchoolSignup(false)
+      setSchoolSignupForm(createDefaultSchoolSignupForm())
+    }
+  }
+
+  const updateSchoolSignupField = (field, value) => {
+    setSchoolSignupForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  const toggleSchoolFeature = (feature, value) => {
+    setSchoolSignupForm((prev) => ({
+      ...prev,
+      featureToggles: {
+        ...prev.featureToggles,
+        [feature]: value,
+      }
+    }))
+  }
+
+  const submitSchoolSignup = async () => {
+    const trimmedInvite = schoolSignupForm.inviteCode.trim()
+    const trimmedSchoolName = schoolSignupForm.schoolName.trim()
+    const ownerName = schoolSignupForm.ownerName.trim()
+    const ownerUsername = schoolSignupForm.ownerUsername.trim()
+    const ownerPassword = schoolSignupForm.ownerPassword.trim()
+
+    if (!trimmedInvite || !trimmedSchoolName || !ownerName || !ownerUsername || !ownerPassword) {
+      showMessage('Please complete all required school and owner fields.', 'error')
+      return
+    }
+
+    if (ownerUsername.length < 3) {
+      showMessage('Owner username must be at least 3 characters long.', 'error')
+      return
+    }
+
+    if (ownerPassword.length < 6) {
+      showMessage('Owner password must be at least 6 characters long.', 'error')
+      return
+    }
+
+    setIsSubmittingSchoolSignup(true)
+    try {
+      const payload = {
+        invite_code: trimmedInvite,
+        school_name: trimmedSchoolName,
+        school_address: schoolSignupForm.schoolAddress.trim(),
+        public_contact: schoolSignupForm.publicContact.trim(),
+        owner: {
+          display_name: ownerName,
+          username: ownerUsername,
+          password: ownerPassword,
+        },
+        feature_toggles: schoolSignupForm.featureToggles,
+        guest_access_enabled: schoolSignupForm.guestAccessEnabled,
+      }
+
+      const response = await fetch(`${API_BASE}/auth/school-signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await response.json()
+      if (response.ok) {
+        handleSchoolSignupDialogChange(false)
+        const credentialsMessage = `School "${data.school.name}" provisioned. Owner credentials — Username: ${data.owner.username}, Temporary Password: ${data.owner.password}.`
+        showMessage(credentialsMessage, 'success', 'large')
+      } else {
+        showMessage(data.error || 'Unable to provision school access.', 'error')
+      }
+    } catch (error) {
+      console.error('School signup failed:', error)
+      showMessage('Unable to provision school access.', 'error')
+    } finally {
+      setIsSubmittingSchoolSignup(false)
+    }
+  }
+
+  const searchGlobalDirectory = async () => {
+    if (!isGlobalAdmin) {
+      return
+    }
+    const query = directorySearchQuery.trim()
+    if (!query) {
+      setDirectorySearchResults([])
+      return
+    }
+    setDirectorySearchLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/auth/global-directory?q=${encodeURIComponent(query)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setDirectorySearchResults(data.results || [])
+      } else {
+        setDirectorySearchResults([])
+      }
+    } catch (error) {
+      console.error('Directory search failed:', error)
+      setDirectorySearchResults([])
+    } finally {
+      setDirectorySearchLoading(false)
+    }
+  }
+
+  const impersonateSchool = async (schoolId) => {
+    if (!schoolId) {
+      return
+    }
+    try {
+      const response = await fetch(`${API_BASE}/auth/impersonate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ school_id: schoolId })
+      })
+      const data = await response.json()
+      if (response.ok) {
+        showMessage(`Now impersonating ${data.school.name} (${data.school.code}).`, 'success')
+        await checkAuthStatus()
+      } else {
+        showMessage(data.error || 'Unable to impersonate the selected school.', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to impersonate school:', error)
+      showMessage('Unable to impersonate the selected school.', 'error')
+    }
+  }
+
+  const clearImpersonation = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/auth/impersonation/clear`, { method: 'POST' })
+      if (response.ok) {
+        showMessage('Global impersonation cleared.', 'info')
+        await checkAuthStatus()
+      } else {
+        const data = await response.json().catch(() => ({}))
+        showMessage(data.error || 'Unable to clear impersonation.', 'error')
+      }
+    } catch (error) {
+      console.error('Failed to clear impersonation:', error)
+      showMessage('Unable to clear impersonation.', 'error')
+    }
+  }
+
+  const renderSchoolSignupDialog = () => (
+    <Dialog open={showSchoolSignupDialog} onOpenChange={handleSchoolSignupDialogChange}>
+      <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
+        <DialogHeader>
+          <DialogTitle>School Sign-Up / Access Request</DialogTitle>
+          <DialogDescription>
+            Submit your school details to provision a new tenant and receive onboarding credentials.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-5">
+          <Alert className="border-amber-200 bg-amber-50">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-amber-900">
+              Use an official school contact email so our team can verify your request. Instructions and confirmations are sent to the provided contact address.
+            </AlertDescription>
+          </Alert>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="signup-school-name">School Name</Label>
+              <Input
+                id="signup-school-name"
+                value={schoolSignupForm.schoolName}
+                onChange={(e) => updateSchoolSignupField('schoolName', e.target.value)}
+                placeholder="North Ridge Academy"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-invite-code">Invite Code</Label>
+              <Input
+                id="signup-invite-code"
+                value={schoolSignupForm.inviteCode}
+                onChange={(e) => updateSchoolSignupField('inviteCode', e.target.value)}
+                placeholder="Enter provisioning invite"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-school-address">School Address / Region</Label>
+              <Input
+                id="signup-school-address"
+                value={schoolSignupForm.schoolAddress}
+                onChange={(e) => updateSchoolSignupField('schoolAddress', e.target.value)}
+                placeholder="123 Campus Way, Toronto, ON"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-public-contact">Public Contact Email</Label>
+              <Input
+                id="signup-public-contact"
+                type="email"
+                value={schoolSignupForm.publicContact}
+                onChange={(e) => updateSchoolSignupField('publicContact', e.target.value)}
+                placeholder="admin@school.ca"
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="signup-owner-name">Owner Display Name</Label>
+              <Input
+                id="signup-owner-name"
+                value={schoolSignupForm.ownerName}
+                onChange={(e) => updateSchoolSignupField('ownerName', e.target.value)}
+                placeholder="Head of School"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-owner-username">Owner Username</Label>
+              <Input
+                id="signup-owner-username"
+                value={schoolSignupForm.ownerUsername}
+                onChange={(e) => updateSchoolSignupField('ownerUsername', e.target.value)}
+                placeholder="principal"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-owner-password">Owner Password</Label>
+              <Input
+                id="signup-owner-password"
+                type="password"
+                value={schoolSignupForm.ownerPassword}
+                onChange={(e) => updateSchoolSignupField('ownerPassword', e.target.value)}
+                placeholder="Temporary password"
+              />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold">Enable Guest Access</p>
+                <p className="text-xs text-gray-500">Allow view-only guests for this tenant by default.</p>
+              </div>
+              <Switch
+                checked={schoolSignupForm.guestAccessEnabled}
+                onCheckedChange={(checked) => updateSchoolSignupField('guestAccessEnabled', checked)}
+              />
+            </div>
+            <div>
+              <p className="text-sm font-semibold mb-2">Feature Toggles</p>
+              <div className="space-y-2">
+                {SCHOOL_FEATURES.map((feature) => (
+                  <div key={feature.key} className="flex items-center justify-between rounded border px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">{feature.label}</p>
+                      <p className="text-xs text-gray-500">Configure availability at tenant creation.</p>
+                    </div>
+                    <Switch
+                      checked={Boolean(schoolSignupForm.featureToggles[feature.key])}
+                      onCheckedChange={(checked) => toggleSchoolFeature(feature.key, checked)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => handleSchoolSignupDialogChange(false)}
+              variant="outline"
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={submitSchoolSignup}
+              className="flex-1 bg-amber-600 hover:bg-amber-700"
+              disabled={isSubmittingSchoolSignup}
+            >
+              {isSubmittingSchoolSignup ? 'Submitting...' : 'Submit Request'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+
+  const renderGlobalAdminDashboard = () => {
+    const schools = globalAdminContext?.schools ?? []
+    const impersonatedSchool = globalAdminContext?.impersonated_school
+    const activeSchool = globalAdminContext?.active_school
+    const impersonating = Boolean(globalAdminContext?.impersonating)
+
+    return (
+      <div className="py-10 space-y-6">
+        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-700">
+                  <Globe2 className="h-5 w-5" /> Global Administration
+                </CardTitle>
+                <CardDescription>Manage tenants and impersonation context.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-gray-700">Impersonation State</p>
+                    <p className="text-gray-500">
+                      {impersonating
+                        ? impersonatedSchool
+                          ? `Acting as ${impersonatedSchool.name} (${impersonatedSchool.code}).`
+                          : 'Acting as selected tenant.'
+                        : 'Not impersonating any tenant.'}
+                    </p>
+                  </div>
+                  {impersonating ? (
+                    <Button size="sm" variant="outline" onClick={clearImpersonation}>
+                      <CircleSlash2 className="h-4 w-4 mr-1" /> Exit
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" className="border-emerald-200 text-emerald-700">
+                      Global Scope
+                    </Badge>
+                  )}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-700">Active School Context</p>
+                  <p className="text-gray-500">
+                    {activeSchool
+                      ? `${activeSchool.name} (${activeSchool.code})`
+                      : 'No tenant context selected.'}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-gray-700">Registered Schools</p>
+                  <Badge variant="outline" className="border-gray-200 text-gray-600">
+                    {schools.length}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" /> Quick Actions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button className="w-full" onClick={() => handleSchoolSignupDialogChange(true)}>
+                  <Plus className="h-4 w-4 mr-2" /> Provision New School
+                </Button>
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={() => checkAuthStatus({ skipSessionInit: false })}
+                >
+                  <RefreshCcw className="h-4 w-4 mr-2" /> Refresh Status
+                </Button>
+                {!impersonating && (
+                  <Alert className="border-blue-200 bg-blue-50">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="text-sm text-blue-800">
+                      Select a school from the list to impersonate and access tenant dashboards.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <School className="h-5 w-5" /> School Directory
+                </CardTitle>
+                <CardDescription>Launch tenant dashboards by impersonating a school.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {schools.length === 0 ? (
+                  <p className="text-sm text-gray-500">No schools registered yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {schools.map((school) => (
+                      <div key={school.id} className="flex items-center justify-between rounded border px-3 py-2">
+                        <div>
+                          <p className="font-medium">{school.name}</p>
+                          <p className="text-xs text-gray-500">{school.code}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={school.guest_access_enabled ? 'outline' : 'destructive'}>
+                            {school.guest_access_enabled ? 'Guest Access On' : 'Guest Access Off'}
+                          </Badge>
+                          <Button size="sm" variant="outline" onClick={() => impersonateSchool(school.id)}>
+                            {impersonatedSchool?.id === school.id ? 'Viewing' : 'Impersonate'}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserSearch className="h-5 w-5" /> User Directory Search
+                </CardTitle>
+                <CardDescription>Lookup users across all tenants.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    value={directorySearchQuery}
+                    onChange={(e) => setDirectorySearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        searchGlobalDirectory()
+                      }
+                    }}
+                    placeholder="Search by username or display name"
+                  />
+                  <Button onClick={searchGlobalDirectory} disabled={directorySearchLoading}>
+                    <Search className="h-4 w-4 mr-2" /> {directorySearchLoading ? 'Searching...' : 'Search'}
+                  </Button>
+                </div>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {directorySearchResults.length === 0 ? (
+                    <p className="text-sm text-gray-500">No results yet. Try searching for a username.</p>
+                  ) : (
+                    directorySearchResults.map((result) => (
+                      <div key={`${result.school.id}-${result.username}`} className="rounded border px-3 py-2">
+                        <p className="font-medium">{result.display_name}</p>
+                        <p className="text-xs text-gray-500">@{result.username} • {result.role} • {result.status}</p>
+                        <p className="text-xs text-gray-400">{result.school.name} ({result.school.code})</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const handleCategoryClick = (category) => {
@@ -1357,6 +1886,7 @@ function App() {
 
   // Account management functions
   const loadAllUsers = async () => {
+    if (!canUseTenantAdminFeatures) return
     try {
       const response = await fetch(`${API_BASE}/admin/users`)
       if (response.ok) {
@@ -1475,10 +2005,10 @@ function App() {
   }
 
   useEffect(() => {
-    if (['admin', 'superadmin'].includes(user?.role)) {
+    if (canUseTenantAdminFeatures) {
       loadDeleteRequests()
     }
-  }, [user])
+  }, [canUseTenantAdminFeatures])
 
   const generateInviteCode = async () => {
     try {
@@ -1597,13 +2127,20 @@ function App() {
               Continue as Guest
             </Button>
             
-            <div className="text-center">
-              <Button 
-                variant="link" 
+            <div className="text-center space-y-2">
+              <Button
+                variant="link"
                 onClick={() => setShowSignupDialog(true)}
                 className="text-amber-600 hover:text-amber-700"
               >
                 Don't have an account? Sign up
+              </Button>
+              <Button
+                variant="link"
+                className="text-sm text-gray-600 hover:text-gray-900"
+                onClick={() => handleSchoolSignupDialogChange(true)}
+              >
+                School Sign-Up / Access Request
               </Button>
             </div>
 
@@ -1675,6 +2212,8 @@ function App() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {renderSchoolSignupDialog()}
       </div>
     )
   }
@@ -1693,6 +2232,25 @@ function App() {
               <p className="text-sm text-gray-600">Prevention, Logging & Assessment of Tossed Edibles</p>
             </div>
             <div className="flex items-center gap-4">
+              {isGlobalAdmin && (
+                <div className="hidden sm:flex flex-col text-right text-xs text-gray-500">
+                  <div className="flex items-center gap-1 justify-end text-gray-600">
+                    <Globe2 className="h-4 w-4 text-amber-600" />
+                    <span>
+                      {globalAdminContext?.impersonating
+                        ? globalAdminContext?.impersonated_school
+                          ? `Impersonating ${globalAdminContext.impersonated_school.name}`
+                          : 'Impersonating tenant'
+                        : 'Global admin scope'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-gray-400">
+                    {globalAdminContext?.active_school
+                      ? `Active: ${globalAdminContext.active_school.name} (${globalAdminContext.active_school.code})`
+                      : 'No tenant selected'}
+                  </span>
+                </div>
+              )}
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
                 {user.name} ({user.username})
               </Badge>
@@ -1717,6 +2275,10 @@ function App() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {isGlobalAdmin && !canAccessTenantData ? (
+          renderGlobalAdminDashboard()
+        ) : (
+          <>
         {/* No Session State */}
         {!sessionId ? (
           <div className="text-center py-16">
@@ -1738,7 +2300,7 @@ function App() {
                   <Plus className="h-5 w-5 mr-2" />
                   {isLoading ? 'Creating...' : 'Create New Session'}
                 </Button>
-                {['admin', 'superadmin'].includes(user?.role) && (
+                {canUseTenantAdminFeatures && (
                   <Button
                     onClick={() => {
                       setShowAdminPanel(true)
@@ -1814,13 +2376,13 @@ function App() {
                 <Users className="h-4 w-4 mr-2" />
                 Switch Session
               </Button>
-              {user.role !== 'user' && user.role !== 'guest' && (
+              {canUseTenantAdminFeatures && (
                 <Button onClick={() => { loadAdminData(); setShowDashboard(true) }} className="bg-purple-600 hover:bg-purple-700">
                   <BarChart3 className="h-4 w-4 mr-2" />
                   Dashboard
                 </Button>
               )}
-              {['admin', 'superadmin'].includes(user.role) && (
+              {canUseTenantAdminFeatures && (
                 <Button
                   onClick={() => { loadAdminData(); setShowAdminPanel(true) }}
                   className="relative bg-red-600 hover:bg-red-700"
@@ -1849,7 +2411,7 @@ function App() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {!['admin', 'superadmin'].includes(user?.role) ? (
+              {!canUseTenantAdminFeatures ? (
                 <Alert className="border-blue-200 bg-blue-50">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-blue-800">
@@ -1864,9 +2426,9 @@ function App() {
                   className="mb-4"
                 />
               )}
-              {['admin', 'superadmin'].includes(user?.role) && (
+              {canUseTenantAdminFeatures && (
                 <div className="flex gap-2 mb-4">
-                  <Button 
+                  <Button
                     onClick={() => previewCSV(1)} 
                     variant="outline" 
                     className="flex-1"
@@ -1897,7 +2459,7 @@ function App() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {!['admin', 'superadmin'].includes(user?.role) ? (
+              {!canUseTenantAdminFeatures ? (
                 <Alert className="border-blue-200 bg-blue-50">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-blue-800">
@@ -1912,9 +2474,9 @@ function App() {
                   className="mb-4"
                 />
               )}
-              {['admin', 'superadmin'].includes(user?.role) && (
+              {canUseTenantAdminFeatures && (
                 <div className="flex gap-2 mb-4">
-                  <Button 
+                  <Button
                     onClick={() => previewTeachers(1)} 
                     variant="outline" 
                     className="flex-1"
@@ -2950,6 +3512,8 @@ function App() {
         )}
       </div>
       
+      {renderSchoolSignupDialog()}
+
       {/* Admin Panel Dialog */}
       <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
         <DialogContent
@@ -2964,7 +3528,7 @@ function App() {
           </DialogHeader>
           <div className="space-y-6">
             <div className="flex gap-4">
-              {['admin', 'superadmin'].includes(user.role) && (
+              {canUseTenantAdminFeatures && (
                 <>
                   <Button
                     onClick={generateInviteCode}
@@ -3009,7 +3573,7 @@ function App() {
                       >
                         {adminUser.role}
                       </Badge>
-                      {user.role === 'superadmin' && adminUser.username !== user.username && (
+                      {canUseTenantSuperAdminFeatures && adminUser.username !== user.username && (
                         <div className="flex gap-1">
                           <select
                             className="text-xs border rounded px-2 py-1"
@@ -3089,8 +3653,12 @@ function App() {
                   >
                     {userAccount.status}
                   </Badge>
-                  {((user.role === 'superadmin' && userAccount.username !== user.username) ||
-                    (user.role === 'admin' && !['superadmin', 'admin'].includes(userAccount.role))) && (
+                  {(
+                    (canUseTenantSuperAdminFeatures && userAccount.username !== user.username) ||
+                    (canUseTenantAdminFeatures &&
+                      user.role === 'admin' &&
+                      !['superadmin', 'school_super_admin', 'admin', 'global_admin'].includes(userAccount.role))
+                  ) && (
                     <Button
                       onClick={() => toggleAccountStatus(userAccount.username, userAccount.status)}
                       variant={userAccount.status === 'active' ? 'destructive' : 'default'}

@@ -6,7 +6,13 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.exc import IntegrityError
 
-from .db import db_session, reset_current_school_id, set_current_school_id, User
+from .db import (
+    db_session,
+    reset_current_school_id,
+    set_current_school_id,
+    school_registry,
+    User,
+)
 from .global_db import (
     AuditLog,
     FeatureToggle,
@@ -95,8 +101,10 @@ def ensure_global_admins_from_school(school: School) -> None:
         reset_current_school_id(token)
 
 
-def ensure_default_superadmin_global_user(user: Optional[User]) -> Optional[GlobalUser]:
-    if user is None:
+def sync_global_superadmin_user(user: Optional[User]) -> Optional[GlobalUser]:
+    """Ensure the global directory mirrors a school's superadmin account."""
+
+    if user is None or getattr(user, 'role', None) != 'superadmin':
         return None
 
     existing = (
@@ -132,6 +140,12 @@ def ensure_default_superadmin_global_user(user: Optional[User]) -> Optional[Glob
     global_db_session.add(global_admin)
     global_db_session.commit()
     return global_admin
+
+
+def ensure_default_superadmin_global_user(user: Optional[User]) -> Optional[GlobalUser]:
+    """Backward-compatible shim for legacy imports."""
+
+    return sync_global_superadmin_user(user)
 
 
 def register_user_directory_entry(
@@ -270,16 +284,71 @@ def set_feature_toggle(school_id: str, feature: str, enabled: bool) -> FeatureTo
     return toggle
 
 
+def bootstrap_school_database(school: School) -> None:
+    """Ensure a freshly-created school has an initialized tenant database."""
+
+    if not school or not school.id:
+        return
+
+    # Touch the registry so the SQLite file and schema exist for the new school.
+    school_registry.get_session(school.id)
+    school_registry.remove_session(school.id)
+
+
+def generate_school_code(name: str) -> str:
+    """Generate a deterministic, unique school code."""
+
+    base = ''.join(ch for ch in (name or '').upper() if ch.isalnum())
+    if len(base) < 4:
+        base = (base + 'SCHOOL')[:4]
+    base = base[:6]
+
+    candidate = base
+    counter = 1
+    while (
+        global_db_session.query(School)
+        .filter(School.code == candidate, School.deleted_at.is_(None))
+        .first()
+    ):
+        suffix = f"{counter:02d}"
+        prefix_length = max(2, 6 - len(suffix))
+        candidate = (base[:prefix_length] + suffix).ljust(4, '0')[:6]
+        counter += 1
+    return candidate
+
+
+def seed_feature_toggles(school: School, feature_states: Dict[str, bool]) -> None:
+    """Persist feature toggle preferences for a school."""
+
+    if not school or not school.id:
+        return
+
+    desired = {feature: bool(state) for feature, state in feature_states.items() if feature in FEATURE_FLAGS}
+    for feature, enabled in desired.items():
+        toggle = FeatureToggle(
+            id=str(uuid.uuid4()),
+            school_id=school.id,
+            feature=feature,
+            enabled=bool(enabled),
+            updated_at=_now(),
+        )
+        global_db_session.add(toggle)
+
+
 __all__ = [
     'FEATURE_FLAGS',
+    'bootstrap_school_database',
     'bootstrap_global_state',
     'ensure_global_admins_from_school',
     'get_directory_entry',
     'get_directory_users_by_username',
+    'generate_school_code',
     'list_feature_toggles',
     'locate_school_by_code',
     'log_audit_event',
     'register_user_directory_entry',
+    'seed_feature_toggles',
+    'sync_global_superadmin_user',
     'set_feature_toggle',
     'sync_directory_entry',
 ]

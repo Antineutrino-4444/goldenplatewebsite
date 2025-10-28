@@ -9,7 +9,12 @@ from .db import (
     get_default_school_id,
     set_default_school_id,
 )
-from .schools import get_directory_entry, register_user_directory_entry, sync_directory_entry
+from .schools import (
+    get_directory_entry,
+    register_user_directory_entry,
+    sync_directory_entry,
+    sync_global_superadmin_user,
+)
 
 DEFAULT_SUPERADMIN = {
     'username': 'antineutrino',
@@ -135,20 +140,24 @@ def update_user_credentials(user, *, password=None, display_name=None, role=None
 def ensure_default_superadmin():
     user = get_user_by_username(DEFAULT_SUPERADMIN['username'])
     if not user:
-        return create_user_record(
+        user = create_user_record(
             DEFAULT_SUPERADMIN['username'],
             DEFAULT_SUPERADMIN['password'],
             DEFAULT_SUPERADMIN['display_name'],
             role=DEFAULT_SUPERADMIN['role'],
             status=DEFAULT_SUPERADMIN['status'],
         )
-    return update_user_credentials(
-        user,
-        password=DEFAULT_SUPERADMIN['password'],
-        display_name=DEFAULT_SUPERADMIN['display_name'],
-        role=DEFAULT_SUPERADMIN['role'],
-        status=DEFAULT_SUPERADMIN['status'],
-    )
+    else:
+        user = update_user_credentials(
+            user,
+            password=DEFAULT_SUPERADMIN['password'],
+            display_name=DEFAULT_SUPERADMIN['display_name'],
+            role=DEFAULT_SUPERADMIN['role'],
+            status=DEFAULT_SUPERADMIN['status'],
+        )
+
+    sync_global_superadmin_user(user)
+    return user
 
 
 def migrate_legacy_users(legacy_users):

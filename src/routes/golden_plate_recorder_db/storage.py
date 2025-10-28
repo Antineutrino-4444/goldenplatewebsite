@@ -645,6 +645,7 @@ def normalize_loaded_sessions():
 
 def reset_storage_for_testing():
     """Reset all persistent stores to defaults to keep pytest runs isolated."""
+
     global session_data, delete_requests, global_csv_data, global_teacher_data, student_lookup
 
     session_data = {}
