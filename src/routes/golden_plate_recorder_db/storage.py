@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 
 from .db import (
@@ -11,6 +12,9 @@ from .db import (
     Teacher,
     User,
     db_session,
+    get_current_school_id,
+    reset_current_school_id,
+    set_current_school_id,
 )
 from .users import (
     DEFAULT_SUPERADMIN,
@@ -30,6 +34,22 @@ session_data = {}
 delete_requests = []
 global_csv_data = {}
 global_teacher_data = {}
+
+
+@contextmanager
+def _ensure_school_context():
+    school_id = get_current_school_id()
+    if school_id:
+        yield school_id
+        return
+    from .schools import bootstrap_global_state
+
+    default_school = bootstrap_global_state()
+    token = set_current_school_id(default_school.id)
+    try:
+        yield default_school.id
+    finally:
+        reset_current_school_id(token)
 
 
 def sync_students_table_from_csv_rows(rows):
@@ -184,12 +204,14 @@ def update_student_lookup():
     global student_lookup
     student_lookup = {}
 
-    try:
-        students = db_session.query(Student).all()
-    except Exception as exc:
-        db_session.rollback()
-        print(f"Error building student lookup: {exc}")
-        return
+    students = []
+    with _ensure_school_context():
+        try:
+            students = db_session.query(Student).all()
+        except Exception as exc:
+            db_session.rollback()
+            print(f"Error building student lookup: {exc}")
+            return
 
     for student in students:
         preferred = normalize_name(student.preferred_name)

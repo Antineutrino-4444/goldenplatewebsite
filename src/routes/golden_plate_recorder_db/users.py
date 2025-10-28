@@ -1,6 +1,15 @@
 import uuid
 
-from .db import User, UserInviteCode, _now_utc, db_session
+from .db import (
+    User,
+    UserInviteCode,
+    _now_utc,
+    db_session,
+    get_current_school_id,
+    get_default_school_id,
+    set_default_school_id,
+)
+from .schools import get_directory_entry, register_user_directory_entry, sync_directory_entry
 
 DEFAULT_SUPERADMIN = {
     'username': 'antineutrino',
@@ -27,7 +36,14 @@ def serialize_user_model(user):
 def get_user_by_username(username):
     if not username:
         return None
-    return db_session.query(User).filter(User.username == username).first()
+    school_id = get_current_school_id() or get_default_school_id()
+    if not school_id:
+        return None
+    return (
+        db_session.query(User)
+        .filter(User.username == username)
+        .first()
+    )
 
 
 def list_all_users():
@@ -36,6 +52,16 @@ def list_all_users():
 
 
 def create_user_record(username, password, display_name, role='user', status='active'):
+    school_id = get_current_school_id()
+    if not school_id:
+        school_id = get_default_school_id()
+    if not school_id:
+        from .schools import bootstrap_global_state
+
+        default_school = bootstrap_global_state()
+        school_id = default_school.id
+        set_default_school_id(school_id)
+
     existing = get_user_by_username(username)
     if existing:
         return existing
@@ -54,6 +80,20 @@ def create_user_record(username, password, display_name, role='user', status='ac
         db_session.commit()
     except Exception:
         db_session.rollback()
+        raise
+    try:
+        register_user_directory_entry(
+            school_id,
+            username,
+            password,
+            display_name,
+            role,
+            status,
+            user_ref=user.id,
+        )
+    except Exception:
+        db_session.delete(user)
+        db_session.commit()
         raise
     return user
 
@@ -80,6 +120,15 @@ def update_user_credentials(user, *, password=None, display_name=None, role=None
             except Exception:
                 db_session.rollback()
                 raise
+        entry = get_directory_entry(get_current_school_id(), user.username)
+        if entry:
+            sync_directory_entry(
+                entry,
+                password_hash=password if password is not None else None,
+                display_name=display_name,
+                role=role,
+                status=status,
+            )
     return user
 
 
@@ -148,8 +197,10 @@ def migrate_legacy_users(legacy_users):
 def create_invite_code_record(owner_user, issued_by_user, role='user'):
     code = str(uuid.uuid4())
     owner = owner_user or issued_by_user
+    school_id = get_current_school_id()
     invite = UserInviteCode(
         id=str(uuid.uuid4()),
+        school_id=school_id,
         user_id=owner.id,
         code=code,
         issued_by=issued_by_user.id,
@@ -174,6 +225,8 @@ def get_invite_code_record(code):
 
 def mark_invite_code_used(invite, used_by_user):
     invite.status = 'used'
+    if not invite.school_id:
+        invite.school_id = get_current_school_id()
     invite.user_id = used_by_user.id
     invite.used_by = used_by_user.id
     invite.used_at = _now_utc()

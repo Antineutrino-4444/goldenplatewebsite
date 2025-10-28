@@ -56,7 +56,8 @@ def _prepare_test_database():
             db_module = None
         else:
             db_module.db_session.remove()
-            db_module.engine.dispose()
+            if hasattr(db_module, 'dispose_all_engines'):
+                db_module.dispose_all_engines()
 
         if previous_database_url is None:
             os.environ.pop('DATABASE_URL', None)
@@ -86,30 +87,28 @@ def _clear_ticket_tables():
     from src.routes.golden_plate_recorder_db.db import (
         DraftPool,
         Session,
+        SessionDeleteRequest,
         SessionDrawEvent,
         SessionRecord,
         SessionTicketEvent,
         db_session,
+        get_default_school_id,
+        reset_current_school_id,
+        set_current_school_id,
     )
 
     # Delete in dependency order to avoid FK constraint issues.
-    for model in (SessionTicketEvent, SessionDrawEvent, SessionRecord, DraftPool):
-        db_session.query(model).delete()
+    token = set_current_school_id(get_default_school_id())
+    try:
+        for model in (SessionTicketEvent, SessionDrawEvent, SessionRecord, DraftPool):
+            db_session.query(model).delete()
 
-    db_session.query(Session).update({
-        Session.draw_number: 1,
-        Session.winner_student_id: None,
-        Session.method: None,
-        Session.finalized: 0,
-        Session.finalized_by: None,
-        Session.finalized_at: None,
-        Session.tickets_at_selection: None,
-        Session.probability_at_selection: None,
-        Session.eligible_pool_size: None,
-        Session.override_applied: 0,
-    })
+        db_session.query(SessionDeleteRequest).delete()
+        db_session.query(Session).delete()
 
-    db_session.commit()
+        db_session.commit()
+    finally:
+        reset_current_school_id(token)
 
 
 @pytest.fixture(autouse=True)

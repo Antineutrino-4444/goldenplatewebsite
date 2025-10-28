@@ -1,6 +1,9 @@
 import os
+import threading
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timezone
+from typing import Dict, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -15,39 +18,142 @@ from sqlalchemy import (
     inspect,
     text,
 )
-from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, scoped_session, sessionmaker
 
-DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///data/golden_plate_recorder.db')
-if DATABASE_URL.startswith('sqlite:///'):
-    db_path = DATABASE_URL.replace('sqlite:///', '', 1)
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
+from .global_db import School, global_db_session
 
-# Configure SQLite-specific settings for better concurrency
-connect_args = {}
-if DATABASE_URL.startswith('sqlite'):
-    connect_args = {
-        'check_same_thread': False,
-        'timeout': 30,  # Wait up to 30 seconds for locks to clear
-    }
+SCHOOL_DATABASE_DIR = os.environ.get('SCHOOL_DATABASE_DIR', 'data/schools')
+os.makedirs(SCHOOL_DATABASE_DIR, exist_ok=True)
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args=connect_args,
-    pool_pre_ping=True,  # Verify connections before using them
-    pool_recycle=3600,  # Recycle connections after 1 hour
-)
-SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-db_session = scoped_session(SessionFactory)
 Base = declarative_base()
+
+
+class _TenantSessionProxy:
+    """Proxy that dispatches ORM calls to the active school session."""
+
+    def __init__(self, registry: 'SchoolDatabaseRegistry') -> None:
+        self._registry = registry
+
+    def _current_session(self) -> Session:
+        school_id = get_current_school_id() or get_default_school_id()
+        if not school_id:
+            raise RuntimeError('No school context is active for this request')
+        return self._registry.get_session(school_id)
+
+    def remove(self) -> None:
+        school_id = get_current_school_id()
+        if school_id:
+            self._registry.remove_session(school_id)
+
+    def __getattr__(self, item):
+        session = self._current_session()
+        return getattr(session, item)
+
+
+class SchoolDatabaseRegistry:
+    """Manage SQLAlchemy sessions for school-scoped databases."""
+
+    def __init__(self) -> None:
+        self._engines: Dict[str, any] = {}
+        self._sessions: Dict[str, scoped_session] = {}
+        self._locks: Dict[str, threading.Lock] = {}
+
+    def _resolve_school(self, school_id: str) -> Optional[School]:
+        if not school_id:
+            return None
+        return global_db_session.query(School).filter(School.id == school_id).first()
+
+    def _create_engine_for_school(self, school: School):
+        if school.id in self._engines:
+            return
+
+        db_path = school.db_path
+        if not db_path:
+            raise RuntimeError(f'School {school.code} is missing a database path')
+
+        if not os.path.isabs(db_path):
+            db_path = os.path.join(SCHOOL_DATABASE_DIR, db_path)
+
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        database_url = f'sqlite:///{db_path}'
+        connect_args = {
+            'check_same_thread': False,
+            'timeout': 30,
+        }
+        engine = create_engine(
+            database_url,
+            connect_args=connect_args,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+        )
+        Base.metadata.create_all(bind=engine)
+        _migrate_draw_schema(engine)
+        _ensure_invite_schema(engine)
+        session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        self._engines[school.id] = engine
+        self._sessions[school.id] = scoped_session(session_factory)
+
+    def get_session(self, school_id: str) -> Session:
+        if not school_id:
+            raise RuntimeError('School identifier is required')
+
+        if school_id not in self._sessions:
+            lock = self._locks.setdefault(school_id, threading.Lock())
+            with lock:
+                if school_id not in self._sessions:
+                    school = self._resolve_school(school_id)
+                    if not school:
+                        raise RuntimeError(f'Unknown school id: {school_id}')
+                    self._create_engine_for_school(school)
+        return self._sessions[school_id]()
+
+    def remove_session(self, school_id: str) -> None:
+        session_factory = self._sessions.get(school_id)
+        if session_factory:
+            session_factory.remove()
+
+
+_school_context: ContextVar[Optional[str]] = ContextVar('school_context', default=None)
+DEFAULT_SCHOOL_ID: Optional[str] = None
+
+
+def set_current_school_id(school_id: Optional[str]):
+    return _school_context.set(school_id)
+
+
+def get_current_school_id() -> Optional[str]:
+    return _school_context.get()
+
+
+def reset_current_school_id(token) -> None:
+    _school_context.reset(token)
+
+
+def set_default_school_id(school_id: Optional[str]) -> None:
+    global DEFAULT_SCHOOL_ID
+    DEFAULT_SCHOOL_ID = school_id
+
+
+def get_default_school_id() -> Optional[str]:
+    return DEFAULT_SCHOOL_ID
+
+
+school_registry = SchoolDatabaseRegistry()
+db_session = _TenantSessionProxy(school_registry)
+
+
+def dispose_all_engines() -> None:
+    for session_factory in school_registry._sessions.values():
+        session_factory.remove()
+    for engine in school_registry._engines.values():
+        engine.dispose()
 
 
 def _now_utc():
     return datetime.now(timezone.utc)
 
 
-def _migrate_draw_schema() -> None:
+def _migrate_draw_schema(engine) -> None:
     """Ensure draw-related schema is embedded in the sessions table."""
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
@@ -216,7 +322,14 @@ def _migrate_draw_schema() -> None:
             connection.execute(text('DROP TABLE session_draws'))
 
 
-_migrate_draw_schema()
+def _ensure_invite_schema(engine) -> None:
+    inspector = inspect(engine)
+    if 'user_invite_codes' not in inspector.get_table_names():
+        return
+    invite_columns = {column['name'] for column in inspector.get_columns('user_invite_codes')}
+    if 'school_id' not in invite_columns:
+        with engine.begin() as connection:
+            connection.execute(text('ALTER TABLE user_invite_codes ADD COLUMN school_id TEXT'))
 
 
 class User(Base):
@@ -239,6 +352,7 @@ class UserInviteCode(Base):
     __table_args__ = (Index('idx_invite_codes_user', 'user_id', 'status'),)
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    school_id = Column(String, nullable=True)
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     code = Column(String, unique=True, nullable=False)
     issued_by = Column(String, ForeignKey('users.id'), nullable=False)
@@ -386,10 +500,7 @@ class SessionDeleteRequest(Base):
     rejection_reason = Column(Text)
 
 
-Base.metadata.create_all(bind=engine)
-
 __all__ = [
-    'DATABASE_URL',
     'Base',
     'DraftPool',
     'Session',
@@ -402,6 +513,12 @@ __all__ = [
     'User',
     'UserInviteCode',
     'db_session',
-    'engine',
+    'dispose_all_engines',
+    'get_current_school_id',
+    'get_default_school_id',
+    'reset_current_school_id',
+    'school_registry',
+    'set_current_school_id',
+    'set_default_school_id',
     '_now_utc',
 ]
