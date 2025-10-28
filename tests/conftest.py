@@ -75,7 +75,38 @@ def _prepare_test_database():
     return _finalize
 
 
+def _prepare_global_meta_database():
+    project_root = Path(__file__).resolve().parent.parent
+    db_path = project_root / 'data' / 'global_meta.db'
+
+    previous_database_url = os.environ.get('GLOBAL_META_DATABASE_URL')
+
+    test_dir = Path(tempfile.mkdtemp(prefix='goldenplate-global-meta-db-'))
+    test_db_path = test_dir / db_path.name
+    os.environ['GLOBAL_META_DATABASE_URL'] = f'sqlite:///{test_db_path.as_posix()}'
+
+    def _finalize() -> None:
+        try:
+            from src.routes.golden_plate_recorder_db import global_meta_db as global_meta_module
+        except Exception:  # pragma: no cover - defensive cleanup
+            global_meta_module = None
+        else:
+            global_meta_module.global_meta_session.remove()
+            global_meta_module.global_meta_engine.dispose()
+
+        if previous_database_url is None:
+            os.environ.pop('GLOBAL_META_DATABASE_URL', None)
+        else:
+            os.environ['GLOBAL_META_DATABASE_URL'] = previous_database_url
+
+        _cleanup_sqlite_sidecars(test_db_path)
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+    return _finalize
+
+
 _DB_CLEANUP_CALLBACK = _prepare_test_database()
+_GLOBAL_META_DB_CLEANUP = _prepare_global_meta_database()
 
 from src.main import app
 
@@ -96,18 +127,7 @@ def _clear_ticket_tables():
     for model in (SessionTicketEvent, SessionDrawEvent, SessionRecord, DraftPool):
         db_session.query(model).delete()
 
-    db_session.query(Session).update({
-        Session.draw_number: 1,
-        Session.winner_student_id: None,
-        Session.method: None,
-        Session.finalized: 0,
-        Session.finalized_by: None,
-        Session.finalized_at: None,
-        Session.tickets_at_selection: None,
-        Session.probability_at_selection: None,
-        Session.eligible_pool_size: None,
-        Session.override_applied: 0,
-    })
+    db_session.query(Session).delete()
 
     db_session.commit()
 
@@ -130,6 +150,8 @@ def _restore_database_after_tests():
     finally:
         if _DB_CLEANUP_CALLBACK:
             _DB_CLEANUP_CALLBACK()
+        if _GLOBAL_META_DB_CLEANUP:
+            _GLOBAL_META_DB_CLEANUP()
 
 
 @pytest.fixture

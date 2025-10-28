@@ -1,6 +1,7 @@
 import uuid
 
 from .db import User, UserInviteCode, _now_utc, db_session
+from .global_meta_db import seed_default_global_user, sync_superadmins_to_global_users
 
 DEFAULT_SUPERADMIN = {
     'username': 'antineutrino',
@@ -84,22 +85,28 @@ def update_user_credentials(user, *, password=None, display_name=None, role=None
 
 
 def ensure_default_superadmin():
+    seed_default_global_user()
+
     user = get_user_by_username(DEFAULT_SUPERADMIN['username'])
     if not user:
-        return create_user_record(
+        user = create_user_record(
             DEFAULT_SUPERADMIN['username'],
             DEFAULT_SUPERADMIN['password'],
             DEFAULT_SUPERADMIN['display_name'],
             role=DEFAULT_SUPERADMIN['role'],
             status=DEFAULT_SUPERADMIN['status'],
         )
-    return update_user_credentials(
-        user,
-        password=DEFAULT_SUPERADMIN['password'],
-        display_name=DEFAULT_SUPERADMIN['display_name'],
-        role=DEFAULT_SUPERADMIN['role'],
-        status=DEFAULT_SUPERADMIN['status'],
-    )
+    else:
+        user = update_user_credentials(
+            user,
+            password=DEFAULT_SUPERADMIN['password'],
+            display_name=DEFAULT_SUPERADMIN['display_name'],
+            role=DEFAULT_SUPERADMIN['role'],
+            status=DEFAULT_SUPERADMIN['status'],
+        )
+
+    migrate_superadmins_to_global_users()
+    return user
 
 
 def migrate_legacy_users(legacy_users):
@@ -143,6 +150,11 @@ def migrate_legacy_users(legacy_users):
     except Exception:
         db_session.rollback()
         raise
+
+
+def migrate_superadmins_to_global_users():
+    superadmins = db_session.query(User).filter(User.role == 'superadmin').all()
+    sync_superadmins_to_global_users(superadmins)
 
 
 def create_invite_code_record(owner_user, issued_by_user, role='user'):
@@ -255,6 +267,7 @@ __all__ = [
     'mark_invite_code_used',
     'migrate_legacy_invite_codes',
     'migrate_legacy_users',
+    'migrate_superadmins_to_global_users',
     'reset_user_store',
     'serialize_user_model',
     'update_user_credentials',
