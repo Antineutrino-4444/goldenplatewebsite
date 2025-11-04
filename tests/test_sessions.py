@@ -1,6 +1,7 @@
 import uuid
 
 from src.routes.golden_plate_recorder_db.db import (
+    Session as SessionModel,
     SessionDrawEvent,
     SessionRecord,
     User,
@@ -46,7 +47,10 @@ def test_custom_name_duplicate_rejected(client, login):
 
 def _seed_record_and_draw_event(session_id: str) -> None:
     user = db_session.query(User).filter_by(username='antineutrino').first()
+    session_model = db_session.query(SessionModel).filter_by(id=session_id).first()
+    school_id = session_model.school_id if session_model else (user.school_id if user else None)
     record = SessionRecord(
+        school_id=school_id,
         session_id=session_id,
         category='clean',
         grade='',
@@ -61,6 +65,7 @@ def _seed_record_and_draw_event(session_id: str) -> None:
     db_session.flush()
 
     event = SessionDrawEvent(
+        school_id=school_id,
         session_id=session_id,
         draw_number=1,
         event_type='draw',

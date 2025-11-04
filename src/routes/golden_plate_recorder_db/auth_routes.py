@@ -1,7 +1,7 @@
 from flask import jsonify, request, session
 
 from . import recorder_bp
-from .db import _now_utc, db_session
+from .db import DEFAULT_SCHOOL_ID, _now_utc, db_session
 from .security import get_current_user, is_guest, require_auth
 from .users import (
     create_user_record,
@@ -25,7 +25,10 @@ def login():
     if user.status != 'active':
         return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
 
+    session['user_uuid'] = user.id
     session['user_id'] = username
+    session['username'] = username
+    session['school_id'] = user.school_id
     user.last_login_at = _now_utc()
     user.updated_at = _now_utc()
     try:
@@ -39,7 +42,8 @@ def login():
         'user': {
             'username': username,
             'name': user.display_name,
-            'role': user.role
+            'role': user.role,
+            'school_id': user.school_id,
         }
     }), 200
 
@@ -48,6 +52,9 @@ def login():
 def logout():
     """User logout."""
     session.pop('user_id', None)
+    session.pop('user_uuid', None)
+    session.pop('username', None)
+    session.pop('school_id', None)
     session.pop('session_id', None)
     session.pop('guest_access', None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
@@ -57,12 +64,14 @@ def logout():
 def guest_login():
     """Guest login - allows viewing sessions without signup."""
     session['guest_access'] = True
+    session['school_id'] = DEFAULT_SCHOOL_ID
     return jsonify({
         'status': 'success',
         'user': {
             'username': 'guest',
             'name': 'Guest User',
-            'role': 'guest'
+            'role': 'guest',
+            'school_id': DEFAULT_SCHOOL_ID,
         }
     }), 200
 
@@ -101,7 +110,8 @@ def signup():
             password,
             name,
             role=invite.role or 'user',
-            status='active'
+            status='active',
+            school_id=invite.school_id,
         )
     except Exception:
         return jsonify({'error': 'Could not create user'}), 500
@@ -132,9 +142,10 @@ def auth_status():
         return jsonify({
             'authenticated': True,
             'user': {
-                'username': session['user_id'],
+                'username': session.get('username'),
                 'name': user['name'],
-                'role': user['role']
+                'role': user['role'],
+                'school_id': user['school_id'],
             }
         }), 200
     if is_guest():
@@ -143,7 +154,8 @@ def auth_status():
             'user': {
                 'username': 'guest',
                 'name': 'Guest User',
-                'role': 'guest'
+                'role': 'guest',
+                'school_id': session.get('school_id', DEFAULT_SCHOOL_ID)
             }
         }), 200
     return jsonify({'authenticated': False}), 200
