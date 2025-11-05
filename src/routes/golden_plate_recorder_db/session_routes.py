@@ -6,6 +6,7 @@ from datetime import datetime
 
 from flask import Response, jsonify, request, session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from . import recorder_bp
 from .db import (
@@ -25,11 +26,11 @@ from .storage import (
     ensure_session_structure,
     get_dirty_count,
     get_session_entry,
+    get_student_lookup_for_school,
     hydrate_session_from_db,
     save_delete_requests,
     save_session_data,
     session_data,
-    student_lookup,
     update_student_lookup,
 )
 from .utils import (
@@ -195,6 +196,9 @@ def create_session():
     session_id = str(uuid.uuid4())
     actor_id, actor_username, school_id = _get_request_actor()
 
+    base_name = None
+    counter = 1
+
     if custom_name:
         existing = db_session.query(SessionModel).filter_by(
             session_name=custom_name,
@@ -207,7 +211,6 @@ def create_session():
         now = datetime.now()
         base_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
         session_name = base_name
-        counter = 1
         while db_session.query(SessionModel).filter_by(
             session_name=session_name,
             school_id=school_id
@@ -215,24 +218,44 @@ def create_session():
             session_name = f"{base_name}_{counter}"
             counter += 1
 
-    new_session = SessionModel(
-        id=session_id,
-        school_id=school_id,
-        session_name=session_name,
-        created_by=actor_id,
-        is_public=1 if is_public else 0,
-        status='active',
-        clean_number=0,
-        dirty_number=0,
-        red_number=0,
-        faculty_number=0,
-        total_records=0,
-        total_clean=0,
-        total_dirty=0
-    )
+    def _make_session(name: str) -> SessionModel:
+        return SessionModel(
+            id=session_id,
+            school_id=school_id,
+            session_name=name,
+            created_by=actor_id,
+            is_public=1 if is_public else 0,
+            status='active',
+            clean_number=0,
+            dirty_number=0,
+            red_number=0,
+            faculty_number=0,
+            total_records=0,
+            total_clean=0,
+            total_dirty=0
+        )
 
+    new_session = _make_session(session_name)
     db_session.add(new_session)
-    db_session.commit()
+    try:
+        db_session.commit()
+    except IntegrityError:
+        db_session.rollback()
+        if base_name is None:
+            return jsonify({'error': 'Session name already exists'}), 400
+        while True:
+            candidate = f"{base_name}_{counter}"
+            counter += 1
+            if not db_session.query(SessionModel.id).filter_by(session_name=candidate, school_id=school_id).first():
+                session_name = candidate
+                break
+        new_session = _make_session(session_name)
+        db_session.add(new_session)
+        try:
+            db_session.commit()
+        except IntegrityError:
+            db_session.rollback()
+            return jsonify({'error': 'Could not allocate unique session name'}), 500
 
     # Keep backward compatibility with JSON storage for draw_info and other features
     session_data[session_id] = {
@@ -286,9 +309,10 @@ def list_sessions():
             return forbidden
 
     _, _, school_id = _get_request_actor()
+    delete_request_cache = save_delete_requests()
     current_delete_requests = [
-        req for req in save_delete_requests()
-        if req.get('session_id')
+        req for req in delete_request_cache
+        if req.get('session_id') and req.get('school_id') == school_id
     ]
 
     query = db_session.query(SessionModel).filter(SessionModel.school_id == school_id)
@@ -316,6 +340,8 @@ def list_sessions():
 
         # Get draw_info from JSON storage for backward compatibility
         json_data = session_data.get(db_sess.id, {})
+        if json_data.get('school_id') and json_data.get('school_id') != school_id:
+            json_data = {}
         draw_info = serialize_draw_info(json_data.get('draw_info', {}))
 
         pending = any(
@@ -415,7 +441,8 @@ def get_session_status():
         return jsonify({'error': 'No active session'}), 400
     
     session_id = session['session_id']
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    _, _, school_id = _get_request_actor()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
@@ -438,6 +465,8 @@ def get_session_status():
 
     # Get scan history count and draw_info from JSON storage for backward compatibility
     json_data = session_data.get(session_id, {})
+    if json_data.get('school_id') and json_data.get('school_id') != school_id:
+        json_data = {}
     ensure_session_structure(json_data)
     scan_history_count = len(json_data.get('scan_history', []))
     draw_info = serialize_draw_info(json_data.get('draw_info', {}))
@@ -469,8 +498,10 @@ def get_session_history():
     if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
+    _, _, school_id = _get_request_actor()
+
     data = get_session_entry(session_id)
-    if data is None:
+    if data is None or (data.get('school_id') and data.get('school_id') != school_id):
         return jsonify({'error': 'Session not found'}), 404
     if is_guest() and not data.get('is_public', True):
         return jsonify({'error': 'Access denied'}), 403
@@ -490,9 +521,10 @@ def get_scan_history():
         return jsonify({'error': 'No active session'}), 400
 
     session_id = session['session_id']
-    
+    _, _, school_id = _get_request_actor()
+
     # Verify session exists
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
     
@@ -504,7 +536,10 @@ def get_scan_history():
     records = (
         db_session.query(SessionRecord, Student)
         .outerjoin(Student, SessionRecord.student_id == Student.id)
-        .filter(SessionRecord.session_id == session_id)
+        .filter(
+            SessionRecord.session_id == session_id,
+            SessionRecord.school_id == school_id
+        )
         .order_by(SessionRecord.recorded_at.desc())
         .all()
     )
@@ -581,6 +616,7 @@ def record_student(category):
     provided_last = normalize_name(data.get('last_name') or data.get('last'))
 
     ensure_session_structure(session_info)
+    school_lookup = get_student_lookup_for_school(school_id)
 
     if category == 'dirty':
         new_count = session_info.get('dirty_count', 0) + 1
@@ -814,10 +850,12 @@ def record_student(category):
 
     student_record = build_student_record(student_obj)
 
-    if not student_record and provided_key and provided_key in student_lookup:
-        lookup_profile = student_lookup.get(provided_key)
+    if not student_record and provided_key:
+        lookup_profile = school_lookup.get(provided_key)
         if lookup_profile:
             dataset_match = True
+    else:
+        lookup_profile = None
 
     preferred_name = ''
     last_name = ''
@@ -1095,8 +1133,14 @@ def export_csv():
     if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
+    _, _, school_id = _get_request_actor()
+
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
     data = get_session_entry(session_id)
-    if data is None:
+    if data is None or (data.get('school_id') and data.get('school_id') != school_id):
         return jsonify({'error': 'Session not found'}), 404
 
     ensure_session_structure(data)
@@ -1150,8 +1194,14 @@ def export_detailed_csv():
     if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
+    _, _, school_id = _get_request_actor()
+
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
     data = get_session_entry(session_id)
-    if data is None:
+    if data is None or (data.get('school_id') and data.get('school_id') != school_id):
         return jsonify({'error': 'Session not found'}), 404
 
     ensure_session_structure(data)

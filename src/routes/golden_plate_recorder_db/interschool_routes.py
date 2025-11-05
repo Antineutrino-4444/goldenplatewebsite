@@ -102,7 +102,7 @@ def register_school():
         username=admin_username,
         password_hash=admin_password,
         display_name=admin_display_name,
-        role='admin',
+        role='superadmin',
         status='active',
         created_at=_now_utc(),
         updated_at=_now_utc(),

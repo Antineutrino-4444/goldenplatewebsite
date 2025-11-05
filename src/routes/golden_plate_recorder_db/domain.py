@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from .storage import ensure_session_structure, session_data, student_lookup
+from .storage import ensure_session_structure, get_student_lookup_for_school, session_data
 from .storage import get_dirty_count  # noqa: F401 - used externally
 from .utils import (
     extract_student_id_from_key,
@@ -11,13 +11,14 @@ from .utils import (
 )
 
 
-def build_profile_from_record(record):
+def build_profile_from_record(record, lookup_map=None):
     preferred = normalize_name(record.get('preferred_name') or record.get('first_name'))
     last = normalize_name(record.get('last_name'))
     student_id = normalize_name(record.get('student_id'))
     key = record.get('student_key') or make_student_key(preferred, last, student_id)
     if not student_id and key:
         student_id = extract_student_id_from_key(key)
+    lookup_map = lookup_map or {}
     profile = {
         'preferred_name': preferred,
         'last_name': last,
@@ -28,8 +29,8 @@ def build_profile_from_record(record):
         'student_id': student_id
     }
     profile['key'] = key
-    if key and key in student_lookup:
-        lookup = student_lookup[key]
+    if key and key in lookup_map:
+        lookup = lookup_map[key]
         for field in ['preferred_name', 'last_name', 'grade', 'advisor', 'house', 'clan', 'student_id']:
             if not profile.get(field):
                 profile[field] = lookup.get(field, '')
@@ -37,12 +38,13 @@ def build_profile_from_record(record):
     return profile
 
 
-def is_student_profile_eligible(profile):
+def is_student_profile_eligible(profile, lookup_map=None):
     key = profile.get('key')
     if not key:
         return False
-    if student_lookup:
-        return key in student_lookup
+    lookup_map = lookup_map or {}
+    if lookup_map:
+        return key in lookup_map
     return True
 
 
@@ -57,6 +59,8 @@ def compute_ticket_rollups():
     student_profiles = {}
     for session_id, info in ordered:
         ensure_session_structure(info)
+        school_id = info.get('school_id')
+        lookup_map = get_student_lookup_for_school(school_id)
         if info.get('is_discarded'):
             summaries[session_id] = {
                 'session_id': session_id,
@@ -77,18 +81,18 @@ def compute_ticket_rollups():
         present_keys = set()
         excluded_records = 0
         for record in info.get('clean_records', []):
-            profile = build_profile_from_record(record)
+            profile = build_profile_from_record(record, lookup_map)
             key = profile.get('key')
-            if not key or not is_student_profile_eligible(profile):
+            if not key or not is_student_profile_eligible(profile, lookup_map):
                 excluded_records += 1
                 continue
             present_keys.add(key)
             student_profiles[key] = profile
             current_tickets[key] = current_tickets.get(key, 0.0) + 1.0
         for record in info.get('red_records', []):
-            profile = build_profile_from_record(record)
+            profile = build_profile_from_record(record, lookup_map)
             key = profile.get('key')
-            if not key or not is_student_profile_eligible(profile):
+            if not key or not is_student_profile_eligible(profile, lookup_map):
                 excluded_records += 1
                 continue
             present_keys.add(key)

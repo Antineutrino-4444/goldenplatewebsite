@@ -5,7 +5,7 @@ from sqlalchemy import func
 
 from . import recorder_bp, storage
 from .db import Teacher, db_session
-from .security import require_admin, require_auth
+from .security import get_current_user, require_admin, require_auth
 from .storage import save_global_teacher_data, sync_teacher_table_from_list
 
 
@@ -14,6 +14,11 @@ def upload_teachers():
     """Upload teacher list (admin/super admin only)."""
     if not require_admin():
         return jsonify({'error': 'Admin or super admin access required'}), 403
+
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    school_id = current_user['school_id']
 
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
@@ -42,7 +47,7 @@ def upload_teachers():
             return jsonify({'error': 'No valid teacher names found in file'}), 400
 
         user_id = session['user_id']
-        storage.global_teacher_data = {
+        storage.global_teacher_data[school_id] = {
             'teachers': teachers,
             'uploaded_by': user_id,
             'uploaded_at': datetime.now().isoformat()
@@ -51,7 +56,7 @@ def upload_teachers():
         save_global_teacher_data()
 
         try:
-            teacher_sync = sync_teacher_table_from_list(teachers)
+            teacher_sync = sync_teacher_table_from_list(teachers, school_id=school_id)
             print(f"Teacher roster sync complete: {teacher_sync}")
         except Exception as exc:
             print(f"Error syncing teachers table: {exc}")
@@ -76,8 +81,14 @@ def get_teacher_names():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    school_id = current_user['school_id']
+
     teachers = (
         db_session.query(Teacher)
+        .filter(Teacher.school_id == school_id)
         .order_by(func.lower(Teacher.display_name), func.lower(Teacher.name))
         .all()
     )
@@ -109,10 +120,15 @@ def preview_teachers():
     if not require_admin():
         return jsonify({'error': 'Admin or super admin access required'}), 403
 
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    school_id = current_user['school_id']
+
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
 
-    base_query = db_session.query(Teacher)
+    base_query = db_session.query(Teacher).filter(Teacher.school_id == school_id)
     total_records = base_query.count()
 
     if total_records == 0:
@@ -136,7 +152,7 @@ def preview_teachers():
         'display_name': str(teacher.display_name or teacher.name or '').strip()
     } for teacher in teachers]
 
-    teacher_data = storage.global_teacher_data
+    teacher_data = storage.global_teacher_data.get(school_id, {})
 
     return jsonify({
         'status': 'success',
