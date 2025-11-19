@@ -22,6 +22,8 @@ export function usePlateApp() {
   const [schoolAdminUsername, setSchoolAdminUsername] = useState('')
   const [schoolAdminPassword, setSchoolAdminPassword] = useState('')
   const [schoolAdminDisplayName, setSchoolAdminDisplayName] = useState('')
+  const [guestSchoolSlug, setGuestSchoolSlug] = useState('')
+  const [showGuestSchoolDialog, setShowGuestSchoolDialog] = useState(false)
   
   // Session state
   const [sessionId, setSessionId] = useState(null)
@@ -273,6 +275,8 @@ export function usePlateApp() {
     setDiscardLoading(false)
     setIsDrawCenterCollapsed(false)
     setSchoolInviteLoading(false)
+    setShowGuestSchoolDialog(false)
+    setGuestSchoolSlug('')
   }
 
   const handlePostAuth = async (userPayload) => {
@@ -338,11 +342,18 @@ export function usePlateApp() {
   }
 
   const guestLogin = async () => {
+    const trimmedSlug = guestSchoolSlug.trim()
+    if (!trimmedSlug) {
+      showMessage('Enter a school slug to continue as guest', 'error')
+      return
+    }
+
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/auth/guest`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ school_slug: trimmedSlug })
       })
 
       const data = await response.json()
@@ -350,6 +361,8 @@ export function usePlateApp() {
         setUser(data.user)
         setIsAuthenticated(true)
         showMessage('Welcome, Guest! You can view sessions but cannot create or modify them.', 'info')
+        setGuestSchoolSlug('')
+        setShowGuestSchoolDialog(false)
         await handlePostAuth(data.user)
       } else {
         showMessage(data.error || 'Guest login failed', 'error')
@@ -496,6 +509,8 @@ export function usePlateApp() {
       setTeacherNames([])
       setLatestSchoolInvites([])
       setSchoolInviteLoading(false)
+  setShowGuestSchoolDialog(false)
+  setGuestSchoolSlug('')
       setShowSchoolRegistration(false)
       resetSchoolRegistrationForm()
       showMessage('Logged out successfully', 'info')
@@ -1706,20 +1721,20 @@ export function usePlateApp() {
     setSignupName,
     signupInviteCode,
     setSignupInviteCode,
-  showSchoolRegistration,
-  setShowSchoolRegistration,
-  schoolInviteCode,
-  setSchoolInviteCode,
-  schoolName,
-  setSchoolName,
-  schoolSlug,
-  setSchoolSlug,
-  schoolAdminUsername,
-  setSchoolAdminUsername,
-  schoolAdminPassword,
-  setSchoolAdminPassword,
-  schoolAdminDisplayName,
-  setSchoolAdminDisplayName,
+    showSchoolRegistration,
+    setShowSchoolRegistration,
+    schoolInviteCode,
+    setSchoolInviteCode,
+    schoolName,
+    setSchoolName,
+    schoolSlug,
+    setSchoolSlug,
+    schoolAdminUsername,
+    setSchoolAdminUsername,
+    schoolAdminPassword,
+    setSchoolAdminPassword,
+    schoolAdminDisplayName,
+    setSchoolAdminDisplayName,
     sessionId,
     setSessionId,
     sessionName,
@@ -1843,8 +1858,12 @@ export function usePlateApp() {
     checkAuthStatus,
     login,
     guestLogin,
+    guestSchoolSlug,
+    setGuestSchoolSlug,
+    showGuestSchoolDialog,
+    setShowGuestSchoolDialog,
     signup,
-  registerSchool,
+    registerSchool,
     logout,
     initializeSession,
     initializeInterschoolPortal,

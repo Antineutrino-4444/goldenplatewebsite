@@ -3,7 +3,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Copy, ListOrdered, LogOut, ShieldCheck, UserPlus } from 'lucide-react'
+import { Building2, Copy, ListOrdered, LogOut, ShieldCheck, UserPlus } from 'lucide-react'
 
 function InterschoolPortal({ app }) {
   const {
@@ -30,6 +30,12 @@ function InterschoolPortal({ app }) {
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
                 {user.name} ({user.username})
               </Badge>
+              {user?.school?.name && (
+                <Badge variant="secondary" className="flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                  <Building2 className="h-3.5 w-3.5" />
+                  {user.school.name}
+                </Badge>
+              )}
               <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200 uppercase tracking-wide">
                 Inter-School
               </Badge>

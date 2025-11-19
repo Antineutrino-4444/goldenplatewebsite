@@ -1,6 +1,7 @@
 import uuid
 
 from src.routes.golden_plate_recorder_db.db import (
+    DEFAULT_SCHOOL_SLUG,
     Session as SessionModel,
     SessionDrawEvent,
     SessionRecord,
@@ -22,7 +23,7 @@ def test_create_and_list_session(client, login):
 
 
 def test_guest_cannot_create_session(client):
-    client.post('/api/auth/guest')
+    client.post('/api/auth/guest', json={'school_slug': DEFAULT_SCHOOL_SLUG})
     resp = client.post('/api/session/create', json={'session_name': 'guest_session'})
     assert resp.status_code == 401
 

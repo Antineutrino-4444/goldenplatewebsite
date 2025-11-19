@@ -1,5 +1,6 @@
 import uuid
 
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from .db import (
@@ -42,6 +43,19 @@ def get_school_by_id(school_id):
     if not school_id:
         return None
     return db_session.query(School).filter(School.id == school_id).first()
+
+
+def get_school_by_slug(slug):
+    if not slug:
+        return None
+    normalized = slug.strip().lower()
+    if not normalized:
+        return None
+    return (
+        db_session.query(School)
+        .filter(func.lower(School.slug) == normalized)
+        .first()
+    )
 
 
 def get_user_by_id(user_id):
@@ -404,6 +418,8 @@ __all__ = [
     'create_user_record',
     'ensure_default_superadmin',
     'ensure_interschool_user',
+    'get_school_by_id',
+    'get_school_by_slug',
     'get_user_by_id',
     'get_invite_code_record',
     'get_school_invite_code_record',

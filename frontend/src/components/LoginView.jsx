@@ -13,6 +13,10 @@ function LoginView({ app }) {
     setLoginPassword,
     login,
     guestLogin,
+    guestSchoolSlug,
+    setGuestSchoolSlug,
+    showGuestSchoolDialog,
+    setShowGuestSchoolDialog,
     isLoading,
     showSignupDialog,
     setShowSignupDialog,
@@ -72,7 +76,7 @@ function LoginView({ app }) {
           </Button>
 
           <Button
-            onClick={guestLogin}
+            onClick={() => setShowGuestSchoolDialog(true)}
             variant="outline"
             className="w-full border-amber-600 text-amber-600 hover:bg-amber-50"
             disabled={isLoading}
@@ -101,6 +105,66 @@ function LoginView({ app }) {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={showGuestSchoolDialog}
+        onOpenChange={(open) => {
+          setShowGuestSchoolDialog(open)
+          if (!open) {
+            setGuestSchoolSlug('')
+          }
+        }}
+      >
+        <DialogContent dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle>Enter School Slug</DialogTitle>
+            <DialogDescription>
+              Provide the slug for the school you want to view as a guest.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="guest-school-slug">School Slug</Label>
+              <Input
+                id="guest-school-slug"
+                type="text"
+                placeholder="e.g., default"
+                value={guestSchoolSlug}
+                onChange={(e) => setGuestSchoolSlug(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    guestLogin()
+                  }
+                }}
+                autoFocus
+              />
+              <p className="text-xs text-gray-500">
+                Ask your administrator for the slug. Guest access is read-only.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowGuestSchoolDialog(false)
+                  setGuestSchoolSlug('')
+                }}
+                disabled={isLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-amber-600 hover:bg-amber-700"
+                onClick={guestLogin}
+                disabled={isLoading}
+              >
+                {isLoading ? 'Connecting...' : 'Continue as Guest'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showSignupDialog} onOpenChange={setShowSignupDialog}>
         <DialogContent dismissOnOverlayClick={false}>

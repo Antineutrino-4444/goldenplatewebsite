@@ -92,7 +92,9 @@ def admin_get_users():
         users_list.append({
             'username': user['username'],
             'name': user['name'],
-            'role': user['role']
+            'role': user['role'],
+            'status': user.get('status'),
+            'school': user.get('school')
         })
 
     return jsonify({'users': users_list}), 200
@@ -283,7 +285,9 @@ def admin_overview():
         users.append({
             'username': user['username'],
             'name': user['name'],
-            'role': user['role']
+            'role': user['role'],
+            'status': user.get('status'),
+            'school': user.get('school')
         })
 
     # Get sessions from database with cached counts
