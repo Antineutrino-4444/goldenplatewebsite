@@ -13,8 +13,8 @@ function LoginView({ app }) {
     setLoginPassword,
     login,
     guestLogin,
-    guestSchoolSlug,
-    setGuestSchoolSlug,
+    guestSchoolCode,
+    setGuestSchoolCode,
     showGuestSchoolDialog,
     setShowGuestSchoolDialog,
     isLoading,
@@ -111,26 +111,26 @@ function LoginView({ app }) {
         onOpenChange={(open) => {
           setShowGuestSchoolDialog(open)
           if (!open) {
-            setGuestSchoolSlug('')
+            setGuestSchoolCode('')
           }
         }}
       >
         <DialogContent dismissOnOverlayClick={false}>
           <DialogHeader>
-            <DialogTitle>Enter School Slug</DialogTitle>
+            <DialogTitle>Enter School Code</DialogTitle>
             <DialogDescription>
-              Provide the slug for the school you want to view as a guest.
+              Provide the code for the school you want to view as a guest.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="guest-school-slug">School Slug</Label>
+              <Label htmlFor="guest-school-code">School Code</Label>
               <Input
-                id="guest-school-slug"
+                id="guest-school-code"
                 type="text"
-                placeholder="e.g., default"
-                value={guestSchoolSlug}
-                onChange={(e) => setGuestSchoolSlug(e.target.value)}
+                placeholder="e.g., ABC123"
+                value={guestSchoolCode}
+                onChange={(e) => setGuestSchoolCode(e.target.value)}
                 onKeyPress={(e) => {
                   if (e.key === 'Enter') {
                     guestLogin()
@@ -139,7 +139,7 @@ function LoginView({ app }) {
                 autoFocus
               />
               <p className="text-xs text-gray-500">
-                Ask your administrator for the slug. Guest access is read-only.
+                Ask your administrator for the code. Guest access is read-only.
               </p>
             </div>
             <div className="flex gap-2">
@@ -148,7 +148,7 @@ function LoginView({ app }) {
                 className="flex-1"
                 onClick={() => {
                   setShowGuestSchoolDialog(false)
-                  setGuestSchoolSlug('')
+                  setGuestSchoolCode('')
                 }}
                 disabled={isLoading}
               >

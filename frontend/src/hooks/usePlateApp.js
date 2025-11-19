@@ -18,11 +18,11 @@ export function usePlateApp() {
   const [showSchoolRegistration, setShowSchoolRegistration] = useState(false)
   const [schoolInviteCode, setSchoolInviteCode] = useState('')
   const [schoolName, setSchoolName] = useState('')
-  const [schoolSlug, setSchoolSlug] = useState('')
+  const [schoolCode, setSchoolCode] = useState('')
   const [schoolAdminUsername, setSchoolAdminUsername] = useState('')
   const [schoolAdminPassword, setSchoolAdminPassword] = useState('')
   const [schoolAdminDisplayName, setSchoolAdminDisplayName] = useState('')
-  const [guestSchoolSlug, setGuestSchoolSlug] = useState('')
+  const [guestSchoolCode, setGuestSchoolCode] = useState('')
   const [showGuestSchoolDialog, setShowGuestSchoolDialog] = useState(false)
   
   // Session state
@@ -222,7 +222,7 @@ export function usePlateApp() {
   const resetSchoolRegistrationForm = () => {
     setSchoolInviteCode('')
     setSchoolName('')
-    setSchoolSlug('')
+    setSchoolCode('')
     setSchoolAdminUsername('')
     setSchoolAdminPassword('')
     setSchoolAdminDisplayName('')
@@ -276,7 +276,7 @@ export function usePlateApp() {
     setIsDrawCenterCollapsed(false)
     setSchoolInviteLoading(false)
     setShowGuestSchoolDialog(false)
-    setGuestSchoolSlug('')
+    setGuestSchoolCode('')
   }
 
   const handlePostAuth = async (userPayload) => {
@@ -342,18 +342,20 @@ export function usePlateApp() {
   }
 
   const guestLogin = async () => {
-    const trimmedSlug = guestSchoolSlug.trim()
-    if (!trimmedSlug) {
-      showMessage('Enter a school slug to continue as guest', 'error')
+    const trimmedCode = guestSchoolCode.trim()
+    if (!trimmedCode) {
+      showMessage('Enter a school code to continue as guest', 'error')
       return
     }
+
+    const payload = { school_code: trimmedCode, school_slug: trimmedCode }
 
     setIsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/auth/guest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ school_slug: trimmedSlug })
+        body: JSON.stringify(payload)
       })
 
       const data = await response.json()
@@ -361,7 +363,7 @@ export function usePlateApp() {
         setUser(data.user)
         setIsAuthenticated(true)
         showMessage('Welcome, Guest! You can view sessions but cannot create or modify them.', 'info')
-        setGuestSchoolSlug('')
+        setGuestSchoolCode('')
         setShowGuestSchoolDialog(false)
         await handlePostAuth(data.user)
       } else {
@@ -424,7 +426,7 @@ export function usePlateApp() {
   const registerSchool = async () => {
     const trimmedInviteCode = schoolInviteCode.trim()
     const trimmedSchoolName = schoolName.trim()
-    const trimmedSlug = schoolSlug.trim()
+    const trimmedCode = schoolCode.trim()
     const trimmedAdminUsername = schoolAdminUsername.trim()
     const trimmedAdminDisplayName = schoolAdminDisplayName.trim()
 
@@ -445,17 +447,23 @@ export function usePlateApp() {
 
     setIsLoading(true)
     try {
+      const payload = {
+        invite_code: trimmedInviteCode,
+        school_name: trimmedSchoolName,
+        admin_username: trimmedAdminUsername,
+        admin_password: schoolAdminPassword,
+        admin_display_name: trimmedAdminDisplayName
+      }
+
+      if (trimmedCode) {
+        payload.school_code = trimmedCode
+        payload.school_slug = trimmedCode
+      }
+
       const response = await fetch(`${API_BASE}/auth/register-school`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invite_code: trimmedInviteCode,
-          school_name: trimmedSchoolName,
-          school_slug: trimmedSlug,
-          admin_username: trimmedAdminUsername,
-          admin_password: schoolAdminPassword,
-          admin_display_name: trimmedAdminDisplayName
-        })
+        body: JSON.stringify(payload)
       })
 
       const data = await response.json()
@@ -509,8 +517,8 @@ export function usePlateApp() {
       setTeacherNames([])
       setLatestSchoolInvites([])
       setSchoolInviteLoading(false)
-  setShowGuestSchoolDialog(false)
-  setGuestSchoolSlug('')
+    setShowGuestSchoolDialog(false)
+    setGuestSchoolCode('')
       setShowSchoolRegistration(false)
       resetSchoolRegistrationForm()
       showMessage('Logged out successfully', 'info')
@@ -1727,8 +1735,8 @@ export function usePlateApp() {
     setSchoolInviteCode,
     schoolName,
     setSchoolName,
-    schoolSlug,
-    setSchoolSlug,
+    schoolCode,
+    setSchoolCode,
     schoolAdminUsername,
     setSchoolAdminUsername,
     schoolAdminPassword,
@@ -1858,8 +1866,8 @@ export function usePlateApp() {
     checkAuthStatus,
     login,
     guestLogin,
-    guestSchoolSlug,
-    setGuestSchoolSlug,
+    guestSchoolCode,
+    setGuestSchoolCode,
     showGuestSchoolDialog,
     setShowGuestSchoolDialog,
     signup,

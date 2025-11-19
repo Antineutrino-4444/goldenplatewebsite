@@ -10,8 +10,8 @@ function SchoolRegistration({ app }) {
     setSchoolInviteCode,
     schoolName,
     setSchoolName,
-    schoolSlug,
-    setSchoolSlug,
+    schoolCode,
+    setSchoolCode,
     schoolAdminUsername,
     setSchoolAdminUsername,
     schoolAdminPassword,
@@ -63,13 +63,13 @@ function SchoolRegistration({ app }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="school-slug">School URL Slug (optional)</Label>
+              <Label htmlFor="school-code">School Code (optional)</Label>
               <Input
-                id="school-slug"
+                id="school-code"
                 type="text"
-                placeholder="Lowercase letters and numbers only"
-                value={schoolSlug}
-                onChange={(e) => setSchoolSlug(e.target.value)}
+                placeholder="Shareable code for your school"
+                value={schoolCode}
+                onChange={(e) => setSchoolCode(e.target.value)}
               />
               <p className="text-xs text-gray-500">
                 Leave blank and we will generate one automatically.
