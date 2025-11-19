@@ -50,8 +50,8 @@ def _now_utc():
 
 
 DEFAULT_SCHOOL_ID = 'default-school'
-DEFAULT_SCHOOL_NAME = 'Default School'
-DEFAULT_SCHOOL_SLUG = 'default'
+DEFAULT_SCHOOL_NAME = "St. Andrew's College"
+DEFAULT_SCHOOL_SLUG = 'SAC'
 
 INTERSCHOOL_SCHOOL_ID = 'a11'
 INTERSCHOOL_SCHOOL_NAME = 'Inter-School Control'
