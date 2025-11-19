@@ -4,7 +4,7 @@ from flask import jsonify, request, session
 
 from . import recorder_bp
 from .db import db_session
-from .security import require_superadmin
+from .security import get_current_user, require_superadmin
 from .storage import save_session_data, session_data
 from .users import get_user_by_username, update_user_credentials
 
@@ -15,6 +15,7 @@ def change_user_role():
     if not require_superadmin():
         return jsonify({'error': 'Super admin access required'}), 403
 
+    current_user = get_current_user()
     current_username = session.get('user_id')
     data = request.get_json(silent=True) or {}
     target_username = data.get('username')
@@ -29,7 +30,7 @@ def change_user_role():
     if target_username == current_username:
         return jsonify({'error': 'Cannot change your own role'}), 400
 
-    target_user_model = get_user_by_username(target_username)
+    target_user_model = get_user_by_username(target_username, school_id=current_user['school_id'])
     if not target_user_model:
         return jsonify({'error': 'User not found'}), 404
 
@@ -47,6 +48,7 @@ def delete_user_account():
     if not require_superadmin():
         return jsonify({'error': 'Super admin access required'}), 403
 
+    current_user = get_current_user()
     current_username = session.get('user_id')
     data = request.get_json(silent=True) or {}
     target_username = data.get('username')
@@ -57,7 +59,7 @@ def delete_user_account():
     if target_username == current_username:
         return jsonify({'error': 'Cannot delete your own account'}), 400
 
-    target_user_model = get_user_by_username(target_username)
+    target_user_model = get_user_by_username(target_username, school_id=current_user['school_id'])
     if not target_user_model:
         return jsonify({'error': 'User not found'}), 404
 
@@ -72,7 +74,10 @@ def delete_user_account():
     if os.path.exists(legacy_file):
         os.remove(legacy_file)
 
-    sessions_to_remove = [sid for sid, info in session_data.items() if info.get('owner') == target_username]
+    sessions_to_remove = [
+        sid for sid, info in session_data.items()
+        if info.get('owner') == target_username and info.get('school_id') == current_user['school_id']
+    ]
     for session_id in sessions_to_remove:
         session_data.pop(session_id, None)
     save_session_data()

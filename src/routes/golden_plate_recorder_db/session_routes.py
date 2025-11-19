@@ -6,9 +6,11 @@ from datetime import datetime
 
 from flask import Response, jsonify, request, session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from . import recorder_bp
 from .db import (
+    DEFAULT_SCHOOL_ID,
     Session as SessionModel,
     SessionDeleteRequest,
     SessionDrawEvent,
@@ -18,17 +20,17 @@ from .db import (
     db_session,
 )
 from .domain import serialize_draw_info
-from .security import get_current_user, is_guest, require_admin, require_auth, require_auth_or_guest
+from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
 from .storage import (
     delete_requests,
     ensure_session_structure,
     get_dirty_count,
     get_session_entry,
+    get_student_lookup_for_school,
     hydrate_session_from_db,
     save_delete_requests,
     save_session_data,
     session_data,
-    student_lookup,
     update_student_lookup,
 )
 from .utils import (
@@ -38,6 +40,23 @@ from .utils import (
     normalize_name,
     split_student_key,
 )
+
+
+def _get_request_actor():
+    user = get_current_user()
+    if user:
+        return user['id'], user['username'], user['school_id']
+    return (
+        session.get('user_uuid'),
+        session.get('username') or session.get('user_id'),
+        session.get('school_id', DEFAULT_SCHOOL_ID),
+    )
+
+
+def _forbid_interschool_accounts():
+    if is_interschool_user():
+        return jsonify({'error': 'Inter-school accounts cannot manage sessions'}), 403
+    return None
 
 
 def _delete_session_with_dependencies(db_sess):
@@ -71,13 +90,19 @@ def request_delete_session():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
+    forbidden = _forbid_interschool_accounts()
+    if forbidden:
+        return forbidden
+
     data = request.get_json() or {}
     session_id = data.get('session_id')
 
     if not session_id:
         return jsonify({'error': 'Session ID is required'}), 400
 
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    actor_id, actor_username, school_id = _get_request_actor()
+
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
@@ -96,6 +121,7 @@ def request_delete_session():
         db_session.query(SessionDeleteRequest)
         .filter(
             SessionDeleteRequest.session_id == session_id,
+            SessionDeleteRequest.school_id == school_id,
             SessionDeleteRequest.status == 'pending'
         )
         .first()
@@ -104,8 +130,9 @@ def request_delete_session():
         return jsonify({'error': 'Delete request already submitted for this session'}), 400
 
     new_request = SessionDeleteRequest(
+        school_id=school_id,
         session_id=session_id,
-        requested_by=current_user['id'],
+        requested_by=actor_id,
         status='pending'
     )
 
@@ -124,8 +151,8 @@ def request_delete_session():
             'id': new_request.id,
             'session_id': session_id,
             'session_name': db_sess.session_name,
-            'requester_id': current_user['id'],
-            'requester': current_user['username'],
+            'requester_id': actor_id,
+            'requester': actor_username,
             'requester_name': current_user['name'],
             'requested_at': new_request.requested_at.isoformat() if new_request.requested_at else _now_utc().isoformat(),
             'status': new_request.status,
@@ -142,6 +169,7 @@ def request_delete_session():
             'dirty_records': db_sess.dirty_number or 0,
             'red_records': db_sess.red_number or 0,
             'faculty_clean_records': db_sess.faculty_number or 0,
+            'school_id': school_id,
         }
 
     return jsonify({
@@ -157,14 +185,25 @@ def create_session():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
+    forbidden = _forbid_interschool_accounts()
+    if forbidden:
+        return forbidden
+
     data = request.get_json(silent=True) or {}
     custom_name = data.get('session_name', '').strip()
     is_public = data.get('is_public', True)
 
     session_id = str(uuid.uuid4())
+    actor_id, actor_username, school_id = _get_request_actor()
+
+    base_name = None
+    counter = 1
 
     if custom_name:
-        existing = db_session.query(SessionModel).filter_by(session_name=custom_name).first()
+        existing = db_session.query(SessionModel).filter_by(
+            session_name=custom_name,
+            school_id=school_id
+        ).first()
         if existing:
             return jsonify({'error': 'Session name already exists'}), 400
         session_name = custom_name
@@ -172,33 +211,57 @@ def create_session():
         now = datetime.now()
         base_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
         session_name = base_name
-        counter = 1
-        while db_session.query(SessionModel).filter_by(session_name=session_name).first():
+        while db_session.query(SessionModel).filter_by(
+            session_name=session_name,
+            school_id=school_id
+        ).first():
             session_name = f"{base_name}_{counter}"
             counter += 1
 
-    new_session = SessionModel(
-        id=session_id,
-        session_name=session_name,
-        created_by=session['user_id'],
-        is_public=1 if is_public else 0,
-        status='active',
-        clean_number=0,
-        dirty_number=0,
-        red_number=0,
-        faculty_number=0,
-        total_records=0,
-        total_clean=0,
-        total_dirty=0
-    )
+    def _make_session(name: str) -> SessionModel:
+        return SessionModel(
+            id=session_id,
+            school_id=school_id,
+            session_name=name,
+            created_by=actor_id,
+            is_public=1 if is_public else 0,
+            status='active',
+            clean_number=0,
+            dirty_number=0,
+            red_number=0,
+            faculty_number=0,
+            total_records=0,
+            total_clean=0,
+            total_dirty=0
+        )
 
+    new_session = _make_session(session_name)
     db_session.add(new_session)
-    db_session.commit()
+    try:
+        db_session.commit()
+    except IntegrityError:
+        db_session.rollback()
+        if base_name is None:
+            return jsonify({'error': 'Session name already exists'}), 400
+        while True:
+            candidate = f"{base_name}_{counter}"
+            counter += 1
+            if not db_session.query(SessionModel.id).filter_by(session_name=candidate, school_id=school_id).first():
+                session_name = candidate
+                break
+        new_session = _make_session(session_name)
+        db_session.add(new_session)
+        try:
+            db_session.commit()
+        except IntegrityError:
+            db_session.rollback()
+            return jsonify({'error': 'Could not allocate unique session name'}), 500
 
     # Keep backward compatibility with JSON storage for draw_info and other features
     session_data[session_id] = {
         'session_name': session_name,
-        'owner': session['user_id'],
+        'owner': actor_username,
+        'school_id': school_id,
         'created_at': new_session.created_at.isoformat(),
         'clean_records': [],
         'dirty_count': 0,
@@ -230,7 +293,7 @@ def create_session():
     return jsonify({
         'session_id': session_id,
         'session_name': session_name,
-        'owner': session['user_id']
+        'owner': actor_username
     }), 200
 
 
@@ -240,9 +303,19 @@ def list_sessions():
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    current_delete_requests = save_delete_requests()
+    if not is_guest():
+        forbidden = _forbid_interschool_accounts()
+        if forbidden:
+            return forbidden
 
-    query = db_session.query(SessionModel)
+    _, _, school_id = _get_request_actor()
+    delete_request_cache = save_delete_requests()
+    current_delete_requests = [
+        req for req in delete_request_cache
+        if req.get('session_id') and req.get('school_id') == school_id
+    ]
+
+    query = db_session.query(SessionModel).filter(SessionModel.school_id == school_id)
     
     # Filter out non-public sessions for guests
     if is_guest():
@@ -267,6 +340,8 @@ def list_sessions():
 
         # Get draw_info from JSON storage for backward compatibility
         json_data = session_data.get(db_sess.id, {})
+        if json_data.get('school_id') and json_data.get('school_id') != school_id:
+            json_data = {}
         draw_info = serialize_draw_info(json_data.get('draw_info', {}))
 
         pending = any(
@@ -292,7 +367,7 @@ def list_sessions():
 
     return jsonify({
         'sessions': user_sessions,
-        'has_global_csv': db_session.query(Student.id).first() is not None
+        'has_global_csv': db_session.query(Student.id).filter(Student.school_id == school_id).first() is not None
     }), 200
 
 
@@ -302,7 +377,14 @@ def switch_session(session_id):
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    _, _, school_id = _get_request_actor()
+
+    if not is_guest():
+        forbidden = _forbid_interschool_accounts()
+        if forbidden:
+            return forbidden
+
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
@@ -326,13 +408,18 @@ def delete_session(session_id):
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    forbidden = _forbid_interschool_accounts()
+    if forbidden:
+        return forbidden
+
+    actor_id, _, school_id = _get_request_actor()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
     current_user = get_current_user()
 
-    if current_user['role'] == 'user' and db_sess.created_by != session['user_id']:
+    if current_user['role'] == 'user' and db_sess.created_by != actor_id:
         return jsonify({'error': 'You can only delete sessions that you created'}), 403
 
     session_name = _delete_session_with_dependencies(db_sess)
@@ -354,7 +441,8 @@ def get_session_status():
         return jsonify({'error': 'No active session'}), 400
     
     session_id = session['session_id']
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    _, _, school_id = _get_request_actor()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
@@ -377,6 +465,8 @@ def get_session_status():
 
     # Get scan history count and draw_info from JSON storage for backward compatibility
     json_data = session_data.get(session_id, {})
+    if json_data.get('school_id') and json_data.get('school_id') != school_id:
+        json_data = {}
     ensure_session_structure(json_data)
     scan_history_count = len(json_data.get('scan_history', []))
     draw_info = serialize_draw_info(json_data.get('draw_info', {}))
@@ -408,8 +498,10 @@ def get_session_history():
     if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
+    _, _, school_id = _get_request_actor()
+
     data = get_session_entry(session_id)
-    if data is None:
+    if data is None or (data.get('school_id') and data.get('school_id') != school_id):
         return jsonify({'error': 'Session not found'}), 404
     if is_guest() and not data.get('is_public', True):
         return jsonify({'error': 'Access denied'}), 403
@@ -429,9 +521,10 @@ def get_scan_history():
         return jsonify({'error': 'No active session'}), 400
 
     session_id = session['session_id']
-    
+    _, _, school_id = _get_request_actor()
+
     # Verify session exists
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
     
@@ -443,7 +536,10 @@ def get_scan_history():
     records = (
         db_session.query(SessionRecord, Student)
         .outerjoin(Student, SessionRecord.student_id == Student.id)
-        .filter(SessionRecord.session_id == session_id)
+        .filter(
+            SessionRecord.session_id == session_id,
+            SessionRecord.school_id == school_id
+        )
         .order_by(SessionRecord.recorded_at.desc())
         .all()
     )
@@ -494,6 +590,12 @@ def record_student(category):
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
+    forbidden = _forbid_interschool_accounts()
+    if forbidden:
+        return forbidden
+
+    actor_id, actor_username, school_id = _get_request_actor()
+
     session_id = session.get('session_id')
     if not session_id:
         return jsonify({'error': 'No active session'}), 400
@@ -514,6 +616,7 @@ def record_student(category):
     provided_last = normalize_name(data.get('last_name') or data.get('last'))
 
     ensure_session_structure(session_info)
+    school_lookup = get_student_lookup_for_school(school_id)
 
     if category == 'dirty':
         new_count = session_info.get('dirty_count', 0) + 1
@@ -521,7 +624,7 @@ def record_student(category):
         record = {
             'category': 'dirty',
             'timestamp': datetime.now().isoformat(),
-            'recorded_by': session['user_id'],
+                'recorded_by': actor_username,
             'display_name': f"Dirty Plate #{new_count}"
         }
         session_info['scan_history'].append(record)
@@ -530,16 +633,17 @@ def record_student(category):
         # Save to database
         dedupe_key = f"dirty_{new_count}_{datetime.now().isoformat()}"
         db_record = SessionRecord(
+            school_id=school_id,
             session_id=session_id,
             category='dirty',
-            recorded_by=session['user_id'],
+                recorded_by=actor_id,
             is_manual_entry=0,
             dedupe_key=dedupe_key
         )
         db_session.add(db_record)
         
         # Update session counts
-        db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+        db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
         if db_sess:
             db_sess.dirty_number = (db_sess.dirty_number or 0) + 1
             db_sess.total_dirty = (db_sess.total_dirty or 0) + 1
@@ -579,10 +683,15 @@ def record_student(category):
         # Also check database for duplicates
         if not duplicate_check:
             dedupe_key_to_check = f"faculty_{preferred_name.lower()}_{last_name.lower()}"
-            existing_db_record = db_session.query(SessionRecord).filter_by(
-                session_id=session_id,
-                dedupe_key=dedupe_key_to_check
-            ).first()
+            existing_db_record = (
+                db_session.query(SessionRecord)
+                .filter(
+                    SessionRecord.session_id == session_id,
+                    SessionRecord.school_id == school_id,
+                    SessionRecord.dedupe_key == dedupe_key_to_check
+                )
+                .first()
+            )
             if existing_db_record:
                 duplicate_check = True
 
@@ -602,7 +711,7 @@ def record_student(category):
             'clan': '',
             'category': 'faculty',
             'timestamp': datetime.now().isoformat(),
-            'recorded_by': session['user_id'],
+                'recorded_by': actor_username,
             'is_manual_entry': True
         }
         session_info['faculty_clean_records'].append(record)
@@ -612,11 +721,12 @@ def record_student(category):
         # Save to database
         dedupe_key = f"faculty_{preferred_name.lower()}_{last_name.lower()}"
         db_record = SessionRecord(
+            school_id=school_id,
             session_id=session_id,
             category='faculty',
             grade='',
             house='',
-            recorded_by=session['user_id'],
+            recorded_by=actor_id,
             is_manual_entry=1,
             dedupe_key=dedupe_key,
             preferred_name=preferred_name,
@@ -625,7 +735,7 @@ def record_student(category):
         db_session.add(db_record)
         
         # Update session counts
-        db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+        db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
         if db_sess:
             db_sess.faculty_number = (db_sess.faculty_number or 0) + 1
             db_sess.total_clean = (db_sess.total_clean or 0) + 1
@@ -641,7 +751,7 @@ def record_student(category):
             'last_name': last_name,
             'category': 'faculty',
             'is_manual_entry': True,
-            'recorded_by': session['user_id']
+            'recorded_by': actor_username
         }), 200
 
     has_reference = bool(
@@ -695,7 +805,10 @@ def record_student(category):
     if normalized_ids:
         student_obj = (
             db_session.query(Student)
-            .filter(Student.student_identifier.in_(normalized_ids))
+            .filter(
+                Student.school_id == school_id,
+                Student.student_identifier.in_(normalized_ids)
+            )
             .first()
         )
         if student_obj:
@@ -727,6 +840,7 @@ def record_student(category):
     if not student_obj and candidate_preferred and candidate_last:
         student_obj = (
             db_session.query(Student)
+            .filter(Student.school_id == school_id)
             .filter(func.lower(Student.preferred_name) == candidate_preferred.lower())
             .filter(func.lower(Student.last_name) == candidate_last.lower())
             .first()
@@ -736,10 +850,12 @@ def record_student(category):
 
     student_record = build_student_record(student_obj)
 
-    if not student_record and provided_key and provided_key in student_lookup:
-        lookup_profile = student_lookup.get(provided_key)
+    if not student_record and provided_key:
+        lookup_profile = school_lookup.get(provided_key)
         if lookup_profile:
             dataset_match = True
+    else:
+        lookup_profile = None
 
     preferred_name = ''
     last_name = ''
@@ -856,10 +972,15 @@ def record_student(category):
     # Also check database for duplicates
     if not duplicate_check:
         dedupe_key_to_check = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
-        existing_db_record = db_session.query(SessionRecord).filter_by(
-            session_id=session_id,
-            dedupe_key=dedupe_key_to_check
-        ).first()
+        existing_db_record = (
+            db_session.query(SessionRecord)
+            .filter(
+                SessionRecord.school_id == school_id,
+                SessionRecord.session_id == session_id,
+                SessionRecord.dedupe_key == dedupe_key_to_check
+            )
+            .first()
+        )
         if existing_db_record:
             duplicate_check = True
 
@@ -876,10 +997,15 @@ def record_student(category):
         # If not found in JSON, check database
         if not existing_category:
             dedupe_key_to_check = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
-            db_record = db_session.query(SessionRecord).filter_by(
-                session_id=session_id,
-                dedupe_key=dedupe_key_to_check
-            ).first()
+            db_record = (
+                db_session.query(SessionRecord)
+                .filter(
+                    SessionRecord.school_id == school_id,
+                    SessionRecord.session_id == session_id,
+                    SessionRecord.dedupe_key == dedupe_key_to_check
+                )
+                .first()
+            )
             if db_record:
                 existing_category = db_record.category
 
@@ -900,7 +1026,7 @@ def record_student(category):
         'student_key': student_key,
         'category': category,
         'timestamp': datetime.now().isoformat(),
-        'recorded_by': session['user_id'],
+        'recorded_by': actor_username,
         'is_manual_entry': is_manual_entry
     }
 
@@ -913,9 +1039,14 @@ def record_student(category):
     db_student = None
     lookup_refresh_needed = False
     if student_id:
-        db_student = db_session.query(Student).filter_by(student_identifier=student_id).first()
+        db_student = (
+            db_session.query(Student)
+            .filter_by(student_identifier=student_id, school_id=school_id)
+            .first()
+        )
         if not db_student:
             db_student = Student(
+                school_id=school_id,
                 student_identifier=student_id,
                 preferred_name=preferred_name,
                 last_name=last_name,
@@ -932,12 +1063,13 @@ def record_student(category):
     dedupe_key = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
     
     db_record = SessionRecord(
+        school_id=school_id,
         session_id=session_id,
         student_id=db_student.id if db_student else None,
         category=category,
         grade=grade,
         house=house,
-        recorded_by=session['user_id'],
+        recorded_by=actor_id,
         is_manual_entry=1 if is_manual_entry else 0,
         dedupe_key=dedupe_key,
         preferred_name=preferred_name,
@@ -947,7 +1079,7 @@ def record_student(category):
     db_session.flush()  # Flush to get db_record.id
     
     # Update session counts
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     if db_sess:
         if category == 'clean':
             db_sess.clean_number = (db_sess.clean_number or 0) + 1
@@ -967,7 +1099,7 @@ def record_student(category):
             student_id=db_student.id,
             category=category,
             session_record_id=db_record.id,
-            user_id=session['user_id']
+            user_id=actor_id
         )
     
     db_session.commit()
@@ -987,7 +1119,7 @@ def record_student(category):
         'student_key': student_key,
         'category': category,
         'is_manual_entry': is_manual_entry,
-        'recorded_by': session['user_id']
+        'recorded_by': actor_username
     }), 200
 
 
@@ -1001,8 +1133,14 @@ def export_csv():
     if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
+    _, _, school_id = _get_request_actor()
+
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
     data = get_session_entry(session_id)
-    if data is None:
+    if data is None or (data.get('school_id') and data.get('school_id') != school_id):
         return jsonify({'error': 'Session not found'}), 404
 
     ensure_session_structure(data)
@@ -1056,8 +1194,14 @@ def export_detailed_csv():
     if not session_id:
         return jsonify({'error': 'No active session'}), 400
 
+    _, _, school_id = _get_request_actor()
+
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
     data = get_session_entry(session_id)
-    if data is None:
+    if data is None or (data.get('school_id') and data.get('school_id') != school_id):
         return jsonify({'error': 'Session not found'}), 404
 
     ensure_session_structure(data)

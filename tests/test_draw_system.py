@@ -195,8 +195,13 @@ class TestDrawOperations:
         assert draw_response.status_code == 200
 
         # After winning, candidate list should now be empty (tickets reset)
+        finalize_response = client.post(f'/api/session/{session_id}/draw/finalize')
+        assert finalize_response.status_code == 200
+
         summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
-        assert summary['candidates'] == []
+        remaining = summary['candidates']
+        assert all(candidate['student_identifier'] != '101' for candidate in remaining)
+        assert not remaining  # Only winner had tickets, so list should be empty
 
     def test_draw_fails_without_eligible_students(self, client, login):
         """Draw fails when no students have tickets."""
@@ -240,7 +245,9 @@ class TestDrawOperations:
         # Override winner should no longer hold tickets after reset
         summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
         print(summary)
-        assert summary['candidates'] == []
+        remaining = summary['candidates']
+        assert all(candidate['student_identifier'] != '101' for candidate in remaining)
+        assert any(candidate['student_identifier'] == '102' for candidate in remaining)
 
     def test_finalize_resets_winner_tickets(self, client, login):
         """Finalizing a draw resets winner's tickets to 0."""

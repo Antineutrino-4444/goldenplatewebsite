@@ -44,3 +44,27 @@ def test_invite_signup_flow(client, login):
     delete = client.post('/api/superadmin/delete-account', json={'username': 'pytestuser'})
     assert delete.status_code == 200
 
+
+def test_admin_users_include_school_metadata(client, login):
+    login()
+    resp = client.get('/api/admin/users')
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload and 'users' in payload and payload['users'], 'Expected users list in response'
+    super_admin = next((user for user in payload['users'] if user['username'] == 'antineutrino'), payload['users'][0])
+    assert 'school' in super_admin
+    assert super_admin['school'] is None or 'name' in super_admin['school']
+    assert 'status' in super_admin
+
+
+def test_admin_overview_includes_school_metadata(client, login):
+    login()
+    resp = client.get('/api/admin/overview')
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload and 'users' in payload and payload['users'], 'Expected users list in overview response'
+    first_user = payload['users'][0]
+    assert 'school' in first_user
+    assert first_user['school'] is None or 'name' in first_user['school']
+    assert 'status' in first_user
+

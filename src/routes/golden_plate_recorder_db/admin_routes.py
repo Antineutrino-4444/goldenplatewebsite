@@ -28,6 +28,7 @@ def manage_account_status():
         return jsonify({'error': 'Authentication required'}), 401
 
     current_user = get_current_user()
+    current_school_id = current_user['school_id']
     data = request.get_json() or {}
     target_username = data.get('username')
     new_status = data.get('status')
@@ -35,14 +36,14 @@ def manage_account_status():
     if not target_username or not new_status:
         return jsonify({'error': 'Username and status are required'}), 400
 
-    target_user_model = get_user_by_username(target_username)
+    target_user_model = get_user_by_username(target_username, school_id=current_school_id)
     if not target_user_model:
         return jsonify({'error': 'User not found'}), 404
 
     target_role = target_user_model.role
 
     if current_user['role'] == 'superadmin':
-        if target_username == session['user_id']:
+        if target_username == session.get('username'):
             return jsonify({'error': 'Cannot modify your own account status'}), 403
     elif current_user['role'] == 'admin':
         if target_role in ['superadmin', 'admin']:
@@ -67,8 +68,12 @@ def get_delete_requests():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
+    current_school_id = get_current_user()['school_id']
     refreshed_requests = save_delete_requests()
-    pending_requests = [req for req in refreshed_requests if req.get('status') == 'pending']
+    pending_requests = [
+        req for req in refreshed_requests
+        if req.get('status') == 'pending' and req.get('school_id') == current_school_id
+    ]
     return jsonify({
         'status': 'success',
         'requests': pending_requests
@@ -82,11 +87,14 @@ def admin_get_users():
         return jsonify({'error': 'Admin access required'}), 403
 
     users_list = []
-    for user in list_all_users():
+    current_school_id = get_current_user()['school_id']
+    for user in list_all_users(school_id=current_school_id):
         users_list.append({
             'username': user['username'],
             'name': user['name'],
-            'role': user['role']
+            'role': user['role'],
+            'status': user.get('status'),
+            'school': user.get('school')
         })
 
     return jsonify({'users': users_list}), 200
@@ -98,11 +106,12 @@ def admin_create_invite():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    issuer = get_user_by_username(session.get('user_id'))
+    current_user = get_current_user()
+    issuer = get_user_by_username(current_user['username'], school_id=current_user['school_id'])
     if not issuer:
         return jsonify({'error': 'Unable to locate issuing user'}), 500
 
-    invite = create_invite_code_record(issuer, issuer, role='user')
+    invite = create_invite_code_record(issuer, issuer, role='user', school_id=issuer.school_id)
     return jsonify({'status': 'success', 'invite_code': invite.code}), 201
 
 
@@ -112,20 +121,29 @@ def admin_get_all_sessions():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
+    current_school_id = get_current_user()['school_id']
+    db_sessions = (
+        db.query(SessionModel)
+        .filter(SessionModel.school_id == current_school_id)
+        .order_by(SessionModel.created_at.desc())
+        .all()
+    )
+
     all_sessions = []
-    for session_id, data in session_data.items():
-        ensure_session_structure(data)
-        total_records = len(data['clean_records']) + get_dirty_count(data) + len(data['red_records'])
+    for db_sess in db_sessions:
+        json_data = session_data.get(db_sess.id, {})
+        ensure_session_structure(json_data)
+        total_records = db_sess.total_records or 0
         all_sessions.append({
-            'session_id': session_id,
-            'session_name': data['session_name'],
-            'owner': data.get('owner', 'unknown'),
-            'created_at': data.get('created_at', 'unknown'),
+            'session_id': db_sess.id,
+            'session_name': db_sess.session_name,
+            'owner': json_data.get('owner', db_sess.created_by),
+            'created_at': db_sess.created_at.isoformat() if db_sess.created_at else json_data.get('created_at', 'unknown'),
             'total_records': total_records,
-            'clean_count': len(data['clean_records']),
-            'dirty_count': get_dirty_count(data),
-            'red_count': len(data['red_records']),
-            'faculty_clean_count': len(data.get('faculty_clean_records', []))
+            'clean_count': db_sess.clean_number or 0,
+            'dirty_count': (db_sess.dirty_number or 0) + (db_sess.red_number or 0),
+            'red_count': db_sess.red_number or 0,
+            'faculty_clean_count': db_sess.faculty_number or 0
         })
 
     return jsonify({'sessions': all_sessions}), 200
@@ -137,7 +155,8 @@ def admin_delete_session(session_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    db_sess = db.query(SessionModel).filter_by(id=session_id).first()
+    current_user = get_current_user()
+    db_sess = db.query(SessionModel).filter_by(id=session_id, school_id=current_user['school_id']).first()
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
@@ -156,7 +175,12 @@ def approve_delete_request(request_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    request_model = db.query(SessionDeleteRequest).filter_by(id=request_id).first()
+    current_user = get_current_user()
+    request_model = (
+        db.query(SessionDeleteRequest)
+        .filter_by(id=request_id, school_id=current_user['school_id'])
+        .first()
+    )
     if not request_model:
         return jsonify({'error': 'Delete request not found'}), 404
 
@@ -164,9 +188,7 @@ def approve_delete_request(request_id):
         return jsonify({'error': 'Request is not pending'}), 400
 
     session_id = request_model.session_id
-    current_user = get_current_user()
-
-    db_sess = db.query(SessionModel).filter_by(id=session_id).first()
+    db_sess = db.query(SessionModel).filter_by(id=session_id, school_id=current_user['school_id']).first()
     if not db_sess:
         request_model.status = 'completed'
         request_model.reviewed_by = current_user['id'] if current_user else None
@@ -219,14 +241,18 @@ def reject_delete_request(request_id):
     data = request.get_json(silent=True) or {}
     rejection_reason = data.get('reason', 'No reason provided')
 
-    request_model = db.query(SessionDeleteRequest).filter_by(id=request_id).first()
+    current_user = get_current_user()
+    request_model = (
+        db.query(SessionDeleteRequest)
+        .filter_by(id=request_id, school_id=current_user['school_id'])
+        .first()
+    )
     if not request_model:
         return jsonify({'error': 'Delete request not found'}), 404
 
     if request_model.status != 'pending':
         return jsonify({'error': 'Request is not pending'}), 400
 
-    current_user = get_current_user()
     request_model.status = 'rejected'
     request_model.reviewed_by = current_user['id'] if current_user else None
     request_model.reviewed_at = _now_utc()
@@ -253,21 +279,31 @@ def admin_overview():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
+    current_school_id = get_current_user()['school_id']
     users = []
-    for user in list_all_users():
+    for user in list_all_users(school_id=current_school_id):
         users.append({
             'username': user['username'],
             'name': user['name'],
-            'role': user['role']
+            'role': user['role'],
+            'status': user.get('status'),
+            'school': user.get('school')
         })
 
     # Get sessions from database with cached counts
-    db_sessions = db.query(SessionModel).order_by(SessionModel.created_at.desc()).all()
+    db_sessions = (
+        db.query(SessionModel)
+        .filter(SessionModel.school_id == current_school_id)
+        .order_by(SessionModel.created_at.desc())
+        .all()
+    )
     
     sessions_overview = []
     for db_sess in db_sessions:
         # Get draw_info from JSON storage for backward compatibility
         json_data = session_data.get(db_sess.id, {})
+        if json_data.get('school_id') and json_data.get('school_id') != current_school_id:
+            json_data = {}
         draw_info = serialize_draw_info(json_data.get('draw_info', {}))
         
         sessions_overview.append({

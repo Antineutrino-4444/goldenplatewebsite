@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from .db import (
+    DEFAULT_SCHOOL_ID,
     Session as SessionModel,
     SessionDeleteRequest,
     SessionRecord,
@@ -22,7 +23,7 @@ from .users import (
 )
 from .utils import extract_student_id_from_key, make_student_key, normalize_name, split_student_key
 
-# Student lookup cache built from the global CSV data for fast eligibility checks
+# Student lookup cache keyed by school for fast eligibility checks
 student_lookup = {}
 
 # Global in-memory state
@@ -32,11 +33,13 @@ global_csv_data = {}
 global_teacher_data = {}
 
 
-def sync_students_table_from_csv_rows(rows):
+def sync_students_table_from_csv_rows(rows, *, school_id=None):
     """Persist uploaded student roster into the students table."""
     result = {'processed': 0, 'created': 0, 'updated': 0}
     if not isinstance(rows, list) or not rows:
         return result
+
+    school_id = school_id or DEFAULT_SCHOOL_ID
 
     unique_rows = {}
     for row in rows:
@@ -53,7 +56,11 @@ def sync_students_table_from_csv_rows(rows):
         return result
 
     identifiers = [item[0] for item in unique_rows.values()]
-    existing_students = db_session.query(Student).filter(Student.student_identifier.in_(identifiers)).all()
+    existing_students = (
+        db_session.query(Student)
+        .filter(Student.school_id == school_id, Student.student_identifier.in_(identifiers))
+        .all()
+    )
     existing_map = {student.student_identifier.lower(): student for student in existing_students}
 
     for key, (identifier, row) in unique_rows.items():
@@ -97,6 +104,7 @@ def sync_students_table_from_csv_rows(rows):
         else:
             student = Student(
                 id=str(uuid.uuid4()),
+                school_id=school_id,
                 student_identifier=identifier,
                 preferred_name=preferred,
                 last_name=last,
@@ -122,11 +130,13 @@ def sync_students_table_from_csv_rows(rows):
     return result
 
 
-def sync_teacher_table_from_list(teachers):
+def sync_teacher_table_from_list(teachers, *, school_id=None):
     """Persist uploaded teacher roster into the teachers table."""
     result = {'processed': 0, 'created': 0, 'updated': 0}
     if not isinstance(teachers, list) or not teachers:
         return result
+
+    school_id = school_id or DEFAULT_SCHOOL_ID
 
     unique_entries = {}
     for entry in teachers:
@@ -146,7 +156,11 @@ def sync_teacher_table_from_list(teachers):
         return result
 
     names = [item[0] for item in unique_entries.values()]
-    existing_teachers = db_session.query(Teacher).filter(Teacher.name.in_(names)).all()
+    existing_teachers = (
+        db_session.query(Teacher)
+        .filter(Teacher.school_id == school_id, Teacher.name.in_(names))
+        .all()
+    )
     existing_map = {teacher.name.lower(): teacher for teacher in existing_teachers}
 
     for key, (name, display) in unique_entries.items():
@@ -160,6 +174,7 @@ def sync_teacher_table_from_list(teachers):
         else:
             teacher = Teacher(
                 id=str(uuid.uuid4()),
+                school_id=school_id,
                 name=name,
                 display_name=desired_display,
             )
@@ -198,7 +213,8 @@ def update_student_lookup():
         key = make_student_key(preferred, last, student_id)
         if not key:
             continue
-        student_lookup[key] = {
+        school_bucket = student_lookup.setdefault(student.school_id or DEFAULT_SCHOOL_ID, {})
+        school_bucket[key] = {
             'preferred_name': preferred,
             'last_name': last,
             'grade': normalize_name(student.grade),
@@ -208,6 +224,12 @@ def update_student_lookup():
             'student_id': student_id,
             'key': key
         }
+
+
+def get_student_lookup_for_school(school_id):
+    if not school_id:
+        return {}
+    return student_lookup.get(school_id, {})
 
 
 def save_all_data():
@@ -286,6 +308,7 @@ def _refresh_delete_requests_cache():
         serialized.append({
             'id': row.id,
             'session_id': row.session_id,
+            'school_id': row.school_id,
             'session_name': session_model.session_name if session_model else None,
             'requester_id': row.requested_by,
             'requester': requester_user.username if requester_user else None,
@@ -671,6 +694,7 @@ __all__ = [
     'ensure_session_structure',
     'get_session_entry',
     'get_dirty_count',
+    'get_student_lookup_for_school',
     'global_csv_data',
     'global_teacher_data',
     'hydrate_session_from_db',

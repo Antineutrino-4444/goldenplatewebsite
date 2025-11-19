@@ -7,7 +7,7 @@ from sqlalchemy import func
 
 from . import recorder_bp, storage
 from .db import Student, db_session
-from .security import require_admin, require_auth
+from .security import get_current_user, require_admin, require_auth
 from .storage import save_global_csv_data, sync_students_table_from_csv_rows
 from .utils import make_student_key
 
@@ -17,6 +17,10 @@ def upload_csv():
     """Upload CSV file (requires admin or super admin)."""
     if not require_admin():
         return jsonify({'error': 'Admin or super admin access required'}), 403
+
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
 
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -42,7 +46,8 @@ def upload_csv():
             return jsonify({'error': f'CSV must contain columns: {columns}'}), 400
 
         user_id = session['user_id']
-        storage.global_csv_data = {
+        school_id = current_user['school_id']
+        storage.global_csv_data[school_id] = {
             'data': rows,
             'columns': csv_reader.fieldnames,
             'uploaded_by': user_id,
@@ -51,7 +56,7 @@ def upload_csv():
         save_global_csv_data()
 
         try:
-            sync_result = sync_students_table_from_csv_rows(rows)
+            sync_result = sync_students_table_from_csv_rows(rows, school_id=school_id)
             print(f"Student roster sync complete: {sync_result}")
         except Exception as exc:
             print(f"Error syncing students table: {exc}")
@@ -76,10 +81,15 @@ def preview_csv():
     if not require_admin():
         return jsonify({'error': 'Admin or super admin access required'}), 403
 
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    school_id = current_user['school_id']
+
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
 
-    base_query = db_session.query(Student)
+    base_query = db_session.query(Student).filter(Student.school_id == school_id)
     total_records = base_query.count()
 
     if total_records == 0:
@@ -107,7 +117,7 @@ def preview_csv():
         'Clan': str(student.clan or '').strip()
     } for student in students]
 
-    csv_data = storage.global_csv_data
+    csv_data = storage.global_csv_data.get(school_id, {})
 
     return jsonify({
         'status': 'success',
@@ -134,8 +144,14 @@ def get_student_names():
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    school_id = current_user['school_id']
+
     students = (
         db_session.query(Student)
+        .filter(Student.school_id == school_id)
         .order_by(func.lower(Student.preferred_name), func.lower(Student.last_name))
         .all()
     )
