@@ -15,6 +15,16 @@ function InterschoolPortal({ app }) {
     copySchoolInvite
   } = app
 
+  const formatSchoolNameWithCode = (school) => {
+    if (!school?.name) {
+      return null
+    }
+    const code = (school.code ?? school.slug ?? '').trim()
+    return code ? `${school.name} (Code: ${code})` : school.name
+  }
+
+  const userSchoolLabel = formatSchoolNameWithCode(user?.school)
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
@@ -30,10 +40,10 @@ function InterschoolPortal({ app }) {
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
                 {user.name} ({user.username})
               </Badge>
-              {user?.school?.name && (
+              {userSchoolLabel && (
                 <Badge variant="secondary" className="flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200">
                   <Building2 className="h-3.5 w-3.5" />
-                  {user.school.name}
+                  {userSchoolLabel}
                 </Badge>
               )}
               <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200 uppercase tracking-wide">

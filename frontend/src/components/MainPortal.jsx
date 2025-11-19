@@ -149,6 +149,15 @@ function MainPortal({ app }) {
     deleteUserAccount
   } = app
 
+  const formatSchoolNameWithCode = (school) => {
+    if (!school?.name) {
+      return null
+    }
+    const code = (school.code ?? school.slug ?? '').trim()
+    return code ? `${school.name} (Code: ${code})` : school.name
+  }
+
+  const userSchoolLabel = formatSchoolNameWithCode(user?.school)
   const deleteRequestsCount = deleteRequests.length
 
   return (
@@ -166,10 +175,10 @@ function MainPortal({ app }) {
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
                 {user.name} ({user.username})
               </Badge>
-              {user?.school?.name && (
+              {userSchoolLabel && (
                 <Badge variant="secondary" className="flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200">
                   <Building2 className="h-3.5 w-3.5" />
-                  {user.school.name}
+                  {userSchoolLabel}
                 </Badge>
               )}
               <Button
@@ -1480,8 +1489,8 @@ function MainPortal({ app }) {
                       <div className="font-medium">{adminUser.name}</div>
                       <div className="text-sm text-gray-500">
                         @{adminUser.username} • {adminUser.role}
-                        {adminUser.school?.name && (
-                          <> • {adminUser.school.name}</>
+                        {formatSchoolNameWithCode(adminUser.school) && (
+                          <> • {formatSchoolNameWithCode(adminUser.school)}</>
                         )}
                       </div>
                     </div>
@@ -1562,8 +1571,8 @@ function MainPortal({ app }) {
                   <div className="font-medium">{userAccount.name}</div>
                   <div className="text-sm text-gray-500">
                     @{userAccount.username} • {userAccount.role}
-                    {userAccount.school?.name && (
-                      <> • {userAccount.school.name}</>
+                    {formatSchoolNameWithCode(userAccount.school) && (
+                      <> • {formatSchoolNameWithCode(userAccount.school)}</>
                     )}
                   </div>
                 </div>
