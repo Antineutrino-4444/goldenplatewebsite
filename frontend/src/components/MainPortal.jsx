@@ -268,9 +268,6 @@ function MainPortal({ app }) {
                       Current Winner:{' '}
                       <span className="font-semibold">{currentDrawInfo.winner.display_name}</span>
                       {currentDrawInfo.finalized ? ' (Finalized)' : ' (Pending Finalization)'}
-                      {currentDrawInfo.override && (
-                        <Badge variant="outline" className="ml-2 text-xs">Superadmin Override</Badge>
-                      )}
                     </div>
                     {currentDrawInfo.winner_timestamp && (
                       <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
@@ -666,9 +663,6 @@ function MainPortal({ app }) {
                                         {currentDrawInfo.finalized ? 'Finalized' : 'Awaiting Finalization'}
                                       </Badge>
                                     </div>
-                                    {currentDrawInfo.override && (
-                                      <div className="text-xs text-orange-600">Winner selected by superadmin override.</div>
-                                    )}
                                   </div>
                                 ) : (
                                   <div className="text-sm text-gray-500">No winner selected yet.</div>
@@ -1412,9 +1406,6 @@ function MainPortal({ app }) {
                         <Badge variant={dashboardWinner.finalized ? 'default' : 'outline'}>
                           {dashboardWinner.finalized ? 'Finalized' : 'Pending finalization'}
                         </Badge>
-                        {dashboardWinner.override && (
-                          <span className="ml-2 text-orange-600">Override</span>
-                        )}
                       </div>
                       {dashboardWinner.timestamp && (
                         <div className="flex items-center gap-1 text-xs text-gray-500">
