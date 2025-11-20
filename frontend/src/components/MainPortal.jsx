@@ -445,16 +445,15 @@ function MainPortal({ app }) {
                 </Card>
               )}
 
-              {user?.role !== 'guest' && (
-                <Card
-                  id="draw-center-section"
-                  className={`${showExportCard ? '' : 'lg:col-span-2'}`}
-                >
-                  <CardHeader>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <CardTitle className="flex items-center gap-2">
-                        <Trophy className="h-5 w-5" />
-                        Draw Center
+              <Card
+                id="draw-center-section"
+                className={`${showExportCard ? '' : 'lg:col-span-2'}`}
+              >
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2">
+                      <Trophy className="h-5 w-5" />
+                      Draw Center
                       </CardTitle>
                       <div className="flex items-center gap-2">
                         <Button
@@ -545,6 +544,7 @@ function MainPortal({ app }) {
                               disabled={
                                 drawActionLoading ||
                                 !canManageDraw ||
+                                user?.role === 'guest' ||
                                 isSessionDiscarded ||
                                 !hasStudentRecords ||
                                 (drawSummary?.total_tickets ?? 0) <= 0
@@ -556,7 +556,13 @@ function MainPortal({ app }) {
                             <Button
                               onClick={finalizeDrawWinner}
                               variant="outline"
-                              disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner || currentDrawInfo.finalized}
+                              disabled={
+                                drawActionLoading ||
+                                !canManageDraw ||
+                                user?.role === 'guest' ||
+                                !currentDrawInfo?.winner ||
+                                currentDrawInfo.finalized
+                              }
                             >
                               <CheckCircle className="h-4 w-4 mr-2" />
                               Finalize Winner
@@ -564,7 +570,12 @@ function MainPortal({ app }) {
                             <Button
                               onClick={resetDrawWinner}
                               variant="outline"
-                              disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner}
+                              disabled={
+                                drawActionLoading ||
+                                !canManageDraw ||
+                                user?.role === 'guest' ||
+                                !currentDrawInfo?.winner
+                              }
                             >
                               <RefreshCcw className="h-4 w-4 mr-2" />
                               Reset Draw
@@ -604,7 +615,12 @@ function MainPortal({ app }) {
                               <Button
                                 onClick={overrideDrawWinner}
                                 variant="outline"
-                                disabled={drawActionLoading || !overrideInput.trim() || !hasStudentRecords}
+                                disabled={
+                                  drawActionLoading ||
+                                  user?.role === 'guest' ||
+                                  !overrideInput.trim() ||
+                                  !hasStudentRecords
+                                }
                               >
                                 <ShieldCheck className="h-4 w-4 mr-2" />
                                 Override Winner
@@ -612,7 +628,7 @@ function MainPortal({ app }) {
                               <Button
                                 onClick={() => toggleDiscardState(!isSessionDiscarded)}
                                 variant={isSessionDiscarded ? 'default' : 'outline'}
-                                disabled={discardLoading}
+                                disabled={discardLoading || user?.role === 'guest'}
                               >
                                 <Ban className="h-4 w-4 mr-2" />
                                 {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
