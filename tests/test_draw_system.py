@@ -217,7 +217,7 @@ class TestDrawOperations:
         assert draw_response.status_code == 400
 
     def test_override_allows_superadmin_to_pick_winner(self, client, login):
-        """Super admin can override and pick a specific winner."""
+        """Super admin can override while recording a standard draw."""
         # Login as superadmin
         login(username='antineutrino', password='b-decay')
         upload_csv(client)
@@ -229,25 +229,37 @@ class TestDrawOperations:
         # Give students tickets
         client.post('/api/record/clean', json={'input_value': '101'})
         client.post('/api/record/clean', json={'input_value': '102'})
-        
+
         # Override to pick specific student
         override_response = client.post(
             f'/api/session/{session_id}/draw/override',
             json={'student_identifier': '101'}
         )
         assert override_response.status_code == 200
-        
+
         data = override_response.get_json()
         assert data['status'] == 'success'
-        assert data['override'] is True
+        assert not data.get('override')
         assert data['winner']['student_identifier'] == '101'
+        assert data['pool_size'] == 2
 
-        # Override winner should no longer hold tickets after reset
         summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
-        print(summary)
-        remaining = summary['candidates']
-        assert all(candidate['student_identifier'] != '101' for candidate in remaining)
-        assert any(candidate['student_identifier'] == '102' for candidate in remaining)
+        draw_info = summary['draw_info']
+
+        # Override draw should be recorded like a normal draw
+        assert draw_info['method'] == 'random'
+        assert draw_info['override_applied'] is False
+        assert draw_info['winner']['student_identifier'] == '101'
+        assert draw_info['finalized'] is False
+        assert [event['event_type'] for event in summary['history']] == ['draw']
+
+        # Finalizing keeps the history indistinguishable from a random draw
+        finalize_response = client.post(f'/api/session/{session_id}/draw/finalize')
+        assert finalize_response.status_code == 200
+
+        final_summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
+        assert final_summary['draw_info']['finalized'] is True
+        assert [event['event_type'] for event in final_summary['history']] == ['draw', 'finalize']
 
     def test_finalize_resets_winner_tickets(self, client, login):
         """Finalizing a draw resets winner's tickets to 0."""

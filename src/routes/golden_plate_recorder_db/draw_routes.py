@@ -308,22 +308,22 @@ def override_draw(session_id):
     # Get or create draw record
     draw = get_or_create_session_draw(session_id)
     
-    # Update draw with override winner
+    # Update draw with winner using the standard draw flags
     draw.winner_student_id = student.id
-    draw.method = 'override'
+    draw.method = 'random'
     draw.tickets_at_selection = int(winner_tickets)
     draw.probability_at_selection = int(probability)
     draw.eligible_pool_size = len(eligible)
-    draw.override_applied = 1
+    draw.override_applied = 0
     draw.finalized = 0
     draw.finalized_by = None
     draw.finalized_at = None
     draw.updated_at = _now_utc()
-    
-    # Record the override event
+
+    # Record the selection as a standard draw event
     record_draw_event(
         draw=draw,
-        event_type='override',
+        event_type='draw',
         user_id=session.get('user_id'),
         selected_student_id=student.id,
         tickets_at_event=winner_tickets,
@@ -331,8 +331,7 @@ def override_draw(session_id):
         eligible_pool_size=len(eligible),
     )
 
-    # Finalize the override selection, recording the finalize event and clearing tickets
-    finalize_draw_db(draw, session.get('user_id'))
+    db_session.commit()
 
     winner_data = {
         'student_id': student.id,
@@ -350,6 +349,6 @@ def override_draw(session_id):
 
     return jsonify({
         'status': 'success',
-        'override': True,
         'winner': winner_data,
+        'pool_size': len(eligible),
     }), 200

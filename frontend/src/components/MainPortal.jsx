@@ -268,9 +268,6 @@ function MainPortal({ app }) {
                       Current Winner:{' '}
                       <span className="font-semibold">{currentDrawInfo.winner.display_name}</span>
                       {currentDrawInfo.finalized ? ' (Finalized)' : ' (Pending Finalization)'}
-                      {currentDrawInfo.override && (
-                        <Badge variant="outline" className="ml-2 text-xs">Superadmin Override</Badge>
-                      )}
                     </div>
                     {currentDrawInfo.winner_timestamp && (
                       <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
@@ -445,18 +442,17 @@ function MainPortal({ app }) {
                 </Card>
               )}
 
-              {user?.role !== 'guest' && (
-                <Card
-                  id="draw-center-section"
-                  className={`${showExportCard ? '' : 'lg:col-span-2'}`}
-                >
-                  <CardHeader>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <CardTitle className="flex items-center gap-2">
-                        <Trophy className="h-5 w-5" />
-                        Draw Center
-                      </CardTitle>
-                      <div className="flex items-center gap-2">
+              <Card
+                id="draw-center-section"
+                className={`${showExportCard ? '' : 'lg:col-span-2'}`}
+              >
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2">
+                      <Trophy className="h-5 w-5" />
+                      Draw Center
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
                         <Button
                           onClick={() => loadDrawSummary({ silent: false })}
                           variant="outline"
@@ -545,6 +541,7 @@ function MainPortal({ app }) {
                               disabled={
                                 drawActionLoading ||
                                 !canManageDraw ||
+                                user?.role === 'guest' ||
                                 isSessionDiscarded ||
                                 !hasStudentRecords ||
                                 (drawSummary?.total_tickets ?? 0) <= 0
@@ -556,7 +553,13 @@ function MainPortal({ app }) {
                             <Button
                               onClick={finalizeDrawWinner}
                               variant="outline"
-                              disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner || currentDrawInfo.finalized}
+                              disabled={
+                                drawActionLoading ||
+                                !canManageDraw ||
+                                user?.role === 'guest' ||
+                                !currentDrawInfo?.winner ||
+                                currentDrawInfo.finalized
+                              }
                             >
                               <CheckCircle className="h-4 w-4 mr-2" />
                               Finalize Winner
@@ -564,7 +567,12 @@ function MainPortal({ app }) {
                             <Button
                               onClick={resetDrawWinner}
                               variant="outline"
-                              disabled={drawActionLoading || !canManageDraw || !currentDrawInfo?.winner}
+                              disabled={
+                                drawActionLoading ||
+                                !canManageDraw ||
+                                user?.role === 'guest' ||
+                                !currentDrawInfo?.winner
+                              }
                             >
                               <RefreshCcw className="h-4 w-4 mr-2" />
                               Reset Draw
@@ -604,7 +612,12 @@ function MainPortal({ app }) {
                               <Button
                                 onClick={overrideDrawWinner}
                                 variant="outline"
-                                disabled={drawActionLoading || !overrideInput.trim() || !hasStudentRecords}
+                                disabled={
+                                  drawActionLoading ||
+                                  user?.role === 'guest' ||
+                                  !overrideInput.trim() ||
+                                  !hasStudentRecords
+                                }
                               >
                                 <ShieldCheck className="h-4 w-4 mr-2" />
                                 Override Winner
@@ -612,7 +625,7 @@ function MainPortal({ app }) {
                               <Button
                                 onClick={() => toggleDiscardState(!isSessionDiscarded)}
                                 variant={isSessionDiscarded ? 'default' : 'outline'}
-                                disabled={discardLoading}
+                                disabled={discardLoading || user?.role === 'guest'}
                               >
                                 <Ban className="h-4 w-4 mr-2" />
                                 {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
@@ -650,9 +663,6 @@ function MainPortal({ app }) {
                                         {currentDrawInfo.finalized ? 'Finalized' : 'Awaiting Finalization'}
                                       </Badge>
                                     </div>
-                                    {currentDrawInfo.override && (
-                                      <div className="text-xs text-orange-600">Winner selected by superadmin override.</div>
-                                    )}
                                   </div>
                                 ) : (
                                   <div className="text-sm text-gray-500">No winner selected yet.</div>
@@ -805,11 +815,10 @@ function MainPortal({ app }) {
                           No draw data available yet. Record plate data to generate tickets.
                         </div>
                       )}
-                    </CardContent>
-                  ) : null}
-                </Card>
-              )}
-            </div>
+                      </CardContent>
+                    ) : null}
+                  </Card>
+                </div>
 
             <div className="mt-8 space-y-4">
               {user?.role === 'guest' && (
@@ -1396,9 +1405,6 @@ function MainPortal({ app }) {
                         <Badge variant={dashboardWinner.finalized ? 'default' : 'outline'}>
                           {dashboardWinner.finalized ? 'Finalized' : 'Pending finalization'}
                         </Badge>
-                        {dashboardWinner.override && (
-                          <span className="ml-2 text-orange-600">Override</span>
-                        )}
                       </div>
                       {dashboardWinner.timestamp && (
                         <div className="flex items-center gap-1 text-xs text-gray-500">
