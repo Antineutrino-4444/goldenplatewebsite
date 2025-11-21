@@ -451,8 +451,8 @@ function MainPortal({ app }) {
                     <CardTitle className="flex items-center gap-2">
                       <Trophy className="h-5 w-5" />
                       Draw Center
-                      </CardTitle>
-                      <div className="flex items-center gap-2">
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
                         <Button
                           onClick={() => loadDrawSummary({ silent: false })}
                           variant="outline"
@@ -815,11 +815,10 @@ function MainPortal({ app }) {
                           No draw data available yet. Record plate data to generate tickets.
                         </div>
                       )}
-                    </CardContent>
-                  ) : null}
-                </Card>
-              )}
-            </div>
+                      </CardContent>
+                    ) : null}
+                  </Card>
+                </div>
 
             <div className="mt-8 space-y-4">
               {user?.role === 'guest' && (
