@@ -107,6 +107,9 @@ export function usePlateApp() {
   const [inviteCode, setInviteCode] = useState('')
   const [latestSchoolInvites, setLatestSchoolInvites] = useState([])
   const [schoolInviteLoading, setSchoolInviteLoading] = useState(false)
+  const [interschoolSchools, setInterschoolSchools] = useState([])
+  const [interschoolInvites, setInterschoolInvites] = useState([])
+  const [interschoolOverviewLoading, setInterschoolOverviewLoading] = useState(false)
 
   const isSessionDiscarded = drawSummary?.is_discarded ?? sessionStats.is_discarded
   const currentDrawInfo = drawSummary?.draw_info ?? sessionStats.draw_info
@@ -219,6 +222,46 @@ export function usePlateApp() {
     }
   }
 
+  const loadInterschoolOverview = async ({ silent = false } = {}) => {
+    if (user?.role !== 'inter_school') {
+      setInterschoolSchools([])
+      setInterschoolInvites([])
+      setInterschoolOverviewLoading(false)
+      return
+    }
+
+    setInterschoolOverviewLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/interschool/overview`)
+      let data = null
+      try {
+        data = await response.json()
+      } catch (error) {
+        data = null
+      }
+
+      if (response.ok) {
+        setInterschoolSchools(Array.isArray(data?.schools) ? data.schools : [])
+        setInterschoolInvites(Array.isArray(data?.invites) ? data.invites : [])
+      } else if (!silent) {
+        const message = data?.error || 'Failed to load inter-school overview'
+        showMessage(message, 'error')
+      }
+    } catch (error) {
+      if (!silent) {
+        showMessage('Failed to load inter-school overview', 'error')
+      }
+      setInterschoolSchools([])
+      setInterschoolInvites([])
+    } finally {
+      setInterschoolOverviewLoading(false)
+    }
+  }
+
+  const refreshInterschoolOverview = async () => {
+    await loadInterschoolOverview({ silent: false })
+  }
+
   const resetSchoolRegistrationForm = () => {
     setSchoolInviteCode('')
     setSchoolName('')
@@ -275,8 +318,13 @@ export function usePlateApp() {
     setDiscardLoading(false)
     setIsDrawCenterCollapsed(false)
     setSchoolInviteLoading(false)
+    setLatestSchoolInvites([])
+    setInterschoolSchools([])
+    setInterschoolInvites([])
+    setInterschoolOverviewLoading(false)
     setShowGuestSchoolDialog(false)
     setGuestSchoolCode('')
+    await loadInterschoolOverview({ silent: true })
   }
 
   const handlePostAuth = async (userPayload) => {
@@ -517,8 +565,11 @@ export function usePlateApp() {
       setTeacherNames([])
       setLatestSchoolInvites([])
       setSchoolInviteLoading(false)
-    setShowGuestSchoolDialog(false)
-    setGuestSchoolCode('')
+      setInterschoolSchools([])
+      setInterschoolInvites([])
+      setInterschoolOverviewLoading(false)
+      setShowGuestSchoolDialog(false)
+      setGuestSchoolCode('')
       setShowSchoolRegistration(false)
       resetSchoolRegistrationForm()
       showMessage('Logged out successfully', 'info')
@@ -1614,6 +1665,7 @@ export function usePlateApp() {
         setLatestSchoolInvites((prev) => [inviteInfo, ...prev].slice(0, 5))
         setModal({ type: 'school-invite', payload: inviteInfo })
         showMessage('School invite generated', 'success')
+        await refreshInterschoolOverview()
       } else {
         showMessage(data.error || 'Failed to generate school invite', 'error')
       }
@@ -1847,6 +1899,12 @@ export function usePlateApp() {
     setLatestSchoolInvites,
     schoolInviteLoading,
     setSchoolInviteLoading,
+    interschoolSchools,
+    setInterschoolSchools,
+    interschoolInvites,
+    setInterschoolInvites,
+    interschoolOverviewLoading,
+    setInterschoolOverviewLoading,
 
     // computed
     isSessionDiscarded,
@@ -1912,6 +1970,7 @@ export function usePlateApp() {
     rejectDeleteRequest,
     generateInviteCode,
     issueSchoolInvite,
+    refreshInterschoolOverview,
     copyToClipboard,
     copyInviteCode,
     copySchoolInvite,

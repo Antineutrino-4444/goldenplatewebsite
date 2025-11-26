@@ -1,7 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -316,6 +316,124 @@ def _ensure_column(
             connection.execute(text(update_nulls_sql))
 
 
+def _format_identifier(name: str) -> str:
+    if not name:
+        return name
+    quote_char = '`' if engine.dialect.name == 'mysql' else '"'
+    escaped = name.replace(quote_char, quote_char * 2)
+    return f'{quote_char}{escaped}{quote_char}'
+
+
+def _has_unique_combination(inspector, table_name: str, expected_columns: Iterable[str]) -> bool:
+    target = tuple(sorted(expected_columns))
+    for constraint in inspector.get_unique_constraints(table_name):
+        columns = tuple(sorted(constraint.get('column_names') or []))
+        if columns == target:
+            return True
+    for index in inspector.get_indexes(table_name):
+        if not index.get('unique'):
+            continue
+        columns = tuple(sorted(index.get('column_names') or []))
+        if columns == target:
+            return True
+    return False
+
+
+def _rebuild_sessions_table(existing_columns: List[str]) -> None:
+    if engine.dialect.name != 'sqlite':
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text('PRAGMA foreign_keys=OFF'))
+        try:
+            connection.execute(text('ALTER TABLE sessions RENAME TO sessions__old'))
+            index_rows = connection.execute(text("PRAGMA index_list('sessions__old')")).fetchall()
+            for row in index_rows:
+                index_name = row[1]
+                if index_name and not str(index_name).startswith('sqlite_autoindex'):
+                    connection.execute(text(f'DROP INDEX IF EXISTS {_format_identifier(index_name)}'))
+
+            Session.__table__.create(bind=connection, checkfirst=False)
+
+            new_columns = [column.name for column in Session.__table__.columns]
+            shared_columns = [col for col in existing_columns if col in new_columns]
+            if shared_columns:
+                column_csv = ', '.join(shared_columns)
+                connection.execute(text(
+                    f'INSERT INTO sessions ({column_csv}) SELECT {column_csv} FROM sessions__old'
+                ))
+
+            connection.execute(text('DROP TABLE sessions__old'))
+        finally:
+            connection.execute(text('PRAGMA foreign_keys=ON'))
+
+
+def _ensure_session_name_scope(inspector):
+    table_name = 'sessions'
+    if table_name not in inspector.get_table_names():
+        return inspector
+
+    dialect_name = engine.dialect.name
+    existing_columns = [col['name'] for col in inspector.get_columns(table_name)]
+    unique_constraints = inspector.get_unique_constraints(table_name)
+    indexes = inspector.get_indexes(table_name)
+
+    drop_constraint_names: List[str] = []
+    drop_index_names: List[str] = []
+    requires_rebuild = False
+
+    for constraint in unique_constraints:
+        columns = constraint.get('column_names') or []
+        if set(columns) == {'session_name'}:
+            name = constraint.get('name') or ''
+            if dialect_name == 'sqlite' and (not name or name.startswith('sqlite_autoindex')):
+                requires_rebuild = True
+            elif name:
+                drop_constraint_names.append(name)
+
+    for index in indexes:
+        columns = index.get('column_names') or []
+        if index.get('unique') and len(columns) == 1 and columns[0] == 'session_name':
+            name = index.get('name') or ''
+            if dialect_name == 'sqlite' and name.startswith('sqlite_autoindex'):
+                requires_rebuild = True
+            elif name:
+                drop_index_names.append(name)
+
+    if drop_index_names or drop_constraint_names:
+        with engine.begin() as connection:
+            for name in drop_constraint_names:
+                if dialect_name == 'sqlite':
+                    connection.execute(text(f'DROP INDEX IF EXISTS {_format_identifier(name)}'))
+                else:
+                    connection.execute(text(
+                        f'ALTER TABLE sessions DROP CONSTRAINT IF EXISTS {_format_identifier(name)}'
+                    ))
+            for name in drop_index_names:
+                connection.execute(text(f'DROP INDEX IF EXISTS {_format_identifier(name)}'))
+
+    if requires_rebuild:
+        _rebuild_sessions_table(existing_columns)
+
+    inspector = inspect(engine)
+
+    if not _has_unique_combination(inspector, table_name, ('school_id', 'session_name')):
+        with engine.begin() as connection:
+            if engine.dialect.name == 'sqlite':
+                connection.execute(text(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS uq_sessions_school_session_name '
+                    'ON sessions (school_id, session_name)'
+                ))
+            else:
+                connection.execute(text(
+                    'ALTER TABLE sessions ADD CONSTRAINT uq_sessions_school_session_name '
+                    'UNIQUE (school_id, session_name)'
+                ))
+        inspector = inspect(engine)
+
+    return inspector
+
+
 def _migrate_schema() -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
@@ -337,6 +455,8 @@ def _migrate_schema() -> None:
             if column_name not in session_columns:
                 with engine.begin() as connection:
                     connection.execute(text(f'ALTER TABLE sessions ADD COLUMN {column_name} {ddl}'))
+        inspector = _ensure_session_name_scope(inspector)
+        tables = set(inspector.get_table_names())
 
     if 'session_draw_events' in tables and 'session_draws' in tables:
         with engine.begin() as connection:
