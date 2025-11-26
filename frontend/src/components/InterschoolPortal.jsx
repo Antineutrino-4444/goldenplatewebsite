@@ -3,7 +3,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Building2, Copy, ListOrdered, LogOut, ShieldCheck, UserPlus } from 'lucide-react'
+import { Building2, Copy, KeyRound, ListOrdered, LogOut, RefreshCcw, School, ShieldCheck, UserPlus } from 'lucide-react'
 
 function InterschoolPortal({ app }) {
   const {
@@ -12,7 +12,11 @@ function InterschoolPortal({ app }) {
     issueSchoolInvite,
     schoolInviteLoading,
     latestSchoolInvites,
-    copySchoolInvite
+    copySchoolInvite,
+    interschoolSchools,
+    interschoolInvites,
+    interschoolOverviewLoading,
+    refreshInterschoolOverview
   } = app
 
   const formatSchoolNameWithCode = (school) => {
@@ -21,6 +25,36 @@ function InterschoolPortal({ app }) {
     }
     const code = (school.code ?? school.slug ?? '').trim()
     return code ? `${school.name} (Code: ${code})` : school.name
+  }
+
+  const formatDateTime = (value) => {
+    if (!value) return null
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return null
+    return date.toLocaleString()
+  }
+
+  const getInviteStatusClasses = (status) => {
+    const normalized = (status || '').toLowerCase()
+    if (normalized === 'unused') {
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    }
+    if (normalized === 'used') {
+      return 'bg-slate-100 text-slate-700 border-slate-200'
+    }
+    if (normalized === 'revoked') {
+      return 'bg-red-50 text-red-700 border-red-200'
+    }
+    return 'bg-gray-50 text-gray-600 border-gray-200'
+  }
+
+  const toTitle = (value) => {
+    if (!value) return ''
+    return value
+      .toString()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
   }
 
   const userSchoolLabel = formatSchoolNameWithCode(user?.school)
@@ -174,6 +208,154 @@ function InterschoolPortal({ app }) {
                 The list keeps invites created after you signed in.
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <School className="h-5 w-5 text-amber-600" />
+                School Directory
+              </CardTitle>
+              <CardDescription>
+                Monitor partner schools as they complete onboarding.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {interschoolSchools.length > 0 && (
+                <Badge variant="outline" className="text-xs uppercase tracking-wide">
+                  {interschoolSchools.length} total
+                </Badge>
+              )}
+              <Button
+                onClick={refreshInterschoolOverview}
+                variant="outline"
+                size="sm"
+                disabled={interschoolOverviewLoading}
+                className="flex items-center gap-2"
+              >
+                <RefreshCcw className={`h-4 w-4 ${interschoolOverviewLoading ? 'animate-spin' : ''}`} />
+                {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {interschoolSchools.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No partner schools have been registered yet. Once an invite is redeemed the school will appear here.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {interschoolSchools.map((school) => {
+                  const createdLabel = formatDateTime(school.created_at)
+                  return (
+                    <div
+                      key={school.id}
+                      className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-semibold text-gray-900">{school.name}</div>
+                        <div className="text-xs text-gray-500">School ID: {school.id}</div>
+                        {school.slug && (
+                          <div className="text-xs text-gray-500">Code: {school.slug}</div>
+                        )}
+                        {createdLabel && (
+                          <div className="text-xs text-gray-400">Created {createdLabel}</div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        <Badge variant="outline" className="text-xs uppercase tracking-wide">
+                          {toTitle(school.status) || 'Unknown'}
+                        </Badge>
+                        <div className="text-xs text-gray-500">Users: {school.user_count ?? 0}</div>
+                        {school.updated_at && (
+                          <div className="text-xs text-gray-400">Updated {formatDateTime(school.updated_at)}</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-amber-600" />
+              Invite Codes Ledger
+            </CardTitle>
+            <CardDescription>
+              Track issued school invites and their redemption status.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {interschoolInvites.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                Generate a school invite to populate the ledger. Redeemed invites remain visible for auditing.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {interschoolInvites.map((invite) => {
+                  const inviteKey = invite.id || invite.code
+                  const issuedLabel = formatDateTime(invite.issued_at)
+                  const usedLabel = formatDateTime(invite.used_at)
+                  const statusClasses = getInviteStatusClasses(invite.status)
+                  return (
+                    <div
+                      key={inviteKey}
+                      className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-100 bg-white p-4 shadow-sm"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-mono text-sm text-gray-900">{invite.code}</div>
+                        <div className="text-xs text-gray-600">School ID: {invite.school_id}</div>
+                        {issuedLabel && (
+                          <div className="text-xs text-gray-400">Issued {issuedLabel}</div>
+                        )}
+                        {invite.issued_by?.display_name && (
+                          <div className="text-xs text-gray-500">
+                            Issued by {invite.issued_by.display_name} ({invite.issued_by.username})
+                          </div>
+                        )}
+                        {usedLabel && (
+                          <div className="text-xs text-gray-400">Redeemed {usedLabel}</div>
+                        )}
+                        {invite.used_by?.display_name && (
+                          <div className="text-xs text-gray-500">
+                            Used by {invite.used_by.display_name} ({invite.used_by.username})
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        <Badge variant="outline" className={`text-xs uppercase tracking-wide ${statusClasses}`}>
+                          {toTitle(invite.status) || 'Unknown'}
+                        </Badge>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => copySchoolInvite({
+                            code: invite.code,
+                            schoolId: invite.school_id,
+                            issuedAt: invite.issued_at
+                          }, 'code')}>
+                            <Copy className="h-3 w-3 mr-1" />
+                            Copy
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => copySchoolInvite({
+                            code: invite.code,
+                            schoolId: invite.school_id,
+                            issuedAt: invite.issued_at
+                          }, 'details')}>
+                            <Copy className="h-3 w-3 mr-1" />
+                            Details
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 

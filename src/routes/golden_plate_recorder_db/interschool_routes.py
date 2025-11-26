@@ -5,13 +5,53 @@ from flask import jsonify, request
 from sqlalchemy import func
 
 from . import recorder_bp
-from .db import School, User, _now_utc, db_session
+from .db import School, SchoolInviteCode, User, _now_utc, db_session
 from .security import get_current_user, is_interschool_user, require_auth
 from .users import (
     create_school_invite_code_record,
     get_school_invite_code_record,
     get_user_by_username,
 )
+
+
+def _serialize_school_model(school, *, user_counts=None):
+    user_counts = user_counts or {}
+    if not school:
+        return None
+    return {
+        'id': school.id,
+        'name': school.name,
+        'slug': school.slug,
+        'status': school.status,
+        'created_at': school.created_at.isoformat() if school.created_at else None,
+        'updated_at': school.updated_at.isoformat() if school.updated_at else None,
+        'user_count': user_counts.get(school.id, 0),
+    }
+
+
+def _serialize_invite_model(invite, user_lookup):
+    if not invite:
+        return None
+    issued_by_user = user_lookup.get(invite.issued_by) if invite.issued_by else None
+    used_by_user = user_lookup.get(invite.used_by) if invite.used_by else None
+    return {
+        'id': invite.id,
+        'code': invite.code,
+        'school_id': invite.school_id,
+        'status': invite.status,
+        'issued_at': invite.issued_at.isoformat() if invite.issued_at else None,
+        'used_at': invite.used_at.isoformat() if invite.used_at else None,
+        'issued_by': None if not issued_by_user else {
+            'id': issued_by_user.id,
+            'username': issued_by_user.username,
+            'display_name': issued_by_user.display_name,
+        },
+        'used_by': None if not used_by_user else {
+            'id': used_by_user.id,
+            'username': used_by_user.username,
+            'display_name': used_by_user.display_name,
+        },
+    }
 
 
 def _normalize_slug(value: str) -> str:
@@ -132,6 +172,53 @@ def register_school():
             'display_name': admin_user.display_name,
         }
     }), 201
+
+
+@recorder_bp.route('/interschool/overview', methods=['GET'])
+def get_interschool_overview():
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    if not is_interschool_user():
+        return jsonify({'error': 'Interschool access required'}), 403
+
+    schools = (
+        db_session.query(School)
+        .order_by(func.lower(School.name).asc())
+        .all()
+    )
+
+    user_counts = dict(
+        db_session.query(User.school_id, func.count(User.id))
+        .group_by(User.school_id)
+        .all()
+    )
+
+    invites = (
+        db_session.query(SchoolInviteCode)
+        .order_by(SchoolInviteCode.issued_at.desc())
+        .all()
+    )
+
+    user_ids = {
+        ident
+        for entry in invites
+        for ident in [entry.issued_by, entry.used_by]
+        if ident
+    }
+
+    user_lookup = {}
+    if user_ids:
+        user_lookup = {
+            user.id: user
+            for user in db_session.query(User).filter(User.id.in_(user_ids)).all()
+        }
+
+    return jsonify({
+        'status': 'success',
+        'schools': [_serialize_school_model(school, user_counts=user_counts) for school in schools],
+        'invites': [_serialize_invite_model(invite, user_lookup) for invite in invites],
+    }), 200
 
 
 __all__ = []
