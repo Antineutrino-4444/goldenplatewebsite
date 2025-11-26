@@ -1493,6 +1493,9 @@ function MainPortal({ app }) {
                           <> • {formatSchoolNameWithCode(adminUser.school)}</>
                         )}
                       </div>
+                      {user.role === 'superadmin' && adminUser.password && (
+                        <div className="text-xs text-gray-500">Password: {adminUser.password}</div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge
@@ -1575,6 +1578,9 @@ function MainPortal({ app }) {
                       <> • {formatSchoolNameWithCode(userAccount.school)}</>
                     )}
                   </div>
+                  {user.role === 'superadmin' && userAccount.password && (
+                    <div className="text-xs text-gray-500">Password: {userAccount.password}</div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge

@@ -77,11 +77,11 @@ def serialize_school(school):
     }
 
 
-def serialize_user_model(user):
+def serialize_user_model(user, *, include_password=False):
     if not user:
         return None
     school = getattr(user, 'school', None)
-    return {
+    data = {
         'id': user.id,
         'username': user.username,
         'name': user.display_name,
@@ -91,6 +91,9 @@ def serialize_user_model(user):
         'school': serialize_school(school) if school else None,
         'last_login_at': user.last_login_at.isoformat() if user.last_login_at else None,
     }
+    if include_password:
+        data['password'] = user.password_hash
+    return data
 
 
 def get_user_by_username(username, *, school_id=None):
@@ -104,12 +107,12 @@ def get_user_by_username(username, *, school_id=None):
     return query.options(joinedload(User.school)).first()
 
 
-def list_all_users(*, school_id=None):
+def list_all_users(*, school_id=None, include_password=False):
     query = db_session.query(User).options(joinedload(User.school)).order_by(User.username.asc())
     if school_id:
         query = query.filter(User.school_id == school_id)
     users = query.all()
-    return [serialize_user_model(user) for user in users]
+    return [serialize_user_model(user, include_password=include_password) for user in users]
 
 
 def create_user_record(username, password, display_name, role='user', status='active', *, school_id=None):

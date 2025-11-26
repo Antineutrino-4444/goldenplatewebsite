@@ -87,15 +87,20 @@ def admin_get_users():
         return jsonify({'error': 'Admin access required'}), 403
 
     users_list = []
-    current_school_id = get_current_user()['school_id']
-    for user in list_all_users(school_id=current_school_id):
-        users_list.append({
+    current_user = get_current_user()
+    current_school_id = current_user['school_id']
+    include_password = current_user['role'] == 'superadmin'
+    for user in list_all_users(school_id=current_school_id, include_password=include_password):
+        payload = {
             'username': user['username'],
             'name': user['name'],
             'role': user['role'],
             'status': user.get('status'),
             'school': user.get('school')
-        })
+        }
+        if include_password:
+            payload['password'] = user.get('password')
+        users_list.append(payload)
 
     return jsonify({'users': users_list}), 200
 
@@ -279,16 +284,21 @@ def admin_overview():
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    current_school_id = get_current_user()['school_id']
+    current_user = get_current_user()
+    current_school_id = current_user['school_id']
+    include_password = current_user['role'] == 'superadmin'
     users = []
-    for user in list_all_users(school_id=current_school_id):
-        users.append({
+    for user in list_all_users(school_id=current_school_id, include_password=include_password):
+        payload = {
             'username': user['username'],
             'name': user['name'],
             'role': user['role'],
             'status': user.get('status'),
             'school': user.get('school')
-        })
+        }
+        if include_password:
+            payload['password'] = user.get('password')
+        users.append(payload)
 
     # Get sessions from database with cached counts
     db_sessions = (
