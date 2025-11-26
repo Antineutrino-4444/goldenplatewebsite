@@ -368,6 +368,35 @@ def _rebuild_sessions_table(existing_columns: List[str]) -> None:
             connection.execute(text('PRAGMA foreign_keys=ON'))
 
 
+def _rebuild_students_table(existing_columns: List[str]) -> None:
+    if engine.dialect.name != 'sqlite':
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text('PRAGMA foreign_keys=OFF'))
+        try:
+            connection.execute(text('ALTER TABLE students RENAME TO students__old'))
+            index_rows = connection.execute(text("PRAGMA index_list('students__old')")).fetchall()
+            for row in index_rows:
+                index_name = row[1]
+                if index_name and not str(index_name).startswith('sqlite_autoindex'):
+                    connection.execute(text(f'DROP INDEX IF EXISTS {_format_identifier(index_name)}'))
+
+            Student.__table__.create(bind=connection, checkfirst=False)
+
+            new_columns = [column.name for column in Student.__table__.columns]
+            shared_columns = [col for col in existing_columns if col in new_columns]
+            if shared_columns:
+                column_csv = ', '.join(shared_columns)
+                connection.execute(text(
+                    f'INSERT INTO students ({column_csv}) SELECT {column_csv} FROM students__old'
+                ))
+
+            connection.execute(text('DROP TABLE students__old'))
+        finally:
+            connection.execute(text('PRAGMA foreign_keys=ON'))
+
+
 def _ensure_session_name_scope(inspector):
     table_name = 'sessions'
     if table_name not in inspector.get_table_names():
@@ -428,6 +457,131 @@ def _ensure_session_name_scope(inspector):
                 connection.execute(text(
                     'ALTER TABLE sessions ADD CONSTRAINT uq_sessions_school_session_name '
                     'UNIQUE (school_id, session_name)'
+                ))
+        inspector = inspect(engine)
+
+    return inspector
+
+
+def _dedupe_student_identifiers(connection) -> bool:
+    """Resolve legacy duplicate student identifiers within the same school."""
+    rows = connection.execute(text(
+        '''
+        SELECT id, school_id, student_identifier
+        FROM students
+        ORDER BY school_id, student_identifier, id
+        '''
+    )).fetchall()
+    if not rows:
+        return False
+
+    seen_counts = {}
+    existing_pairs = {(row.school_id, row.student_identifier) for row in rows}
+    planned_updates = []
+
+    for row in rows:
+        school_id = row.school_id
+        identifier = row.student_identifier or ''
+        key = (school_id, identifier)
+        count = seen_counts.get(key, 0)
+        if count == 0:
+            seen_counts[key] = 1
+            continue
+
+        suffix = count
+        base_identifier = identifier
+        while True:
+            candidate = f"{base_identifier}__dup{suffix}" if base_identifier else f"__dup{suffix}"
+            candidate_key = (school_id, candidate)
+            if candidate_key not in existing_pairs:
+                break
+            suffix += 1
+
+        planned_updates.append((row.id, candidate))
+        existing_pairs.add(candidate_key)
+        seen_counts[key] = count + 1
+
+    for row_id, new_identifier in planned_updates:
+        connection.execute(
+            text('UPDATE students SET student_identifier = :identifier WHERE id = :id'),
+            {'identifier': new_identifier, 'id': row_id},
+        )
+
+    return bool(planned_updates)
+
+
+def _ensure_student_identifier_scope(inspector):
+    table_name = 'students'
+    if table_name not in inspector.get_table_names():
+        return inspector
+
+    with engine.begin() as connection:
+        deduped = _dedupe_student_identifiers(connection)
+
+    if deduped:
+        inspector = inspect(engine)
+
+    dialect_name = engine.dialect.name
+    existing_columns = [col['name'] for col in inspector.get_columns(table_name)]
+    unique_constraints = inspector.get_unique_constraints(table_name)
+    indexes = inspector.get_indexes(table_name)
+
+    drop_constraint_names: List[str] = []
+    drop_index_names: List[str] = []
+    requires_rebuild = False
+
+    for constraint in unique_constraints:
+        columns = tuple(sorted(constraint.get('column_names') or ()))
+        name = constraint.get('name') or ''
+        if columns == ('student_identifier',):
+            if dialect_name == 'sqlite' and (not name or name.startswith('sqlite_autoindex')):
+                requires_rebuild = True
+            elif name:
+                drop_constraint_names.append(name)
+
+    for index in indexes:
+        if not index.get('unique'):
+            continue
+        columns = tuple(sorted(index.get('column_names') or ()))
+        name = index.get('name') or ''
+        if columns == ('student_identifier',):
+            if dialect_name == 'sqlite' and name.startswith('sqlite_autoindex'):
+                requires_rebuild = True
+            elif name:
+                drop_index_names.append(name)
+
+    if drop_constraint_names or drop_index_names:
+        with engine.begin() as connection:
+            for name in drop_constraint_names:
+                if dialect_name == 'sqlite':
+                    connection.execute(text(f'DROP INDEX IF EXISTS {_format_identifier(name)}'))
+                else:
+                    connection.execute(text(
+                        f'ALTER TABLE students DROP CONSTRAINT IF EXISTS {_format_identifier(name)}'
+                    ))
+            for name in drop_index_names:
+                connection.execute(text(f'DROP INDEX IF EXISTS {_format_identifier(name)}'))
+
+    if requires_rebuild:
+        _rebuild_students_table(existing_columns)
+        inspector = inspect(engine)
+    else:
+        inspector = inspect(engine)
+
+    combo_exists = _has_unique_combination(inspector, table_name, ('school_id', 'student_identifier'))
+
+    if not combo_exists:
+        with engine.begin() as connection:
+            _dedupe_student_identifiers(connection)
+            if engine.dialect.name == 'sqlite':
+                connection.execute(text(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS uq_students_school_identifier '
+                    'ON students (school_id, student_identifier)'
+                ))
+            else:
+                connection.execute(text(
+                    'ALTER TABLE students ADD CONSTRAINT uq_students_school_identifier '
+                    'UNIQUE (school_id, student_identifier)'
                 ))
         inspector = inspect(engine)
 
@@ -556,6 +710,10 @@ def _migrate_schema() -> None:
 
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
+
+    if 'students' in tables:
+        inspector = _ensure_student_identifier_scope(inspector)
+        tables = set(inspector.get_table_names())
 
     if 'draft_pool' in tables:
         draft_columns = {col['name'] for col in inspector.get_columns('draft_pool')}
