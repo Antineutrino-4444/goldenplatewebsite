@@ -14,6 +14,7 @@ from .draw_db import (
     record_draw_event,
     reset_draw as reset_draw_db,
 )
+from .utils import extract_student_id_from_key, format_display_name, make_student_key, normalize_name
 from .security import require_admin, require_auth_or_guest, require_superadmin
 
 
@@ -266,50 +267,159 @@ def override_draw(session_id):
 
     data = request.get_json(silent=True) or {}
     
-    # Get student identifier or ID
-    student_identifier = data.get('student_identifier')
-    student_id = data.get('student_id')
-    
-    if not student_identifier and not student_id:
-        return jsonify({'error': 'student_identifier or student_id required'}), 400
+    provided_key_raw = data.get('student_key')
+    provided_key = normalize_name(provided_key_raw).lower()
+    provided_identifier = normalize_name(data.get('student_identifier'))
+    provided_student_id = normalize_name(data.get('student_id'))
+    input_value = normalize_name(data.get('input_value'))
+    provided_preferred = normalize_name(data.get('preferred_name'))
+    provided_last = normalize_name(data.get('last_name'))
 
-    # Find the student
-    query = db_session.query(Student)
-    if student_id:
-        student = query.filter_by(id=student_id).first()
-    else:
-        student = query.filter_by(student_identifier=student_identifier).first()
-    
-    if not student:
-        return jsonify({'error': 'Student not found'}), 404
+    if not any([provided_key, provided_identifier, provided_student_id, input_value, provided_preferred and provided_last]):
+        return jsonify({'error': 'A student key, name, or identifier is required to override the draw winner'}), 400
 
-    # Check if student has records in this session
-    has_record = (
-        db_session.query(SessionRecord)
+    record_rows = (
+        db_session.query(SessionRecord, Student)
+        .outerjoin(Student, SessionRecord.student_id == Student.id)
         .filter(
             SessionRecord.session_id == session_id,
-            SessionRecord.student_id == student.id
+            SessionRecord.category.in_(['clean', 'red'])
         )
-        .first()
+        .all()
     )
-    
-    if not has_record:
-        return jsonify({'error': 'Student has no records in this session'}), 400
 
-    # Calculate tickets for this student
+    if not record_rows:
+        return jsonify({'error': 'No student records available for this session'}), 400
+
     ticket_balances = calculate_ticket_balances()
-    winner_tickets = ticket_balances.get(student.id, 0.0)
-    
-    # Calculate probability
     eligible = get_eligible_students_with_tickets(session_id)
     total_tickets = sum(tickets for _, tickets in eligible)
+
+    profiles = {}
+
+    def merge_profile(profile):
+        key = profile.get('key')
+        if not key:
+            return
+        existing = profiles.get(key) or {}
+        merged = {**profile}
+        if existing:
+            for field in ['student_id', 'student_identifier', 'preferred_name', 'last_name', 'grade', 'advisor', 'house', 'clan']:
+                if not merged.get(field) and existing.get(field):
+                    merged[field] = existing[field]
+            merged['tickets'] = merged.get('tickets') or existing.get('tickets', 0.0)
+            merged['display_name'] = merged.get('display_name') or existing.get('display_name')
+        profiles[key] = merged
+
+    for session_record, student in record_rows:
+        preferred = normalize_name(session_record.preferred_name or (student.preferred_name if student else ''))
+        last = normalize_name(session_record.last_name or (student.last_name if student else ''))
+        student_identifier = normalize_name(student.student_identifier if student else '')
+        if not student_identifier:
+            student_identifier = extract_student_id_from_key(session_record.dedupe_key)
+        key = make_student_key(preferred, last, student_identifier)
+        profile = {
+            'key': key,
+            'preferred_name': preferred,
+            'last_name': last,
+            'grade': normalize_name(student.grade if student else ''),
+            'advisor': normalize_name(student.advisor if student else ''),
+            'house': normalize_name(student.house if student else ''),
+            'clan': normalize_name(student.clan if student else ''),
+            'student_id': student.id if student else None,
+            'student_identifier': student_identifier,
+        }
+        profile['display_name'] = format_display_name(profile)
+        if profile.get('student_id'):
+            profile['tickets'] = ticket_balances.get(profile['student_id'], 0.0)
+        merge_profile(profile)
+
+    override_key = provided_key
+
+    if not override_key and provided_identifier:
+        match = next(
+            (p for p in profiles.values() if normalize_name(p.get('student_identifier')).lower() == provided_identifier.lower()),
+            None
+        )
+        if match:
+            override_key = match.get('key')
+
+    if not override_key and provided_student_id:
+        match = next(
+            (p for p in profiles.values() if normalize_name(p.get('student_id')) == provided_student_id),
+            None
+        )
+        if match:
+            override_key = match.get('key')
+
+    if not override_key and input_value:
+        normalized_input = input_value.lower()
+        match = next(
+            (p for p in profiles.values() if (p.get('display_name') or '').lower() == normalized_input),
+            None
+        )
+        if not match and input_value.isdigit():
+            match = next(
+                (
+                    p
+                    for p in profiles.values()
+                    if normalize_name(p.get('student_identifier')).lower() == normalized_input
+                ),
+                None
+            )
+        if match:
+            override_key = match.get('key')
+
+    if not override_key and provided_preferred and provided_last:
+        override_key = make_student_key(provided_preferred, provided_last, provided_identifier)
+
+    if not override_key:
+        return jsonify({
+            'error': 'Unable to determine the override candidate from the provided input',
+            'details': 'Provide a student name, identifier, or override key for someone recorded in this session.'
+        }), 400
+
+    if override_key not in profiles:
+        return jsonify({
+            'error': 'Specified student is not part of this session',
+            'details': 'Only students recorded in this session can be selected for an override.'
+        }), 404
+
+    profile = profiles[override_key]
+
+    if not profile.get('student_id'):
+        student_identifier = profile.get('student_identifier')
+        if not student_identifier:
+            return jsonify({
+                'error': 'Student record is missing an identifier',
+                'details': 'Add a student identifier to this entry or select another recorded student.'
+            }), 400
+        student = (
+            db_session.query(Student)
+            .filter_by(student_identifier=student_identifier, school_id=sess.school_id)
+            .first()
+        )
+        if not student:
+            student = Student(
+                school_id=sess.school_id,
+                student_identifier=student_identifier,
+                preferred_name=profile.get('preferred_name') or profile.get('display_name'),
+                last_name=profile.get('last_name') or '',
+                grade=profile.get('grade'),
+                advisor=profile.get('advisor'),
+                house=profile.get('house'),
+                clan=profile.get('clan'),
+            )
+            db_session.add(student)
+            db_session.flush()
+        profile['student_id'] = student.id
+
+    winner_tickets = ticket_balances.get(profile['student_id'], 0.0)
     probability = (winner_tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
 
-    # Get or create draw record
     draw = get_or_create_session_draw(session_id)
-    
-    # Update draw with winner using the standard draw flags
-    draw.winner_student_id = student.id
+
+    draw.winner_student_id = profile['student_id']
     draw.method = 'random'
     draw.tickets_at_selection = int(winner_tickets)
     draw.probability_at_selection = int(probability)
@@ -320,12 +430,11 @@ def override_draw(session_id):
     draw.finalized_at = None
     draw.updated_at = _now_utc()
 
-    # Record the selection as a standard draw event
     record_draw_event(
         draw=draw,
         event_type='draw',
         user_id=session.get('user_id'),
-        selected_student_id=student.id,
+        selected_student_id=profile['student_id'],
         tickets_at_event=winner_tickets,
         probability_at_event=probability,
         eligible_pool_size=len(eligible),
@@ -334,15 +443,15 @@ def override_draw(session_id):
     db_session.commit()
 
     winner_data = {
-        'student_id': student.id,
-        'student_identifier': student.student_identifier,
-        'preferred_name': student.preferred_name,
-        'last_name': student.last_name,
-        'display_name': f"{student.preferred_name} {student.last_name}",
-        'grade': student.grade,
-        'advisor': student.advisor,
-        'house': student.house,
-        'clan': student.clan,
+        'student_id': profile.get('student_id'),
+        'student_identifier': profile.get('student_identifier'),
+        'preferred_name': profile.get('preferred_name', ''),
+        'last_name': profile.get('last_name', ''),
+        'display_name': profile.get('display_name', ''),
+        'grade': profile.get('grade', ''),
+        'advisor': profile.get('advisor', ''),
+        'house': profile.get('house', ''),
+        'clan': profile.get('clan', ''),
         'tickets': winner_tickets,
         'probability': probability,
     }
