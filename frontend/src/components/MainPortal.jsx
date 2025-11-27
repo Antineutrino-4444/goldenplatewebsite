@@ -26,6 +26,7 @@ import {
   RefreshCcw,
   Shield,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Trophy,
   Upload,
@@ -59,6 +60,9 @@ function MainPortal({ app }) {
     discardLoading,
     isDrawCenterCollapsed,
     setIsDrawCenterCollapsed,
+    facultyPick,
+    facultyPickLoading,
+    pickRandomFaculty,
     overrideInput,
     setOverrideInput,
     overrideCandidate,
@@ -576,6 +580,33 @@ function MainPortal({ app }) {
                             >
                               <RefreshCcw className="h-4 w-4 mr-2" />
                               Reset Draw
+                            </Button>
+                          </div>
+                          <div className="flex w-full flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <div className="text-sm text-gray-500">Random Faculty Picker</div>
+                              <div className="text-lg font-semibold">
+                                {facultyPick?.display_name || 'No faculty selected yet'}
+                              </div>
+                              {facultyPick?.recorded_at && (
+                                <div className="text-xs text-gray-500">
+                                  Recorded at {new Date(facultyPick.recorded_at).toLocaleString()}
+                                </div>
+                              )}
+                            </div>
+                            <Button
+                              onClick={pickRandomFaculty}
+                              variant="outline"
+                              disabled={
+                                facultyPickLoading ||
+                                user?.role === 'guest' ||
+                                isSessionDiscarded ||
+                                (sessionStats.faculty_clean_count ?? 0) <= 0 ||
+                                !sessionId
+                              }
+                            >
+                              <Sparkles className="h-4 w-4 mr-2" />
+                              Pick Faculty Name
                             </Button>
                           </div>
                           {canOverrideWinner && (

@@ -100,6 +100,8 @@ export function usePlateApp() {
   const [drawActionLoading, setDrawActionLoading] = useState(false)
   const [discardLoading, setDiscardLoading] = useState(false)
   const [isDrawCenterCollapsed, setIsDrawCenterCollapsed] = useState(false)
+  const [facultyPick, setFacultyPick] = useState(null)
+  const [facultyPickLoading, setFacultyPickLoading] = useState(false)
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -209,6 +211,10 @@ export function usePlateApp() {
 
   // Derived flags
   const isInterschoolUser = user?.role === 'inter_school'
+
+  useEffect(() => {
+    setFacultyPick(null)
+  }, [sessionId])
 
   // Check authentication status on load
   useEffect(() => {
@@ -1234,6 +1240,50 @@ export function usePlateApp() {
     }
   }
 
+  const pickRandomFaculty = async () => {
+    if (!sessionId) {
+      showMessage('Select a session before picking a faculty name', 'error')
+      return
+    }
+
+    if (isSessionDiscarded) {
+      showMessage('Restore the session before picking a faculty name', 'error')
+      return
+    }
+
+    if ((sessionStats.faculty_clean_count ?? 0) <= 0) {
+      showMessage('Add at least one faculty record before picking a name', 'error')
+      return
+    }
+
+    setFacultyPickLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/pick`)
+      const data = await response.json()
+
+      if (response.ok) {
+        const faculty = data.faculty || {}
+        const preferred = normalizeName(faculty.preferred_name)
+        const last = normalizeName(faculty.last_name)
+        const displayName = (faculty.display_name || `${preferred} ${last}`.trim()).trim() || 'Faculty Member'
+
+        setFacultyPick({
+          preferred_name: preferred,
+          last_name: last,
+          display_name: displayName,
+          recorded_at: faculty.recorded_at || null,
+          recorded_by: faculty.recorded_by || null
+        })
+      } else {
+        showMessage(data.error || 'Failed to pick a faculty name', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to pick a faculty name', 'error')
+    } finally {
+      setFacultyPickLoading(false)
+    }
+  }
+
   const startDrawProcess = async () => {
     if (!sessionId) {
       showMessage('Select a session before starting a draw', 'error')
@@ -1889,6 +1939,10 @@ export function usePlateApp() {
     setDiscardLoading,
     isDrawCenterCollapsed,
     setIsDrawCenterCollapsed,
+    facultyPick,
+    setFacultyPick,
+    facultyPickLoading,
+    setFacultyPickLoading,
     notification,
     setNotification,
     modal,
@@ -1950,6 +2004,7 @@ export function usePlateApp() {
     updateDrawSummaryState,
     loadDrawSummary,
     applyDrawResponse,
+    pickRandomFaculty,
     startDrawProcess,
     finalizeDrawWinner,
     resetDrawWinner,
