@@ -9,6 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from . import recorder_bp
+import random
 from .db import (
     DEFAULT_SCHOOL_ID,
     Session as SessionModel,
@@ -508,6 +509,54 @@ def get_session_history():
 
     return jsonify({
         'scan_history': data['scan_history']
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/faculty/pick', methods=['GET'])
+def pick_random_faculty(session_id):
+    """Return a random faculty clean record for the given session."""
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
+
+    actor_id, _, school_id = _get_request_actor()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
+    if is_guest() and not db_sess.is_public:
+        return jsonify({'error': 'Access denied'}), 403
+
+    data = get_session_entry(session_id) or {}
+    if data.get('school_id') and data.get('school_id') != school_id:
+        data = {}
+
+    hydrate_session_from_db(db_sess, data)
+    ensure_session_structure(data)
+
+    if db_sess.status == 'discarded':
+        return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    faculty_records = data.get('faculty_clean_records') or []
+    if not faculty_records:
+        return jsonify({'error': 'No faculty records available for this session'}), 400
+
+    chosen = random.choice(faculty_records)
+    preferred = normalize_name(chosen.get('preferred_name') or chosen.get('first_name'))
+    last = normalize_name(chosen.get('last_name'))
+    display_name = format_display_name({'preferred_name': preferred, 'last_name': last})
+
+    faculty_payload = {
+        'preferred_name': preferred,
+        'last_name': last,
+        'display_name': display_name,
+        'recorded_at': chosen.get('timestamp'),
+        'recorded_by': chosen.get('recorded_by') or actor_id,
+    }
+
+    return jsonify({
+        'status': 'success',
+        'faculty': faculty_payload,
+        'session_id': session_id
     }), 200
 
 
