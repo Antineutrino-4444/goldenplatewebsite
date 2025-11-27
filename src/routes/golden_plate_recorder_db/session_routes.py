@@ -530,7 +530,7 @@ def pick_random_faculty(session_id):
     if data.get('school_id') and data.get('school_id') != school_id:
         data = {}
 
-    hydrate_session_from_db(db_sess, data)
+    data = hydrate_session_from_db(session_id, session_model=db_sess) or data
     ensure_session_structure(data)
 
     if db_sess.status == 'discarded':
