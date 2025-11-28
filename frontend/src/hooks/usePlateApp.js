@@ -102,6 +102,7 @@ export function usePlateApp() {
   const [isDrawCenterCollapsed, setIsDrawCenterCollapsed] = useState(false)
   const [facultyPick, setFacultyPick] = useState(null)
   const [facultyPickLoading, setFacultyPickLoading] = useState(false)
+  const [drawActionComment, setDrawActionComment] = useState('')
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -215,6 +216,11 @@ export function usePlateApp() {
   useEffect(() => {
     setFacultyPick(null)
   }, [sessionId])
+
+  const buildDrawActionPayload = () => {
+    const trimmed = drawActionComment.trim()
+    return trimmed ? { comment: trimmed } : {}
+  }
 
   // Check authentication status on load
   useEffect(() => {
@@ -1219,6 +1225,7 @@ export function usePlateApp() {
         candidates: summaryData.candidates ?? [],
         ticket_snapshot: summaryData.tickets_snapshot ?? {},
         generated_at: summaryData.generated_at ?? new Date().toISOString(),
+        history: summaryData.history ?? drawSummary?.history ?? [],
         draw_info: data.draw_info ?? sessionStats.draw_info
       }
       updateDrawSummaryState(summaryPayload)
@@ -1300,7 +1307,9 @@ export function usePlateApp() {
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/start`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildDrawActionPayload())
       })
       const data = await response.json()
       if (response.ok) {
@@ -1310,6 +1319,8 @@ export function usePlateApp() {
         } else {
           showMessage('Winner selected', 'success')
         }
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to start draw', 'error')
@@ -1334,12 +1345,16 @@ export function usePlateApp() {
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/finalize`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildDrawActionPayload())
       })
       const data = await response.json()
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner finalized', 'success')
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to finalize draw', 'error')
@@ -1368,12 +1383,16 @@ export function usePlateApp() {
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/reset`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildDrawActionPayload())
       })
       const data = await response.json()
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Draw reset successfully', 'success')
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to reset draw', 'error')
@@ -1447,6 +1466,11 @@ export function usePlateApp() {
       }
     }
 
+    const { comment } = buildDrawActionPayload()
+    if (comment) {
+      payload.comment = comment
+    }
+
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/override`, {
@@ -1458,6 +1482,8 @@ export function usePlateApp() {
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner overridden successfully', 'success')
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to override draw', 'error')
@@ -1968,6 +1994,7 @@ export function usePlateApp() {
     studentRecordCount,
     hasStudentRecords,
     showExportCard,
+    drawActionComment,
     selectedCandidate,
     overrideOptions,
     sessionDashboardStats,
@@ -2004,6 +2031,7 @@ export function usePlateApp() {
     updateDrawSummaryState,
     loadDrawSummary,
     applyDrawResponse,
+    setDrawActionComment,
     pickRandomFaculty,
     startDrawProcess,
     finalizeDrawWinner,

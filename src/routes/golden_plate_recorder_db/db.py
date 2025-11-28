@@ -249,6 +249,7 @@ class SessionDrawEvent(Base):
     tickets_at_event = Column(Integer)
     probability_at_event = Column(Integer)
     eligible_pool_size = Column(Integer)
+    comment = Column(Text)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     created_by = Column(String, ForeignKey('users.id'))
 
@@ -627,6 +628,7 @@ def _migrate_schema() -> None:
                     tickets_at_event INTEGER,
                     probability_at_event INTEGER,
                     eligible_pool_size INTEGER,
+                    comment TEXT,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     created_by TEXT REFERENCES users(id)
                 )
@@ -664,6 +666,11 @@ def _migrate_schema() -> None:
                 '''
             ))
             connection.execute(text('DROP TABLE session_draw_events_old'))
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+
+    if 'session_draw_events' in tables:
+        _ensure_column(inspector, 'session_draw_events', 'comment', 'TEXT')
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
 
