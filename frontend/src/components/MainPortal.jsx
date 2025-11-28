@@ -60,6 +60,8 @@ function MainPortal({ app }) {
     discardLoading,
     isDrawCenterCollapsed,
     setIsDrawCenterCollapsed,
+    drawActionComment,
+    setDrawActionComment,
     facultyPick,
     facultyPickLoading,
     pickRandomFaculty,
@@ -582,6 +584,20 @@ function MainPortal({ app }) {
                               Reset Draw
                             </Button>
                           </div>
+                          <div className="flex flex-col gap-1">
+                            <Label htmlFor="draw-action-comment" className="text-xs text-gray-600">
+                              Action comment (optional)
+                            </Label>
+                            <Input
+                              id="draw-action-comment"
+                              value={drawActionComment}
+                              onChange={(event) => setDrawActionComment(event.target.value)}
+                              placeholder="Add context for this draw action"
+                            />
+                            <p className="text-xs text-gray-500">
+                              The note is saved to the draw history when you start, finalize, reset, or override.
+                            </p>
+                          </div>
                           <div className="flex w-full flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                             <div>
                               <div className="text-sm text-gray-500">Random Faculty Picker</div>
@@ -792,6 +808,7 @@ function MainPortal({ app }) {
                                             <div>Eligible pool: {entry.pool_size}</div>
                                           )}
                                           {entry.created_by && <div>By: {entry.created_by}</div>}
+                                          {entry.comment && <div className="text-gray-700">Comment: {entry.comment}</div>}
                                         </div>
                                       ))}
                                   </div>
