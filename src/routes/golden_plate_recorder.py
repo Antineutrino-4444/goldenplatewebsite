@@ -1956,6 +1956,48 @@ def get_draw_summary(session_id):
     return jsonify(response), 200
 
 
+@recorder_bp.route('/session/<session_id>/faculty/pick', methods=['GET'])
+def pick_random_faculty(session_id):
+    """Return a random faculty clean record for the given session."""
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
+
+    session_info = session_data.get(session_id)
+    if session_info is None:
+        return jsonify({'error': 'Session not found'}), 404
+
+    if is_guest() and not session_info.get('is_public', True):
+        return jsonify({'error': 'Access denied'}), 403
+
+    ensure_session_structure(session_info)
+
+    if session_info.get('is_discarded'):
+        return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    faculty_records = session_info.get('faculty_clean_records') or []
+    if not faculty_records:
+        return jsonify({'error': 'No faculty records available for this session'}), 400
+
+    chosen = random.choice(faculty_records)
+    preferred = normalize_name(chosen.get('preferred_name') or chosen.get('first_name'))
+    last = normalize_name(chosen.get('last_name'))
+    display_name = format_display_name({'preferred_name': preferred, 'last_name': last})
+
+    faculty_payload = {
+        'preferred_name': preferred,
+        'last_name': last,
+        'display_name': display_name,
+        'recorded_at': chosen.get('timestamp'),
+        'recorded_by': chosen.get('recorded_by')
+    }
+
+    return jsonify({
+        'status': 'success',
+        'faculty': faculty_payload,
+        'session_id': session_id
+    }), 200
+
+
 @recorder_bp.route('/session/<session_id>/draw/start', methods=['POST'])
 def start_draw(session_id):
     """Start a weighted random draw for a session."""
