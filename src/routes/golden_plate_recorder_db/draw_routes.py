@@ -112,6 +112,9 @@ def start_draw(session_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
+    data = request.get_json(silent=True) or {}
+    comment = (data.get('comment') or '').strip() or None
+
     sess = db_session.query(SessionModel).filter_by(id=session_id).first()
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
@@ -164,6 +167,7 @@ def start_draw(session_id):
         tickets_at_event=winner_tickets,
         probability_at_event=probability,
         eligible_pool_size=pool_size,
+        comment=comment,
     )
 
     db_session.commit()
@@ -195,6 +199,9 @@ def finalize_draw_route(session_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
+    data = request.get_json(silent=True) or {}
+    comment = (data.get('comment') or '').strip() or None
+
     sess = db_session.query(SessionModel).filter_by(id=session_id).first()
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
@@ -208,7 +215,7 @@ def finalize_draw_route(session_id):
         return jsonify({'error': 'Draw already finalized'}), 400
 
     # Finalize the draw
-    finalize_draw_db(draw, session.get('user_id'))
+    finalize_draw_db(draw, session.get('user_id'), comment)
     
     winner = db_session.query(Student).filter_by(id=draw.winner_student_id).first()
 
@@ -231,6 +238,9 @@ def reset_draw_route(session_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
+    data = request.get_json(silent=True) or {}
+    comment = (data.get('comment') or '').strip() or None
+
     sess = db_session.query(SessionModel).filter_by(id=session_id).first()
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
@@ -244,7 +254,7 @@ def reset_draw_route(session_id):
         return jsonify({'error': 'Only super admins can reset a finalized draw'}), 403
 
     # Reset the draw
-    reset_draw_db(draw, session.get('user_id'))
+    reset_draw_db(draw, session.get('user_id'), comment)
 
     return jsonify({
         'status': 'success',
@@ -266,7 +276,8 @@ def override_draw(session_id):
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
 
     data = request.get_json(silent=True) or {}
-    
+    comment = (data.get('comment') or '').strip() or None
+
     provided_key_raw = data.get('student_key')
     provided_key = normalize_name(provided_key_raw).lower()
     provided_identifier = normalize_name(data.get('student_identifier'))
@@ -438,6 +449,7 @@ def override_draw(session_id):
         tickets_at_event=winner_tickets,
         probability_at_event=probability,
         eligible_pool_size=len(eligible),
+        comment=comment,
     )
 
     db_session.commit()
