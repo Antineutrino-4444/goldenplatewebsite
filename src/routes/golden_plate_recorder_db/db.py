@@ -207,6 +207,11 @@ class Session(Base):
     probability_at_selection = Column(Integer)
     eligible_pool_size = Column(Integer)
     override_applied = Column(Integer, nullable=False, default=0)
+    faculty_pick_preferred_name = Column(String)
+    faculty_pick_last_name = Column(String)
+    faculty_pick_display_name = Column(String)
+    faculty_pick_recorded_at = Column(DateTime(timezone=True))
+    faculty_pick_recorded_by = Column(String, ForeignKey('users.id'))
 
 
 class SessionRecord(Base):
@@ -606,6 +611,11 @@ def _migrate_schema() -> None:
             ('probability_at_selection', 'INTEGER'),
             ('eligible_pool_size', 'INTEGER'),
             ('override_applied', 'INTEGER DEFAULT 0'),
+            ('faculty_pick_preferred_name', 'TEXT'),
+            ('faculty_pick_last_name', 'TEXT'),
+            ('faculty_pick_display_name', 'TEXT'),
+            ('faculty_pick_recorded_at', 'DATETIME'),
+            ('faculty_pick_recorded_by', 'TEXT'),
         ]:
             if column_name not in session_columns:
                 with engine.begin() as connection:

@@ -214,7 +214,9 @@ export function usePlateApp() {
   const isInterschoolUser = user?.role === 'inter_school'
 
   useEffect(() => {
-    setFacultyPick(null)
+    if (!sessionId) {
+      setFacultyPick(null)
+    }
   }, [sessionId])
 
   const buildDrawActionPayload = () => {
@@ -609,6 +611,7 @@ export function usePlateApp() {
           is_discarded: data.is_discarded ?? false,
           draw_info: data.draw_info ?? null
         })
+        setFacultyPick(data.faculty_pick ?? null)
         await loadScanHistory()
         await loadStudentNames()
         await loadTeacherNames()
@@ -632,6 +635,7 @@ export function usePlateApp() {
             is_discarded: false,
             draw_info: null
           })
+          setFacultyPick(null)
           setScanHistory([])
           setDrawSummary(null)
           setOverrideInput('')
@@ -655,6 +659,7 @@ export function usePlateApp() {
         clean_percentage: 0,
         dirty_percentage: 0
       })
+      setFacultyPick(null)
       setScanHistory([])
       setDrawSummary(null)
       setOverrideInput('')
@@ -726,6 +731,7 @@ export function usePlateApp() {
   const switchSession = async (targetSessionId) => {
     setIsLoading(true)
     try {
+      setFacultyPick(null)
       const response = await fetch(`${API_BASE}/session/switch/${targetSessionId}`, {
         method: 'POST'
       })
@@ -1028,6 +1034,7 @@ export function usePlateApp() {
           is_discarded: data.is_discarded ?? prev.is_discarded,
           draw_info: data.draw_info ?? prev.draw_info
         }))
+        setFacultyPick(data.faculty_pick ?? null)
         nextSessionId = data.session_id ?? nextSessionId
         nextSessionName = data.session_name ?? nextSessionName
         if (data.is_discarded !== undefined) {
