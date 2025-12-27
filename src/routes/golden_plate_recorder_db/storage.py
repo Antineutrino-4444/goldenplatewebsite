@@ -369,6 +369,9 @@ def ensure_session_structure(session_info):
     if 'scan_history' not in session_info or not isinstance(session_info['scan_history'], list):
         session_info['scan_history'] = []
 
+    if 'faculty_pick' not in session_info:
+        session_info['faculty_pick'] = None
+
     # Strip any stored names from historic dirty scan history entries
     for record in session_info['scan_history']:
         if record.get('category') == 'dirty':
@@ -483,6 +486,20 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
     if db_sess.discarded_by and not discard_metadata.get('discarded_by'):
         discard_metadata['discarded_by'] = db_sess.discarded_by
     session_info['discard_metadata'] = discard_metadata
+    if (
+        db_sess.faculty_pick_display_name
+        or db_sess.faculty_pick_preferred_name
+        or db_sess.faculty_pick_last_name
+    ):
+        session_info['faculty_pick'] = {
+            'preferred_name': db_sess.faculty_pick_preferred_name,
+            'last_name': db_sess.faculty_pick_last_name,
+            'display_name': db_sess.faculty_pick_display_name,
+            'recorded_at': _isoformat_timestamp(db_sess.faculty_pick_recorded_at),
+            'recorded_by': db_sess.faculty_pick_recorded_by,
+        }
+    else:
+        session_info.setdefault('faculty_pick', None)
 
     try:
         records = (

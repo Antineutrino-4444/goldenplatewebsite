@@ -156,6 +156,7 @@ def record_draw_event(
     tickets_at_event: Optional[float] = None,
     probability_at_event: Optional[float] = None,
     eligible_pool_size: Optional[int] = None,
+    comment: Optional[str] = None,
 ) -> SessionDrawEvent:
     """Record a draw event in the database."""
     event = SessionDrawEvent(
@@ -166,6 +167,7 @@ def record_draw_event(
         tickets_at_event=int(tickets_at_event) if tickets_at_event is not None else None,
         probability_at_event=int(probability_at_event) if probability_at_event is not None else None,
         eligible_pool_size=eligible_pool_size,
+        comment=(comment or '').strip() or None,
         created_by=user_id,
     )
     db_session.add(event)
@@ -225,7 +227,7 @@ def reset_student_tickets(
     return True
 
 
-def finalize_draw(draw: SessionModel, user_id: str) -> None:
+def finalize_draw(draw: SessionModel, user_id: str, comment: Optional[str] = None) -> None:
     """Finalize a draw and reset winner's tickets."""
     if draw.finalized:
         return
@@ -241,6 +243,7 @@ def finalize_draw(draw: SessionModel, user_id: str) -> None:
         event_type='finalize',
         user_id=user_id,
         selected_student_id=draw.winner_student_id,
+        comment=comment,
     )
     
     # Reset winner's tickets to 0
@@ -255,7 +258,7 @@ def finalize_draw(draw: SessionModel, user_id: str) -> None:
     db_session.commit()
 
 
-def reset_draw(draw: SessionModel, user_id: str) -> None:
+def reset_draw(draw: SessionModel, user_id: str, comment: Optional[str] = None) -> None:
     """Reset a draw, clearing the winner."""
     # Record restore event before resetting
     record_draw_event(
@@ -263,6 +266,7 @@ def reset_draw(draw: SessionModel, user_id: str) -> None:
         event_type='restore',
         user_id=user_id,
         selected_student_id=draw.winner_student_id,
+        comment=comment,
     )
     
     draw.winner_student_id = None
@@ -303,6 +307,7 @@ def get_draw_history(session_id: str) -> List[Dict]:
             'tickets': event.tickets_at_event,
             'probability': event.probability_at_event,
             'pool_size': event.eligible_pool_size,
+            'comment': event.comment,
         })
     
     return result

@@ -60,6 +60,51 @@ def _forbid_interschool_accounts():
     return None
 
 
+def _isoformat_timestamp(value):
+    if not value:
+        return None
+    try:
+        return value.isoformat()
+    except AttributeError:
+        try:
+            return datetime.fromisoformat(str(value)).isoformat()
+        except Exception:
+            return str(value)
+
+
+def _parse_iso_timestamp(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _serialize_faculty_pick(db_sess, fallback=None):
+    if db_sess and (
+        db_sess.faculty_pick_display_name
+        or db_sess.faculty_pick_preferred_name
+        or db_sess.faculty_pick_last_name
+    ):
+        return {
+            'preferred_name': db_sess.faculty_pick_preferred_name,
+            'last_name': db_sess.faculty_pick_last_name,
+            'display_name': db_sess.faculty_pick_display_name,
+            'recorded_at': _isoformat_timestamp(db_sess.faculty_pick_recorded_at),
+            'recorded_by': db_sess.faculty_pick_recorded_by,
+        }
+    if isinstance(fallback, dict) and fallback:
+        return {
+            'preferred_name': fallback.get('preferred_name'),
+            'last_name': fallback.get('last_name'),
+            'display_name': fallback.get('display_name'),
+            'recorded_at': fallback.get('recorded_at'),
+            'recorded_by': fallback.get('recorded_by'),
+        }
+    return None
+
+
 def _delete_session_with_dependencies(db_sess):
     """Remove a session and any dependent draw and record rows."""
     session_id = db_sess.id
@@ -269,6 +314,7 @@ def create_session():
         'red_records': [],
         'faculty_clean_records': [],
         'scan_history': [],
+        'faculty_pick': None,
         'is_public': is_public,
         'draw_info': {
             'winner': None,
@@ -471,6 +517,7 @@ def get_session_status():
     ensure_session_structure(json_data)
     scan_history_count = len(json_data.get('scan_history', []))
     draw_info = serialize_draw_info(json_data.get('draw_info', {}))
+    faculty_pick = _serialize_faculty_pick(db_sess, json_data.get('faculty_pick'))
 
     return jsonify({
         'session_id': session_id,
@@ -485,7 +532,8 @@ def get_session_status():
         'dirty_percentage': round(dirty_percentage, 1),
         'scan_history_count': scan_history_count,
         'is_discarded': db_sess.status == 'discarded',
-        'draw_info': draw_info
+        'draw_info': draw_info,
+        'faculty_pick': faculty_pick,
     }), 200
 
 
@@ -544,14 +592,27 @@ def pick_random_faculty(session_id):
     preferred = normalize_name(chosen.get('preferred_name') or chosen.get('first_name'))
     last = normalize_name(chosen.get('last_name'))
     display_name = format_display_name({'preferred_name': preferred, 'last_name': last})
+    recorded_at = chosen.get('timestamp')
 
     faculty_payload = {
         'preferred_name': preferred,
         'last_name': last,
         'display_name': display_name,
-        'recorded_at': chosen.get('timestamp'),
+        'recorded_at': recorded_at,
         'recorded_by': chosen.get('recorded_by') or actor_id,
     }
+
+    db_sess.faculty_pick_preferred_name = preferred
+    db_sess.faculty_pick_last_name = last
+    db_sess.faculty_pick_display_name = display_name
+    db_sess.faculty_pick_recorded_at = _parse_iso_timestamp(recorded_at)
+    db_sess.faculty_pick_recorded_by = faculty_payload['recorded_by']
+    db_sess.updated_at = _now_utc()
+
+    data['faculty_pick'] = faculty_payload
+    session_data[session_id] = data
+    save_session_data()
+    db_session.commit()
 
     return jsonify({
         'status': 'success',

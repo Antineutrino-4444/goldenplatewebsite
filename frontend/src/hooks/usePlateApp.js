@@ -102,6 +102,7 @@ export function usePlateApp() {
   const [isDrawCenterCollapsed, setIsDrawCenterCollapsed] = useState(false)
   const [facultyPick, setFacultyPick] = useState(null)
   const [facultyPickLoading, setFacultyPickLoading] = useState(false)
+  const [drawActionComment, setDrawActionComment] = useState('')
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -213,8 +214,15 @@ export function usePlateApp() {
   const isInterschoolUser = user?.role === 'inter_school'
 
   useEffect(() => {
-    setFacultyPick(null)
+    if (!sessionId) {
+      setFacultyPick(null)
+    }
   }, [sessionId])
+
+  const buildDrawActionPayload = () => {
+    const trimmed = drawActionComment.trim()
+    return trimmed ? { comment: trimmed } : {}
+  }
 
   // Check authentication status on load
   useEffect(() => {
@@ -603,6 +611,7 @@ export function usePlateApp() {
           is_discarded: data.is_discarded ?? false,
           draw_info: data.draw_info ?? null
         })
+        setFacultyPick(data.faculty_pick ?? null)
         await loadScanHistory()
         await loadStudentNames()
         await loadTeacherNames()
@@ -626,6 +635,7 @@ export function usePlateApp() {
             is_discarded: false,
             draw_info: null
           })
+          setFacultyPick(null)
           setScanHistory([])
           setDrawSummary(null)
           setOverrideInput('')
@@ -649,6 +659,7 @@ export function usePlateApp() {
         clean_percentage: 0,
         dirty_percentage: 0
       })
+      setFacultyPick(null)
       setScanHistory([])
       setDrawSummary(null)
       setOverrideInput('')
@@ -720,6 +731,7 @@ export function usePlateApp() {
   const switchSession = async (targetSessionId) => {
     setIsLoading(true)
     try {
+      setFacultyPick(null)
       const response = await fetch(`${API_BASE}/session/switch/${targetSessionId}`, {
         method: 'POST'
       })
@@ -1022,6 +1034,7 @@ export function usePlateApp() {
           is_discarded: data.is_discarded ?? prev.is_discarded,
           draw_info: data.draw_info ?? prev.draw_info
         }))
+        setFacultyPick(data.faculty_pick ?? null)
         nextSessionId = data.session_id ?? nextSessionId
         nextSessionName = data.session_name ?? nextSessionName
         if (data.is_discarded !== undefined) {
@@ -1219,6 +1232,7 @@ export function usePlateApp() {
         candidates: summaryData.candidates ?? [],
         ticket_snapshot: summaryData.tickets_snapshot ?? {},
         generated_at: summaryData.generated_at ?? new Date().toISOString(),
+        history: summaryData.history ?? drawSummary?.history ?? [],
         draw_info: data.draw_info ?? sessionStats.draw_info
       }
       updateDrawSummaryState(summaryPayload)
@@ -1300,7 +1314,9 @@ export function usePlateApp() {
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/start`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildDrawActionPayload())
       })
       const data = await response.json()
       if (response.ok) {
@@ -1310,6 +1326,8 @@ export function usePlateApp() {
         } else {
           showMessage('Winner selected', 'success')
         }
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to start draw', 'error')
@@ -1334,12 +1352,16 @@ export function usePlateApp() {
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/finalize`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildDrawActionPayload())
       })
       const data = await response.json()
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner finalized', 'success')
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to finalize draw', 'error')
@@ -1368,12 +1390,16 @@ export function usePlateApp() {
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/reset`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildDrawActionPayload())
       })
       const data = await response.json()
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Draw reset successfully', 'success')
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to reset draw', 'error')
@@ -1447,6 +1473,11 @@ export function usePlateApp() {
       }
     }
 
+    const { comment } = buildDrawActionPayload()
+    if (comment) {
+      payload.comment = comment
+    }
+
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/override`, {
@@ -1458,6 +1489,8 @@ export function usePlateApp() {
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner overridden successfully', 'success')
+        setDrawActionComment('')
+        await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
       } else {
         showMessage(data.error || 'Failed to override draw', 'error')
@@ -1968,6 +2001,7 @@ export function usePlateApp() {
     studentRecordCount,
     hasStudentRecords,
     showExportCard,
+    drawActionComment,
     selectedCandidate,
     overrideOptions,
     sessionDashboardStats,
@@ -2004,6 +2038,7 @@ export function usePlateApp() {
     updateDrawSummaryState,
     loadDrawSummary,
     applyDrawResponse,
+    setDrawActionComment,
     pickRandomFaculty,
     startDrawProcess,
     finalizeDrawWinner,

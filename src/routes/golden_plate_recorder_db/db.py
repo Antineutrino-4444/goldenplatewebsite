@@ -207,6 +207,11 @@ class Session(Base):
     probability_at_selection = Column(Integer)
     eligible_pool_size = Column(Integer)
     override_applied = Column(Integer, nullable=False, default=0)
+    faculty_pick_preferred_name = Column(String)
+    faculty_pick_last_name = Column(String)
+    faculty_pick_display_name = Column(String)
+    faculty_pick_recorded_at = Column(DateTime(timezone=True))
+    faculty_pick_recorded_by = Column(String, ForeignKey('users.id'))
 
 
 class SessionRecord(Base):
@@ -249,6 +254,7 @@ class SessionDrawEvent(Base):
     tickets_at_event = Column(Integer)
     probability_at_event = Column(Integer)
     eligible_pool_size = Column(Integer)
+    comment = Column(Text)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     created_by = Column(String, ForeignKey('users.id'))
 
@@ -605,6 +611,11 @@ def _migrate_schema() -> None:
             ('probability_at_selection', 'INTEGER'),
             ('eligible_pool_size', 'INTEGER'),
             ('override_applied', 'INTEGER DEFAULT 0'),
+            ('faculty_pick_preferred_name', 'TEXT'),
+            ('faculty_pick_last_name', 'TEXT'),
+            ('faculty_pick_display_name', 'TEXT'),
+            ('faculty_pick_recorded_at', 'DATETIME'),
+            ('faculty_pick_recorded_by', 'TEXT'),
         ]:
             if column_name not in session_columns:
                 with engine.begin() as connection:
@@ -627,6 +638,7 @@ def _migrate_schema() -> None:
                     tickets_at_event INTEGER,
                     probability_at_event INTEGER,
                     eligible_pool_size INTEGER,
+                    comment TEXT,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     created_by TEXT REFERENCES users(id)
                 )
@@ -664,6 +676,11 @@ def _migrate_schema() -> None:
                 '''
             ))
             connection.execute(text('DROP TABLE session_draw_events_old'))
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+
+    if 'session_draw_events' in tables:
+        _ensure_column(inspector, 'session_draw_events', 'comment', 'TEXT')
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
 
