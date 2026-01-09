@@ -165,7 +165,8 @@ def record_draw_event(
         event_type=event_type,
         selected_student_id=selected_student_id,
         tickets_at_event=int(tickets_at_event) if tickets_at_event is not None else None,
-        probability_at_event=int(probability_at_event) if probability_at_event is not None else None,
+        # Store probability as basis points (multiply by 100) to preserve 2 decimal places
+        probability_at_event=int(round(probability_at_event * 100)) if probability_at_event is not None else None,
         eligible_pool_size=eligible_pool_size,
         comment=(comment or '').strip() or None,
         created_by=user_id,
@@ -291,13 +292,20 @@ def get_draw_history(session_id: str) -> List[Dict]:
         .order_by(SessionDrawEvent.created_at)
         .all()
     )
-    
+
     result = []
     for event in events:
         student = None
         if event.selected_student_id:
             student = db_session.query(Student).filter_by(id=event.selected_student_id).first()
-        
+
+        # Convert probability from basis points (stored as * 100) back to percentage
+        probability = (
+            event.probability_at_event / 100.0
+            if event.probability_at_event is not None
+            else None
+        )
+
         result.append({
             'event_type': event.event_type,
             'timestamp': event.created_at.isoformat() if event.created_at else None,
@@ -305,11 +313,11 @@ def get_draw_history(session_id: str) -> List[Dict]:
             'student_name': f"{student.preferred_name} {student.last_name}" if student else None,
             'student_id': event.selected_student_id,
             'tickets': event.tickets_at_event,
-            'probability': event.probability_at_event,
+            'probability': probability,
             'pool_size': event.eligible_pool_size,
             'comment': event.comment,
         })
-    
+
     return result
 
 

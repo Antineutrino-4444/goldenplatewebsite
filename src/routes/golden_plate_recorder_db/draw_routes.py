@@ -58,13 +58,20 @@ def get_draw_summary(session_id):
     draw = db_session.query(SessionModel.__table__.c.id).filter_by(id=session_id).first()
     draw_record = get_or_create_session_draw(session_id)
     
+    # Convert probability from basis points (stored as * 100) back to percentage
+    probability_at_selection = (
+        draw_record.probability_at_selection / 100.0
+        if draw_record.probability_at_selection is not None
+        else None
+    )
+
     draw_info = {
         'has_winner': draw_record.winner_student_id is not None,
         'finalized': bool(draw_record.finalized),
         'method': draw_record.method,
         'override_applied': bool(draw_record.override_applied),
         'tickets_at_selection': draw_record.tickets_at_selection,
-        'probability_at_selection': draw_record.probability_at_selection,
+        'probability_at_selection': probability_at_selection,
         'eligible_pool_size': draw_record.eligible_pool_size,
         'finalized_at': draw_record.finalized_at.isoformat() if draw_record.finalized_at else None,
         'winner': None,
@@ -84,7 +91,7 @@ def get_draw_summary(session_id):
                 'house': winner.house,
                 'clan': winner.clan,
                 'tickets': draw_record.tickets_at_selection,
-                'probability': draw_record.probability_at_selection,
+                'probability': probability_at_selection,
             }
     
     # Get history
@@ -150,7 +157,8 @@ def start_draw(session_id):
     draw.winner_student_id = winner.id
     draw.method = 'random'
     draw.tickets_at_selection = int(winner_tickets)
-    draw.probability_at_selection = int(probability)
+    # Store probability as basis points (multiply by 100) to preserve 2 decimal places
+    draw.probability_at_selection = int(round(probability * 100))
     draw.eligible_pool_size = pool_size
     draw.override_applied = 0
     draw.finalized = 0
@@ -433,7 +441,8 @@ def override_draw(session_id):
     draw.winner_student_id = profile['student_id']
     draw.method = 'random'
     draw.tickets_at_selection = int(winner_tickets)
-    draw.probability_at_selection = int(probability)
+    # Store probability as basis points (multiply by 100) to preserve 2 decimal places
+    draw.probability_at_selection = int(round(probability * 100))
     draw.eligible_pool_size = len(eligible)
     draw.override_applied = 0
     draw.finalized = 0
