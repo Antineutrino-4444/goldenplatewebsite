@@ -431,29 +431,148 @@ function MainPortal({ app }) {
               </Card>
 
               {showExportCard && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Download className="h-5 w-5" />
-                      Export Food Waste Data
-                    </CardTitle>
-                    <CardDescription>
-                      Download plate cleanliness records by category (Clean, Dirty Count, Very Dirty, Faculty Clean)
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-col gap-2">
-                      <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
-                        <Download className="h-4 w-4 mr-2" />
+                <div className="flex flex-col gap-4 lg:row-span-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Download className="h-5 w-5" />
                         Export Food Waste Data
-                      </Button>
-                      <Button onClick={exportDetailedCSV} variant="outline" className="w-full">
-                        <FileText className="h-4 w-4 mr-2" />
-                        Export Detailed Record List
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                      </CardTitle>
+                      <CardDescription>
+                        Download plate cleanliness records by category (Clean, Dirty Count, Very Dirty, Faculty Clean)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-col gap-2">
+                        <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
+                          <Download className="h-4 w-4 mr-2" />
+                          Export Food Waste Data
+                        </Button>
+                        <Button onClick={exportDetailedCSV} variant="outline" className="w-full">
+                          <FileText className="h-4 w-4 mr-2" />
+                          Export Detailed Record List
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="flex-1 flex flex-col">
+                    <CardHeader>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <CardTitle className="flex items-center gap-2">
+                          <Home className="h-5 w-5" />
+                          House Data
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-500">Sort by:</span>
+                          <div className="flex border rounded-lg overflow-hidden">
+                            <button
+                              onClick={() => setHouseSortBy('count')}
+                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                                houseSortBy === 'count'
+                                  ? 'bg-teal-600 text-white'
+                                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <ArrowDownNarrowWide className="h-3.5 w-3.5" />
+                              Count
+                            </button>
+                            <button
+                              onClick={() => setHouseSortBy('percentage')}
+                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                                houseSortBy === 'percentage'
+                                  ? 'bg-teal-600 text-white'
+                                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+                              Clean Rate
+                            </button>
+                          </div>
+                          <Button
+                            onClick={() => loadHouseStats({ silent: false })}
+                            variant="outline"
+                            size="sm"
+                          >
+                            <RefreshCcw className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      <CardDescription>
+                        House ranking statistics for the current session
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex-1 overflow-y-auto">
+                      {!sessionId ? (
+                        <div className="py-8 text-center text-gray-500">
+                          No active session selected. Switch to a session to view house data.
+                        </div>
+                      ) : houseStatsLoading ? (
+                        <div className="py-8 text-center text-gray-500">
+                          Loading house statistics...
+                        </div>
+                      ) : !houseStats?.has_house_data ? (
+                        <div className="py-8 text-center text-gray-500">
+                          <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                          <p className="text-lg font-medium">No House Data Available</p>
+                          <p className="text-sm mt-2">
+                            {houseStats?.message || 'The student database does not contain house information.'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="text-sm text-gray-500">
+                            Total records with house data: <span className="font-medium">{houseStats.total_records_with_house}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {(houseStats.house_stats || [])
+                              .slice()
+                              .sort((a, b) => {
+                                if (houseSortBy === 'percentage') {
+                                  return b.clean_rate - a.clean_rate
+                                }
+                                return b.total_count - a.total_count
+                              })
+                              .map((house, index) => (
+                                <div
+                                  key={house.house}
+                                  className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm"
+                                >
+                                  <div className="flex items-center gap-4">
+                                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
+                                      #{index + 1}
+                                    </div>
+                                    <div>
+                                      <div className="font-semibold text-gray-900">{house.house}</div>
+                                      <div className="text-sm text-gray-500">
+                                        Clean: {house.clean_count} • Very Dirty: {house.red_count}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-2xl font-bold text-emerald-600">
+                                      {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {houseSortBy === 'percentage' ? `${house.total_count} total` : `${house.clean_rate}% clean rate`}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {house.percentage}% of all records
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                          {(houseStats.house_stats || []).length === 0 && (
+                            <div className="py-8 text-center text-gray-500">
+                              No house data recorded in this session yet.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               )}
 
               <Card
@@ -875,122 +994,124 @@ function MainPortal({ app }) {
                     ) : null}
                   </Card>
 
-              <Card className={`${showExportCard ? '' : 'lg:col-span-2'}`}>
-                <CardHeader>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <CardTitle className="flex items-center gap-2">
-                      <Home className="h-5 w-5" />
-                      House Data
-                    </CardTitle>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">Sort by:</span>
-                      <div className="flex border rounded-lg overflow-hidden">
-                        <button
-                          onClick={() => setHouseSortBy('count')}
-                          className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                            houseSortBy === 'count'
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-50'
-                          }`}
+              {!showExportCard && (
+                <Card className="lg:col-span-2">
+                  <CardHeader>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="flex items-center gap-2">
+                        <Home className="h-5 w-5" />
+                        House Data
+                      </CardTitle>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">Sort by:</span>
+                        <div className="flex border rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setHouseSortBy('count')}
+                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                              houseSortBy === 'count'
+                                ? 'bg-teal-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <ArrowDownNarrowWide className="h-3.5 w-3.5" />
+                            Count
+                          </button>
+                          <button
+                            onClick={() => setHouseSortBy('percentage')}
+                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                              houseSortBy === 'percentage'
+                                ? 'bg-teal-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+                            Clean Rate
+                          </button>
+                        </div>
+                        <Button
+                          onClick={() => loadHouseStats({ silent: false })}
+                          variant="outline"
+                          size="sm"
                         >
-                          <ArrowDownNarrowWide className="h-3.5 w-3.5" />
-                          Count
-                        </button>
-                        <button
-                          onClick={() => setHouseSortBy('percentage')}
-                          className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                            houseSortBy === 'percentage'
-                              ? 'bg-teal-600 text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <ArrowUpNarrowWide className="h-3.5 w-3.5" />
-                          Clean Rate
-                        </button>
+                          <RefreshCcw className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        onClick={() => loadHouseStats({ silent: false })}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <RefreshCcw className="h-4 w-4" />
-                      </Button>
                     </div>
-                  </div>
-                  <CardDescription>
-                    House ranking statistics for the current session
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!sessionId ? (
-                    <div className="py-8 text-center text-gray-500">
-                      No active session selected. Switch to a session to view house data.
-                    </div>
-                  ) : houseStatsLoading ? (
-                    <div className="py-8 text-center text-gray-500">
-                      Loading house statistics...
-                    </div>
-                  ) : !houseStats?.has_house_data ? (
-                    <div className="py-8 text-center text-gray-500">
-                      <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                      <p className="text-lg font-medium">No House Data Available</p>
-                      <p className="text-sm mt-2">
-                        {houseStats?.message || 'The student database does not contain house information.'}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="text-sm text-gray-500">
-                        Total records with house data: <span className="font-medium">{houseStats.total_records_with_house}</span>
+                    <CardDescription>
+                      House ranking statistics for the current session
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {!sessionId ? (
+                      <div className="py-8 text-center text-gray-500">
+                        No active session selected. Switch to a session to view house data.
                       </div>
-                      <div className="space-y-2">
-                        {(houseStats.house_stats || [])
-                          .slice()
-                          .sort((a, b) => {
-                            if (houseSortBy === 'percentage') {
-                              return b.clean_rate - a.clean_rate
-                            }
-                            return b.total_count - a.total_count
-                          })
-                          .map((house, index) => (
-                            <div
-                              key={house.house}
-                              className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm"
-                            >
-                              <div className="flex items-center gap-4">
-                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
-                                  #{index + 1}
+                    ) : houseStatsLoading ? (
+                      <div className="py-8 text-center text-gray-500">
+                        Loading house statistics...
+                      </div>
+                    ) : !houseStats?.has_house_data ? (
+                      <div className="py-8 text-center text-gray-500">
+                        <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                        <p className="text-lg font-medium">No House Data Available</p>
+                        <p className="text-sm mt-2">
+                          {houseStats?.message || 'The student database does not contain house information.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="text-sm text-gray-500">
+                          Total records with house data: <span className="font-medium">{houseStats.total_records_with_house}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {(houseStats.house_stats || [])
+                            .slice()
+                            .sort((a, b) => {
+                              if (houseSortBy === 'percentage') {
+                                return b.clean_rate - a.clean_rate
+                              }
+                              return b.total_count - a.total_count
+                            })
+                            .map((house, index) => (
+                              <div
+                                key={house.house}
+                                className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm"
+                              >
+                                <div className="flex items-center gap-4">
+                                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
+                                    #{index + 1}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-gray-900">{house.house}</div>
+                                    <div className="text-sm text-gray-500">
+                                      Clean: {house.clean_count} • Very Dirty: {house.red_count}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <div className="font-semibold text-gray-900">{house.house}</div>
-                                  <div className="text-sm text-gray-500">
-                                    Clean: {house.clean_count} • Very Dirty: {house.red_count}
+                                <div className="text-right">
+                                  <div className="text-2xl font-bold text-emerald-600">
+                                    {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {houseSortBy === 'percentage' ? `${house.total_count} total` : `${house.clean_rate}% clean rate`}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {house.percentage}% of all records
                                   </div>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className="text-2xl font-bold text-emerald-600">
-                                  {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {houseSortBy === 'percentage' ? `${house.total_count} total` : `${house.clean_rate}% clean rate`}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {house.percentage}% of all records
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                      {(houseStats.house_stats || []).length === 0 && (
-                        <div className="py-8 text-center text-gray-500">
-                          No house data recorded in this session yet.
+                            ))}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                        {(houseStats.house_stats || []).length === 0 && (
+                          <div className="py-8 text-center text-gray-500">
+                            No house data recorded in this session yet.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
                 </div>
 
             <div className="mt-8 space-y-4">
