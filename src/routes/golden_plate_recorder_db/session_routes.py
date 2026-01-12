@@ -621,6 +621,92 @@ def pick_random_faculty(session_id):
     }), 200
 
 
+@recorder_bp.route('/session/<session_id>/house-stats', methods=['GET'])
+def get_house_stats(session_id):
+    """Get house statistics for a specific session."""
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
+
+    _, _, school_id = _get_request_actor()
+
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
+    if is_guest() and not db_sess.is_public:
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Check if house data exists in the students table for this school
+    has_house_data = db_session.query(Student.id).filter(
+        Student.school_id == school_id,
+        Student.house.isnot(None),
+        Student.house != ''
+    ).first() is not None
+
+    if not has_house_data:
+        return jsonify({
+            'has_house_data': False,
+            'message': 'No house data available in the student database',
+            'house_stats': []
+        }), 200
+
+    # Get house statistics from session records
+    records = (
+        db_session.query(SessionRecord)
+        .filter(
+            SessionRecord.session_id == session_id,
+            SessionRecord.school_id == school_id,
+            SessionRecord.category.in_(['clean', 'red'])  # Only student categories
+        )
+        .all()
+    )
+
+    # Aggregate by house
+    house_counts = {}
+    total_with_house = 0
+
+    for record in records:
+        house = (record.house or '').strip()
+        if not house:
+            # Try to get house from linked student
+            if record.student_id:
+                student = db_session.query(Student).filter_by(id=record.student_id).first()
+                if student:
+                    house = (student.house or '').strip()
+
+        if house:
+            if house not in house_counts:
+                house_counts[house] = {'clean': 0, 'red': 0, 'total': 0}
+            house_counts[house][record.category] += 1
+            house_counts[house]['total'] += 1
+            total_with_house += 1
+
+    # Calculate percentages and build response
+    house_stats = []
+    for house_name, counts in house_counts.items():
+        percentage = (counts['total'] / total_with_house * 100) if total_with_house > 0 else 0
+        clean_rate = (counts['clean'] / counts['total'] * 100) if counts['total'] > 0 else 0
+        house_stats.append({
+            'house': house_name,
+            'clean_count': counts['clean'],
+            'red_count': counts['red'],
+            'total_count': counts['total'],
+            'percentage': round(percentage, 1),
+            'clean_rate': round(clean_rate, 1)
+        })
+
+    # Sort by total count descending by default
+    house_stats.sort(key=lambda x: x['total_count'], reverse=True)
+
+    return jsonify({
+        'has_house_data': True,
+        'session_id': session_id,
+        'session_name': db_sess.session_name,
+        'total_records_with_house': total_with_house,
+        'house_stats': house_stats
+    }), 200
+
+
 @recorder_bp.route('/session/scan-history', methods=['GET'])
 def get_scan_history():
     """Get scan history for current session (formatted) from session_records table."""

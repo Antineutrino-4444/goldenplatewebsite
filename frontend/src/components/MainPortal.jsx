@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label.jsx'
 import { SearchableNameInput } from '@/components/SearchableNameInput.jsx'
 import {
   AlertCircle,
+  ArrowDownNarrowWide,
+  ArrowUpNarrowWide,
   Ban,
   BarChart3,
   Building2,
@@ -20,6 +22,7 @@ import {
   Download,
   FileText,
   History,
+  Home,
   ListOrdered,
   LogOut,
   Plus,
@@ -152,7 +155,14 @@ function MainPortal({ app }) {
     setShowUserDeleteConfirm,
     showUserDeleteConfirm,
     userToDelete,
-    deleteUserAccount
+    deleteUserAccount,
+    houseStats,
+    houseStatsLoading,
+    showHouseDataPanel,
+    setShowHouseDataPanel,
+    houseSortBy,
+    setHouseSortBy,
+    loadHouseStats
   } = app
 
   const formatSchoolNameWithCode = (school) => {
@@ -310,6 +320,16 @@ function MainPortal({ app }) {
               >
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Dashboard
+              </Button>
+              <Button
+                onClick={() => {
+                  loadHouseStats({ silent: false })
+                  setShowHouseDataPanel(true)
+                }}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                <Home className="h-4 w-4 mr-2" />
+                House Data
               </Button>
               {['admin', 'superadmin'].includes(user.role) && (
                 <Button
@@ -1800,6 +1820,131 @@ function MainPortal({ app }) {
             ))}
           </div>
           <Button onClick={() => setShowSessionsDialog(false)} className="w-full">
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showHouseDataPanel} onOpenChange={setShowHouseDataPanel}>
+        <DialogContent
+          className="w-full sm:max-w-2xl lg:max-w-3xl max-h-[82vh] overflow-y-auto"
+          dismissOnOverlayClick={false}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-teal-600 flex items-center gap-2">
+              <Home className="h-5 w-5" />
+              House Data
+            </DialogTitle>
+            <DialogDescription>
+              House ranking statistics for the current session
+            </DialogDescription>
+          </DialogHeader>
+          {!sessionId ? (
+            <div className="py-12 text-center text-gray-500">
+              No active session selected. Switch to a session to view house data.
+            </div>
+          ) : houseStatsLoading ? (
+            <div className="py-12 text-center text-gray-500">
+              Loading house statistics...
+            </div>
+          ) : !houseStats?.has_house_data ? (
+            <div className="py-12 text-center text-gray-500">
+              <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg font-medium">No House Data Available</p>
+              <p className="text-sm mt-2">
+                {houseStats?.message || 'The student database does not contain house information.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-500">
+                  Total records with house data: <span className="font-medium">{houseStats.total_records_with_house}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Sort by:</span>
+                  <div className="flex border rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setHouseSortBy('count')}
+                      className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                        houseSortBy === 'count'
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <ArrowDownNarrowWide className="h-3.5 w-3.5" />
+                      Count
+                    </button>
+                    <button
+                      onClick={() => setHouseSortBy('percentage')}
+                      className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                        houseSortBy === 'percentage'
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+                      Percentage
+                    </button>
+                  </div>
+                  <Button
+                    onClick={() => loadHouseStats({ silent: false })}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {(houseStats.house_stats || [])
+                  .slice()
+                  .sort((a, b) => {
+                    if (houseSortBy === 'percentage') {
+                      return b.percentage - a.percentage
+                    }
+                    return b.total_count - a.total_count
+                  })
+                  .map((house, index) => (
+                    <div
+                      key={house.house}
+                      className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
+                          #{index + 1}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-gray-900">{house.house}</div>
+                          <div className="text-sm text-gray-500">
+                            Clean: {house.clean_count} • Very Dirty: {house.red_count}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold text-gray-900">
+                          {houseSortBy === 'percentage' ? `${house.percentage}%` : house.total_count}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {houseSortBy === 'percentage' ? `${house.total_count} total` : `${house.percentage}% of total`}
+                        </div>
+                        <div className="text-xs text-emerald-600">
+                          Clean rate: {house.clean_rate}%
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              {(houseStats.house_stats || []).length === 0 && (
+                <div className="py-8 text-center text-gray-500">
+                  No house data recorded in this session yet.
+                </div>
+              )}
+            </div>
+          )}
+          <Button onClick={() => setShowHouseDataPanel(false)} className="w-full">
             Close
           </Button>
         </DialogContent>
