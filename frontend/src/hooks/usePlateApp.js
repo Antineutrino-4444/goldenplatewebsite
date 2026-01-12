@@ -104,6 +104,12 @@ export function usePlateApp() {
   const [facultyPickLoading, setFacultyPickLoading] = useState(false)
   const [drawActionComment, setDrawActionComment] = useState('')
 
+  // House stats state
+  const [houseStats, setHouseStats] = useState(null)
+  const [houseStatsLoading, setHouseStatsLoading] = useState(false)
+  const [showHouseDataPanel, setShowHouseDataPanel] = useState(false)
+  const [houseSortBy, setHouseSortBy] = useState('count') // 'count' or 'percentage'
+
   // Notification and modal states
   const [notification, setNotification] = useState(null)
   const [modal, setModal] = useState(null)
@@ -1211,6 +1217,36 @@ export function usePlateApp() {
     }
   }
 
+  const loadHouseStats = async ({ silent = false, sessionIdOverride = null } = {}) => {
+    const targetSessionId = sessionIdOverride || sessionId
+    if (!targetSessionId) {
+      setHouseStats(null)
+      return
+    }
+
+    setHouseStatsLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${targetSessionId}/house-stats`)
+      const data = await response.json()
+      if (response.ok) {
+        setHouseStats(data)
+      } else {
+        if (!silent) {
+          showMessage(data.error || 'Failed to load house statistics', 'error')
+        }
+        setHouseStats(null)
+      }
+    } catch (error) {
+      console.error('Failed to load house stats:', error)
+      if (!silent) {
+        showMessage('Failed to load house statistics', 'error')
+      }
+      setHouseStats(null)
+    } finally {
+      setHouseStatsLoading(false)
+    }
+  }
+
   const applyDrawResponse = (data, { silent = false } = {}) => {
     if (!data) {
       return
@@ -2007,6 +2043,10 @@ export function usePlateApp() {
     sessionDashboardStats,
     dashboardWinner,
     isInterschoolUser,
+    houseStats,
+    houseStatsLoading,
+    showHouseDataPanel,
+    houseSortBy,
 
     // actions
     checkAuthStatus,
@@ -2067,6 +2107,9 @@ export function usePlateApp() {
     changeUserRole,
     deleteUserAccount,
     sanitizeSelection,
-    resetSchoolRegistrationForm
+    resetSchoolRegistrationForm,
+    loadHouseStats,
+    setShowHouseDataPanel,
+    setHouseSortBy
   }
 }
