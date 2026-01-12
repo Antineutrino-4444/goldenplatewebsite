@@ -875,7 +875,7 @@ function MainPortal({ app }) {
                     ) : null}
                   </Card>
 
-              <Card className="lg:col-span-2">
+              <Card className={`${showExportCard ? '' : 'lg:col-span-2'}`}>
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <CardTitle className="flex items-center gap-2">
