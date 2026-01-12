@@ -154,6 +154,20 @@ function MainPortal({ app }) {
     userToDelete,
     deleteUserAccount
   } = app
+  const [houseSortKey, setHouseSortKey] = React.useState('percentage')
+  const houseSummary = Array.isArray(sessionStats.house_summary) ? sessionStats.house_summary : []
+  const houseTotal = Number(sessionStats.house_total ?? 0) || houseSummary.reduce((sum, entry) => sum + Number(entry.count ?? 0), 0)
+  const sortedHouseSummary = React.useMemo(() => {
+    const next = [...houseSummary]
+    const sortField = houseSortKey === 'count' ? 'count' : 'percentage'
+    return next.sort((a, b) => {
+      const primary = Number(b[sortField] ?? 0) - Number(a[sortField] ?? 0)
+      if (primary !== 0) {
+        return primary
+      }
+      return String(a.house ?? '').localeCompare(String(b.house ?? ''))
+    })
+  }, [houseSummary, houseSortKey])
 
   const formatSchoolNameWithCode = (school) => {
     if (!school?.name) {
@@ -1471,6 +1485,52 @@ function MainPortal({ app }) {
                   )}
                 </div>
               </div>
+
+              {sortedHouseSummary.length > 0 && (
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                      <Building2 className="h-4 w-4" />
+                      House breakdown
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant={houseSortKey === 'percentage' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setHouseSortKey('percentage')}
+                      >
+                        Sort by %
+                      </Button>
+                      <Button
+                        variant={houseSortKey === 'count' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setHouseSortKey('count')}
+                      >
+                        Sort by count
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>House</span>
+                      <span>Records</span>
+                    </div>
+                    <div className="space-y-2">
+                      {sortedHouseSummary.map((entry) => (
+                        <div key={entry.house} className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 text-sm">
+                          <div className="font-medium text-gray-800">{entry.house}</div>
+                          <div className="text-xs text-gray-500">
+                            {Number(entry.count ?? 0).toLocaleString()} • {Number(entry.percentage ?? 0).toFixed(1)}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-1 text-xs text-gray-500">
+                      {houseTotal.toLocaleString()} total records with house data
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

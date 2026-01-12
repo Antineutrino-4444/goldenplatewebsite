@@ -509,6 +509,26 @@ def get_session_status():
 
     clean_percentage = (combined_clean_count / total_recorded * 100) if total_recorded > 0 else 0
     dirty_percentage = (combined_dirty_count / total_recorded * 100) if total_recorded > 0 else 0
+    house_rows = (
+        db_session.query(SessionRecord.house, func.count(SessionRecord.id))
+        .filter(
+            SessionRecord.session_id == session_id,
+            SessionRecord.school_id == school_id,
+            SessionRecord.house.isnot(None),
+            func.trim(SessionRecord.house) != ''
+        )
+        .group_by(SessionRecord.house)
+        .all()
+    )
+    house_total = sum(count for _, count in house_rows)
+    house_summary = [
+        {
+            'house': house,
+            'count': count,
+            'percentage': round((count / house_total * 100), 1) if house_total else 0
+        }
+        for house, count in house_rows
+    ]
 
     # Get scan history count and draw_info from JSON storage for backward compatibility
     json_data = session_data.get(session_id, {})
@@ -534,6 +554,8 @@ def get_session_status():
         'is_discarded': db_sess.status == 'discarded',
         'draw_info': draw_info,
         'faculty_pick': faculty_pick,
+        'house_total': house_total,
+        'house_summary': house_summary,
     }), 200
 
 

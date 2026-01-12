@@ -43,7 +43,9 @@ export function usePlateApp() {
     clean_percentage: 0,
     dirty_percentage: 0,
     is_discarded: false,
-    draw_info: null
+    draw_info: null,
+    house_total: 0,
+    house_summary: []
   })
   const [isLoading, setIsLoading] = useState(false)
   
@@ -302,7 +304,9 @@ export function usePlateApp() {
       clean_percentage: 0,
       dirty_percentage: 0,
       is_discarded: false,
-      draw_info: null
+      draw_info: null,
+      house_total: 0,
+      house_summary: []
     })
     setDrawSummary(null)
     setOverrideInput('')
@@ -566,7 +570,9 @@ export function usePlateApp() {
         clean_percentage: 0,
         dirty_percentage: 0,
         is_discarded: false,
-        draw_info: null
+        draw_info: null,
+        house_total: 0,
+        house_summary: []
       })
       setInviteCode('')
       setModal(null)
@@ -609,7 +615,9 @@ export function usePlateApp() {
           clean_percentage: data.clean_percentage,
           dirty_percentage: data.dirty_percentage,
           is_discarded: data.is_discarded ?? false,
-          draw_info: data.draw_info ?? null
+          draw_info: data.draw_info ?? null,
+          house_total: data.house_total ?? 0,
+          house_summary: data.house_summary ?? []
         })
         setFacultyPick(data.faculty_pick ?? null)
         await loadScanHistory()
@@ -633,7 +641,9 @@ export function usePlateApp() {
             clean_percentage: 0,
             dirty_percentage: 0,
             is_discarded: false,
-            draw_info: null
+            draw_info: null,
+            house_total: 0,
+            house_summary: []
           })
           setFacultyPick(null)
           setScanHistory([])
@@ -657,7 +667,11 @@ export function usePlateApp() {
         combined_dirty_count: 0,
         total_recorded: 0,
         clean_percentage: 0,
-        dirty_percentage: 0
+        dirty_percentage: 0,
+        is_discarded: false,
+        draw_info: null,
+        house_total: 0,
+        house_summary: []
       })
       setFacultyPick(null)
       setScanHistory([])
@@ -689,7 +703,11 @@ export function usePlateApp() {
           combined_dirty_count: 0,
           total_recorded: 0,
           clean_percentage: 0,
-          dirty_percentage: 0
+          dirty_percentage: 0,
+          is_discarded: false,
+          draw_info: null,
+          house_total: 0,
+          house_summary: []
         })
         await refreshSessionStatus({
           sessionIdOverride: data.session_id,
@@ -1032,7 +1050,9 @@ export function usePlateApp() {
           clean_percentage: data.clean_percentage,
           dirty_percentage: data.dirty_percentage,
           is_discarded: data.is_discarded ?? prev.is_discarded,
-          draw_info: data.draw_info ?? prev.draw_info
+          draw_info: data.draw_info ?? prev.draw_info,
+          house_total: data.house_total ?? prev.house_total ?? 0,
+          house_summary: data.house_summary ?? prev.house_summary ?? []
         }))
         setFacultyPick(data.faculty_pick ?? null)
         nextSessionId = data.session_id ?? nextSessionId
