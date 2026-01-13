@@ -1,7 +1,9 @@
+import json
+
 from flask import jsonify, request, session
 
 from . import recorder_bp
-from .db import DEFAULT_SCHOOL_ID, _now_utc, db_session
+from .db import DEFAULT_SCHOOL_ID, User, _now_utc, db_session
 from .security import get_current_user, is_guest, require_auth
 from .users import (
     create_user_record,
@@ -193,6 +195,68 @@ def auth_status():
             }
         }), 200
     return jsonify({'authenticated': False}), 200
+
+
+@recorder_bp.route('/auth/preferences', methods=['GET'])
+def get_preferences():
+    """Get user preferences."""
+    if not require_auth():
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    user_uuid = session.get('user_uuid')
+    if not user_uuid:
+        return jsonify({'preferences': {}}), 200
+
+    user = db_session.query(User).filter(User.id == user_uuid).first()
+    if not user:
+        return jsonify({'preferences': {}}), 200
+
+    preferences = {}
+    if user.preferences:
+        try:
+            preferences = json.loads(user.preferences)
+        except (json.JSONDecodeError, TypeError):
+            preferences = {}
+
+    return jsonify({'preferences': preferences}), 200
+
+
+@recorder_bp.route('/auth/preferences', methods=['PUT'])
+def update_preferences():
+    """Update user preferences."""
+    if not require_auth():
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    user_uuid = session.get('user_uuid')
+    if not user_uuid:
+        return jsonify({'error': 'User not found'}), 404
+
+    user = db_session.query(User).filter(User.id == user_uuid).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    data = request.get_json() or {}
+    new_preferences = data.get('preferences', {})
+
+    # Merge with existing preferences
+    existing = {}
+    if user.preferences:
+        try:
+            existing = json.loads(user.preferences)
+        except (json.JSONDecodeError, TypeError):
+            existing = {}
+
+    existing.update(new_preferences)
+    user.preferences = json.dumps(existing)
+    user.updated_at = _now_utc()
+
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Failed to save preferences'}), 500
+
+    return jsonify({'status': 'success', 'preferences': existing}), 200
 
 
 __all__ = []

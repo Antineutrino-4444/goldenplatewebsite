@@ -109,6 +109,10 @@ export function usePlateApp() {
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
   const [houseSortBy, setHouseSortBy] = useState('percentage') // 'count' or 'percentage'
 
+  // User preferences state
+  const [userPreferences, setUserPreferences] = useState({})
+  const [cardOrder, setCardOrder] = useState(['student-database', 'teacher-database', 'export-house-data', 'draw-center'])
+
   // Notification and modal states
   const [notification, setNotification] = useState(null)
   const [modal, setModal] = useState(null)
@@ -349,6 +353,10 @@ export function usePlateApp() {
   const handlePostAuth = async (userPayload) => {
     if (!userPayload) {
       return
+    }
+    // Load user preferences for non-guest users
+    if (userPayload.role !== 'guest') {
+      await loadUserPreferences()
     }
     if (userPayload.role === 'inter_school') {
       await initializeInterschoolPortal()
@@ -1248,6 +1256,47 @@ export function usePlateApp() {
     }
   }
 
+  const loadUserPreferences = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/auth/preferences`)
+      if (response.ok) {
+        const data = await response.json()
+        const prefs = data.preferences || {}
+        setUserPreferences(prefs)
+        if (prefs.cardOrder && Array.isArray(prefs.cardOrder)) {
+          setCardOrder(prefs.cardOrder)
+        }
+        return prefs
+      }
+    } catch (error) {
+      console.error('Failed to load user preferences:', error)
+    }
+    return {}
+  }
+
+  const saveUserPreferences = async (newPrefs) => {
+    try {
+      const response = await fetch(`${API_BASE}/auth/preferences`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: newPrefs })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setUserPreferences(data.preferences || {})
+        return true
+      }
+    } catch (error) {
+      console.error('Failed to save user preferences:', error)
+    }
+    return false
+  }
+
+  const updateCardOrder = async (newOrder) => {
+    setCardOrder(newOrder)
+    await saveUserPreferences({ cardOrder: newOrder })
+  }
+
   const applyDrawResponse = (data, { silent = false } = {}) => {
     if (!data) {
       return
@@ -2047,6 +2096,8 @@ export function usePlateApp() {
     houseStats,
     houseStatsLoading,
     houseSortBy,
+    userPreferences,
+    cardOrder,
 
     // actions
     checkAuthStatus,
@@ -2109,6 +2160,9 @@ export function usePlateApp() {
     sanitizeSelection,
     resetSchoolRegistrationForm,
     loadHouseStats,
-    setHouseSortBy
+    setHouseSortBy,
+    loadUserPreferences,
+    saveUserPreferences,
+    updateCardOrder
   }
 }
