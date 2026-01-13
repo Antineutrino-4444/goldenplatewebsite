@@ -92,7 +92,6 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
     status = Column(String, nullable=False, default='active')
-    preferences = Column(Text, nullable=True)  # JSON string for user preferences (card layout, etc.)
 
     school = relationship('School', lazy='joined')
 
