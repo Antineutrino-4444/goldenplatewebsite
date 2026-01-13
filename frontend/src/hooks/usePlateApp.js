@@ -16,7 +16,7 @@ export function usePlateApp() {
   const [signupName, setSignupName] = useState('')
   const [signupSchoolCode, setSignupSchoolCode] = useState('')
   const [showSchoolRegistration, setShowSchoolRegistration] = useState(false)
-  const [schoolInviteCode, setSchoolInviteCode] = useState('')
+  const [schoolEmail, setSchoolEmail] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [schoolCode, setSchoolCode] = useState('')
   const [schoolAdminUsername, setSchoolAdminUsername] = useState('')
@@ -120,6 +120,7 @@ export function usePlateApp() {
   const [schoolInviteLoading, setSchoolInviteLoading] = useState(false)
   const [interschoolSchools, setInterschoolSchools] = useState([])
   const [interschoolInvites, setInterschoolInvites] = useState([])
+  const [interschoolRegistrationRequests, setInterschoolRegistrationRequests] = useState([])
   const [interschoolOverviewLoading, setInterschoolOverviewLoading] = useState(false)
 
   const isSessionDiscarded = drawSummary?.is_discarded ?? sessionStats.is_discarded
@@ -248,6 +249,7 @@ export function usePlateApp() {
     if (user?.role !== 'inter_school') {
       setInterschoolSchools([])
       setInterschoolInvites([])
+      setInterschoolRegistrationRequests([])
       setInterschoolOverviewLoading(false)
       return
     }
@@ -265,6 +267,7 @@ export function usePlateApp() {
       if (response.ok) {
         setInterschoolSchools(Array.isArray(data?.schools) ? data.schools : [])
         setInterschoolInvites(Array.isArray(data?.invites) ? data.invites : [])
+        setInterschoolRegistrationRequests(Array.isArray(data?.registration_requests) ? data.registration_requests : [])
       } else if (!silent) {
         const message = data?.error || 'Failed to load inter-school overview'
         showMessage(message, 'error')
@@ -275,6 +278,7 @@ export function usePlateApp() {
       }
       setInterschoolSchools([])
       setInterschoolInvites([])
+      setInterschoolRegistrationRequests([])
     } finally {
       setInterschoolOverviewLoading(false)
     }
@@ -285,7 +289,7 @@ export function usePlateApp() {
   }
 
   const resetSchoolRegistrationForm = () => {
-    setSchoolInviteCode('')
+    setSchoolEmail('')
     setSchoolName('')
     setSchoolCode('')
     setSchoolAdminUsername('')
@@ -343,6 +347,7 @@ export function usePlateApp() {
     setLatestSchoolInvites([])
     setInterschoolSchools([])
     setInterschoolInvites([])
+    setInterschoolRegistrationRequests([])
     setInterschoolOverviewLoading(false)
     setShowGuestSchoolDialog(false)
     setGuestSchoolCode('')
@@ -499,15 +504,21 @@ export function usePlateApp() {
     }
   }
 
-  const registerSchool = async () => {
-    const trimmedInviteCode = schoolInviteCode.trim()
+  const registerSchool = async (recaptchaToken = null) => {
+    const trimmedEmail = schoolEmail.trim()
     const trimmedSchoolName = schoolName.trim()
     const trimmedCode = schoolCode.trim()
     const trimmedAdminUsername = schoolAdminUsername.trim()
     const trimmedAdminDisplayName = schoolAdminDisplayName.trim()
 
-    if (!trimmedInviteCode || !trimmedSchoolName || !trimmedAdminUsername || !schoolAdminPassword || !trimmedAdminDisplayName) {
+    if (!trimmedEmail || !trimmedSchoolName || !trimmedAdminUsername || !schoolAdminPassword || !trimmedAdminDisplayName) {
       showMessage('Please complete all required fields', 'error')
+      return
+    }
+
+    // Basic email validation
+    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      showMessage('Please enter a valid email address', 'error')
       return
     }
 
@@ -524,7 +535,7 @@ export function usePlateApp() {
     setIsLoading(true)
     try {
       const payload = {
-        invite_code: trimmedInviteCode,
+        email: trimmedEmail,
         school_name: trimmedSchoolName,
         admin_username: trimmedAdminUsername,
         admin_password: schoolAdminPassword,
@@ -536,6 +547,10 @@ export function usePlateApp() {
         payload.school_slug = trimmedCode
       }
 
+      if (recaptchaToken) {
+        payload.recaptcha_token = recaptchaToken
+      }
+
       const response = await fetch(`${API_BASE}/auth/register-school`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -544,16 +559,14 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
-        showMessage('School registered successfully! You can now sign in with your new admin account.', 'success')
+        showMessage(data.message || 'School registration request submitted! Please wait for approval.', 'success')
         setShowSchoolRegistration(false)
         resetSchoolRegistrationForm()
-        setLoginUsername(trimmedAdminUsername)
-        setLoginPassword('')
       } else {
-        showMessage(data.error || 'Failed to register school', 'error')
+        showMessage(data.error || 'Failed to submit registration request', 'error')
       }
     } catch (error) {
-      showMessage('Failed to register school. Please try again.', 'error')
+      showMessage('Failed to submit registration request. Please try again.', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -595,6 +608,7 @@ export function usePlateApp() {
       setSchoolInviteLoading(false)
       setInterschoolSchools([])
       setInterschoolInvites([])
+      setInterschoolRegistrationRequests([])
       setInterschoolOverviewLoading(false)
       setShowGuestSchoolDialog(false)
       setGuestSchoolCode('')
@@ -1805,6 +1819,46 @@ export function usePlateApp() {
     }
   }
 
+  const approveSchoolRegistration = async (requestId) => {
+    try {
+      const response = await fetch(`${API_BASE}/interschool/registration-requests/${requestId}/approve`, {
+        method: 'POST'
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        await refreshInterschoolOverview()
+      } else {
+        const error = await response.json()
+        showMessage(error.error || 'Failed to approve registration request', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to approve registration request', 'error')
+    }
+  }
+
+  const rejectSchoolRegistration = async (requestId, reason = '') => {
+    try {
+      const response = await fetch(`${API_BASE}/interschool/registration-requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        await refreshInterschoolOverview()
+      } else {
+        const error = await response.json()
+        showMessage(error.error || 'Failed to reject registration request', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to reject registration request', 'error')
+    }
+  }
+
   const copyToClipboard = async (text, successMessage = 'Copied to clipboard') => {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -2002,8 +2056,8 @@ export function usePlateApp() {
     setSignupSchoolCode,
     showSchoolRegistration,
     setShowSchoolRegistration,
-    schoolInviteCode,
-    setSchoolInviteCode,
+    schoolEmail,
+    setSchoolEmail,
     schoolName,
     setSchoolName,
     schoolCode,
@@ -2132,6 +2186,8 @@ export function usePlateApp() {
     setInterschoolSchools,
     interschoolInvites,
     setInterschoolInvites,
+    interschoolRegistrationRequests,
+    setInterschoolRegistrationRequests,
     interschoolOverviewLoading,
     setInterschoolOverviewLoading,
 
@@ -2205,6 +2261,8 @@ export function usePlateApp() {
     rejectDeleteRequest,
     generateInviteCode,
     issueSchoolInvite,
+    approveSchoolRegistration,
+    rejectSchoolRegistration,
     refreshInterschoolOverview,
     copyToClipboard,
     copyInviteCode,
