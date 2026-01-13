@@ -92,6 +92,7 @@ def admin_get_users():
     include_password = current_user['role'] == 'superadmin'
     for user in list_all_users(school_id=current_school_id, include_password=include_password):
         payload = {
+            'id': user['id'],
             'username': user['username'],
             'name': user['name'],
             'role': user['role'],
