@@ -311,6 +311,28 @@ class SessionDeleteRequest(Base):
     rejection_reason = Column(Text)
 
 
+class AccountCreationRequest(Base):
+    __tablename__ = 'account_creation_requests'
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','approved','rejected')", name='ck_account_creation_requests_status'),
+        Index('idx_account_requests_school', 'school_id'),
+        Index('idx_account_requests_status', 'status'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False)
+    username = Column(String, nullable=False)
+    password_hash = Column(Text, nullable=False)
+    display_name = Column(String, nullable=False)
+    requested_at = Column(DateTime(timezone=True), default=_now_utc)
+    status = Column(String, nullable=False, default='pending')
+    reviewed_by = Column(String, ForeignKey('users.id'))
+    reviewed_at = Column(DateTime(timezone=True))
+    rejection_reason = Column(Text)
+
+    school = relationship('School', lazy='joined')
+
+
 def _ensure_column(
     inspector, table_name: str, column_name: str, ddl: str, *, update_nulls_sql: Optional[str] = None
 ) -> None:
@@ -851,6 +873,7 @@ _ensure_user_school_assignments()
 
 __all__ = [
     'DATABASE_URL',
+    'AccountCreationRequest',
     'Base',
     'DEFAULT_SCHOOL_ID',
     'DEFAULT_SCHOOL_NAME',
