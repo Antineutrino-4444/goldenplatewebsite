@@ -443,7 +443,7 @@ export function usePlateApp() {
     }
   }
 
-  const signup = async () => {
+  const signup = async (recaptchaToken = null) => {
     if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || !signupInviteCode.trim()) {
       showMessage('Please fill in all fields', 'error')
       return
@@ -461,15 +461,21 @@ export function usePlateApp() {
 
     setIsLoading(true)
     try {
+      const payload = {
+        username: signupUsername.trim(),
+        password: signupPassword.trim(),
+        name: signupName.trim(),
+        invite_code: signupInviteCode.trim()
+      }
+
+      if (recaptchaToken) {
+        payload.recaptcha_token = recaptchaToken
+      }
+
       const response = await fetch(`${API_BASE}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: signupUsername.trim(),
-          password: signupPassword.trim(),
-          name: signupName.trim(),
-          invite_code: signupInviteCode.trim()
-        })
+        body: JSON.stringify(payload)
       })
 
       const data = await response.json()
