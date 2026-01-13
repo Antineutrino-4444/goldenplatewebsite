@@ -1,3 +1,6 @@
+import os
+
+import requests
 from flask import jsonify, request, session
 
 from . import recorder_bp
@@ -12,6 +15,38 @@ from .users import (
     mark_invite_code_used,
     serialize_school,
 )
+
+RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
+RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify'
+
+
+def verify_recaptcha(token):
+    """Verify reCAPTCHA token with Google's API.
+
+    Returns True if verification succeeds or if reCAPTCHA is not configured.
+    Returns False if verification fails.
+    """
+    if not RECAPTCHA_SECRET_KEY:
+        # reCAPTCHA not configured, skip verification
+        return True
+
+    if not token:
+        return False
+
+    try:
+        response = requests.post(
+            RECAPTCHA_VERIFY_URL,
+            data={
+                'secret': RECAPTCHA_SECRET_KEY,
+                'response': token,
+            },
+            timeout=10,
+        )
+        result = response.json()
+        return result.get('success', False)
+    except Exception:
+        # If verification request fails, deny signup for safety
+        return False
 
 
 @recorder_bp.route('/auth/login', methods=['POST'])
@@ -114,6 +149,11 @@ def signup():
     password = data.get('password', '').strip()
     name = data.get('name', '').strip()
     invite_code = data.get('invite_code', '').strip()
+    recaptcha_token = data.get('recaptcha_token', '').strip()
+
+    # Verify reCAPTCHA if configured
+    if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
+        return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
 
     if not username or not password or not name or not invite_code:
         return jsonify({'error': 'Username, password, name, and invite code are required'}), 400

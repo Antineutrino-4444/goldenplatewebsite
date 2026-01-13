@@ -1,11 +1,16 @@
-import React from 'react'
+import React, { useRef } from 'react'
+import ReCAPTCHA from 'react-google-recaptcha'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
+
 function LoginView({ app }) {
+  const recaptchaRef = useRef(null)
+
   const {
     loginUsername,
     setLoginUsername,
@@ -30,8 +35,33 @@ function LoginView({ app }) {
     setSignupInviteCode,
     signup,
     setShowSchoolRegistration,
-    resetSchoolRegistrationForm
+    resetSchoolRegistrationForm,
+    showMessage
   } = app
+
+  const handleSignup = async () => {
+    if (!RECAPTCHA_SITE_KEY) {
+      // reCAPTCHA not configured, proceed without it
+      await signup(null)
+      return
+    }
+
+    const token = recaptchaRef.current?.getValue()
+    if (!token) {
+      showMessage('Please complete the reCAPTCHA verification', 'error')
+      return
+    }
+
+    await signup(token)
+    recaptchaRef.current?.reset()
+  }
+
+  const handleSignupDialogChange = (open) => {
+    setShowSignupDialog(open)
+    if (!open && recaptchaRef.current) {
+      recaptchaRef.current.reset()
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -166,7 +196,7 @@ function LoginView({ app }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSignupDialog} onOpenChange={setShowSignupDialog}>
+      <Dialog open={showSignupDialog} onOpenChange={handleSignupDialogChange}>
         <DialogContent dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Create Account</DialogTitle>
@@ -215,12 +245,21 @@ function LoginView({ app }) {
                 onChange={(e) => setSignupInviteCode(e.target.value)}
               />
             </div>
+            {RECAPTCHA_SITE_KEY && (
+              <div className="flex justify-center">
+                <ReCAPTCHA
+                  ref={recaptchaRef}
+                  sitekey={RECAPTCHA_SITE_KEY}
+                  theme="light"
+                />
+              </div>
+            )}
             <div className="flex gap-2">
-              <Button onClick={() => setShowSignupDialog(false)} variant="outline" className="flex-1">
+              <Button onClick={() => handleSignupDialogChange(false)} variant="outline" className="flex-1">
                 Cancel
               </Button>
               <Button
-                onClick={signup}
+                onClick={handleSignup}
                 className="flex-1 bg-amber-600 hover:bg-amber-700"
                 disabled={isLoading}
               >
