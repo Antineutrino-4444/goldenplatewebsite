@@ -107,8 +107,7 @@ export function usePlateApp() {
   // House stats state
   const [houseStats, setHouseStats] = useState(null)
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
-  const [showHouseDataPanel, setShowHouseDataPanel] = useState(false)
-  const [houseSortBy, setHouseSortBy] = useState('count') // 'count' or 'percentage'
+  const [houseSortBy, setHouseSortBy] = useState('percentage') // 'count' or 'percentage'
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -622,6 +621,7 @@ export function usePlateApp() {
         await loadStudentNames()
         await loadTeacherNames()
         await loadDrawSummary({ silent: true, sessionIdOverride: data.session_id, sessionNameOverride: data.session_name, isDiscarded: data.is_discarded })
+        await loadHouseStats({ silent: true, sessionIdOverride: data.session_id })
       } else {
         const sessionsList = await loadSessions()
         if (sessionsList.length > 0) {
@@ -1060,6 +1060,7 @@ export function usePlateApp() {
       sessionNameOverride: nextSessionName,
       isDiscarded: nextIsDiscarded
     })
+    await loadHouseStats({ silent: true, sessionIdOverride: nextSessionId })
   }
 
   const loadScanHistory = async () => {
@@ -2045,7 +2046,6 @@ export function usePlateApp() {
     isInterschoolUser,
     houseStats,
     houseStatsLoading,
-    showHouseDataPanel,
     houseSortBy,
 
     // actions
@@ -2109,7 +2109,6 @@ export function usePlateApp() {
     sanitizeSelection,
     resetSchoolRegistrationForm,
     loadHouseStats,
-    setShowHouseDataPanel,
     setHouseSortBy
   }
 }
