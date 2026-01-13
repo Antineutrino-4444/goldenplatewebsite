@@ -333,6 +333,28 @@ class AccountCreationRequest(Base):
     school = relationship('School', lazy='joined')
 
 
+class SchoolRegistrationRequest(Base):
+    __tablename__ = 'school_registration_requests'
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','approved','rejected')", name='ck_school_registration_requests_status'),
+        Index('idx_school_registration_requests_status', 'status'),
+        Index('idx_school_registration_requests_email', 'email'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, nullable=False)
+    school_name = Column(String, nullable=False)
+    school_slug = Column(String)
+    admin_username = Column(String, nullable=False)
+    admin_password_hash = Column(Text, nullable=False)
+    admin_display_name = Column(String, nullable=False)
+    requested_at = Column(DateTime(timezone=True), default=_now_utc)
+    status = Column(String, nullable=False, default='pending')
+    reviewed_by = Column(String, ForeignKey('users.id'))
+    reviewed_at = Column(DateTime(timezone=True))
+    rejection_reason = Column(Text)
+
+
 def _ensure_column(
     inspector, table_name: str, column_name: str, ddl: str, *, update_nulls_sql: Optional[str] = None
 ) -> None:
@@ -884,6 +906,7 @@ __all__ = [
     'INTERSCHOOL_SCHOOL_SLUG',
     'School',
     'SchoolInviteCode',
+    'SchoolRegistrationRequest',
     'Session',
     'SessionDeleteRequest',
     'SessionDrawEvent',

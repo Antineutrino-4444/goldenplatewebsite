@@ -1,13 +1,16 @@
-import React from 'react'
+import React, { useRef } from 'react'
+import ReCAPTCHA from 'react-google-recaptcha'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY
+
 function SchoolRegistration({ app }) {
   const {
-    schoolInviteCode,
-    setSchoolInviteCode,
+    schoolEmail,
+    setSchoolEmail,
     schoolName,
     setSchoolName,
     schoolCode,
@@ -24,9 +27,17 @@ function SchoolRegistration({ app }) {
     resetSchoolRegistrationForm
   } = app
 
+  const recaptchaRef = useRef(null)
+
   const handleBackToLogin = () => {
     resetSchoolRegistrationForm()
     setShowSchoolRegistration(false)
+  }
+
+  const handleSubmit = async () => {
+    const recaptchaToken = recaptchaRef.current?.getValue() || null
+    await registerSchool(recaptchaToken)
+    recaptchaRef.current?.reset()
   }
 
   return (
@@ -37,20 +48,23 @@ function SchoolRegistration({ app }) {
             Register Your School
           </CardTitle>
           <CardDescription className="text-gray-600 mt-2">
-            Use the invite code provided by PLATE to activate your school and create the primary admin account.
+            Submit your school registration request for PLATE administrator approval.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4">
             <div className="space-y-2">
-              <Label htmlFor="invite-code">Invite Code</Label>
+              <Label htmlFor="school-email">Contact Email</Label>
               <Input
-                id="invite-code"
-                type="text"
-                placeholder="Enter invite code"
-                value={schoolInviteCode}
-                onChange={(e) => setSchoolInviteCode(e.target.value)}
+                id="school-email"
+                type="email"
+                placeholder="Enter your email address"
+                value={schoolEmail}
+                onChange={(e) => setSchoolEmail(e.target.value)}
               />
+              <p className="text-xs text-gray-500">
+                We'll use this email to contact you about your registration.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="school-name">School Name</Label>
@@ -113,16 +127,25 @@ function SchoolRegistration({ app }) {
             </div>
           </div>
 
+          {RECAPTCHA_SITE_KEY && (
+            <div className="flex justify-center">
+              <ReCAPTCHA
+                ref={recaptchaRef}
+                sitekey={RECAPTCHA_SITE_KEY}
+              />
+            </div>
+          )}
+
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
             <Button variant="ghost" onClick={handleBackToLogin} className="sm:w-auto w-full">
               Back to Login
             </Button>
             <Button
-              onClick={registerSchool}
+              onClick={handleSubmit}
               className="bg-amber-600 hover:bg-amber-700 sm:w-auto w-full"
               disabled={isLoading}
             >
-              {isLoading ? 'Registering...' : 'Complete Registration'}
+              {isLoading ? 'Submitting...' : 'Submit Registration Request'}
             </Button>
           </div>
         </CardContent>

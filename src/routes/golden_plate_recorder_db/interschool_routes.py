@@ -1,17 +1,45 @@
+import os
 import re
 import uuid
 
+import requests as http_requests
 from flask import jsonify, request
 from sqlalchemy import func
 
 from . import recorder_bp
-from .db import School, SchoolInviteCode, User, _now_utc, db_session
+from .db import School, SchoolInviteCode, SchoolRegistrationRequest, User, _now_utc, db_session
 from .security import get_current_user, is_interschool_user, require_auth
 from .users import (
     create_school_invite_code_record,
     get_school_invite_code_record,
     get_user_by_username,
 )
+
+RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
+RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify'
+
+
+def verify_recaptcha(token):
+    """Verify reCAPTCHA token with Google's API."""
+    if not RECAPTCHA_SECRET_KEY:
+        return True
+
+    if not token:
+        return False
+
+    try:
+        response = http_requests.post(
+            RECAPTCHA_VERIFY_URL,
+            data={
+                'secret': RECAPTCHA_SECRET_KEY,
+                'response': token,
+            },
+            timeout=10,
+        )
+        result = response.json()
+        return result.get('success', False)
+    except Exception:
+        return False
 
 
 def _serialize_school_model(school, *, user_counts=None):
@@ -90,30 +118,50 @@ def create_school_invite():
 
 @recorder_bp.route('/auth/register-school', methods=['POST'])
 def register_school():
+    """Submit a school registration request for interschool admin approval."""
     data = request.get_json(silent=True) or {}
-    invite_code = (data.get('invite_code') or '').strip()
+    email = (data.get('email') or '').strip()
     school_name = (data.get('school_name') or '').strip()
     school_slug = (data.get('school_slug') or '').strip()
     admin_username = (data.get('admin_username') or '').strip()
     admin_password = (data.get('admin_password') or '').strip()
     admin_display_name = (data.get('admin_display_name') or '').strip()
+    recaptcha_token = (data.get('recaptcha_token') or '').strip()
 
-    if not invite_code or not school_name or not admin_username or not admin_password or not admin_display_name:
-        return jsonify({'error': 'Invite code, school name, and admin credentials are required'}), 400
+    # Verify reCAPTCHA if configured
+    if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
+        return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
 
-    invite = get_school_invite_code_record(invite_code)
-    if not invite:
-        return jsonify({'error': 'Invalid invite code'}), 404
+    if not email or not school_name or not admin_username or not admin_password or not admin_display_name:
+        return jsonify({'error': 'Email, school name, and admin credentials are required'}), 400
 
-    if invite.status != 'unused':
-        return jsonify({'error': 'Invite code has already been used'}), 403
+    # Basic email validation
+    if '@' not in email or '.' not in email:
+        return jsonify({'error': 'Please enter a valid email address'}), 400
 
-    # Ensure the school does not already exist.
-    existing_school = db_session.query(School).filter(School.id == invite.school_id).first()
-    if existing_school:
-        return jsonify({'error': 'School has already been registered'}), 409
+    if len(admin_username) < 3:
+        return jsonify({'error': 'Admin username must be at least 3 characters long'}), 400
 
-    # Normalize slug and ensure uniqueness.
+    if len(admin_password) < 6:
+        return jsonify({'error': 'Admin password must be at least 6 characters long'}), 400
+
+    # Check for existing pending request with same email
+    existing_request = db_session.query(SchoolRegistrationRequest).filter(
+        SchoolRegistrationRequest.email == email,
+        SchoolRegistrationRequest.status == 'pending'
+    ).first()
+    if existing_request:
+        return jsonify({'error': 'A registration request with this email is already pending approval'}), 409
+
+    # Check for existing pending request with same school name
+    existing_name_request = db_session.query(SchoolRegistrationRequest).filter(
+        func.lower(SchoolRegistrationRequest.school_name) == school_name.lower(),
+        SchoolRegistrationRequest.status == 'pending'
+    ).first()
+    if existing_name_request:
+        return jsonify({'error': 'A registration request for this school name is already pending approval'}), 409
+
+    # Check if school name already exists
     normalized_slug = _normalize_slug(school_slug or school_name)
     slug_conflict = (
         db_session.query(School)
@@ -121,56 +169,32 @@ def register_school():
         .first()
     )
     if slug_conflict:
-        return jsonify({'error': 'School slug already in use'}), 409
+        return jsonify({'error': 'A school with this name or code already exists'}), 409
 
-    # Ensure username availability.
+    # Ensure username availability
     if get_user_by_username(admin_username):
         return jsonify({'error': 'Username already exists'}), 409
 
-    new_school = School(
-        id=invite.school_id,
-        name=school_name,
-        slug=normalized_slug,
-        status='active',
-        created_at=_now_utc(),
-        updated_at=_now_utc(),
-    )
-
-    admin_user = User(
-        id=str(uuid.uuid4()),
-        school_id=invite.school_id,
-        username=admin_username,
-        password_hash=admin_password,
-        display_name=admin_display_name,
-        role='superadmin',
-        status='active',
-        created_at=_now_utc(),
-        updated_at=_now_utc(),
-    )
-
-    invite.status = 'used'
-    invite.used_by = admin_user.id
-    invite.used_at = _now_utc()
-
     try:
-        db_session.add(new_school)
-        db_session.add(admin_user)
+        registration_request = SchoolRegistrationRequest(
+            email=email,
+            school_name=school_name,
+            school_slug=school_slug or None,
+            admin_username=admin_username,
+            admin_password_hash=admin_password,
+            admin_display_name=admin_display_name,
+            status='pending',
+            requested_at=_now_utc(),
+        )
+        db_session.add(registration_request)
         db_session.commit()
     except Exception:
         db_session.rollback()
-        return jsonify({'error': 'Unable to register school'}), 500
+        return jsonify({'error': 'Could not submit registration request'}), 500
 
     return jsonify({
         'status': 'success',
-        'school': {
-            'id': new_school.id,
-            'name': new_school.name,
-            'slug': new_school.slug,
-        },
-        'admin_user': {
-            'username': admin_user.username,
-            'display_name': admin_user.display_name,
-        }
+        'message': 'School registration request submitted successfully. Please wait for approval from the PLATE administrator.'
     }), 201
 
 
@@ -214,10 +238,188 @@ def get_interschool_overview():
             for user in db_session.query(User).filter(User.id.in_(user_ids)).all()
         }
 
+    # Also include pending school registration requests
+    registration_requests = (
+        db_session.query(SchoolRegistrationRequest)
+        .order_by(SchoolRegistrationRequest.requested_at.desc())
+        .all()
+    )
+
     return jsonify({
         'status': 'success',
         'schools': [_serialize_school_model(school, user_counts=user_counts) for school in schools],
         'invites': [_serialize_invite_model(invite, user_lookup) for invite in invites],
+        'registration_requests': [_serialize_registration_request(req) for req in registration_requests],
+    }), 200
+
+
+def _serialize_registration_request(req):
+    if not req:
+        return None
+    return {
+        'id': req.id,
+        'email': req.email,
+        'school_name': req.school_name,
+        'school_slug': req.school_slug,
+        'admin_username': req.admin_username,
+        'admin_display_name': req.admin_display_name,
+        'status': req.status,
+        'requested_at': req.requested_at.isoformat() if req.requested_at else None,
+        'reviewed_at': req.reviewed_at.isoformat() if req.reviewed_at else None,
+        'rejection_reason': req.rejection_reason,
+    }
+
+
+@recorder_bp.route('/interschool/registration-requests', methods=['GET'])
+def get_registration_requests():
+    """Get all pending school registration requests."""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    if not is_interschool_user():
+        return jsonify({'error': 'Interschool access required'}), 403
+
+    requests_list = (
+        db_session.query(SchoolRegistrationRequest)
+        .filter(SchoolRegistrationRequest.status == 'pending')
+        .order_by(SchoolRegistrationRequest.requested_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        'status': 'success',
+        'requests': [_serialize_registration_request(req) for req in requests_list],
+    }), 200
+
+
+@recorder_bp.route('/interschool/registration-requests/<request_id>/approve', methods=['POST'])
+def approve_registration_request(request_id):
+    """Approve a school registration request and create the school."""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    if not is_interschool_user():
+        return jsonify({'error': 'Interschool access required'}), 403
+
+    current = get_current_user()
+    reviewer = get_user_by_username(current['username'], school_id=current['school_id']) if current else None
+    if not reviewer:
+        return jsonify({'error': 'Unable to resolve reviewing user'}), 500
+
+    reg_request = db_session.query(SchoolRegistrationRequest).filter(
+        SchoolRegistrationRequest.id == request_id
+    ).first()
+
+    if not reg_request:
+        return jsonify({'error': 'Registration request not found'}), 404
+
+    if reg_request.status != 'pending':
+        return jsonify({'error': 'This request has already been processed'}), 400
+
+    # Re-validate that the school can still be created
+    normalized_slug = _normalize_slug(reg_request.school_slug or reg_request.school_name)
+    slug_conflict = (
+        db_session.query(School)
+        .filter(func.lower(School.slug) == normalized_slug.lower())
+        .first()
+    )
+    if slug_conflict:
+        return jsonify({'error': 'A school with this name or code already exists'}), 409
+
+    if get_user_by_username(reg_request.admin_username):
+        return jsonify({'error': 'The requested admin username already exists'}), 409
+
+    school_id = str(uuid.uuid4())
+
+    new_school = School(
+        id=school_id,
+        name=reg_request.school_name,
+        slug=normalized_slug,
+        status='active',
+        created_at=_now_utc(),
+        updated_at=_now_utc(),
+    )
+
+    admin_user = User(
+        id=str(uuid.uuid4()),
+        school_id=school_id,
+        username=reg_request.admin_username,
+        password_hash=reg_request.admin_password_hash,
+        display_name=reg_request.admin_display_name,
+        role='superadmin',
+        status='active',
+        created_at=_now_utc(),
+        updated_at=_now_utc(),
+    )
+
+    reg_request.status = 'approved'
+    reg_request.reviewed_by = reviewer.id
+    reg_request.reviewed_at = _now_utc()
+
+    try:
+        db_session.add(new_school)
+        db_session.add(admin_user)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Unable to create school'}), 500
+
+    return jsonify({
+        'status': 'success',
+        'message': f'School "{new_school.name}" has been approved and created.',
+        'school': {
+            'id': new_school.id,
+            'name': new_school.name,
+            'slug': new_school.slug,
+        },
+        'admin_user': {
+            'username': admin_user.username,
+            'display_name': admin_user.display_name,
+        }
+    }), 200
+
+
+@recorder_bp.route('/interschool/registration-requests/<request_id>/reject', methods=['POST'])
+def reject_registration_request(request_id):
+    """Reject a school registration request."""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    if not is_interschool_user():
+        return jsonify({'error': 'Interschool access required'}), 403
+
+    current = get_current_user()
+    reviewer = get_user_by_username(current['username'], school_id=current['school_id']) if current else None
+    if not reviewer:
+        return jsonify({'error': 'Unable to resolve reviewing user'}), 500
+
+    data = request.get_json(silent=True) or {}
+    reason = (data.get('reason') or '').strip()
+
+    reg_request = db_session.query(SchoolRegistrationRequest).filter(
+        SchoolRegistrationRequest.id == request_id
+    ).first()
+
+    if not reg_request:
+        return jsonify({'error': 'Registration request not found'}), 404
+
+    if reg_request.status != 'pending':
+        return jsonify({'error': 'This request has already been processed'}), 400
+
+    reg_request.status = 'rejected'
+    reg_request.reviewed_by = reviewer.id
+    reg_request.reviewed_at = _now_utc()
+    reg_request.rejection_reason = reason or None
+
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Unable to reject registration request'}), 500
+
+    return jsonify({
+        'status': 'success',
+        'message': f'Registration request for "{reg_request.school_name}" has been rejected.',
     }), 200
 
 
