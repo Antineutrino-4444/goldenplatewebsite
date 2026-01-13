@@ -33,6 +33,7 @@ import {
   Trash2,
   Trophy,
   Upload,
+  UserPlus,
   Users,
   Wand2,
   XCircle
@@ -156,6 +157,13 @@ function MainPortal({ app }) {
     showUserDeleteConfirm,
     userToDelete,
     deleteUserAccount,
+    accountRequests,
+    showAccountRequests,
+    setShowAccountRequests,
+    accountRequestsLoading,
+    loadAccountRequests,
+    approveAccountRequest,
+    rejectAccountRequest,
     houseStats,
     houseStatsLoading,
     houseSortBy,
@@ -173,6 +181,7 @@ function MainPortal({ app }) {
 
   const userSchoolLabel = formatSchoolNameWithCode(user?.school)
   const deleteRequestsCount = deleteRequests.length
+  const pendingAccountRequestsCount = accountRequests.filter(r => r.status === 'pending').length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1738,7 +1747,7 @@ function MainPortal({ app }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
               {['admin', 'superadmin'].includes(user.role) && (
                 <>
                   <Button
@@ -1777,6 +1786,24 @@ function MainPortal({ app }) {
                     Manage Accounts
                   </Button>
                 </>
+              )}
+              {user.role === 'superadmin' && (
+                <Button
+                  onClick={() => {
+                    loadAccountRequests()
+                    setShowAccountRequests(true)
+                  }}
+                  variant="outline"
+                  className="relative flex-1"
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Account Requests
+                  {pendingAccountRequestsCount > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs rounded-full px-2 py-0.5">
+                      {pendingAccountRequestsCount}
+                    </span>
+                  )}
+                </Button>
               )}
             </div>
 
@@ -1990,6 +2017,81 @@ function MainPortal({ app }) {
             )}
           </div>
           <Button onClick={() => setShowDeleteRequests(false)} className="w-full">
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAccountRequests} onOpenChange={setShowAccountRequests}>
+        <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle>Account Creation Requests</DialogTitle>
+            <DialogDescription>
+              Review and approve pending account creation requests for your school
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {accountRequestsLoading ? (
+              <div className="text-center py-8 text-gray-500">
+                Loading account requests...
+              </div>
+            ) : accountRequests.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No account requests
+              </div>
+            ) : (
+              accountRequests.map((request) => (
+                <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <div className="font-medium">{request.display_name}</div>
+                    <div className="text-sm text-gray-500">
+                      Username: @{request.username}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      Requested: {new Date(request.requested_at).toLocaleString()}
+                    </div>
+                    <Badge
+                      variant={
+                        request.status === 'pending' ? 'outline' :
+                        request.status === 'approved' ? 'default' :
+                        'destructive'
+                      }
+                      className="mt-1"
+                    >
+                      {request.status}
+                    </Badge>
+                    {request.rejection_reason && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        Reason: {request.rejection_reason}
+                      </div>
+                    )}
+                  </div>
+                  {request.status === 'pending' && (
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        onClick={() => approveAccountRequest(request.id)}
+                        variant="default"
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Approve
+                      </Button>
+                      <Button
+                        onClick={() => rejectAccountRequest(request.id)}
+                        variant="outline"
+                        size="sm"
+                      >
+                        <XCircle className="h-4 w-4 mr-1" />
+                        Reject
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          <Button onClick={() => setShowAccountRequests(false)} className="w-full">
             Close
           </Button>
         </DialogContent>

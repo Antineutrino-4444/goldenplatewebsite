@@ -14,7 +14,7 @@ export function usePlateApp() {
   const [signupUsername, setSignupUsername] = useState('')
   const [signupPassword, setSignupPassword] = useState('')
   const [signupName, setSignupName] = useState('')
-  const [signupInviteCode, setSignupInviteCode] = useState('')
+  const [signupSchoolCode, setSignupSchoolCode] = useState('')
   const [showSchoolRegistration, setShowSchoolRegistration] = useState(false)
   const [schoolInviteCode, setSchoolInviteCode] = useState('')
   const [schoolName, setSchoolName] = useState('')
@@ -62,6 +62,9 @@ export function usePlateApp() {
   // Account management state
   const [allUsers, setAllUsers] = useState([])
   const [deleteRequests, setDeleteRequests] = useState([])
+  const [accountRequests, setAccountRequests] = useState([])
+  const [showAccountRequests, setShowAccountRequests] = useState(false)
+  const [accountRequestsLoading, setAccountRequestsLoading] = useState(false)
   
   // Popup states for each category
   const [showCleanDialog, setShowCleanDialog] = useState(false)
@@ -444,7 +447,7 @@ export function usePlateApp() {
   }
 
   const signup = async (recaptchaToken = null) => {
-    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || !signupInviteCode.trim()) {
+    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || !signupSchoolCode.trim()) {
       showMessage('Please fill in all fields', 'error')
       return
     }
@@ -465,7 +468,7 @@ export function usePlateApp() {
         username: signupUsername.trim(),
         password: signupPassword.trim(),
         name: signupName.trim(),
-        invite_code: signupInviteCode.trim()
+        school_code: signupSchoolCode.trim()
       }
 
       if (recaptchaToken) {
@@ -480,11 +483,11 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
-        showMessage('Account created successfully! Please login.', 'success')
+        showMessage(data.message || 'Account request submitted! Please wait for approval.', 'success')
         setSignupUsername('')
         setSignupPassword('')
         setSignupName('')
-        setSignupInviteCode('')
+        setSignupSchoolCode('')
         setShowSignupDialog(false)
       } else {
         showMessage(data.error || 'Signup failed', 'error')
@@ -1885,6 +1888,96 @@ export function usePlateApp() {
     }
   }
 
+  const loadAccountRequests = async () => {
+    if (user?.role !== 'superadmin') {
+      setAccountRequests([])
+      return
+    }
+
+    setAccountRequestsLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/superadmin/account-requests`)
+      if (response.ok) {
+        const data = await response.json()
+        setAccountRequests(data.requests || [])
+      } else {
+        const error = await response.json()
+        showMessage(error.error || 'Failed to load account requests', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to load account requests', 'error')
+      setAccountRequests([])
+    } finally {
+      setAccountRequestsLoading(false)
+    }
+  }
+
+  const loadPendingAccountRequests = async () => {
+    if (user?.role !== 'superadmin') {
+      setAccountRequests([])
+      return
+    }
+
+    setAccountRequestsLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/superadmin/account-requests/pending`)
+      if (response.ok) {
+        const data = await response.json()
+        setAccountRequests(data.requests || [])
+      } else {
+        const error = await response.json()
+        showMessage(error.error || 'Failed to load pending account requests', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to load pending account requests', 'error')
+      setAccountRequests([])
+    } finally {
+      setAccountRequestsLoading(false)
+    }
+  }
+
+  const approveAccountRequest = async (requestId) => {
+    try {
+      const response = await fetch(`${API_BASE}/superadmin/account-requests/${requestId}/approve`, {
+        method: 'POST'
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        loadAccountRequests()
+        loadAllUsers()
+        loadAdminData()
+      } else {
+        const error = await response.json()
+        showMessage(error.error, 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to approve account request', 'error')
+    }
+  }
+
+  const rejectAccountRequest = async (requestId, reason = '') => {
+    try {
+      const response = await fetch(`${API_BASE}/superadmin/account-requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        loadAccountRequests()
+      } else {
+        const error = await response.json()
+        showMessage(error.error, 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to reject account request', 'error')
+    }
+  }
+
   return {
     // state
     user,
@@ -1905,8 +1998,8 @@ export function usePlateApp() {
     setSignupPassword,
     signupName,
     setSignupName,
-    signupInviteCode,
-    setSignupInviteCode,
+    signupSchoolCode,
+    setSignupSchoolCode,
     showSchoolRegistration,
     setShowSchoolRegistration,
     schoolInviteCode,
@@ -1963,6 +2056,12 @@ export function usePlateApp() {
     setAllUsers,
     deleteRequests,
     setDeleteRequests,
+    accountRequests,
+    setAccountRequests,
+    showAccountRequests,
+    setShowAccountRequests,
+    accountRequestsLoading,
+    setAccountRequestsLoading,
     showCleanDialog,
     setShowCleanDialog,
     showDirtyDialog,
@@ -2112,6 +2211,10 @@ export function usePlateApp() {
     copySchoolInvite,
     changeUserRole,
     deleteUserAccount,
+    loadAccountRequests,
+    loadPendingAccountRequests,
+    approveAccountRequest,
+    rejectAccountRequest,
     sanitizeSelection,
     resetSchoolRegistrationForm,
     loadHouseStats,

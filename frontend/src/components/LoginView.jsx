@@ -31,8 +31,8 @@ function LoginView({ app }) {
     setSignupPassword,
     signupName,
     setSignupName,
-    signupInviteCode,
-    setSignupInviteCode,
+    signupSchoolCode,
+    setSignupSchoolCode,
     signup,
     setShowSchoolRegistration,
     resetSchoolRegistrationForm,
@@ -199,9 +199,9 @@ function LoginView({ app }) {
       <Dialog open={showSignupDialog} onOpenChange={handleSignupDialogChange}>
         <DialogContent dismissOnOverlayClick={false}>
           <DialogHeader>
-            <DialogTitle>Create Account</DialogTitle>
+            <DialogTitle>Request Account</DialogTitle>
             <DialogDescription>
-              Enter your information to create a new account
+              Enter your information to request an account. Your school administrator will review your request.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -236,14 +236,17 @@ function LoginView({ app }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="signup-invite">Invite Code</Label>
+              <Label htmlFor="signup-school">School Code</Label>
               <Input
-                id="signup-invite"
+                id="signup-school"
                 type="text"
-                placeholder="Enter invite code"
-                value={signupInviteCode}
-                onChange={(e) => setSignupInviteCode(e.target.value)}
+                placeholder="Enter your school code (e.g., SAC)"
+                value={signupSchoolCode}
+                onChange={(e) => setSignupSchoolCode(e.target.value)}
               />
+              <p className="text-xs text-gray-500">
+                Ask your school administrator for your school code.
+              </p>
             </div>
             {RECAPTCHA_SITE_KEY && (
               <div className="flex justify-center">
@@ -263,7 +266,7 @@ function LoginView({ app }) {
                 className="flex-1 bg-amber-600 hover:bg-amber-700"
                 disabled={isLoading}
               >
-                {isLoading ? 'Creating...' : 'Create Account'}
+                {isLoading ? 'Submitting...' : 'Submit Request'}
               </Button>
             </div>
           </div>
