@@ -431,7 +431,7 @@ function MainPortal({ app }) {
               </Card>
 
               {showExportCard && (
-                <div className="flex flex-col gap-4 lg:row-span-2">
+                <div className="flex flex-col gap-4 lg:row-span-2 min-h-0">
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
@@ -456,7 +456,7 @@ function MainPortal({ app }) {
                     </CardContent>
                   </Card>
 
-                  <Card className="flex-1 flex flex-col">
+                  <Card className="flex-1 flex flex-col min-h-0">
                     <CardHeader>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <CardTitle className="flex items-center gap-2">
@@ -467,17 +467,6 @@ function MainPortal({ app }) {
                           <span className="text-sm text-gray-500">Sort by:</span>
                           <div className="flex border rounded-lg overflow-hidden">
                             <button
-                              onClick={() => setHouseSortBy('count')}
-                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                                houseSortBy === 'count'
-                                  ? 'bg-teal-600 text-white'
-                                  : 'bg-white text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <ArrowDownNarrowWide className="h-3.5 w-3.5" />
-                              Count
-                            </button>
-                            <button
                               onClick={() => setHouseSortBy('percentage')}
                               className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
                                 houseSortBy === 'percentage'
@@ -487,6 +476,17 @@ function MainPortal({ app }) {
                             >
                               <ArrowUpNarrowWide className="h-3.5 w-3.5" />
                               Clean Rate
+                            </button>
+                            <button
+                              onClick={() => setHouseSortBy('count')}
+                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                                houseSortBy === 'count'
+                                  ? 'bg-teal-600 text-white'
+                                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <ArrowDownNarrowWide className="h-3.5 w-3.5" />
+                              Count
                             </button>
                           </div>
                           <Button
@@ -1006,17 +1006,6 @@ function MainPortal({ app }) {
                         <span className="text-sm text-gray-500">Sort by:</span>
                         <div className="flex border rounded-lg overflow-hidden">
                           <button
-                            onClick={() => setHouseSortBy('count')}
-                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                              houseSortBy === 'count'
-                                ? 'bg-teal-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <ArrowDownNarrowWide className="h-3.5 w-3.5" />
-                            Count
-                          </button>
-                          <button
                             onClick={() => setHouseSortBy('percentage')}
                             className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
                               houseSortBy === 'percentage'
@@ -1026,6 +1015,17 @@ function MainPortal({ app }) {
                           >
                             <ArrowUpNarrowWide className="h-3.5 w-3.5" />
                             Clean Rate
+                          </button>
+                          <button
+                            onClick={() => setHouseSortBy('count')}
+                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                              houseSortBy === 'count'
+                                ? 'bg-teal-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <ArrowDownNarrowWide className="h-3.5 w-3.5" />
+                            Count
                           </button>
                         </div>
                         <Button

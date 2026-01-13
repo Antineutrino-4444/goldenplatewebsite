@@ -107,7 +107,7 @@ export function usePlateApp() {
   // House stats state
   const [houseStats, setHouseStats] = useState(null)
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
-  const [houseSortBy, setHouseSortBy] = useState('count') // 'count' or 'percentage'
+  const [houseSortBy, setHouseSortBy] = useState('percentage') // 'count' or 'percentage'
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
