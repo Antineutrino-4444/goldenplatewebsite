@@ -3,7 +3,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Building2, CheckCircle, Copy, KeyRound, ListOrdered, LogOut, RefreshCcw, School, ShieldCheck, UserPlus, XCircle } from 'lucide-react'
+import { Building2, CheckCircle, Copy, KeyRound, ListOrdered, LogOut, RefreshCcw, School, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react'
 
 function InterschoolPortal({ app }) {
   const {
@@ -19,7 +19,8 @@ function InterschoolPortal({ app }) {
     refreshInterschoolOverview,
     interschoolRegistrationRequests,
     approveSchoolRegistration,
-    rejectSchoolRegistration
+    rejectSchoolRegistration,
+    deleteSchool
   } = app
 
   const formatSchoolNameWithCode = (school) => {
@@ -372,6 +373,12 @@ function InterschoolPortal({ app }) {
               <div className="space-y-3">
                 {interschoolSchools.map((school) => {
                   const createdLabel = formatDateTime(school.created_at)
+                  const isSystemSchool = school.id === 'default-school' || school.id === 'a11'
+                  const handleDeleteSchool = () => {
+                    if (window.confirm(`Are you sure you want to delete "${school.name}"? This will also delete all users associated with this school. This action cannot be undone.`)) {
+                      deleteSchool(school.id)
+                    }
+                  }
                   return (
                     <div
                       key={school.id}
@@ -394,6 +401,17 @@ function InterschoolPortal({ app }) {
                         <div className="text-xs text-gray-500">Users: {school.user_count ?? 0}</div>
                         {school.updated_at && (
                           <div className="text-xs text-gray-400">Updated {formatDateTime(school.updated_at)}</div>
+                        )}
+                        {!isSystemSchool && (
+                          <Button
+                            onClick={handleDeleteSchool}
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Delete
+                          </Button>
                         )}
                       </div>
                     </div>

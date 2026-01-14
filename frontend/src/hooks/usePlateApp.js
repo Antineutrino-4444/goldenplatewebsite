@@ -1952,6 +1952,25 @@ export function usePlateApp() {
     }
   }
 
+  const deleteSchool = async (schoolId) => {
+    try {
+      const response = await fetch(`${API_BASE}/interschool/schools/${schoolId}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        showMessage(data.message, 'success')
+        await refreshInterschoolOverview()
+      } else {
+        const error = await response.json()
+        showMessage(error.error || 'Failed to delete school', 'error')
+      }
+    } catch (error) {
+      showMessage('Failed to delete school', 'error')
+    }
+  }
+
   const copyToClipboard = async (text, successMessage = 'Copied to clipboard') => {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -2365,6 +2384,7 @@ export function usePlateApp() {
     issueSchoolInvite,
     approveSchoolRegistration,
     rejectSchoolRegistration,
+    deleteSchool,
     refreshInterschoolOverview,
     copyToClipboard,
     copyInviteCode,

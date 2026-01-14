@@ -7,7 +7,16 @@ from flask import jsonify, request
 from sqlalchemy import func
 
 from . import recorder_bp
-from .db import School, SchoolInviteCode, SchoolRegistrationRequest, User, _now_utc, db_session
+from .db import (
+    DEFAULT_SCHOOL_ID,
+    INTERSCHOOL_SCHOOL_ID,
+    School,
+    SchoolInviteCode,
+    SchoolRegistrationRequest,
+    User,
+    _now_utc,
+    db_session,
+)
 from .email_service import (
     create_verification_code,
     is_email_verified,
@@ -501,6 +510,44 @@ def reject_registration_request(request_id):
     return jsonify({
         'status': 'success',
         'message': f'Registration request for "{reg_request.school_name}" has been rejected.',
+    }), 200
+
+
+@recorder_bp.route('/interschool/schools/<school_id>', methods=['DELETE'])
+def delete_school(school_id):
+    """Delete a school and all associated data."""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    if not is_interschool_user():
+        return jsonify({'error': 'Interschool access required'}), 403
+
+    # Prevent deletion of system schools
+    protected_school_ids = {DEFAULT_SCHOOL_ID, INTERSCHOOL_SCHOOL_ID}
+    if school_id in protected_school_ids:
+        return jsonify({'error': 'Cannot delete system schools'}), 403
+
+    school = db_session.query(School).filter(School.id == school_id).first()
+
+    if not school:
+        return jsonify({'error': 'School not found'}), 404
+
+    school_name = school.name
+
+    try:
+        # Delete all users associated with this school
+        db_session.query(User).filter(User.school_id == school_id).delete()
+
+        # Delete the school (cascade will handle related records)
+        db_session.delete(school)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Unable to delete school'}), 500
+
+    return jsonify({
+        'status': 'success',
+        'message': f'School "{school_name}" has been deleted.',
     }), 200
 
 
