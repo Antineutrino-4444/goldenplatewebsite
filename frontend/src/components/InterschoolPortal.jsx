@@ -3,7 +3,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Building2, Copy, KeyRound, ListOrdered, LogOut, RefreshCcw, School, ShieldCheck, UserPlus } from 'lucide-react'
+import { Building2, CheckCircle, Copy, KeyRound, ListOrdered, LogOut, RefreshCcw, School, ShieldCheck, UserPlus, XCircle } from 'lucide-react'
 
 function InterschoolPortal({ app }) {
   const {
@@ -16,7 +16,10 @@ function InterschoolPortal({ app }) {
     interschoolSchools,
     interschoolInvites,
     interschoolOverviewLoading,
-    refreshInterschoolOverview
+    refreshInterschoolOverview,
+    interschoolRegistrationRequests,
+    approveSchoolRegistration,
+    rejectSchoolRegistration
   } = app
 
   const formatSchoolNameWithCode = (school) => {
@@ -47,6 +50,28 @@ function InterschoolPortal({ app }) {
     }
     return 'bg-gray-50 text-gray-600 border-gray-200'
   }
+
+  const getRequestStatusClasses = (status) => {
+    const normalized = (status || '').toLowerCase()
+    if (normalized === 'pending') {
+      return 'bg-amber-50 text-amber-700 border-amber-200'
+    }
+    if (normalized === 'approved') {
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    }
+    if (normalized === 'rejected') {
+      return 'bg-red-50 text-red-700 border-red-200'
+    }
+    return 'bg-gray-50 text-gray-600 border-gray-200'
+  }
+
+  const handleRejectRegistration = async (requestId) => {
+    const reason = window.prompt('Enter rejection reason (optional):')
+    if (reason === null) return // User cancelled
+    await rejectSchoolRegistration(requestId, reason)
+  }
+
+  const pendingRegistrationRequests = interschoolRegistrationRequests.filter(r => r.status === 'pending')
 
   const toTitle = (value) => {
     if (!value) return ''
@@ -125,6 +150,104 @@ function InterschoolPortal({ app }) {
                 <li>Reference onboarding guidance and upcoming management tools.</li>
               </ul>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-amber-600" />
+                Pending School Registration Requests
+                {pendingRegistrationRequests.length > 0 && (
+                  <Badge className="bg-amber-500 text-white">
+                    {pendingRegistrationRequests.length}
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Review and approve school registration requests submitted via the registration form.
+              </CardDescription>
+            </div>
+            <Button
+              onClick={refreshInterschoolOverview}
+              variant="outline"
+              size="sm"
+              disabled={interschoolOverviewLoading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCcw className={`h-4 w-4 ${interschoolOverviewLoading ? 'animate-spin' : ''}`} />
+              {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {interschoolRegistrationRequests.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No school registration requests have been submitted yet. Schools can register via the registration form.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {interschoolRegistrationRequests.map((request) => {
+                  const requestedLabel = formatDateTime(request.requested_at)
+                  const reviewedLabel = formatDateTime(request.reviewed_at)
+                  const statusClasses = getRequestStatusClasses(request.status)
+                  return (
+                    <div
+                      key={request.id}
+                      className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-semibold text-gray-900">{request.school_name}</div>
+                        <div className="text-sm text-gray-600">
+                          Contact: {request.email}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Admin: {request.admin_display_name} (@{request.admin_username})
+                        </div>
+                        {request.school_slug && (
+                          <div className="text-xs text-gray-500">School Code: {request.school_slug}</div>
+                        )}
+                        {requestedLabel && (
+                          <div className="text-xs text-gray-400">Requested {requestedLabel}</div>
+                        )}
+                        {reviewedLabel && (
+                          <div className="text-xs text-gray-400">Reviewed {reviewedLabel}</div>
+                        )}
+                        {request.rejection_reason && (
+                          <div className="text-xs text-red-600">Reason: {request.rejection_reason}</div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        <Badge variant="outline" className={`text-xs uppercase tracking-wide ${statusClasses}`}>
+                          {toTitle(request.status) || 'Unknown'}
+                        </Badge>
+                        {request.status === 'pending' && (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              onClick={() => approveSchoolRegistration(request.id)}
+                              variant="default"
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              onClick={() => handleRejectRegistration(request.id)}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <XCircle className="h-4 w-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 
