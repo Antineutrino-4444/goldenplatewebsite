@@ -8,6 +8,12 @@ from sqlalchemy import func
 
 from . import recorder_bp
 from .db import School, SchoolInviteCode, SchoolRegistrationRequest, User, _now_utc, db_session
+from .email_service import (
+    create_verification_code,
+    is_email_verified,
+    send_verification_email,
+    verify_code as verify_email_code,
+)
 from .security import get_current_user, is_interschool_user, require_auth
 from .users import (
     create_school_invite_code_record,
@@ -116,6 +122,77 @@ def create_school_invite():
     }), 201
 
 
+@recorder_bp.route('/auth/send-verification-code', methods=['POST'])
+def send_verification_code():
+    """Send a verification code to the provided email address."""
+    data = request.get_json(silent=True) or {}
+    email = (data.get('email') or '').strip().lower()
+    recaptcha_token = (data.get('recaptcha_token') or '').strip()
+
+    # Verify reCAPTCHA if configured
+    if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
+        return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
+
+    if not email:
+        return jsonify({'error': 'Email address is required'}), 400
+
+    # Basic email validation
+    if '@' not in email or '.' not in email:
+        return jsonify({'error': 'Please enter a valid email address'}), 400
+
+    # Check if there's already a pending request with this email
+    existing_request = db_session.query(SchoolRegistrationRequest).filter(
+        SchoolRegistrationRequest.email == email,
+        SchoolRegistrationRequest.status == 'pending'
+    ).first()
+    if existing_request:
+        return jsonify({'error': 'A registration request with this email is already pending approval'}), 409
+
+    try:
+        # Create verification code
+        verification = create_verification_code(email, purpose='school_registration')
+
+        # Send email
+        result = send_verification_email(email, verification.code)
+
+        if not result.get('success'):
+            return jsonify({
+                'error': 'Failed to send verification email. Please try again.',
+                'detail': result.get('error'),
+            }), 500
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Verification code sent to your email address.',
+        }), 200
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({'error': 'Failed to send verification code. Please try again.'}), 500
+
+
+@recorder_bp.route('/auth/verify-email-code', methods=['POST'])
+def verify_email_code_endpoint():
+    """Verify an email verification code."""
+    data = request.get_json(silent=True) or {}
+    email = (data.get('email') or '').strip().lower()
+    code = (data.get('code') or '').strip()
+
+    if not email or not code:
+        return jsonify({'error': 'Email and verification code are required'}), 400
+
+    result = verify_email_code(email, code, purpose='school_registration')
+
+    if not result.get('valid'):
+        return jsonify({'error': result.get('error', 'Invalid verification code')}), 400
+
+    return jsonify({
+        'status': 'success',
+        'message': 'Email verified successfully.',
+        'verified': True,
+    }), 200
+
+
 @recorder_bp.route('/auth/register-school', methods=['POST'])
 def register_school():
     """Submit a school registration request for interschool admin approval."""
@@ -144,6 +221,10 @@ def register_school():
 
     if len(admin_password) < 6:
         return jsonify({'error': 'Admin password must be at least 6 characters long'}), 400
+
+    # Check if email has been verified
+    if not is_email_verified(email.lower(), purpose='school_registration'):
+        return jsonify({'error': 'Please verify your email address before submitting the registration'}), 400
 
     # Check for existing pending request with same email
     existing_request = db_session.query(SchoolRegistrationRequest).filter(

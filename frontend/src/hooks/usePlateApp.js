@@ -22,6 +22,10 @@ export function usePlateApp() {
   const [schoolAdminUsername, setSchoolAdminUsername] = useState('')
   const [schoolAdminPassword, setSchoolAdminPassword] = useState('')
   const [schoolAdminDisplayName, setSchoolAdminDisplayName] = useState('')
+  const [emailVerificationCode, setEmailVerificationCode] = useState('')
+  const [emailVerified, setEmailVerified] = useState(false)
+  const [verificationSent, setVerificationSent] = useState(false)
+  const [verificationLoading, setVerificationLoading] = useState(false)
   const [guestSchoolCode, setGuestSchoolCode] = useState('')
   const [showGuestSchoolDialog, setShowGuestSchoolDialog] = useState(false)
   
@@ -295,6 +299,95 @@ export function usePlateApp() {
     setSchoolAdminUsername('')
     setSchoolAdminPassword('')
     setSchoolAdminDisplayName('')
+    setEmailVerificationCode('')
+    setEmailVerified(false)
+    setVerificationSent(false)
+    setVerificationLoading(false)
+  }
+
+  const sendVerificationCode = async (recaptchaToken = null) => {
+    const trimmedEmail = schoolEmail.trim().toLowerCase()
+
+    if (!trimmedEmail) {
+      showMessage('Please enter your email address', 'error')
+      return false
+    }
+
+    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      showMessage('Please enter a valid email address', 'error')
+      return false
+    }
+
+    setVerificationLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/auth/send-verification-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: trimmedEmail,
+          recaptcha_token: recaptchaToken,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setVerificationSent(true)
+        showMessage('Verification code sent to your email!', 'success')
+        return true
+      } else {
+        showMessage(data.error || 'Failed to send verification code', 'error')
+        return false
+      }
+    } catch (error) {
+      showMessage('Failed to send verification code. Please try again.', 'error')
+      return false
+    } finally {
+      setVerificationLoading(false)
+    }
+  }
+
+  const verifyEmailCode = async () => {
+    const trimmedEmail = schoolEmail.trim().toLowerCase()
+    const trimmedCode = emailVerificationCode.trim()
+
+    if (!trimmedCode) {
+      showMessage('Please enter the verification code', 'error')
+      return false
+    }
+
+    if (trimmedCode.length !== 6) {
+      showMessage('Verification code must be 6 digits', 'error')
+      return false
+    }
+
+    setVerificationLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/auth/verify-email-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: trimmedEmail,
+          code: trimmedCode,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.verified) {
+        setEmailVerified(true)
+        showMessage('Email verified successfully!', 'success')
+        return true
+      } else {
+        showMessage(data.error || 'Invalid verification code', 'error')
+        return false
+      }
+    } catch (error) {
+      showMessage('Failed to verify code. Please try again.', 'error')
+      return false
+    } finally {
+      setVerificationLoading(false)
+    }
   }
 
   const initializeInterschoolPortal = async () => {
@@ -2068,6 +2161,15 @@ export function usePlateApp() {
     setSchoolAdminPassword,
     schoolAdminDisplayName,
     setSchoolAdminDisplayName,
+    emailVerificationCode,
+    setEmailVerificationCode,
+    emailVerified,
+    setEmailVerified,
+    verificationSent,
+    setVerificationSent,
+    verificationLoading,
+    sendVerificationCode,
+    verifyEmailCode,
     sessionId,
     setSessionId,
     sessionName,
