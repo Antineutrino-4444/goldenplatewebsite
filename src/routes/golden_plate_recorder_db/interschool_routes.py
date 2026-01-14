@@ -190,16 +190,25 @@ def verify_email_code_endpoint():
     if not email or not code:
         return jsonify({'error': 'Email and verification code are required'}), 400
 
-    result = verify_email_code(email, code, purpose='school_registration')
+    # Ensure code is exactly 6 digits
+    if not code.isdigit() or len(code) != 6:
+        return jsonify({'error': 'Verification code must be exactly 6 digits'}), 400
 
-    if not result.get('valid'):
-        return jsonify({'error': result.get('error', 'Invalid verification code')}), 400
+    try:
+        result = verify_email_code(email, code, purpose='school_registration')
 
-    return jsonify({
-        'status': 'success',
-        'message': 'Email verified successfully.',
-        'verified': True,
-    }), 200
+        if not result.get('valid'):
+            return jsonify({'error': result.get('error', 'Invalid verification code')}), 400
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Email verified successfully.',
+            'verified': True,
+        }), 200
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({'error': 'Failed to verify code. Please try again.'}), 500
 
 
 @recorder_bp.route('/auth/register-school', methods=['POST'])
