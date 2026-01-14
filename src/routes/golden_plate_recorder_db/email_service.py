@@ -263,9 +263,16 @@ def verify_code(email: str, code: str, purpose: str = 'school_registration') -> 
 
     # Check if expired
     now = _now_utc()
-    time_remaining = verification.expires_at - now
-    if now > verification.expires_at:
-        logger.warning(f'Verification code expired for {normalized_email}. Expired {abs(time_remaining.total_seconds()):.0f}s ago')
+
+    # Handle timezone-aware vs naive datetime comparison (SQLite stores naive datetimes)
+    expires_at = verification.expires_at
+    if expires_at.tzinfo is None:
+        # Make expires_at timezone-aware (assume UTC)
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if now > expires_at:
+        time_diff = now - expires_at
+        logger.warning(f'Verification code expired for {normalized_email}. Expired {abs(time_diff.total_seconds()):.0f}s ago')
         return {'valid': False, 'error': 'Verification code has expired. Please request a new one.'}
 
     # Check attempt limit
