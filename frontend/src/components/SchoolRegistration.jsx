@@ -21,6 +21,13 @@ function SchoolRegistration({ app }) {
     setSchoolAdminPassword,
     schoolAdminDisplayName,
     setSchoolAdminDisplayName,
+    emailVerificationCode,
+    setEmailVerificationCode,
+    emailVerified,
+    verificationSent,
+    verificationLoading,
+    sendVerificationCode,
+    verifyEmailCode,
     registerSchool,
     isLoading,
     setShowSchoolRegistration,
@@ -34,10 +41,24 @@ function SchoolRegistration({ app }) {
     setShowSchoolRegistration(false)
   }
 
+  const handleSendVerificationCode = async () => {
+    const recaptchaToken = recaptchaRef.current?.getValue() || null
+    await sendVerificationCode(recaptchaToken)
+    recaptchaRef.current?.reset()
+  }
+
+  const handleVerifyCode = async () => {
+    await verifyEmailCode()
+  }
+
   const handleSubmit = async () => {
     const recaptchaToken = recaptchaRef.current?.getValue() || null
     await registerSchool(recaptchaToken)
     recaptchaRef.current?.reset()
+  }
+
+  const handleEmailChange = (e) => {
+    setSchoolEmail(e.target.value)
   }
 
   return (
@@ -52,80 +73,164 @@ function SchoolRegistration({ app }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="school-email">Contact Email</Label>
-              <Input
-                id="school-email"
-                type="email"
-                placeholder="Enter your email address"
-                value={schoolEmail}
-                onChange={(e) => setSchoolEmail(e.target.value)}
-              />
-              <p className="text-xs text-gray-500">
-                We'll use this email to contact you about your registration.
-              </p>
+          {/* Step 1: Email Verification */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${emailVerified ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>
+                {emailVerified ? '✓' : '1'}
+              </div>
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                Verify Your Email
+              </h3>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="school-name">School Name</Label>
-              <Input
-                id="school-name"
-                type="text"
-                placeholder="Full school name"
-                value={schoolName}
-                onChange={(e) => setSchoolName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="school-code">School Code (optional)</Label>
-              <Input
-                id="school-code"
-                type="text"
-                placeholder="Shareable code for your school"
-                value={schoolCode}
-                onChange={(e) => setSchoolCode(e.target.value)}
-              />
-              <p className="text-xs text-gray-500">
-                Leave blank and we will generate one automatically.
-              </p>
+
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="school-email">Contact Email</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="school-email"
+                    type="email"
+                    placeholder="Enter your email address"
+                    value={schoolEmail}
+                    onChange={handleEmailChange}
+                    disabled={emailVerified}
+                    className={emailVerified ? 'bg-green-50 border-green-300' : ''}
+                  />
+                  {!emailVerified && (
+                    <Button
+                      onClick={handleSendVerificationCode}
+                      disabled={verificationLoading || !schoolEmail.trim()}
+                      className="bg-amber-600 hover:bg-amber-700 whitespace-nowrap"
+                    >
+                      {verificationLoading ? 'Sending...' : verificationSent ? 'Resend Code' : 'Send Code'}
+                    </Button>
+                  )}
+                </div>
+                {emailVerified && (
+                  <p className="text-xs text-green-600 font-medium">
+                    Email verified successfully!
+                  </p>
+                )}
+                {!emailVerified && (
+                  <p className="text-xs text-gray-500">
+                    We'll send a verification code to this email address.
+                  </p>
+                )}
+              </div>
+
+              {verificationSent && !emailVerified && (
+                <div className="space-y-2 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <Label htmlFor="verification-code">Verification Code</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="verification-code"
+                      type="text"
+                      placeholder="Enter 6-digit code"
+                      value={emailVerificationCode}
+                      onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      maxLength={6}
+                      className="text-center text-lg tracking-widest font-mono"
+                    />
+                    <Button
+                      onClick={handleVerifyCode}
+                      disabled={verificationLoading || emailVerificationCode.length !== 6}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {verificationLoading ? 'Verifying...' : 'Verify'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-amber-700">
+                    Check your email for the 6-digit verification code. The code expires in 15 minutes.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="border-t border-gray-200 pt-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Primary Admin Account</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="admin-display-name">Display Name</Label>
-                <Input
-                  id="admin-display-name"
-                  type="text"
-                  placeholder="Name shown to other users"
-                  value={schoolAdminDisplayName}
-                  onChange={(e) => setSchoolAdminDisplayName(e.target.value)}
-                />
+          {/* Step 2: School Details (only shown after email verification) */}
+          {emailVerified && (
+            <>
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold bg-amber-500 text-white">
+                    2
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                    School Information
+                  </h3>
+                </div>
+                <div className="grid gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="school-name">School Name</Label>
+                    <Input
+                      id="school-name"
+                      type="text"
+                      placeholder="Full school name"
+                      value={schoolName}
+                      onChange={(e) => setSchoolName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="school-code">School Code (optional)</Label>
+                    <Input
+                      id="school-code"
+                      type="text"
+                      placeholder="Shareable code for your school"
+                      value={schoolCode}
+                      onChange={(e) => setSchoolCode(e.target.value)}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Leave blank and we will generate one automatically.
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin-username">Admin Username</Label>
-                <Input
-                  id="admin-username"
-                  type="text"
-                  placeholder="Choose a username"
-                  value={schoolAdminUsername}
-                  onChange={(e) => setSchoolAdminUsername(e.target.value)}
-                />
+
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold bg-amber-500 text-white">
+                    3
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                    Primary Admin Account
+                  </h3>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="admin-display-name">Display Name</Label>
+                    <Input
+                      id="admin-display-name"
+                      type="text"
+                      placeholder="Name shown to other users"
+                      value={schoolAdminDisplayName}
+                      onChange={(e) => setSchoolAdminDisplayName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="admin-username">Admin Username</Label>
+                    <Input
+                      id="admin-username"
+                      type="text"
+                      placeholder="Choose a username"
+                      value={schoolAdminUsername}
+                      onChange={(e) => setSchoolAdminUsername(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="admin-password">Admin Password</Label>
+                    <Input
+                      id="admin-password"
+                      type="password"
+                      placeholder="Choose a secure password"
+                      value={schoolAdminPassword}
+                      onChange={(e) => setSchoolAdminPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="admin-password">Admin Password</Label>
-                <Input
-                  id="admin-password"
-                  type="password"
-                  placeholder="Choose a secure password"
-                  value={schoolAdminPassword}
-                  onChange={(e) => setSchoolAdminPassword(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
+            </>
+          )}
 
           {RECAPTCHA_SITE_KEY && (
             <div className="flex justify-center">
@@ -140,13 +245,15 @@ function SchoolRegistration({ app }) {
             <Button variant="ghost" onClick={handleBackToLogin} className="sm:w-auto w-full">
               Back to Login
             </Button>
-            <Button
-              onClick={handleSubmit}
-              className="bg-amber-600 hover:bg-amber-700 sm:w-auto w-full"
-              disabled={isLoading}
-            >
-              {isLoading ? 'Submitting...' : 'Submit Registration Request'}
-            </Button>
+            {emailVerified && (
+              <Button
+                onClick={handleSubmit}
+                className="bg-amber-600 hover:bg-amber-700 sm:w-auto w-full"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Submitting...' : 'Submit Registration Request'}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

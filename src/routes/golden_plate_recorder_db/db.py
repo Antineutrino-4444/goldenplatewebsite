@@ -355,6 +355,23 @@ class SchoolRegistrationRequest(Base):
     rejection_reason = Column(Text)
 
 
+class EmailVerification(Base):
+    __tablename__ = 'email_verifications'
+    __table_args__ = (
+        Index('idx_email_verifications_email', 'email'),
+        Index('idx_email_verifications_expires', 'expires_at'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, nullable=False)
+    code = Column(String(6), nullable=False)
+    purpose = Column(String, nullable=False, default='school_registration')
+    created_at = Column(DateTime(timezone=True), default=_now_utc)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    verified_at = Column(DateTime(timezone=True))
+    attempts = Column(Integer, nullable=False, default=0)
+
+
 def _ensure_column(
     inspector, table_name: str, column_name: str, ddl: str, *, update_nulls_sql: Optional[str] = None
 ) -> None:
@@ -901,6 +918,7 @@ __all__ = [
     'DEFAULT_SCHOOL_NAME',
     'DEFAULT_SCHOOL_SLUG',
     'DraftPool',
+    'EmailVerification',
     'INTERSCHOOL_SCHOOL_ID',
     'INTERSCHOOL_SCHOOL_NAME',
     'INTERSCHOOL_SCHOOL_SLUG',
