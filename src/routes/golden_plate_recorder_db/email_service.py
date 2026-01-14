@@ -87,22 +87,34 @@ def send_email_via_brevo(to_email: str, subject: str, html_content: str) -> dict
 
 def create_verification_code(email: str, purpose: str = 'school_registration') -> EmailVerification:
     """Create a new email verification code record."""
-    # Invalidate any existing unused codes for this email/purpose
+    from sqlalchemy import func
+
+    # Normalize email to lowercase for consistent storage and lookup
+    normalized_email = (email or '').strip().lower()
+
+    if not normalized_email:
+        raise ValueError('Email address is required')
+
+    logger.info(f'Creating verification code for email={normalized_email}, purpose={purpose}')
+
+    # Invalidate any existing unused codes for this email/purpose (case-insensitive)
     existing_codes = db_session.query(EmailVerification).filter(
-        EmailVerification.email == email,
+        func.lower(EmailVerification.email) == normalized_email,
         EmailVerification.purpose == purpose,
         EmailVerification.verified_at.is_(None),
     ).all()
 
-    for code_record in existing_codes:
-        db_session.delete(code_record)
+    if existing_codes:
+        logger.info(f'Removing {len(existing_codes)} existing unused codes for {normalized_email}')
+        for code_record in existing_codes:
+            db_session.delete(code_record)
 
     # Create new verification code
     code = generate_verification_code()
     expires_at = _now_utc() + timedelta(minutes=VERIFICATION_CODE_EXPIRY_MINUTES)
 
     verification = EmailVerification(
-        email=email,
+        email=normalized_email,  # Store normalized email
         code=code,
         purpose=purpose,
         expires_at=expires_at,
@@ -111,6 +123,8 @@ def create_verification_code(email: str, purpose: str = 'school_registration') -
 
     db_session.add(verification)
     db_session.commit()
+
+    logger.info(f'Created verification code for {normalized_email}, code={code}, expires_at={expires_at.isoformat()}')
 
     return verification
 
@@ -206,53 +220,117 @@ def send_verification_email(email: str, code: str) -> dict:
 
 def verify_code(email: str, code: str, purpose: str = 'school_registration') -> dict:
     """Verify an email verification code."""
+    # Normalize inputs
+    normalized_email = (email or '').strip().lower()
+    normalized_code = (code or '').strip()
+
+    logger.info(f'Verification attempt for email={normalized_email}, code_length={len(normalized_code)}, purpose={purpose}')
+
+    if not normalized_email:
+        logger.warning('Verification failed: empty email provided')
+        return {'valid': False, 'error': 'Email address is required'}
+
+    if not normalized_code:
+        logger.warning('Verification failed: empty code provided')
+        return {'valid': False, 'error': 'Verification code is required'}
+
+    # Query for pending verification - use case-insensitive email match
+    from sqlalchemy import func
     verification = db_session.query(EmailVerification).filter(
-        EmailVerification.email == email,
+        func.lower(EmailVerification.email) == normalized_email,
         EmailVerification.purpose == purpose,
         EmailVerification.verified_at.is_(None),
     ).order_by(EmailVerification.created_at.desc()).first()
 
     if not verification:
-        return {'valid': False, 'error': 'No verification code found for this email'}
+        # Log additional debug info - check if there are any records for this email
+        all_records = db_session.query(EmailVerification).filter(
+            func.lower(EmailVerification.email) == normalized_email,
+        ).all()
+        if all_records:
+            statuses = [f"id={r.id}, purpose={r.purpose}, verified={r.verified_at is not None}, expired={_now_utc() > r.expires_at}" for r in all_records]
+            logger.warning(f'No pending verification found for {normalized_email}. Existing records: {statuses}')
+            # Check if already verified
+            already_verified = any(r.verified_at is not None and r.purpose == purpose for r in all_records)
+            if already_verified:
+                return {'valid': False, 'error': 'This email has already been verified. Please proceed with registration.'}
+            return {'valid': False, 'error': 'No pending verification code found. The code may have expired or been used. Please request a new one.'}
+        else:
+            logger.warning(f'No verification records exist for {normalized_email}')
+            return {'valid': False, 'error': 'No verification code found for this email. Please request a verification code first.'}
+
+    logger.info(f'Found verification record id={verification.id}, stored_code_length={len(verification.code)}, attempts={verification.attempts}')
 
     # Check if expired
     now = _now_utc()
+    time_remaining = verification.expires_at - now
     if now > verification.expires_at:
+        logger.warning(f'Verification code expired for {normalized_email}. Expired {abs(time_remaining.total_seconds()):.0f}s ago')
         return {'valid': False, 'error': 'Verification code has expired. Please request a new one.'}
 
     # Check attempt limit
     if verification.attempts >= MAX_VERIFICATION_ATTEMPTS:
+        logger.warning(f'Too many attempts for {normalized_email}. Attempts: {verification.attempts}')
         return {'valid': False, 'error': 'Too many failed attempts. Please request a new code.'}
 
-    # Check code
-    if verification.code != code:
+    # Check code - normalize both for comparison
+    stored_code = (verification.code or '').strip()
+    if stored_code != normalized_code:
         verification.attempts += 1
         db_session.commit()
         remaining = MAX_VERIFICATION_ATTEMPTS - verification.attempts
+        logger.warning(
+            f'Code mismatch for {normalized_email}. '
+            f'Provided: "{normalized_code}" (len={len(normalized_code)}), '
+            f'Expected: "{stored_code}" (len={len(stored_code)}). '
+            f'{remaining} attempts remaining.'
+        )
         if remaining > 0:
-            return {'valid': False, 'error': f'Invalid code. {remaining} attempts remaining.'}
+            return {
+                'valid': False,
+                'error': f'Invalid verification code. {remaining} attempts remaining.',
+                'debug': {
+                    'attempts_used': verification.attempts,
+                    'attempts_remaining': remaining,
+                    'code_length_provided': len(normalized_code),
+                    'code_length_expected': len(stored_code),
+                }
+            }
         else:
             return {'valid': False, 'error': 'Too many failed attempts. Please request a new code.'}
 
     # Mark as verified
     verification.verified_at = now
     db_session.commit()
+    logger.info(f'Email {normalized_email} verified successfully. Verification ID: {verification.id}')
 
     return {'valid': True, 'verification_id': verification.id}
 
 
 def is_email_verified(email: str, purpose: str = 'school_registration', max_age_minutes: int = 30) -> bool:
     """Check if an email has been recently verified for the given purpose."""
+    from sqlalchemy import func
+
+    # Normalize email for case-insensitive lookup
+    normalized_email = (email or '').strip().lower()
+
+    if not normalized_email:
+        logger.warning('is_email_verified called with empty email')
+        return False
+
     cutoff = _now_utc() - timedelta(minutes=max_age_minutes)
 
     verification = db_session.query(EmailVerification).filter(
-        EmailVerification.email == email,
+        func.lower(EmailVerification.email) == normalized_email,
         EmailVerification.purpose == purpose,
         EmailVerification.verified_at.isnot(None),
         EmailVerification.verified_at >= cutoff,
     ).first()
 
-    return verification is not None
+    is_verified = verification is not None
+    logger.info(f'is_email_verified check: email={normalized_email}, purpose={purpose}, verified={is_verified}')
+
+    return is_verified
 
 
 __all__ = [
