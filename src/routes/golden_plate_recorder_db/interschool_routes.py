@@ -183,23 +183,58 @@ def send_verification_code():
 @recorder_bp.route('/auth/verify-email-code', methods=['POST'])
 def verify_email_code_endpoint():
     """Verify an email verification code."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     data = request.get_json(silent=True) or {}
     email = (data.get('email') or '').strip().lower()
     code = (data.get('code') or '').strip()
 
+    logger.info(f'Verify email code endpoint called: email={email}, code_length={len(code)}')
+
     if not email or not code:
-        return jsonify({'error': 'Email and verification code are required'}), 400
+        logger.warning(f'Missing required fields: email={bool(email)}, code={bool(code)}')
+        return jsonify({
+            'error': 'Email and verification code are required',
+            'debug': {
+                'email_provided': bool(email),
+                'code_provided': bool(code),
+            }
+        }), 400
 
     # Ensure code is exactly 6 digits
-    if not code.isdigit() or len(code) != 6:
-        return jsonify({'error': 'Verification code must be exactly 6 digits'}), 400
+    if not code.isdigit():
+        logger.warning(f'Code is not all digits: "{code}"')
+        return jsonify({
+            'error': 'Verification code must contain only digits',
+            'debug': {
+                'code_length': len(code),
+                'is_digit': code.isdigit(),
+            }
+        }), 400
+
+    if len(code) != 6:
+        logger.warning(f'Code length incorrect: {len(code)} (expected 6)')
+        return jsonify({
+            'error': f'Verification code must be exactly 6 digits (received {len(code)})',
+            'debug': {
+                'code_length': len(code),
+            }
+        }), 400
 
     try:
         result = verify_email_code(email, code, purpose='school_registration')
 
         if not result.get('valid'):
-            return jsonify({'error': result.get('error', 'Invalid verification code')}), 400
+            error_msg = result.get('error', 'Invalid verification code')
+            debug_info = result.get('debug', {})
+            logger.warning(f'Verification failed for {email}: {error_msg}')
+            response_data = {'error': error_msg}
+            if debug_info:
+                response_data['debug'] = debug_info
+            return jsonify(response_data), 400
 
+        logger.info(f'Email verified successfully: {email}')
         return jsonify({
             'status': 'success',
             'message': 'Email verified successfully.',
@@ -208,7 +243,13 @@ def verify_email_code_endpoint():
 
     except Exception as e:
         db_session.rollback()
-        return jsonify({'error': 'Failed to verify code. Please try again.'}), 500
+        logger.exception(f'Exception during verification for {email}: {str(e)}')
+        return jsonify({
+            'error': 'Failed to verify code. Please try again.',
+            'debug': {
+                'exception': str(e),
+            }
+        }), 500
 
 
 @recorder_bp.route('/auth/register-school', methods=['POST'])

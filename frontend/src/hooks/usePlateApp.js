@@ -361,13 +361,21 @@ export function usePlateApp() {
       return false
     }
 
+    // Check if code contains only digits
+    if (!/^\d+$/.test(trimmedCode)) {
+      showMessage('Verification code must contain only digits', 'error')
+      return false
+    }
+
     if (trimmedCode.length !== 6) {
-      showMessage('Verification code must be 6 digits', 'error')
+      showMessage(`Verification code must be 6 digits (you entered ${trimmedCode.length})`, 'error')
       return false
     }
 
     setVerificationLoading(true)
     try {
+      console.log('Verifying email code:', { email: trimmedEmail, codeLength: trimmedCode.length })
+
       const response = await fetch(`${API_BASE}/auth/verify-email-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -378,16 +386,27 @@ export function usePlateApp() {
       })
 
       const data = await response.json()
+      console.log('Verification response:', { status: response.status, data })
 
       if (response.ok && data.verified) {
         setEmailVerified(true)
         showMessage('Email verified successfully!', 'success')
         return true
       } else {
-        showMessage(data.error || 'Invalid verification code', 'error')
+        // Build a more informative error message
+        let errorMsg = data.error || 'Invalid verification code'
+        if (data.debug) {
+          console.error('Verification debug info:', data.debug)
+          // Show additional context for common issues
+          if (data.debug.attempts_remaining !== undefined) {
+            errorMsg = `${errorMsg}`
+          }
+        }
+        showMessage(errorMsg, 'error')
         return false
       }
     } catch (error) {
+      console.error('Verification error:', error)
       showMessage('Failed to verify code. Please try again.', 'error')
       return false
     } finally {
