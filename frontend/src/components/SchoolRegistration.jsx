@@ -139,6 +139,8 @@ function SchoolRegistration({ app }) {
                   </div>
                   <p className="text-xs text-amber-700 text-center">
                     Check your email for the 6-digit verification code. The code expires in 15 minutes.
+                    <br />
+                    <span className="text-gray-500">Can't find it? Check your junk/spam folder.</span>
                   </p>
                 </div>
               )}
