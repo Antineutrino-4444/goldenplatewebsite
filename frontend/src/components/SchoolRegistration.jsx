@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
+import VerificationCodeInput from './VerificationCodeInput.jsx'
 
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY
 
@@ -120,28 +121,26 @@ function SchoolRegistration({ app }) {
               </div>
 
               {verificationSent && !emailVerified && (
-                <div className="space-y-2 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <Label htmlFor="verification-code">Verification Code</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="verification-code"
-                      type="text"
-                      placeholder="Enter 6-digit code"
-                      value={emailVerificationCode}
-                      onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      maxLength={6}
-                      className="text-center text-lg tracking-widest font-mono"
-                    />
+                <div className="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <Label className="text-center block">Enter Verification Code</Label>
+                  <VerificationCodeInput
+                    value={emailVerificationCode}
+                    onChange={setEmailVerificationCode}
+                    disabled={verificationLoading}
+                  />
+                  <div className="flex justify-center">
                     <Button
                       onClick={handleVerifyCode}
                       disabled={verificationLoading || emailVerificationCode.length !== 6}
-                      className="bg-green-600 hover:bg-green-700"
+                      className="bg-green-600 hover:bg-green-700 px-8"
                     >
-                      {verificationLoading ? 'Verifying...' : 'Verify'}
+                      {verificationLoading ? 'Verifying...' : 'Verify Code'}
                     </Button>
                   </div>
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-amber-700 text-center">
                     Check your email for the 6-digit verification code. The code expires in 15 minutes.
+                    <br />
+                    <span className="text-gray-500">Can't find it? Check your junk/spam folder.</span>
                   </p>
                 </div>
               )}
