@@ -336,7 +336,12 @@ export function usePlateApp() {
         showMessage('Verification code sent to your email!', 'success')
         return true
       } else {
-        showMessage(data.error || 'Failed to send verification code', 'error')
+        // Show detailed error if available (helps with debugging)
+        const errorMsg = data.detail
+          ? `${data.error} (${data.detail})`
+          : data.error || 'Failed to send verification code'
+        showMessage(errorMsg, 'error')
+        console.error('Email verification error:', data)
         return false
       }
     } catch (error) {
