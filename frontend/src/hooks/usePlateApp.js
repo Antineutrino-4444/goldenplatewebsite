@@ -15,10 +15,15 @@ export function usePlateApp() {
   const [signupPassword, setSignupPassword] = useState('')
   const [signupName, setSignupName] = useState('')
   const [signupSchoolCode, setSignupSchoolCode] = useState('')
+  const [signupInviteCode, setSignupInviteCode] = useState('')
+  const [signupMode, setSignupMode] = useState('school')
   const [showSchoolRegistration, setShowSchoolRegistration] = useState(false)
   const [schoolEmail, setSchoolEmail] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [schoolCode, setSchoolCode] = useState('')
+  const [schoolInviteCode, setSchoolInviteCode] = useState('')
+  const [schoolInviteSchoolId, setSchoolInviteSchoolId] = useState('')
+  const [schoolSignupMode, setSchoolSignupMode] = useState('request')
   const [schoolAdminUsername, setSchoolAdminUsername] = useState('')
   const [schoolAdminPassword, setSchoolAdminPassword] = useState('')
   const [schoolAdminDisplayName, setSchoolAdminDisplayName] = useState('')
@@ -114,7 +119,7 @@ export function usePlateApp() {
   // House stats state
   const [houseStats, setHouseStats] = useState(null)
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
-  const [houseSortBy, setHouseSortBy] = useState('percentage') // 'count' or 'percentage'
+  const [houseSortBy, setHouseSortBy] = useState('count') // 'count' or 'percentage'
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -296,6 +301,8 @@ export function usePlateApp() {
     setSchoolEmail('')
     setSchoolName('')
     setSchoolCode('')
+    setSchoolInviteCode('')
+    setSchoolInviteSchoolId('')
     setSchoolAdminUsername('')
     setSchoolAdminPassword('')
     setSchoolAdminDisplayName('')
@@ -303,6 +310,7 @@ export function usePlateApp() {
     setEmailVerified(false)
     setVerificationSent(false)
     setVerificationLoading(false)
+    setSchoolSignupMode('request')
   }
 
   const sendVerificationCode = async (recaptchaToken = null) => {
@@ -569,8 +577,21 @@ export function usePlateApp() {
   }
 
   const signup = async (recaptchaToken = null) => {
-    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || !signupSchoolCode.trim()) {
+    const trimmedInviteCode = signupInviteCode.trim()
+    const usingInvite = signupMode === 'invite'
+
+    if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || (!trimmedInviteCode && !signupSchoolCode.trim())) {
       showMessage('Please fill in all fields', 'error')
+      return
+    }
+
+    if (usingInvite && !trimmedInviteCode) {
+      showMessage('Please enter your invite code', 'error')
+      return
+    }
+
+    if (!usingInvite && !signupSchoolCode.trim()) {
+      showMessage('Please enter your school code', 'error')
       return
     }
 
@@ -589,8 +610,13 @@ export function usePlateApp() {
       const payload = {
         username: signupUsername.trim(),
         password: signupPassword.trim(),
-        name: signupName.trim(),
-        school_code: signupSchoolCode.trim()
+        name: signupName.trim()
+      }
+
+      if (usingInvite) {
+        payload.invite_code = trimmedInviteCode
+      } else {
+        payload.school_code = signupSchoolCode.trim()
       }
 
       if (recaptchaToken) {
@@ -610,6 +636,8 @@ export function usePlateApp() {
         setSignupPassword('')
         setSignupName('')
         setSignupSchoolCode('')
+        setSignupInviteCode('')
+        setSignupMode('school')
         setShowSignupDialog(false)
       } else {
         showMessage(data.error || 'Signup failed', 'error')
@@ -627,15 +655,28 @@ export function usePlateApp() {
     const trimmedCode = schoolCode.trim()
     const trimmedAdminUsername = schoolAdminUsername.trim()
     const trimmedAdminDisplayName = schoolAdminDisplayName.trim()
+    const trimmedInviteCode = schoolInviteCode.trim()
+    const trimmedInviteSchoolId = schoolInviteSchoolId.trim()
+    const usingInvite = schoolSignupMode === 'invite'
 
-    if (!trimmedEmail || !trimmedSchoolName || !trimmedAdminUsername || !schoolAdminPassword || !trimmedAdminDisplayName) {
+    if (!trimmedSchoolName || !trimmedAdminUsername || !schoolAdminPassword || !trimmedAdminDisplayName) {
       showMessage('Please complete all required fields', 'error')
       return
     }
 
-    // Basic email validation
-    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
-      showMessage('Please enter a valid email address', 'error')
+    if (!usingInvite) {
+      if (!trimmedEmail) {
+        showMessage('Please enter your email address', 'error')
+        return
+      }
+
+      // Basic email validation
+      if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+        showMessage('Please enter a valid email address', 'error')
+        return
+      }
+    } else if (!trimmedInviteCode) {
+      showMessage('Please enter your school invite code', 'error')
       return
     }
 
@@ -652,11 +693,19 @@ export function usePlateApp() {
     setIsLoading(true)
     try {
       const payload = {
-        email: trimmedEmail,
         school_name: trimmedSchoolName,
         admin_username: trimmedAdminUsername,
         admin_password: schoolAdminPassword,
         admin_display_name: trimmedAdminDisplayName
+      }
+
+      if (usingInvite) {
+        payload.invite_code = trimmedInviteCode
+        if (trimmedInviteSchoolId) {
+          payload.school_id = trimmedInviteSchoolId
+        }
+      } else {
+        payload.email = trimmedEmail
       }
 
       if (trimmedCode) {
@@ -2190,6 +2239,10 @@ export function usePlateApp() {
     setSignupName,
     signupSchoolCode,
     setSignupSchoolCode,
+    signupInviteCode,
+    setSignupInviteCode,
+    signupMode,
+    setSignupMode,
     showSchoolRegistration,
     setShowSchoolRegistration,
     schoolEmail,
@@ -2198,6 +2251,12 @@ export function usePlateApp() {
     setSchoolName,
     schoolCode,
     setSchoolCode,
+    schoolInviteCode,
+    setSchoolInviteCode,
+    schoolInviteSchoolId,
+    setSchoolInviteSchoolId,
+    schoolSignupMode,
+    setSchoolSignupMode,
     schoolAdminUsername,
     setSchoolAdminUsername,
     schoolAdminPassword,

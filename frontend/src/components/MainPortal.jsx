@@ -476,17 +476,6 @@ function MainPortal({ app }) {
                           <span className="text-sm text-gray-500">Sort by:</span>
                           <div className="flex border rounded-lg overflow-hidden">
                             <button
-                              onClick={() => setHouseSortBy('percentage')}
-                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                                houseSortBy === 'percentage'
-                                  ? 'bg-teal-600 text-white'
-                                  : 'bg-white text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <ArrowUpNarrowWide className="h-3.5 w-3.5" />
-                              Clean Rate
-                            </button>
-                            <button
                               onClick={() => setHouseSortBy('count')}
                               className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
                                 houseSortBy === 'count'
@@ -496,6 +485,17 @@ function MainPortal({ app }) {
                             >
                               <ArrowDownNarrowWide className="h-3.5 w-3.5" />
                               Count
+                            </button>
+                            <button
+                              onClick={() => setHouseSortBy('percentage')}
+                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                                houseSortBy === 'percentage'
+                                  ? 'bg-teal-600 text-white'
+                                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+                              Clean Rate
                             </button>
                           </div>
                           <Button
@@ -1015,17 +1015,6 @@ function MainPortal({ app }) {
                         <span className="text-sm text-gray-500">Sort by:</span>
                         <div className="flex border rounded-lg overflow-hidden">
                           <button
-                            onClick={() => setHouseSortBy('percentage')}
-                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                              houseSortBy === 'percentage'
-                                ? 'bg-teal-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <ArrowUpNarrowWide className="h-3.5 w-3.5" />
-                            Clean Rate
-                          </button>
-                          <button
                             onClick={() => setHouseSortBy('count')}
                             className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
                               houseSortBy === 'count'
@@ -1035,6 +1024,17 @@ function MainPortal({ app }) {
                           >
                             <ArrowDownNarrowWide className="h-3.5 w-3.5" />
                             Count
+                          </button>
+                          <button
+                            onClick={() => setHouseSortBy('percentage')}
+                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
+                              houseSortBy === 'percentage'
+                                ? 'bg-teal-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+                            Clean Rate
                           </button>
                         </div>
                         <Button

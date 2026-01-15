@@ -1,10 +1,11 @@
 import os
+import uuid
 
 import requests
 from flask import jsonify, request, session
 
 from . import recorder_bp
-from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, _now_utc, db_session
+from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, User, _now_utc, db_session
 from .security import get_current_user, is_guest, require_auth
 from .users import (
     create_user_record,
@@ -149,20 +150,71 @@ def signup():
     password = data.get('password', '').strip()
     name = data.get('name', '').strip()
     school_code = data.get('school_code', '').strip()
+    invite_code = data.get('invite_code', '').strip()
     recaptcha_token = data.get('recaptcha_token', '').strip()
 
     # Verify reCAPTCHA if configured
     if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
         return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
 
-    if not username or not password or not name or not school_code:
-        return jsonify({'error': 'Username, password, name, and school code are required'}), 400
+    if not username or not password or not name or (not school_code and not invite_code):
+        error_message = 'Username, password, name, and school code are required'
+        if invite_code:
+            error_message = 'Username, password, name, and invite code are required'
+        return jsonify({'error': error_message}), 400
 
     if len(username) < 3:
         return jsonify({'error': 'Username must be at least 3 characters long'}), 400
 
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters long'}), 400
+
+    if invite_code:
+        invite = get_invite_code_record(invite_code)
+        if not invite or invite.status != 'unused':
+            return jsonify({'error': 'Invalid invite code'}), 403
+
+        school = get_school_by_id(invite.school_id)
+        if not school:
+            return jsonify({'error': 'Invite code is not tied to an active school'}), 404
+
+        if school.status != 'active':
+            return jsonify({'error': 'This school is not accepting new registrations'}), 403
+
+        if get_user_by_username(username, school_id=invite.school_id):
+            return jsonify({'error': 'Username already exists in this school'}), 409
+
+        if get_user_by_username(username):
+            return jsonify({'error': 'Username already exists'}), 409
+
+        try:
+            user = User(
+                id=str(uuid.uuid4()),
+                school_id=invite.school_id,
+                username=username,
+                password_hash=password,
+                display_name=name,
+                role=invite.role or 'user',
+                status='active',
+                created_at=_now_utc(),
+                updated_at=_now_utc(),
+            )
+            db_session.add(user)
+            invite.status = 'used'
+            invite.user_id = user.id
+            invite.used_by = user.id
+            invite.used_at = _now_utc()
+            invite.school_id = user.school_id
+            invite.updated_at = _now_utc()
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            return jsonify({'error': 'Could not create account with invite code'}), 500
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Account created successfully.'
+        }), 201
 
     # Find the school by slug (school code)
     school = get_school_by_slug(school_code)

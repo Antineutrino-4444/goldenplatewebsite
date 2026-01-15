@@ -259,6 +259,8 @@ def register_school():
     email = (data.get('email') or '').strip()
     school_name = (data.get('school_name') or '').strip()
     school_slug = (data.get('school_slug') or '').strip()
+    invite_code = (data.get('invite_code') or '').strip()
+    invite_school_id = (data.get('school_id') or '').strip()
     admin_username = (data.get('admin_username') or '').strip()
     admin_password = (data.get('admin_password') or '').strip()
     admin_display_name = (data.get('admin_display_name') or '').strip()
@@ -268,12 +270,16 @@ def register_school():
     if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
         return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
 
-    if not email or not school_name or not admin_username or not admin_password or not admin_display_name:
-        return jsonify({'error': 'Email, school name, and admin credentials are required'}), 400
+    if not school_name or not admin_username or not admin_password or not admin_display_name:
+        return jsonify({'error': 'School name and admin credentials are required'}), 400
 
-    # Basic email validation
-    if '@' not in email or '.' not in email:
-        return jsonify({'error': 'Please enter a valid email address'}), 400
+    if not invite_code:
+        if not email:
+            return jsonify({'error': 'Email, school name, and admin credentials are required'}), 400
+
+        # Basic email validation
+        if '@' not in email or '.' not in email:
+            return jsonify({'error': 'Please enter a valid email address'}), 400
 
     if len(admin_username) < 3:
         return jsonify({'error': 'Admin username must be at least 3 characters long'}), 400
@@ -281,25 +287,39 @@ def register_school():
     if len(admin_password) < 6:
         return jsonify({'error': 'Admin password must be at least 6 characters long'}), 400
 
-    # Check if email has been verified
-    if not is_email_verified(email.lower(), purpose='school_registration'):
-        return jsonify({'error': 'Please verify your email address before submitting the registration'}), 400
+    if invite_code:
+        invite = get_school_invite_code_record(invite_code)
+        if not invite or invite.status != 'unused':
+            return jsonify({'error': 'Invalid invite code'}), 403
 
-    # Check for existing pending request with same email
-    existing_request = db_session.query(SchoolRegistrationRequest).filter(
-        SchoolRegistrationRequest.email == email,
-        SchoolRegistrationRequest.status == 'pending'
-    ).first()
-    if existing_request:
-        return jsonify({'error': 'A registration request with this email is already pending approval'}), 409
+        if invite_school_id and invite_school_id != invite.school_id:
+            return jsonify({'error': 'Invite code does not match the provided school ID'}), 400
 
-    # Check for existing pending request with same school name
-    existing_name_request = db_session.query(SchoolRegistrationRequest).filter(
-        func.lower(SchoolRegistrationRequest.school_name) == school_name.lower(),
-        SchoolRegistrationRequest.status == 'pending'
-    ).first()
-    if existing_name_request:
-        return jsonify({'error': 'A registration request for this school name is already pending approval'}), 409
+        existing_school = db_session.query(School).filter(School.id == invite.school_id).first()
+        if existing_school:
+            return jsonify({'error': 'A school has already been registered with this invite code'}), 409
+    else:
+        # Check if email has been verified
+        if not is_email_verified(email.lower(), purpose='school_registration'):
+            return jsonify({'error': 'Please verify your email address before submitting the registration'}), 400
+
+    if not invite_code:
+        # Check for existing pending request with same email
+        existing_request = db_session.query(SchoolRegistrationRequest).filter(
+            SchoolRegistrationRequest.email == email,
+            SchoolRegistrationRequest.status == 'pending'
+        ).first()
+        if existing_request:
+            return jsonify({'error': 'A registration request with this email is already pending approval'}), 409
+
+    if not invite_code:
+        # Check for existing pending request with same school name
+        existing_name_request = db_session.query(SchoolRegistrationRequest).filter(
+            func.lower(SchoolRegistrationRequest.school_name) == school_name.lower(),
+            SchoolRegistrationRequest.status == 'pending'
+        ).first()
+        if existing_name_request:
+            return jsonify({'error': 'A registration request for this school name is already pending approval'}), 409
 
     # Check if school name already exists
     normalized_slug = _normalize_slug(school_slug or school_name)
@@ -314,6 +334,55 @@ def register_school():
     # Ensure username availability
     if get_user_by_username(admin_username):
         return jsonify({'error': 'Username already exists'}), 409
+
+    if invite_code:
+        school_id = invite.school_id
+        new_school = School(
+            id=school_id,
+            name=school_name,
+            slug=normalized_slug,
+            status='active',
+            created_at=_now_utc(),
+            updated_at=_now_utc(),
+        )
+
+        admin_user = User(
+            id=str(uuid.uuid4()),
+            school_id=school_id,
+            username=admin_username,
+            password_hash=admin_password,
+            display_name=admin_display_name,
+            role='superadmin',
+            status='active',
+            created_at=_now_utc(),
+            updated_at=_now_utc(),
+        )
+
+        invite.status = 'used'
+        invite.used_by = admin_user.id
+        invite.used_at = _now_utc()
+
+        try:
+            db_session.add(new_school)
+            db_session.add(admin_user)
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            return jsonify({'error': 'Unable to create school with invite code'}), 500
+
+        return jsonify({
+            'status': 'success',
+            'message': 'School created successfully using the invite code.',
+            'school': {
+                'id': new_school.id,
+                'name': new_school.name,
+                'slug': new_school.slug,
+            },
+            'admin_user': {
+                'username': admin_user.username,
+                'display_name': admin_user.display_name,
+            },
+        }), 201
 
     try:
         registration_request = SchoolRegistrationRequest(
