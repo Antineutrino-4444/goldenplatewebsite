@@ -16,6 +16,12 @@ function SchoolRegistration({ app }) {
     setSchoolName,
     schoolCode,
     setSchoolCode,
+    schoolInviteCode,
+    setSchoolInviteCode,
+    schoolInviteSchoolId,
+    setSchoolInviteSchoolId,
+    schoolSignupMode,
+    setSchoolSignupMode,
     schoolAdminUsername,
     setSchoolAdminUsername,
     schoolAdminPassword,
@@ -36,6 +42,7 @@ function SchoolRegistration({ app }) {
   } = app
 
   const recaptchaRef = useRef(null)
+  const isInviteMode = schoolSignupMode === 'invite'
 
   const handleBackToLogin = () => {
     resetSchoolRegistrationForm()
@@ -74,81 +81,149 @@ function SchoolRegistration({ app }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Step 1: Email Verification */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${emailVerified ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>
-                {emailVerified ? '✓' : '1'}
-              </div>
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                Verify Your Email
-              </h3>
+          <div className="space-y-2">
+            <Label>Registration Method</Label>
+            <div className="flex border rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setSchoolSignupMode('request')}
+                className={`px-3 py-1.5 text-sm flex-1 transition-colors ${
+                  schoolSignupMode === 'request'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Email Verification
+              </button>
+              <button
+                type="button"
+                onClick={() => setSchoolSignupMode('invite')}
+                className={`px-3 py-1.5 text-sm flex-1 transition-colors ${
+                  schoolSignupMode === 'invite'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Legacy Invite
+              </button>
             </div>
-
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="school-email">Contact Email</Label>
-                <div className="flex gap-2">
+            <p className="text-xs text-gray-500">
+              Use a legacy invite code to create a school immediately, or verify by email to request approval.
+            </p>
+          </div>
+          {/* Step 1: Email Verification */}
+          {isInviteMode ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold bg-amber-500 text-white">
+                  1
+                </div>
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                  Invite Details
+                </h3>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="school-invite-code">Legacy Invite Code</Label>
                   <Input
-                    id="school-email"
-                    type="email"
-                    placeholder="Enter your email address"
-                    value={schoolEmail}
-                    onChange={handleEmailChange}
-                    disabled={emailVerified}
-                    className={emailVerified ? 'bg-green-50 border-green-300' : ''}
+                    id="school-invite-code"
+                    type="text"
+                    placeholder="Enter the invite code provided"
+                    value={schoolInviteCode}
+                    onChange={(e) => setSchoolInviteCode(e.target.value)}
                   />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="school-invite-id">School ID (optional)</Label>
+                  <Input
+                    id="school-invite-id"
+                    type="text"
+                    placeholder="Enter the school ID if provided"
+                    value={schoolInviteSchoolId}
+                    onChange={(e) => setSchoolInviteSchoolId(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Use the school ID that came with the invite if you were given one.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${emailVerified ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>
+                  {emailVerified ? '✓' : '1'}
+                </div>
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                  Verify Your Email
+                </h3>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="school-email">Contact Email</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="school-email"
+                      type="email"
+                      placeholder="Enter your email address"
+                      value={schoolEmail}
+                      onChange={handleEmailChange}
+                      disabled={emailVerified}
+                      className={emailVerified ? 'bg-green-50 border-green-300' : ''}
+                    />
+                    {!emailVerified && (
+                      <Button
+                        onClick={handleSendVerificationCode}
+                        disabled={verificationLoading || !schoolEmail.trim()}
+                        className="bg-amber-600 hover:bg-amber-700 whitespace-nowrap"
+                      >
+                        {verificationLoading ? 'Sending...' : verificationSent ? 'Resend Code' : 'Send Code'}
+                      </Button>
+                    )}
+                  </div>
+                  {emailVerified && (
+                    <p className="text-xs text-green-600 font-medium">
+                      Email verified successfully!
+                    </p>
+                  )}
                   {!emailVerified && (
-                    <Button
-                      onClick={handleSendVerificationCode}
-                      disabled={verificationLoading || !schoolEmail.trim()}
-                      className="bg-amber-600 hover:bg-amber-700 whitespace-nowrap"
-                    >
-                      {verificationLoading ? 'Sending...' : verificationSent ? 'Resend Code' : 'Send Code'}
-                    </Button>
+                    <p className="text-xs text-gray-500">
+                      We'll send a verification code to this email address.
+                    </p>
                   )}
                 </div>
-                {emailVerified && (
-                  <p className="text-xs text-green-600 font-medium">
-                    Email verified successfully!
-                  </p>
-                )}
-                {!emailVerified && (
-                  <p className="text-xs text-gray-500">
-                    We'll send a verification code to this email address.
-                  </p>
+
+                {verificationSent && !emailVerified && (
+                  <div className="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <Label className="text-center block">Enter Verification Code</Label>
+                    <VerificationCodeInput
+                      value={emailVerificationCode}
+                      onChange={setEmailVerificationCode}
+                      disabled={verificationLoading}
+                    />
+                    <div className="flex justify-center">
+                      <Button
+                        onClick={handleVerifyCode}
+                        disabled={verificationLoading || emailVerificationCode.length !== 6}
+                        className="bg-green-600 hover:bg-green-700 px-8"
+                      >
+                        {verificationLoading ? 'Verifying...' : 'Verify Code'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-amber-700 text-center">
+                      Check your email for the 6-digit verification code. The code expires in 15 minutes.
+                      <br />
+                      <span className="text-gray-500">Can't find it? Check your junk/spam folder.</span>
+                    </p>
+                  </div>
                 )}
               </div>
-
-              {verificationSent && !emailVerified && (
-                <div className="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <Label className="text-center block">Enter Verification Code</Label>
-                  <VerificationCodeInput
-                    value={emailVerificationCode}
-                    onChange={setEmailVerificationCode}
-                    disabled={verificationLoading}
-                  />
-                  <div className="flex justify-center">
-                    <Button
-                      onClick={handleVerifyCode}
-                      disabled={verificationLoading || emailVerificationCode.length !== 6}
-                      className="bg-green-600 hover:bg-green-700 px-8"
-                    >
-                      {verificationLoading ? 'Verifying...' : 'Verify Code'}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-amber-700 text-center">
-                    Check your email for the 6-digit verification code. The code expires in 15 minutes.
-                    <br />
-                    <span className="text-gray-500">Can't find it? Check your junk/spam folder.</span>
-                  </p>
-                </div>
-              )}
             </div>
-          </div>
+          )}
 
-          {/* Step 2: School Details (only shown after email verification) */}
-          {emailVerified && (
+          {/* Step 2: School Details (shown after email verification or invite selection) */}
+          {(emailVerified || isInviteMode) && (
             <>
               <div className="border-t border-gray-200 pt-4">
                 <div className="flex items-center gap-2 mb-4">
@@ -244,7 +319,7 @@ function SchoolRegistration({ app }) {
             <Button variant="ghost" onClick={handleBackToLogin} className="sm:w-auto w-full">
               Back to Login
             </Button>
-            {emailVerified && (
+            {(emailVerified || isInviteMode) && (
               <Button
                 onClick={handleSubmit}
                 className="bg-amber-600 hover:bg-amber-700 sm:w-auto w-full"

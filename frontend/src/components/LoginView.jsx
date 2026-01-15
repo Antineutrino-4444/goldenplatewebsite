@@ -33,6 +33,10 @@ function LoginView({ app }) {
     setSignupName,
     signupSchoolCode,
     setSignupSchoolCode,
+    signupInviteCode,
+    setSignupInviteCode,
+    signupMode,
+    setSignupMode,
     signup,
     setShowSchoolRegistration,
     resetSchoolRegistrationForm,
@@ -60,6 +64,10 @@ function LoginView({ app }) {
     setShowSignupDialog(open)
     if (!open && recaptchaRef.current) {
       recaptchaRef.current.reset()
+    }
+    if (!open) {
+      setSignupInviteCode('')
+      setSignupMode('school')
     }
   }
 
@@ -206,6 +214,42 @@ function LoginView({ app }) {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
+              <Label>Sign-up method</Label>
+              <div className="flex border rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupMode('school')
+                    setSignupInviteCode('')
+                  }}
+                  className={`px-3 py-1.5 text-sm flex-1 transition-colors ${
+                    signupMode === 'school'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  School Code
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupMode('invite')
+                    setSignupSchoolCode('')
+                  }}
+                  className={`px-3 py-1.5 text-sm flex-1 transition-colors ${
+                    signupMode === 'invite'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Legacy Invite
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Use a legacy invite code for immediate access, or request approval with your school code.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="signup-name">Full Name</Label>
               <Input
                 id="signup-name"
@@ -235,19 +279,35 @@ function LoginView({ app }) {
                 onChange={(e) => setSignupPassword(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="signup-school">School Code</Label>
-              <Input
-                id="signup-school"
-                type="text"
-                placeholder="Enter your school code (e.g., SAC)"
-                value={signupSchoolCode}
-                onChange={(e) => setSignupSchoolCode(e.target.value)}
-              />
-              <p className="text-xs text-gray-500">
-                Ask your school administrator for your school code.
-              </p>
-            </div>
+            {signupMode === 'school' ? (
+              <div className="space-y-2">
+                <Label htmlFor="signup-school">School Code</Label>
+                <Input
+                  id="signup-school"
+                  type="text"
+                  placeholder="Enter your school code (e.g., SAC)"
+                  value={signupSchoolCode}
+                  onChange={(e) => setSignupSchoolCode(e.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  Ask your school administrator for your school code.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="signup-invite">Legacy Invite Code</Label>
+                <Input
+                  id="signup-invite"
+                  type="text"
+                  placeholder="Enter your invite code"
+                  value={signupInviteCode}
+                  onChange={(e) => setSignupInviteCode(e.target.value)}
+                />
+                <p className="text-xs text-gray-500">
+                  Enter the one-time invite code provided by your administrator.
+                </p>
+              </div>
+            )}
             {RECAPTCHA_SITE_KEY && (
               <div className="flex justify-center">
                 <ReCAPTCHA
