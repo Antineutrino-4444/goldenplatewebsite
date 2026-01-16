@@ -138,7 +138,7 @@ function LoginView({ app }) {
               }}
               className="text-amber-600 hover:text-amber-700"
             >
-              Have a school invite? Register your school
+              Want to register your school?
             </Button>
           </div>
         </CardContent>
