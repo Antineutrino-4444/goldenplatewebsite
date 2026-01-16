@@ -290,7 +290,18 @@ def register_school():
     if invite_code:
         invite = get_school_invite_code_record(invite_code)
         if not invite or invite.status != 'unused':
-            return jsonify({'error': 'Invalid invite code'}), 403
+            return jsonify({'error': 'Invalid or already used invite code'}), 403
+
+        # Check if invite code has expired
+        if invite.expires_at is not None:
+            now = _now_utc()
+            expires_at = invite.expires_at
+            # Handle timezone-naive comparison
+            if expires_at.tzinfo is None:
+                from datetime import timezone
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if now > expires_at:
+                return jsonify({'error': 'Invite code has expired'}), 403
 
         if invite_school_id and invite_school_id != invite.school_id:
             return jsonify({'error': 'Invite code does not match the provided school ID'}), 400
