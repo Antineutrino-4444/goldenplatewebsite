@@ -19,6 +19,7 @@ from .db import (
 )
 from .email_service import (
     create_verification_code,
+    VERIFICATION_CODE_EXPIRY_MINUTES,
     is_email_verified,
     send_verification_email,
     verify_code as verify_email_code,
@@ -173,6 +174,7 @@ def send_verification_code():
         return jsonify({
             'status': 'success',
             'message': 'Verification code sent to your email address.',
+            'expiry_minutes': VERIFICATION_CODE_EXPIRY_MINUTES,
         }), 200
 
     except Exception as e:

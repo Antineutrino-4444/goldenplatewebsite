@@ -31,6 +31,7 @@ export function usePlateApp() {
   const [emailVerified, setEmailVerified] = useState(false)
   const [verificationSent, setVerificationSent] = useState(false)
   const [verificationLoading, setVerificationLoading] = useState(false)
+  const [verificationExpiryMinutes, setVerificationExpiryMinutes] = useState(5)
   const [guestSchoolCode, setGuestSchoolCode] = useState('')
   const [showGuestSchoolDialog, setShowGuestSchoolDialog] = useState(false)
   
@@ -341,6 +342,9 @@ export function usePlateApp() {
 
       if (response.ok) {
         setVerificationSent(true)
+        if (data.expiry_minutes) {
+          setVerificationExpiryMinutes(data.expiry_minutes)
+        }
         showMessage('Verification code sent to your email!', 'success')
         return true
       } else {
@@ -2270,6 +2274,7 @@ export function usePlateApp() {
     verificationSent,
     setVerificationSent,
     verificationLoading,
+    verificationExpiryMinutes,
     sendVerificationCode,
     verifyEmailCode,
     sessionId,
