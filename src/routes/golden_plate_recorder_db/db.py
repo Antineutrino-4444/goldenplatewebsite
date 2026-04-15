@@ -188,6 +188,10 @@ class Session(Base):
     discarded_at = Column(DateTime(timezone=True))
     discarded_by = Column(String, ForeignKey('users.id'))
 
+    # If non-null, this session has been merged as an "extra" session whose
+    # records are pooled into the referenced main session's draw.
+    main_session_id = Column(String, ForeignKey('sessions.id', ondelete='SET NULL'))
+
     clean_number = Column(Integer)
     dirty_number = Column(Integer)
     red_number = Column(Integer)
@@ -677,6 +681,7 @@ def _migrate_schema() -> None:
             ('faculty_pick_display_name', 'TEXT'),
             ('faculty_pick_recorded_at', 'DATETIME'),
             ('faculty_pick_recorded_by', 'TEXT'),
+            ('main_session_id', 'TEXT'),
         ]:
             if column_name not in session_columns:
                 with engine.begin() as connection:

@@ -409,7 +409,9 @@ def list_sessions():
             'is_public': bool(db_sess.is_public),
             'delete_requested': pending,
             'is_discarded': db_sess.status == 'discarded',
-            'draw_info': draw_info
+            'draw_info': draw_info,
+            'main_session_id': db_sess.main_session_id,
+            'is_extra': bool(db_sess.main_session_id),
         })
 
     return jsonify({
@@ -446,6 +448,113 @@ def switch_session(session_id):
     return jsonify({
         'session_id': session_id,
         'session_name': db_sess.session_name
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/merge', methods=['POST'])
+def merge_session(session_id):
+    """Merge this session as an extra into a main session.
+
+    Only admins and superadmins may combine sessions. The extra session's
+    draw is disabled; its clean records are pooled into the main session's
+    draw eligibility. Both sessions must belong to the same school, and
+    neither chains nor self-merges are permitted.
+    """
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    forbidden = _forbid_interschool_accounts()
+    if forbidden:
+        return forbidden
+
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    _, _, school_id = _get_request_actor()
+
+    data = request.get_json(silent=True) or {}
+    main_session_id = (data.get('main_session_id') or '').strip()
+    if not main_session_id:
+        return jsonify({'error': 'main_session_id is required'}), 400
+
+    if main_session_id == session_id:
+        return jsonify({'error': 'A session cannot be merged into itself'}), 400
+
+    extra_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not extra_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
+    main_sess = db_session.query(SessionModel).filter_by(id=main_session_id, school_id=school_id).first()
+    if not main_sess:
+        return jsonify({'error': 'Main session not found'}), 404
+
+    if main_sess.main_session_id:
+        return jsonify({'error': 'The selected main session is itself an extra session'}), 400
+
+    # Disallow merging a session that already has extras of its own
+    has_dependents = (
+        db_session.query(SessionModel.id)
+        .filter(SessionModel.main_session_id == session_id)
+        .first()
+    )
+    if has_dependents:
+        return jsonify({'error': 'This session already has extras merged into it; remove them first'}), 400
+
+    extra_sess.main_session_id = main_session_id
+    extra_sess.updated_at = _now_utc()
+
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Failed to merge sessions'}), 500
+
+    return jsonify({
+        'status': 'success',
+        'message': f'Session "{extra_sess.session_name}" merged into "{main_sess.session_name}"',
+        'session_id': extra_sess.id,
+        'main_session_id': main_sess.id,
+        'is_extra': True,
+    }), 200
+
+
+@recorder_bp.route('/session/<session_id>/unmerge', methods=['POST'])
+def unmerge_session(session_id):
+    """Remove the merge link so this session is no longer an extra."""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+
+    forbidden = _forbid_interschool_accounts()
+    if forbidden:
+        return forbidden
+
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+
+    _, _, school_id = _get_request_actor()
+
+    extra_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not extra_sess:
+        return jsonify({'error': 'Session not found'}), 404
+
+    if not extra_sess.main_session_id:
+        return jsonify({'error': 'Session is not currently merged'}), 400
+
+    extra_sess.main_session_id = None
+    extra_sess.updated_at = _now_utc()
+
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Failed to unmerge session'}), 500
+
+    return jsonify({
+        'status': 'success',
+        'message': f'Session "{extra_sess.session_name}" is no longer merged',
+        'session_id': extra_sess.id,
+        'main_session_id': None,
+        'is_extra': False,
     }), 200
 
 
@@ -534,6 +643,8 @@ def get_session_status():
         'is_discarded': db_sess.status == 'discarded',
         'draw_info': draw_info,
         'faculty_pick': faculty_pick,
+        'main_session_id': db_sess.main_session_id,
+        'is_extra': bool(db_sess.main_session_id),
     }), 200
 
 
@@ -583,6 +694,9 @@ def pick_random_faculty(session_id):
 
     if db_sess.status == 'discarded':
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    if db_sess.main_session_id:
+        return jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400
 
     faculty_records = data.get('faculty_clean_records') or []
     if not faculty_records:

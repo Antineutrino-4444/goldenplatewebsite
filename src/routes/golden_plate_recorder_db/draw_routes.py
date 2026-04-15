@@ -10,6 +10,7 @@ from .draw_db import (
     get_draw_history,
     get_eligible_students_with_tickets,
     get_or_create_session_draw,
+    get_session_ids_for_draw,
     perform_weighted_draw,
     record_draw_event,
     reset_draw as reset_draw_db,
@@ -97,6 +98,11 @@ def get_draw_summary(session_id):
     # Get history
     history = get_draw_history(session_id)
     
+    # Count how many extra sessions are merged in, for UI context
+    extra_session_ids = [
+        sid for sid in get_session_ids_for_draw(session_id) if sid != session_id
+    ]
+
     response = {
         'session_id': session_id,
         'session_name': sess.session_name,
@@ -108,8 +114,11 @@ def get_draw_summary(session_id):
         'candidates': candidates,
         'draw_info': draw_info,
         'history': history,
+        'main_session_id': sess.main_session_id,
+        'is_extra': bool(sess.main_session_id),
+        'extra_session_count': len(extra_session_ids),
     }
-    
+
     return jsonify(response), 200
 
 
@@ -126,19 +135,23 @@ def start_draw(session_id):
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
 
+    if sess.main_session_id:
+        return jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400
+
     if sess.status == 'discarded':
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
 
-    # Check if there are any student records
+    # Check if there are any student records across the main session + extras
+    draw_session_ids = get_session_ids_for_draw(session_id)
     record_count = (
         db_session.query(SessionRecord)
         .filter(
-            SessionRecord.session_id == session_id,
+            SessionRecord.session_id.in_(draw_session_ids),
             SessionRecord.category.in_(['clean', 'red'])
         )
         .count()
     )
-    
+
     if record_count == 0:
         return jsonify({'error': 'No student records available for this session'}), 400
 
@@ -214,8 +227,11 @@ def finalize_draw_route(session_id):
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
 
+    if sess.main_session_id:
+        return jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400
+
     draw = get_or_create_session_draw(session_id)
-    
+
     if not draw.winner_student_id:
         return jsonify({'error': 'No winner to finalize'}), 400
 
@@ -253,8 +269,11 @@ def reset_draw_route(session_id):
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
 
+    if sess.main_session_id:
+        return jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400
+
     draw = get_or_create_session_draw(session_id)
-    
+
     if not draw.winner_student_id:
         return jsonify({'error': 'No draw to reset'}), 400
 
@@ -280,6 +299,9 @@ def override_draw(session_id):
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
 
+    if sess.main_session_id:
+        return jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400
+
     if sess.status == 'discarded':
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
 
@@ -297,11 +319,12 @@ def override_draw(session_id):
     if not any([provided_key, provided_identifier, provided_student_id, input_value, provided_preferred and provided_last]):
         return jsonify({'error': 'A student key, name, or identifier is required to override the draw winner'}), 400
 
+    draw_session_ids = get_session_ids_for_draw(session_id)
     record_rows = (
         db_session.query(SessionRecord, Student)
         .outerjoin(Student, SessionRecord.student_id == Student.id)
         .filter(
-            SessionRecord.session_id == session_id,
+            SessionRecord.session_id.in_(draw_session_ids),
             SessionRecord.category.in_(['clean', 'red'])
         )
         .all()
