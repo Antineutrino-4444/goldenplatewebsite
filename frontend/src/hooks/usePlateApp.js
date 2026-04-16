@@ -53,8 +53,14 @@ export function usePlateApp() {
     clean_percentage: 0,
     dirty_percentage: 0,
     is_discarded: false,
-    draw_info: null
+    draw_info: null,
+    main_session_id: null,
+    is_extra: false
   })
+  const [showMergeDialog, setShowMergeDialog] = useState(false)
+  const [mergeTargetSession, setMergeTargetSession] = useState(null)
+  const [mergeMainSessionId, setMergeMainSessionId] = useState('')
+  const [mergeActionLoading, setMergeActionLoading] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   
   // Dialog states
@@ -135,6 +141,11 @@ export function usePlateApp() {
 
   const isSessionDiscarded = drawSummary?.is_discarded ?? sessionStats.is_discarded
   const currentDrawInfo = drawSummary?.draw_info ?? sessionStats.draw_info
+  const isExtraSession = Boolean(
+    drawSummary?.is_extra ?? sessionStats.is_extra ?? Boolean(sessionStats.main_session_id)
+  )
+  const currentMainSessionId =
+    drawSummary?.main_session_id ?? sessionStats.main_session_id ?? null
   const canManageDraw = ['admin', 'superadmin'].includes(user?.role)
   const canOverrideWinner = user?.role === 'superadmin'
   const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
@@ -807,7 +818,9 @@ export function usePlateApp() {
           clean_percentage: data.clean_percentage,
           dirty_percentage: data.dirty_percentage,
           is_discarded: data.is_discarded ?? false,
-          draw_info: data.draw_info ?? null
+          draw_info: data.draw_info ?? null,
+          main_session_id: data.main_session_id ?? null,
+          is_extra: Boolean(data.is_extra ?? data.main_session_id)
         })
         setFacultyPick(data.faculty_pick ?? null)
         await loadScanHistory()
@@ -1231,7 +1244,9 @@ export function usePlateApp() {
           clean_percentage: data.clean_percentage,
           dirty_percentage: data.dirty_percentage,
           is_discarded: data.is_discarded ?? prev.is_discarded,
-          draw_info: data.draw_info ?? prev.draw_info
+          draw_info: data.draw_info ?? prev.draw_info,
+          main_session_id: data.main_session_id ?? null,
+          is_extra: Boolean(data.is_extra ?? data.main_session_id)
         }))
         setFacultyPick(data.faculty_pick ?? null)
         nextSessionId = data.session_id ?? nextSessionId
@@ -1388,13 +1403,18 @@ export function usePlateApp() {
           ticket_snapshot: data.ticket_snapshot ?? {},
           generated_at: data.generated_at ?? new Date().toISOString(),
           draw_info: data.draw_info ?? null,
-          history: data.history ?? []
+          history: data.history ?? [],
+          main_session_id: data.main_session_id ?? null,
+          is_extra: Boolean(data.is_extra ?? data.main_session_id),
+          extra_session_count: data.extra_session_count ?? 0
         }
         updateDrawSummaryState(summaryPayload)
         setSessionStats(prev => ({
           ...prev,
           is_discarded: summaryPayload.is_discarded,
-          draw_info: summaryPayload.draw_info
+          draw_info: summaryPayload.draw_info,
+          main_session_id: summaryPayload.main_session_id,
+          is_extra: summaryPayload.is_extra
         }))
       } else {
         if (!silent) {
@@ -1463,13 +1483,18 @@ export function usePlateApp() {
         ticket_snapshot: summaryData.tickets_snapshot ?? {},
         generated_at: summaryData.generated_at ?? new Date().toISOString(),
         history: summaryData.history ?? drawSummary?.history ?? [],
-        draw_info: data.draw_info ?? sessionStats.draw_info
+        draw_info: data.draw_info ?? sessionStats.draw_info,
+        main_session_id: summaryData.main_session_id ?? drawSummary?.main_session_id ?? null,
+        is_extra: Boolean(summaryData.is_extra ?? summaryData.main_session_id ?? drawSummary?.is_extra),
+        extra_session_count: summaryData.extra_session_count ?? drawSummary?.extra_session_count ?? 0
       }
       updateDrawSummaryState(summaryPayload)
       setSessionStats(prev => ({
         ...prev,
         is_discarded: summaryPayload.is_discarded,
-        draw_info: summaryPayload.draw_info
+        draw_info: summaryPayload.draw_info,
+        main_session_id: summaryPayload.main_session_id,
+        is_extra: summaryPayload.is_extra
       }))
     } else {
       if (typeof nextIsDiscarded === 'boolean') {
@@ -1765,6 +1790,91 @@ export function usePlateApp() {
     } finally {
       setDiscardLoading(false)
     }
+  }
+
+  const mergeSession = async (extraSessionId, mainSessionId) => {
+    if (!extraSessionId || !mainSessionId) {
+      showMessage('Select a main session to merge into', 'error')
+      return false
+    }
+    if (extraSessionId === mainSessionId) {
+      showMessage('A session cannot be merged into itself', 'error')
+      return false
+    }
+    setMergeActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${extraSessionId}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ main_session_id: mainSessionId })
+      })
+      const data = await response.json()
+      if (response.ok) {
+        showMessage(data.message || 'Session merged successfully', 'success')
+        await loadSessions()
+        if (sessionId === extraSessionId) {
+          await refreshSessionStatus()
+          await loadDrawSummary({ silent: true })
+        }
+        setShowMergeDialog(false)
+        setMergeTargetSession(null)
+        setMergeMainSessionId('')
+        return true
+      } else {
+        showMessage(data.error || 'Failed to merge session', 'error')
+        return false
+      }
+    } catch (error) {
+      console.error('Failed to merge session:', error)
+      showMessage('Failed to merge session', 'error')
+      return false
+    } finally {
+      setMergeActionLoading(false)
+    }
+  }
+
+  const unmergeSession = async (extraSessionId) => {
+    if (!extraSessionId) {
+      return false
+    }
+    setMergeActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${extraSessionId}/unmerge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const data = await response.json()
+      if (response.ok) {
+        showMessage(data.message || 'Session unmerged successfully', 'success')
+        await loadSessions()
+        if (sessionId === extraSessionId) {
+          await refreshSessionStatus()
+          await loadDrawSummary({ silent: true })
+        }
+        return true
+      } else {
+        showMessage(data.error || 'Failed to unmerge session', 'error')
+        return false
+      }
+    } catch (error) {
+      console.error('Failed to unmerge session:', error)
+      showMessage('Failed to unmerge session', 'error')
+      return false
+    } finally {
+      setMergeActionLoading(false)
+    }
+  }
+
+  const openMergeDialog = (session) => {
+    setMergeTargetSession(session || null)
+    setMergeMainSessionId(session?.main_session_id || '')
+    setShowMergeDialog(true)
+  }
+
+  const closeMergeDialog = () => {
+    setShowMergeDialog(false)
+    setMergeTargetSession(null)
+    setMergeMainSessionId('')
   }
 
   const exportCSV = async () => {
@@ -2293,6 +2403,14 @@ export function usePlateApp() {
     setScanHistory,
     sessionStats,
     setSessionStats,
+    showMergeDialog,
+    setShowMergeDialog,
+    mergeTargetSession,
+    setMergeTargetSession,
+    mergeMainSessionId,
+    setMergeMainSessionId,
+    mergeActionLoading,
+    setMergeActionLoading,
     isLoading,
     setIsLoading,
     showNewSessionDialog,
@@ -2403,6 +2521,8 @@ export function usePlateApp() {
     // computed
     isSessionDiscarded,
     currentDrawInfo,
+    isExtraSession,
+    currentMainSessionId,
     canManageDraw,
     canOverrideWinner,
     studentRecordCount,
@@ -2455,6 +2575,10 @@ export function usePlateApp() {
     resetDrawWinner,
     overrideDrawWinner,
     toggleDiscardState,
+    mergeSession,
+    unmergeSession,
+    openMergeDialog,
+    closeMergeDialog,
     exportCSV,
     exportDetailedCSV,
     loadAdminData,

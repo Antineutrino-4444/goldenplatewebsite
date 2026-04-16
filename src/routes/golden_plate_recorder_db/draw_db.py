@@ -59,12 +59,34 @@ def calculate_ticket_balances() -> Dict[str, float]:
     }
 
 
+def get_session_ids_for_draw(session_id: str) -> List[str]:
+    """Return the session id plus any extra sessions merged into it.
+
+    If the supplied session is itself an extra (has a ``main_session_id``),
+    only the session id is returned, since extra sessions cannot host a draw.
+    """
+    session = db_session.query(SessionModel).filter_by(id=session_id).first()
+    if session is None:
+        return [session_id]
+
+    if session.main_session_id:
+        return [session_id]
+
+    extra_rows = (
+        db_session.query(SessionModel.id)
+        .filter(SessionModel.main_session_id == session_id)
+        .all()
+    )
+    return [session_id] + [row[0] for row in extra_rows]
+
+
 def get_clean_student_ids_for_session(session_id: str) -> Set[str]:
-    """Return student IDs with a clean-plate record in the session."""
+    """Return student IDs with a clean-plate record in the session or its extras."""
+    session_ids = get_session_ids_for_draw(session_id)
     rows = (
         db_session.query(SessionRecord.student_id)
         .filter(
-            SessionRecord.session_id == session_id,
+            SessionRecord.session_id.in_(session_ids),
             SessionRecord.category == 'clean',
             SessionRecord.student_id.isnot(None),
         )
@@ -414,6 +436,7 @@ __all__ = [
     'get_draw_history',
     'get_eligible_students_with_tickets',
     'get_or_create_session_draw',
+    'get_session_ids_for_draw',
     'get_student_ticket_balance',
     'perform_weighted_draw',
     'record_draw_event',

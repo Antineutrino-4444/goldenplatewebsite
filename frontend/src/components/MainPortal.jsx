@@ -168,7 +168,19 @@ function MainPortal({ app }) {
     houseStatsLoading,
     houseSortBy,
     setHouseSortBy,
-    loadHouseStats
+    loadHouseStats,
+    isExtraSession,
+    currentMainSessionId,
+    showMergeDialog,
+    setShowMergeDialog,
+    mergeTargetSession,
+    mergeMainSessionId,
+    setMergeMainSessionId,
+    mergeActionLoading,
+    mergeSession,
+    unmergeSession,
+    openMergeDialog,
+    closeMergeDialog
   } = app
 
   const formatSchoolNameWithCode = (school) => {
@@ -584,6 +596,46 @@ function MainPortal({ app }) {
                 </div>
               )}
 
+              {isExtraSession ? (
+                <Card
+                  id="draw-center-section"
+                  className={`${showExportCard ? '' : 'lg:col-span-2'}`}
+                >
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Trophy className="h-5 w-5" />
+                      Draw Center
+                    </CardTitle>
+                    <CardDescription>
+                      Draws are disabled for extra sessions merged into a main session.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Alert>
+                      <AlertDescription>
+                        This session is merged as an extra session. Its records count toward the main session's draw.
+                        {currentMainSessionId && sessions?.length > 0 && (() => {
+                          const mainSess = sessions.find(s => s.session_id === currentMainSessionId)
+                          return mainSess ? (
+                            <> Main session: <strong>{mainSess.session_name}</strong>.</>
+                          ) : null
+                        })()}
+                        {canManageDraw && (
+                          <Button
+                            onClick={() => unmergeSession(sessionId)}
+                            disabled={mergeActionLoading}
+                            variant="outline"
+                            size="sm"
+                            className="ml-2 mt-2"
+                          >
+                            Unmerge this session
+                          </Button>
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
+              ) : (
               <Card
                 id="draw-center-section"
                 className={`${showExportCard ? '' : 'lg:col-span-2'}`}
@@ -1002,6 +1054,7 @@ function MainPortal({ app }) {
                       </CardContent>
                     ) : null}
                   </Card>
+              )}
 
               {!showExportCard && (
                 <Card className="lg:col-span-2">
@@ -2106,7 +2159,12 @@ function MainPortal({ app }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            {sessions.map((session) => (
+            {sessions.map((session) => {
+              const mainSess = session.main_session_id
+                ? sessions.find(s => s.session_id === session.main_session_id)
+                : null
+              const hasExtras = !session.main_session_id && sessions.some(s => s.main_session_id === session.session_id)
+              return (
               <div key={session.session_id} className="flex items-center justify-between p-2 border rounded">
                 <Button
                   variant="ghost"
@@ -2116,9 +2174,19 @@ function MainPortal({ app }) {
                 >
                   <div className="text-left">
                     <div className="font-medium">{session.session_name}</div>
-                    {session.is_discarded && (
-                      <Badge variant="destructive" className="mt-1 text-xs uppercase">Discarded</Badge>
-                    )}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {session.is_discarded && (
+                        <Badge variant="destructive" className="text-xs uppercase">Discarded</Badge>
+                      )}
+                      {session.main_session_id && (
+                        <Badge variant="secondary" className="text-xs uppercase">
+                          Extra{mainSess ? ` of ${mainSess.session_name}` : ''}
+                        </Badge>
+                      )}
+                      {hasExtras && (
+                        <Badge variant="outline" className="text-xs uppercase">Main</Badge>
+                      )}
+                    </div>
                     <div className="text-sm text-gray-500">
                       {session.total_records > 0 ? (
                         <>
@@ -2132,6 +2200,31 @@ function MainPortal({ app }) {
                     </div>
                   </div>
                 </Button>
+                {canManageDraw && (
+                  session.main_session_id ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => unmergeSession(session.session_id)}
+                      disabled={mergeActionLoading}
+                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      title="Unmerge from main session"
+                    >
+                      Unmerge
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openMergeDialog(session)}
+                      disabled={mergeActionLoading || hasExtras}
+                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      title={hasExtras ? 'Remove extras before merging' : 'Merge into another session'}
+                    >
+                      Merge
+                    </Button>
+                  )
+                )}
                 {sessionId && (
                   <Button
                     variant="ghost"
@@ -2148,11 +2241,65 @@ function MainPortal({ app }) {
                   </Button>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
           <Button onClick={() => setShowSessionsDialog(false)} className="w-full">
             Close
           </Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMergeDialog} onOpenChange={(open) => { if (!open) closeMergeDialog() }}>
+        <DialogContent dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle>Merge Session</DialogTitle>
+            <DialogDescription>
+              {mergeTargetSession
+                ? `Merge "${mergeTargetSession.session_name}" as an extra session into a main session. Records will count toward the main session's draw. Draws will be disabled for this session.`
+                : 'Select a main session to merge into.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="merge-main-session">Main session</Label>
+            <select
+              id="merge-main-session"
+              value={mergeMainSessionId}
+              onChange={(e) => setMergeMainSessionId(e.target.value)}
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              disabled={mergeActionLoading}
+            >
+              <option value="">-- Select a main session --</option>
+              {sessions
+                .filter((s) =>
+                  mergeTargetSession
+                    ? s.session_id !== mergeTargetSession.session_id && !s.main_session_id
+                    : !s.main_session_id
+                )
+                .map((s) => (
+                  <option key={s.session_id} value={s.session_id}>
+                    {s.session_name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={closeMergeDialog}
+              disabled={mergeActionLoading}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => mergeTargetSession && mergeSession(mergeTargetSession.session_id, mergeMainSessionId)}
+              disabled={mergeActionLoading || !mergeMainSessionId || !mergeTargetSession}
+              className="flex-1"
+            >
+              {mergeActionLoading ? 'Merging...' : 'Merge'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
