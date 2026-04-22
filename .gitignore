@@ -1,7 +1,15 @@
 persistent_data/
 __pycache__/
-node_modules
+**/__pycache__/
+*.py[cod]
+node_modules/
+**/node_modules/
+**/.pnpm-store/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
 venv/
+.venv/
 src/static/
 /src/static
 data/
