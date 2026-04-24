@@ -27,10 +27,7 @@ const API_BASE = '/api'
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
 
 function normalizeMapPath() {
-  const path = window.location.pathname.replace(/\/+$/, '') || '/map'
-  if (path.startsWith('/maps')) {
-    return path.replace(/^\/maps/, '/map') || '/map'
-  }
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
   return path
 }
 

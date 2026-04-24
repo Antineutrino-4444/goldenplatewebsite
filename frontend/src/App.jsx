@@ -1,24 +1,20 @@
+import { Suspense, lazy } from 'react'
 import './App.css'
 import { usePlateApp } from '@/hooks/usePlateApp.js'
 import LoginView from '@/components/LoginView.jsx'
 import InterschoolPortal from '@/components/InterschoolPortal.jsx'
 import MainPortal from '@/components/MainPortal.jsx'
-import MapPortal from '@/components/MapPortal.jsx'
 import OverlayElements from '@/components/OverlayElements.jsx'
 import SchoolRegistration from '@/components/SchoolRegistration.jsx'
 
-const MAP_HOSTNAME = 'map.goldenplate.ca'
-
-function isMapSubdomain() {
-  return typeof window !== 'undefined' && window.location.hostname.toLowerCase() === MAP_HOSTNAME
-}
+const MapPortal = lazy(() => import('@/components/MapPortal.jsx'))
 
 function isMapPath() {
   if (typeof window === 'undefined') {
     return false
   }
-  const path = window.location.pathname.replace(/\/+$/, '') || '/map'
-  return path === '/map' || path.startsWith('/map/') || path === '/maps' || path.startsWith('/maps/')
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/map' || path.startsWith('/map/')
 }
 
 function PlateApp() {
@@ -80,14 +76,16 @@ function MapApp() {
 
   return (
     <>
-      <MapPortal app={app} />
+      <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+        <MapPortal app={app} />
+      </Suspense>
       <OverlayElements app={app} />
     </>
   )
 }
 
 function App() {
-  if (isMapSubdomain() || isMapPath()) {
+  if (isMapPath()) {
     return <MapApp />
   }
 
