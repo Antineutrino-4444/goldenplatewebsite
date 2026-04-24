@@ -118,3 +118,102 @@
     @apply bg-background text-foreground;
   }
 }
+
+.map-placeholder-page {
+  --map-ink: #18221e;
+  --map-muted: #58675f;
+  --map-gold: #d2a642;
+  --map-cream: #fff8e7;
+  --map-green: #2f6f59;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1.5rem, 6vw, 5rem);
+  color: var(--map-ink);
+  background:
+    radial-gradient(circle at 18% 18%, rgba(210, 166, 66, 0.34), transparent 28rem),
+    radial-gradient(circle at 78% 72%, rgba(47, 111, 89, 0.28), transparent 24rem),
+    linear-gradient(135deg, #fff7df 0%, #f4ead4 42%, #d8e8dc 100%);
+}
+
+.map-placeholder-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(24, 34, 30, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 34, 30, 0.06) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+  mask-image: radial-gradient(circle at center, black, transparent 75%);
+}
+
+.map-placeholder-card {
+  position: relative;
+  width: min(100%, 46rem);
+  overflow: hidden;
+  border: 1px solid rgba(24, 34, 30, 0.12);
+  border-radius: 2rem;
+  padding: clamp(2rem, 7vw, 4.5rem);
+  background: rgba(255, 248, 231, 0.84);
+  box-shadow: 0 2rem 5rem rgba(24, 34, 30, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.map-placeholder-glow {
+  position: absolute;
+  top: -6rem;
+  right: -5rem;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(210, 166, 66, 0.45), transparent 68%);
+}
+
+.map-placeholder-eyebrow {
+  margin: 0 0 1rem;
+  color: var(--map-green);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.map-placeholder-card h1 {
+  max-width: 11ch;
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(3.3rem, 10vw, 6.8rem);
+  line-height: 0.88;
+  letter-spacing: -0.06em;
+}
+
+.map-placeholder-copy {
+  max-width: 35rem;
+  margin: 1.5rem 0 0;
+  color: var(--map-muted);
+  font-size: clamp(1.05rem, 2vw, 1.3rem);
+  line-height: 1.7;
+}
+
+.map-placeholder-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 2rem;
+  border: 1px solid rgba(47, 111, 89, 0.24);
+  border-radius: 999px;
+  padding: 0.65rem 0.95rem;
+  background: rgba(255, 255, 255, 0.56);
+  color: var(--map-green);
+  font-weight: 800;
+}
+
+.map-placeholder-status::before {
+  content: "";
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: var(--map-gold);
+  box-shadow: 0 0 0 0.38rem rgba(210, 166, 66, 0.18);
+}

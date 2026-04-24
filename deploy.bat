@@ -22,8 +22,18 @@ if not exist "requirements.txt" (
 
 echo.
 echo [1/7] Checking for Python...
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
+set "PYTHON_CMD="
+py -3 --version >nul 2>&1
+if !errorlevel! equ 0 (
+    set "PYTHON_CMD=py -3"
+) else (
+    python --version >nul 2>&1
+    if !errorlevel! equ 0 (
+        set "PYTHON_CMD=python"
+    )
+)
+
+if not defined PYTHON_CMD (
     echo Python is not installed or not in PATH.
     echo Attempting to install Python via winget...
     winget install --id Python.Python.3.11 -e --silent --accept-package-agreements --accept-source-agreements
@@ -66,19 +76,49 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [3/7] Setting up Python Virtual Environment...
+if exist "venv\Scripts\python.exe" (
+    venv\Scripts\python.exe -c "import sys" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo Existing virtual environment is broken. Recreating it...
+        rmdir /s /q venv
+    )
+)
+
 if not exist "venv\Scripts\activate.bat" (
     echo Creating virtual environment...
-    python -m venv venv
+    %PYTHON_CMD% -m venv venv
+    if !errorlevel! neq 0 (
+        echo ERROR: Failed to create Python virtual environment.
+        pause
+        exit /b 1
+    )
 ) else (
     echo Virtual environment already exists.
 )
 
 echo Activating virtual environment...
 call venv\Scripts\activate.bat
+if !errorlevel! neq 0 (
+    echo ERROR: Failed to activate Python virtual environment.
+    pause
+    exit /b 1
+)
 
 echo Installing Python dependencies...
 REM It is safe and fast to run pip install every time, which prevents broken states if a previous install failed.
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+if !errorlevel! neq 0 (
+    echo ERROR: Failed to upgrade pip.
+    pause
+    exit /b 1
+)
+
+python -m pip install -r requirements.txt
+if !errorlevel! neq 0 (
+    echo ERROR: Failed to install Python dependencies.
+    pause
+    exit /b 1
+)
 
 echo.
 echo [4/7] Setting up Frontend Dependencies...
@@ -93,10 +133,22 @@ pushd frontend
 echo Installing frontend dependencies...
 REM It is safe to run npm install every time; this repairs partial node_modules folders after interrupted installs or cleanup.
 call npm install --legacy-peer-deps
+if !errorlevel! neq 0 (
+    popd
+    echo ERROR: Failed to install frontend dependencies.
+    pause
+    exit /b 1
+)
 
 echo.
 echo [5/7] Building Frontend...
 call npm run build
+if !errorlevel! neq 0 (
+    popd
+    echo ERROR: Failed to build frontend.
+    pause
+    exit /b 1
+)
 popd
 
 echo.
