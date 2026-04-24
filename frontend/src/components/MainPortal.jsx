@@ -204,7 +204,12 @@ function MainPortal({ app }) {
               <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
                 PLATE
               </h1>
-              <p className="text-sm text-gray-600">Prevention, Logging & Assessment of Tossed Edibles</p>
+              <p className="text-sm text-gray-600">
+                Prevention, Logging &amp; Assessment of Tossed Edibles. Check out{' '}
+                <a href="/map" className="underline text-amber-700 hover:text-amber-800">
+                  Ecological Map
+                </a>
+              </p>
             </div>
             <div className="flex items-center gap-4">
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">

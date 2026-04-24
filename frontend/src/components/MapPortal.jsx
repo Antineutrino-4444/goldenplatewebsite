@@ -218,16 +218,27 @@ function MapPortal({ app }) {
   const [showApprovals, setShowApprovals] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const [email, setEmail] = useState('')
-  const [authMethod, setAuthMethod] = useState('email')
+  const SUBMISSION_DRAFT_KEY = 'mapSubmissionDraft.v1'
+  const initialDraft = (() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = window.localStorage.getItem(SUBMISSION_DRAFT_KEY)
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })()
+
+  const [email, setEmail] = useState(initialDraft.email || '')
+  const [authMethod, setAuthMethod] = useState(initialDraft.authMethod || 'email')
   const [password, setPassword] = useState('')
   const [shortcutPassword, setShortcutPassword] = useState('')
-  const [verificationCode, setVerificationCode] = useState('')
-  const [verificationSent, setVerificationSent] = useState(false)
+  const [verificationCode, setVerificationCode] = useState(initialDraft.verificationCode || '')
+  const [verificationSent, setVerificationSent] = useState(Boolean(initialDraft.verificationSent))
   const [emailVerified, setEmailVerified] = useState(false)
   const [verificationLoading, setVerificationLoading] = useState(false)
   const [hasShortcutPassword, setHasShortcutPassword] = useState(false)
-  const [text, setText] = useState('')
+  const [text, setText] = useState(initialDraft.text || '')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -298,7 +309,7 @@ function MapPortal({ app }) {
 
   useEffect(() => {
     const originalTitle = document.title
-    document.title = isSubmissionPage ? 'Golden Plate Map Submission' : 'Golden Plate Map'
+    document.title = isSubmissionPage ? 'Ecological Map Submission' : 'Ecological Map'
     return () => {
       document.title = originalTitle
     }
@@ -309,6 +320,20 @@ function MapPortal({ app }) {
     loadPendingSubmissions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role])
+
+  // Persist submission draft (text, email, auth method, verification state) so a
+  // page refresh on the submission page doesn't wipe the user's work.
+  // Image files and passwords are intentionally NOT persisted.
+  useEffect(() => {
+    if (!isSubmissionPage) return
+    if (typeof window === 'undefined') return
+    try {
+      const draft = { email, authMethod, text, verificationCode, verificationSent }
+      window.localStorage.setItem(SUBMISSION_DRAFT_KEY, JSON.stringify(draft))
+    } catch {
+      // localStorage may be unavailable (private mode / quota) - non-fatal
+    }
+  }, [isSubmissionPage, email, authMethod, text, verificationCode, verificationSent])
 
   useEffect(() => {
     if (!imageFile) {
@@ -459,6 +484,13 @@ function MapPortal({ app }) {
     setVerificationCode('')
     setVerificationSent(false)
     setEmailVerified(false)
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(SUBMISSION_DRAFT_KEY)
+      } catch {
+        // ignore
+      }
+    }
   }
 
   const handleImageChange = (file) => {
@@ -648,15 +680,27 @@ function MapPortal({ app }) {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <div className="flex items-center gap-3">
+          <a
+            href="/map"
+            className="flex items-center gap-3 no-underline text-inherit hover:opacity-90"
+          >
             <div className="flex h-11 w-11 items-center justify-center rounded-md bg-teal-700 text-white">
               <MapPinned className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-950">Golden Plate Map</h1>
-              <p className="text-sm text-slate-500">China submission board</p>
+              <h1 className="text-2xl font-bold text-slate-950">Ecological Map</h1>
+              <p className="text-sm text-slate-500">
+                Brought to you by SAC Environmental Council. Check out{' '}
+                <a
+                  href="https://goldenplate.ca"
+                  onClick={(event) => event.stopPropagation()}
+                  className="underline hover:text-slate-700"
+                >
+                  Golden Plate
+                </a>
+              </p>
             </div>
-          </div>
+          </a>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="bg-teal-50 text-teal-800">
               {roleLabel}: @{user?.username || 'guest'}
