@@ -25,6 +25,39 @@ import {
 
 const API_BASE = '/api'
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
+const MAP_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const MAP_ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+
+async function readApiResponse(response) {
+  const raw = await response.text()
+  let data = {}
+  if (raw) {
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      data = {
+        error: `Server returned a non-JSON response (${response.status})`,
+        detail: raw.slice(0, 180),
+        non_json: true
+      }
+    }
+  }
+  return { ok: response.ok, status: response.status, data, raw }
+}
+
+function buildApiErrorMessage(result, fallbackCode, fallbackMessage) {
+  const status = result?.status
+  const data = result?.data || {}
+  const code = data.code || fallbackCode || `HTTP_${status || 'UNKNOWN'}`
+  const message = data.error || fallbackMessage
+  const detail = data.detail ? ` (${data.detail})` : ''
+  return `[${code}] ${message}${detail}`
+}
+
+function buildNetworkErrorMessage(code, message, error) {
+  const detail = error?.message ? ` (${error.message})` : ''
+  return `[${code}] ${message}${detail}`
+}
 
 function normalizeMapPath() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/'
@@ -207,14 +240,15 @@ function MapPortal({ app }) {
     setApprovedLoading(true)
     try {
       const response = await fetch(`${API_BASE}/map/submissions`)
-      const data = await response.json()
-      if (response.ok) {
+      const result = await readApiResponse(response)
+      const data = result.data
+      if (result.ok) {
         setApprovedSubmissions(Array.isArray(data.submissions) ? data.submissions : [])
       } else {
-        showMessage(data.error || 'Failed to load map submissions', 'error')
+        showMessage(buildApiErrorMessage(result, 'MAP_LOAD_APPROVED_FAILED', 'Failed to load map submissions'), 'error')
       }
     } catch (error) {
-      showMessage('Failed to load map submissions', 'error')
+      showMessage(buildNetworkErrorMessage('MAP_LOAD_APPROVED_NETWORK', 'Failed to load map submissions', error), 'error')
     } finally {
       setApprovedLoading(false)
     }
@@ -229,14 +263,15 @@ function MapPortal({ app }) {
     setPendingLoading(true)
     try {
       const response = await fetch(`${API_BASE}/map/submissions/pending`)
-      const data = await response.json()
-      if (response.ok) {
+      const result = await readApiResponse(response)
+      const data = result.data
+      if (result.ok) {
         setPendingSubmissions(Array.isArray(data.submissions) ? data.submissions : [])
       } else {
-        showMessage(data.error || 'Failed to load pending map submissions', 'error')
+        showMessage(buildApiErrorMessage(result, 'MAP_LOAD_PENDING_FAILED', 'Failed to load pending map submissions'), 'error')
       }
     } catch (error) {
-      showMessage('Failed to load pending map submissions', 'error')
+      showMessage(buildNetworkErrorMessage('MAP_LOAD_PENDING_NETWORK', 'Failed to load pending map submissions', error), 'error')
     } finally {
       setPendingLoading(false)
     }
@@ -251,9 +286,9 @@ function MapPortal({ app }) {
 
     try {
       const response = await fetch(`${API_BASE}/map/submitter-account/status?email=${encodeURIComponent(trimmed)}`)
-      const data = await response.json()
-      setHasShortcutPassword(Boolean(response.ok && data.has_password))
-    } catch (error) {
+      const result = await readApiResponse(response)
+      setHasShortcutPassword(Boolean(result.ok && result.data.has_password))
+    } catch {
       setHasShortcutPassword(false)
     }
   }
@@ -269,6 +304,7 @@ function MapPortal({ app }) {
   useEffect(() => {
     loadApprovedSubmissions()
     loadPendingSubmissions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role])
 
   useEffect(() => {
@@ -287,7 +323,7 @@ function MapPortal({ app }) {
     }
     const token = recaptchaRef.current?.getValue()
     if (!token) {
-      showMessage('Please complete the reCAPTCHA verification', 'error')
+      showMessage('[MAP_RECAPTCHA_REQUIRED_CLIENT] Please complete the reCAPTCHA verification', 'error')
       return undefined
     }
     return token
@@ -310,7 +346,7 @@ function MapPortal({ app }) {
   const sendVerificationCode = async () => {
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail.endsWith('@sac.on.ca')) {
-      showMessage('Use an @sac.on.ca email address', 'error')
+      showMessage('[MAP_EMAIL_DOMAIN_DENIED_CLIENT] Use an @sac.on.ca email address', 'error')
       return
     }
 
@@ -329,15 +365,15 @@ function MapPortal({ app }) {
           recaptcha_token: recaptchaToken
         })
       })
-      const data = await response.json()
-      if (response.ok) {
+      const result = await readApiResponse(response)
+      if (result.ok) {
         setVerificationSent(true)
         showMessage('Verification code sent', 'success')
       } else {
-        showMessage(data.detail ? `${data.error} (${data.detail})` : data.error || 'Failed to send verification code', 'error')
+        showMessage(buildApiErrorMessage(result, 'MAP_VERIFICATION_SEND_FAILED', 'Failed to send verification code'), 'error')
       }
     } catch (error) {
-      showMessage('Failed to send verification code', 'error')
+      showMessage(buildNetworkErrorMessage('MAP_VERIFICATION_SEND_NETWORK', 'Failed to send verification code', error), 'error')
     } finally {
       resetRecaptcha()
       setVerificationLoading(false)
@@ -349,7 +385,7 @@ function MapPortal({ app }) {
     const trimmedCode = verificationCode.trim()
 
     if (trimmedCode.length !== 6 || !/^\d+$/.test(trimmedCode)) {
-      showMessage('Verification code must be 6 digits', 'error')
+      showMessage('[MAP_VERIFICATION_CODE_INVALID_CLIENT] Verification code must be 6 digits', 'error')
       return
     }
 
@@ -363,15 +399,16 @@ function MapPortal({ app }) {
           code: trimmedCode
         })
       })
-      const data = await response.json()
-      if (response.ok && data.verified) {
+      const result = await readApiResponse(response)
+      const data = result.data
+      if (result.ok && data.verified) {
         setEmailVerified(true)
         showMessage('Email verified', 'success')
       } else {
-        showMessage(data.error || 'Invalid verification code', 'error')
+        showMessage(buildApiErrorMessage(result, 'MAP_VERIFICATION_CHECK_FAILED', 'Invalid verification code'), 'error')
       }
     } catch (error) {
-      showMessage('Failed to verify code', 'error')
+      showMessage(buildNetworkErrorMessage('MAP_VERIFICATION_CHECK_NETWORK', 'Failed to verify code', error), 'error')
     } finally {
       setVerificationLoading(false)
     }
@@ -387,26 +424,58 @@ function MapPortal({ app }) {
     setEmailVerified(false)
   }
 
+  const handleImageChange = (file) => {
+    if (!file) {
+      setImageFile(null)
+      return
+    }
+
+    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type)) {
+      showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, or GIF file', 'error')
+      setImageFile(null)
+      return
+    }
+
+    if (file.size > MAP_MAX_IMAGE_BYTES) {
+      showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 5 MB or smaller', 'error')
+      setImageFile(null)
+      return
+    }
+
+    setImageFile(file)
+  }
+
   const submitMapEntry = async () => {
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail.endsWith('@sac.on.ca')) {
-      showMessage('Use an @sac.on.ca email address', 'error')
+      showMessage('[MAP_EMAIL_DOMAIN_DENIED_CLIENT] Use an @sac.on.ca email address', 'error')
       return
     }
 
     if (!text.trim()) {
-      showMessage('Enter submission text', 'error')
+      showMessage('[MAP_SUBMISSION_TEXT_REQUIRED_CLIENT] Enter submission text', 'error')
       return
     }
 
     if (authMethod === 'email' && !emailVerified) {
-      showMessage('Verify your SAC email before submitting', 'error')
+      showMessage('[MAP_EMAIL_NOT_VERIFIED_CLIENT] Verify your SAC email before submitting', 'error')
       return
     }
 
     if (authMethod === 'password' && !password) {
-      showMessage('Enter your map submission password', 'error')
+      showMessage('[MAP_PASSWORD_REQUIRED_CLIENT] Enter your map submission password', 'error')
       return
+    }
+
+    if (imageFile) {
+      if (!MAP_ALLOWED_IMAGE_TYPES.has(imageFile.type)) {
+        showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, or GIF file', 'error')
+        return
+      }
+      if (imageFile.size > MAP_MAX_IMAGE_BYTES) {
+        showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 5 MB or smaller', 'error')
+        return
+      }
     }
 
     const recaptchaToken = getRecaptchaToken()
@@ -437,8 +506,9 @@ function MapPortal({ app }) {
         method: 'POST',
         body: formData
       })
-      const data = await response.json()
-      if (response.ok) {
+      const result = await readApiResponse(response)
+      const data = result.data
+      if (result.ok) {
         showMessage(
           data.password_created
             ? 'Submission sent and shortcut password saved'
@@ -449,10 +519,16 @@ function MapPortal({ app }) {
         await loadApprovedSubmissions()
         await loadPendingSubmissions()
       } else {
-        showMessage(data.error || 'Failed to submit map entry', 'error')
+        showMessage(buildApiErrorMessage(result, 'MAP_SUBMIT_FAILED', 'Failed to submit map entry'), 'error')
+        console.error('Map submission failed:', {
+          status: result.status,
+          data: result.data,
+          raw: result.raw
+        })
       }
     } catch (error) {
-      showMessage('Failed to submit map entry', 'error')
+      showMessage(buildNetworkErrorMessage('MAP_SUBMIT_NETWORK', 'Failed to submit map entry', error), 'error')
+      console.error('Map submission network/parse failure:', error)
     } finally {
       resetRecaptcha()
       setSubmitting(false)
@@ -463,16 +539,16 @@ function MapPortal({ app }) {
     setActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/map/submissions/${submissionId}/approve`, { method: 'POST' })
-      const data = await response.json()
-      if (response.ok) {
+      const result = await readApiResponse(response)
+      if (result.ok) {
         showMessage('Map submission approved', 'success')
         await loadApprovedSubmissions()
         await loadPendingSubmissions()
       } else {
-        showMessage(data.error || 'Failed to approve submission', 'error')
+        showMessage(buildApiErrorMessage(result, 'MAP_APPROVE_FAILED', 'Failed to approve submission'), 'error')
       }
     } catch (error) {
-      showMessage('Failed to approve submission', 'error')
+      showMessage(buildNetworkErrorMessage('MAP_APPROVE_NETWORK', 'Failed to approve submission', error), 'error')
     } finally {
       setActionLoading(false)
     }
@@ -486,15 +562,15 @@ function MapPortal({ app }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: '' })
       })
-      const data = await response.json()
-      if (response.ok) {
+      const result = await readApiResponse(response)
+      if (result.ok) {
         showMessage('Map submission rejected', 'success')
         await loadPendingSubmissions()
       } else {
-        showMessage(data.error || 'Failed to reject submission', 'error')
+        showMessage(buildApiErrorMessage(result, 'MAP_REJECT_FAILED', 'Failed to reject submission'), 'error')
       }
     } catch (error) {
-      showMessage('Failed to reject submission', 'error')
+      showMessage(buildNetworkErrorMessage('MAP_REJECT_NETWORK', 'Failed to reject submission', error), 'error')
     } finally {
       setActionLoading(false)
     }
@@ -718,7 +794,7 @@ function MapPortal({ app }) {
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif"
                       className="sr-only"
-                      onChange={(event) => setImageFile(event.target.files?.[0] || null)}
+                      onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
                     />
                   </label>
                   {imagePreviewUrl && (

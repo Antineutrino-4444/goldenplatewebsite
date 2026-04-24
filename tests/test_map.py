@@ -44,6 +44,7 @@ def test_map_submission_rejects_non_sac_email(client, login):
     })
 
     assert response.status_code == 403
+    assert response.get_json()['code'] == 'MAP_EMAIL_DOMAIN_DENIED'
 
 
 def test_map_submission_approval_flow(client, login):
