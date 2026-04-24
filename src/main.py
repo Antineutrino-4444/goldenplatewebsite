@@ -19,6 +19,7 @@ from flask_cors import CORS
 
 from src.routes.golden_plate_recorder_db import recorder_bp
 from src.routes.golden_plate_recorder_db.db import db_session
+from src.routes.golden_plate_recorder_db.map_db import map_db_session
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -49,6 +50,7 @@ def serve(path):
 @app.teardown_appcontext
 def _shutdown_scoped_session(exception=None):
     db_session.remove()
+    map_db_session.remove()
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
 import os
 import shutil
 import sys
-import tempfile
+import uuid
 from pathlib import Path
 
 import pytest
@@ -18,6 +18,17 @@ def _cleanup_sqlite_sidecars(db_path: Path) -> None:
             sidecar.unlink()
 
 
+def _make_workspace_temp_dir(root: Path, prefix: str) -> Path:
+    for _ in range(10):
+        candidate = root / f'{prefix}{uuid.uuid4().hex}'
+        try:
+            candidate.mkdir(parents=True, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            continue
+    raise RuntimeError('Unable to create workspace temporary directory')
+
+
 def _prepare_test_database():
     project_root = Path(__file__).resolve().parent.parent
     db_path = project_root / 'data' / 'golden_plate_recorder.db'
@@ -32,7 +43,10 @@ def _prepare_test_database():
 
     _cleanup_sqlite_sidecars(db_path)
 
-    backup_dir = Path(tempfile.mkdtemp(prefix='goldenplate-db-backup-'))
+    temp_root = project_root / '.tmp'
+    temp_root.mkdir(exist_ok=True)
+
+    backup_dir = _make_workspace_temp_dir(temp_root, 'goldenplate-db-backup-')
     backup_path = backup_dir / db_path.name
     try:
         shutil.copy2(db_path, backup_path)
@@ -42,12 +56,15 @@ def _prepare_test_database():
             'Close any application that keeps the SQLite file open and retry.'
         ) from exc
 
-    test_dir = Path(tempfile.mkdtemp(prefix='goldenplate-pytest-db-'))
+    test_dir = _make_workspace_temp_dir(temp_root, 'goldenplate-pytest-db-')
     test_db_path = test_dir / db_path.name
+    test_map_db_path = test_dir / 'golden_plate_map.db'
     shutil.copy2(backup_path, test_db_path)
 
     previous_database_url = os.environ.get('DATABASE_URL')
+    previous_map_database_url = os.environ.get('MAP_DATABASE_URL')
     os.environ['DATABASE_URL'] = f'sqlite:///{test_db_path.as_posix()}'
+    os.environ['MAP_DATABASE_URL'] = f'sqlite:///{test_map_db_path.as_posix()}'
 
     def _finalize() -> None:
         try:
@@ -58,16 +75,30 @@ def _prepare_test_database():
             db_module.db_session.remove()
             db_module.engine.dispose()
 
+        try:
+            from src.routes.golden_plate_recorder_db import map_db as map_db_module
+        except Exception:  # pragma: no cover - best effort cleanup
+            map_db_module = None
+        else:
+            map_db_module.map_db_session.remove()
+            map_db_module.map_engine.dispose()
+
         if previous_database_url is None:
             os.environ.pop('DATABASE_URL', None)
         else:
             os.environ['DATABASE_URL'] = previous_database_url
+
+        if previous_map_database_url is None:
+            os.environ.pop('MAP_DATABASE_URL', None)
+        else:
+            os.environ['MAP_DATABASE_URL'] = previous_map_database_url
 
         if backup_path.exists():
             db_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(backup_path, db_path)
         _cleanup_sqlite_sidecars(db_path)
         _cleanup_sqlite_sidecars(test_db_path)
+        _cleanup_sqlite_sidecars(test_map_db_path)
 
         shutil.rmtree(test_dir, ignore_errors=True)
         shutil.rmtree(backup_dir, ignore_errors=True)
