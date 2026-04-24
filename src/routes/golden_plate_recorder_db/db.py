@@ -842,34 +842,46 @@ def _migrate_schema() -> None:
                 update_nulls_sql=f"UPDATE {table_name} SET school_id = '{default}' WHERE school_id IS NULL",
             )
 
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+
     with engine.begin() as connection:
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_invite_codes_school ON user_invite_codes (school_id)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_records_school_session_category ON session_records (school_id, session_id, category)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_draw_events_school_session ON session_draw_events (school_id, session_id, created_at)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_ticket_events_school_session ON session_ticket_events (school_id, session_id, occurred_at)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_delete_requests_school_session ON session_delete_requests (school_id, session_id)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_students_school ON students (school_id)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_teachers_school ON teachers (school_id)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_sessions_school ON sessions (school_id)'
-        ))
-        connection.execute(text(
-            'CREATE INDEX IF NOT EXISTS idx_users_school ON users (school_id)'
-        ))
+        if 'user_invite_codes' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_invite_codes_school ON user_invite_codes (school_id)'
+            ))
+        if 'session_records' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_records_school_session_category ON session_records (school_id, session_id, category)'
+            ))
+        if 'session_draw_events' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_draw_events_school_session ON session_draw_events (school_id, session_id, created_at)'
+            ))
+        if 'session_ticket_events' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_ticket_events_school_session ON session_ticket_events (school_id, session_id, occurred_at)'
+            ))
+        if 'session_delete_requests' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_delete_requests_school_session ON session_delete_requests (school_id, session_id)'
+            ))
+        if 'students' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_students_school ON students (school_id)'
+            ))
+        if 'teachers' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_teachers_school ON teachers (school_id)'
+            ))
+        if 'sessions' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_sessions_school ON sessions (school_id)'
+            ))
+        if 'users' in tables:
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_users_school ON users (school_id)'
+            ))
 
 
 def _ensure_seed_schools() -> None:
@@ -909,10 +921,22 @@ def _ensure_user_school_assignments() -> None:
         ), {'default_school': DEFAULT_SCHOOL_ID})
 
 
-_migrate_schema()
-Base.metadata.create_all(bind=engine)
-_ensure_seed_schools()
-_ensure_user_school_assignments()
+def _bootstrap_database() -> None:
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    # A brand-new local SQLite file can be completely empty. Create the base
+    # schema first so migration/index logic does not run against missing tables.
+    if not existing_tables:
+        Base.metadata.create_all(bind=engine)
+
+    _migrate_schema()
+    Base.metadata.create_all(bind=engine)
+    _ensure_seed_schools()
+    _ensure_user_school_assignments()
+
+
+_bootstrap_database()
 
 
 __all__ = [

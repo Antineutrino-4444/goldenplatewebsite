@@ -1,7 +1,14 @@
 persistent_data/
+.pytest_cache/
+.tmp/
+.tmp-bootstrap-tests/
+pytest-cache-files-*/
 __pycache__/
 **/__pycache__/
 *.py[cod]
+*.db-journal
+*.db-wal
+*.db-shm
 node_modules/
 **/node_modules/
 **/.pnpm-store/
