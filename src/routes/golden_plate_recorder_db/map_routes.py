@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 MAP_VERIFICATION_PURPOSE = 'map_submission'
 MAX_VERIFICATION_ATTEMPTS = 5
 MAP_EMAIL_VERIFICATION_MAX_AGE_MINUTES = 30
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_BYTES = 50 * 1024 * 1024
 ALLOWED_IMAGE_MIMES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
 SAC_EMAIL_SUFFIX = '@sac.on.ca'
 
@@ -54,7 +54,7 @@ def handle_map_request_too_large(error):
     if request.path.startswith('/api/map/'):
         return _map_error(
             'MAP_IMAGE_TOO_LARGE',
-            'Image must be 5 MB or smaller',
+            'Image must be 50 MB or smaller',
             413,
         )
     return error.get_response()
@@ -618,7 +618,7 @@ def create_map_submission():
         image_data = image_file.read()
         image_size = len(image_data)
         if image_size > MAX_IMAGE_BYTES:
-            return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 5 MB or smaller', 413)
+            return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
 
         image_filename = secure_filename(image_file.filename) or 'submission-image'
 

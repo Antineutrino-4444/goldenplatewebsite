@@ -20,12 +20,13 @@ import {
   Send,
   ShieldCheck,
   Upload,
+  X,
   XCircle
 } from 'lucide-react'
 
 const API_BASE = '/api'
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
-const MAP_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const MAP_MAX_IMAGE_BYTES = 50 * 1024 * 1024
 const MAP_ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
 async function readApiResponse(response) {
@@ -230,6 +231,8 @@ function MapPortal({ app }) {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [isDraggingImage, setIsDraggingImage] = useState(false)
+  const fileInputRef = useRef(null)
 
   const mapPath = normalizeMapPath()
   const isSubmissionPage = mapPath === '/map/submission'
@@ -316,6 +319,37 @@ function MapPortal({ app }) {
     setImagePreviewUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [imageFile])
+
+  useEffect(() => {
+    if (!isSubmissionPage) {
+      return
+    }
+    const handlePaste = (event) => {
+      const target = event.target
+      const tag = target?.tagName
+      // Allow normal text paste into inputs/textareas/contenteditables; only intercept if image present
+      const items = event.clipboardData?.items
+      if (!items || items.length === 0) {
+        return
+      }
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) {
+            // If the focus is in a text editor and the clipboard also contains text, the image item still wins.
+            event.preventDefault()
+            handleImageChange(file)
+            return
+          }
+        }
+      }
+      // No image in clipboard — do nothing, let normal paste behavior continue
+      void tag
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSubmissionPage])
 
   const getRecaptchaToken = () => {
     if (!RECAPTCHA_SITE_KEY) {
@@ -417,6 +451,9 @@ function MapPortal({ app }) {
   const resetSubmissionForm = () => {
     setText('')
     setImageFile(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
     setPassword('')
     setShortcutPassword('')
     setVerificationCode('')
@@ -437,12 +474,43 @@ function MapPortal({ app }) {
     }
 
     if (file.size > MAP_MAX_IMAGE_BYTES) {
-      showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 5 MB or smaller', 'error')
+      showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 50 MB or smaller', 'error')
       setImageFile(null)
       return
     }
 
     setImageFile(file)
+  }
+
+  const handleRemoveImage = () => {
+    setImageFile(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleImageDrop = (event) => {
+    event.preventDefault()
+    setIsDraggingImage(false)
+    const file = event.dataTransfer?.files?.[0]
+    if (file) {
+      handleImageChange(file)
+    }
+  }
+
+  const handleImageDragOver = (event) => {
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy'
+    }
+    if (!isDraggingImage) {
+      setIsDraggingImage(true)
+    }
+  }
+
+  const handleImageDragLeave = (event) => {
+    event.preventDefault()
+    setIsDraggingImage(false)
   }
 
   const submitMapEntry = async () => {
@@ -473,7 +541,7 @@ function MapPortal({ app }) {
         return
       }
       if (imageFile.size > MAP_MAX_IMAGE_BYTES) {
-        showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 5 MB or smaller', 'error')
+        showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 50 MB or smaller', 'error')
         return
       }
     }
@@ -782,14 +850,23 @@ function MapPortal({ app }) {
                   <Label htmlFor="map-image">Image</Label>
                   <label
                     htmlFor="map-image"
-                    className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed bg-slate-50 p-4 text-center hover:bg-slate-100"
+                    onDragOver={handleImageDragOver}
+                    onDragEnter={handleImageDragOver}
+                    onDragLeave={handleImageDragLeave}
+                    onDrop={handleImageDrop}
+                    className={`flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed p-4 text-center transition-colors ${
+                      isDraggingImage
+                        ? 'border-teal-500 bg-teal-50'
+                        : 'bg-slate-50 hover:bg-slate-100'
+                    }`}
                   >
                     <Upload className="mb-2 h-6 w-6 text-slate-500" />
                     <span className="text-sm font-medium text-slate-700">
-                      {imageFile ? imageFile.name : 'Choose image'}
+                      {imageFile ? imageFile.name : 'Choose image, drag & drop, or paste (Ctrl/Cmd+V)'}
                     </span>
-                    <span className="text-xs text-slate-500">JPG, PNG, WebP, or GIF up to 5 MB</span>
-                    <Input
+                    <span className="text-xs text-slate-500">JPG, PNG, WebP, or GIF up to 50 MB</span>
+                    <input
+                      ref={fileInputRef}
                       id="map-image"
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif"
@@ -798,7 +875,17 @@ function MapPortal({ app }) {
                     />
                   </label>
                   {imagePreviewUrl && (
-                    <img src={imagePreviewUrl} alt="Selected preview" className="max-h-72 w-full rounded-md border object-cover" />
+                    <div className="relative">
+                      <img src={imagePreviewUrl} alt="Selected preview" className="max-h-72 w-full rounded-md border object-cover" />
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        aria-label="Remove image"
+                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white shadow hover:bg-black/80 focus:outline-none focus:ring-2 focus:ring-white"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
 
