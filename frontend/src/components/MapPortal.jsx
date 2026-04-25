@@ -123,6 +123,7 @@ function EcologicalMapGraphic({
   pendingPoint = null,
   onMapClick = null,
   imageAspect = null,
+  naturalSize = null, // {w,h} — if provided, render at this exact pixel size
   className = ''
 }) {
   const containerRef = useRef(null)
@@ -140,13 +141,17 @@ function EcologicalMapGraphic({
     onMapClick(Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y)))
   }
 
+  const containerStyle = naturalSize
+    ? { width: naturalSize.w, height: naturalSize.h }
+    : { aspectRatio: `${aspect}` }
+
   return (
-    <div className={`relative w-full ${className}`}>
+    <div className={`relative ${naturalSize ? '' : 'w-full'} ${className}`}>
       <div
         ref={containerRef}
         onClick={handleClick}
-        className={`relative w-full overflow-hidden rounded-md border bg-white shadow-sm ${onMapClick ? 'cursor-crosshair' : ''}`}
-        style={{ aspectRatio: `${aspect}` }}
+        className={`relative overflow-hidden rounded-md border bg-white shadow-sm ${naturalSize ? '' : 'w-full'} ${onMapClick ? 'cursor-crosshair' : ''}`}
+        style={containerStyle}
       >
         {backgroundUrl ? (
           <img
@@ -367,6 +372,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
   const fileInputRef = useRef(null)
   const stageRef = useRef(null)
   const [image, setImage] = useState(null) // HTMLImageElement
+  const [originalFile, setOriginalFile] = useState(null)
   const [filename, setFilename] = useState('map-background.png')
   // image transform (rendered into stage)
   const [scale, setScale] = useState(1)
@@ -383,6 +389,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
   useEffect(() => {
     if (!open) {
       setImage(null)
+      setOriginalFile(null)
       setScale(1)
       setRotation(0)
       setTranslate({ x: 0, y: 0 })
@@ -420,9 +427,15 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
   }, [image, stageSize.w, stageSize.h])
 
   const initCrop = (sw, sh, ar) => {
-    const margin = 0.1
-    let w = sw * (1 - margin * 2)
-    let h = sh * (1 - margin * 2)
+    // Default crop covers the displayed image exactly (centered),
+    // so clicking Apply with no edits yields the original image.
+    let w = sw
+    let h = sh
+    if (image) {
+      const fit = Math.min(sw / image.naturalWidth, sh / image.naturalHeight)
+      w = image.naturalWidth * fit
+      h = image.naturalHeight * fit
+    }
     if (ar && ar > 0) {
       if (w / h > ar) w = h * ar
       else h = w / ar
@@ -433,6 +446,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
   const handleFile = (file) => {
     if (!file) return
     if (file.type && !MAP_ALLOWED_IMAGE_TYPES.has(file.type)) return
+    setOriginalFile(file)
     setFilename(file.name || 'map-background.png')
     const reader = new FileReader()
     reader.onload = () => {
@@ -548,33 +562,60 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
 
   const handleApply = async () => {
     if (!image || crop.w <= 0 || crop.h <= 0) return
-    // Output canvas at crop pixel size (use stage units; sufficient quality for backgrounds)
+
+    // Short-circuit: if the user hasn't transformed or cropped at all, just
+    // upload the original file unchanged (no re-encoding, no compression).
+    if (originalFile && rotation === 0 && translate.x === 0 && translate.y === 0) {
+      const fit = Math.min(stageSize.w / image.naturalWidth, stageSize.h / image.naturalHeight)
+      const sameScale = Math.abs(scale - fit) < 0.001
+      const fullCropW = image.naturalWidth * fit
+      const fullCropH = image.naturalHeight * fit
+      const cropMatchesImage =
+        Math.abs(crop.w - fullCropW) < 1 &&
+        Math.abs(crop.h - fullCropH) < 1 &&
+        Math.abs(crop.x - (stageSize.w - fullCropW) / 2) < 1 &&
+        Math.abs(crop.y - (stageSize.h - fullCropH) / 2) < 1
+      if (sameScale && cropMatchesImage) {
+        await onUpload(originalFile, filename)
+        return
+      }
+    }
+
+    // Render at full image resolution so we don't downscale. The image is
+    // displayed at `scale` on stage, so 1 stage-pixel == 1/scale image-pixels.
+    const outW = Math.max(1, Math.round(crop.w / scale))
+    const outH = Math.max(1, Math.round(crop.h / scale))
     const out = document.createElement('canvas')
-    out.width = Math.round(crop.w)
-    out.height = Math.round(crop.h)
+    out.width = outW
+    out.height = outH
     const ctx = out.getContext('2d')
     if (!ctx) return
     ctx.imageSmoothingQuality = 'high'
-    // We render the rotated/scaled image onto a temp canvas the size of the
-    // stage, then crop from it. Keeps the math straightforward.
+
+    // Render the (rotated, translated) image onto a high-resolution stage,
+    // then copy the corresponding crop region into the output canvas.
     const stage = document.createElement('canvas')
-    stage.width = Math.round(stageSize.w)
-    stage.height = Math.round(stageSize.h)
+    stage.width = Math.max(1, Math.round(stageSize.w / scale))
+    stage.height = Math.max(1, Math.round(stageSize.h / scale))
     const sctx = stage.getContext('2d')
     if (!sctx) return
     sctx.fillStyle = '#0f172a'
     sctx.fillRect(0, 0, stage.width, stage.height)
-    const cx = stage.width / 2 + translate.x
-    const cy = stage.height / 2 + translate.y
+    const cx = stage.width / 2 + translate.x / scale
+    const cy = stage.height / 2 + translate.y / scale
     sctx.translate(cx, cy)
     sctx.rotate((rotation * Math.PI) / 180)
-    sctx.scale(scale, scale)
     sctx.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2)
     sctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.drawImage(stage, crop.x, crop.y, crop.w, crop.h, 0, 0, out.width, out.height)
-    const blob = await new Promise((resolve) => out.toBlob(resolve, 'image/png', 0.95))
+    ctx.drawImage(
+      stage,
+      crop.x / scale, crop.y / scale, crop.w / scale, crop.h / scale,
+      0, 0, outW, outH,
+    )
+    // PNG is lossless — no compression artifacts.
+    const blob = await new Promise((resolve) => out.toBlob(resolve, 'image/png'))
     if (!blob) return
-    const outName = filename.replace(/\.[^.]+$/, '') + '-cropped.png'
+    const outName = filename.replace(/\.[^.]+$/, '') + '-edited.png'
     await onUpload(blob, outName)
   }
 
@@ -775,6 +816,7 @@ function MapPortal({ app }) {
   const [backgroundUrl, setBackgroundUrl] = useState(null)
   const [backgroundUploading, setBackgroundUploading] = useState(false)
   const [imageAspect, setImageAspect] = useState(null)
+  const [imageNaturalSize, setImageNaturalSize] = useState(null)
   const [showBackgroundEditor, setShowBackgroundEditor] = useState(false)
   const backgroundInputRef = useRef(null)
 
@@ -965,12 +1007,14 @@ function MapPortal({ app }) {
   useEffect(() => {
     if (!backgroundUrl) {
       setImageAspect(null)
+      setImageNaturalSize(null)
       return
     }
     const img = new Image()
     img.onload = () => {
       if (img.naturalWidth > 0 && img.naturalHeight > 0) {
         setImageAspect(img.naturalWidth / img.naturalHeight)
+        setImageNaturalSize({ w: img.naturalWidth, h: img.naturalHeight })
       }
     }
     img.src = backgroundUrl
@@ -2001,12 +2045,14 @@ function MapPortal({ app }) {
       />
 
       <Dialog open={showEnlarge} onOpenChange={setShowEnlarge}>
-        <DialogContent className="w-full sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-full sm:max-w-[95vw] max-h-[95vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Ecological Map (enlarged)</DialogTitle>
-            <DialogDescription>Click pins for details. Use this larger view for more precise placement.</DialogDescription>
+            <DialogDescription>
+              Full image at original resolution. Scroll if larger than the viewport.
+            </DialogDescription>
           </DialogHeader>
-          <div className="w-full">
+          <div className="max-h-[80vh] w-full overflow-auto rounded-md border bg-slate-100">
             <EcologicalMapGraphic
               pins={pins}
               submissionsByPin={submissionsByPin}
@@ -2014,6 +2060,7 @@ function MapPortal({ app }) {
               onSelectPin={(id) => { setSelectedPinId(id); setShowEnlarge(false) }}
               backgroundUrl={backgroundUrl}
               imageAspect={imageAspect}
+              naturalSize={imageNaturalSize}
             />
           </div>
         </DialogContent>
