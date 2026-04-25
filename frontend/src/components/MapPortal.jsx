@@ -73,7 +73,7 @@ async function convertHeicViaServer(file, onProgress) {
   // Use XHR so we can report upload progress + indeterminate "decoding" stage.
   const xhrPromise = new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', '/api/map/convert-heic')
+    xhr.open('POST', '/api/map/convert-image')
     xhr.responseType = 'blob'
     if (xhr.upload && typeof onProgress === 'function') {
       xhr.upload.onprogress = (event) => {
@@ -115,11 +115,74 @@ async function convertHeicViaServer(file, onProgress) {
   const blob = await xhrPromise
   const mime = blob.type || 'image/png'
   const ext = mime === 'image/png' ? '.png' : (mime === 'image/jpeg' ? '.jpg' : '.png')
-  const baseName = (lowerName.replace(/\.(heic|heif)$/i, '') || 'image') + ext
+  // Strip any known source extension and append the converted one.
+  const baseStem = lowerName.replace(/\.[a-z0-9]+$/i, '') || 'image'
+  const baseName = baseStem + ext
   return new File([blob], baseName, { type: mime })
 }
 
-const MAP_ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
+const MAP_ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg', 'image/pjpeg', 'image/png', 'image/webp', 'image/gif',
+  'image/avif', 'image/bmp', 'image/x-bmp', 'image/x-ms-bmp',
+  'image/vnd.microsoft.icon', 'image/x-icon',
+  'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence',
+  'image/tiff', 'image/tif', 'image/x-tiff',
+  'image/svg+xml', 'image/svg',
+])
+const MAP_RAW_EXTENSIONS = new Set([
+  'cr2', 'cr3', 'crw',
+  'nef', 'nrw',
+  'arw', 'srf', 'sr2',
+  'raf',
+  'dng',
+  'orf',
+  'rw2', 'raw',
+  'pef',
+  'srw',
+  'x3f',
+  'rwl',
+  'iiq',
+  '3fr',
+  'kdc',
+  'dcr',
+  'mrw',
+])
+const MAP_ALLOWED_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'jpe', 'jfif',
+  'png', 'gif', 'webp', 'avif',
+  'bmp', 'dib', 'ico',
+  'heic', 'heif',
+  'tif', 'tiff',
+  'svg',
+  ...MAP_RAW_EXTENSIONS,
+])
+
+function getFileExt(name = '') {
+  const m = String(name).toLowerCase().match(/\.([a-z0-9]+)$/)
+  return m ? m[1] : ''
+}
+
+function isMapImageFile(file) {
+  if (!file) return false
+  if (file.type && MAP_ALLOWED_IMAGE_TYPES.has(file.type.toLowerCase())) return true
+  return MAP_ALLOWED_EXTENSIONS.has(getFileExt(file.name))
+}
+
+// Formats the browser can't render in <img> — must be sent through the
+// server convert endpoint to get a PNG preview.
+function needsServerImageConversion(file) {
+  if (!file) return false
+  if (isHeicFile(file)) return true
+  const t = (file.type || '').toLowerCase()
+  if (
+    t === 'image/tiff' || t === 'image/tif' || t === 'image/x-tiff'
+    || t === 'image/svg+xml' || t === 'image/svg'
+  ) return true
+  const ext = getFileExt(file.name)
+  if (ext === 'tif' || ext === 'tiff' || ext === 'svg') return true
+  if (MAP_RAW_EXTENSIONS.has(ext)) return true
+  return false
+}
 
 async function readApiResponse(response) {
   const raw = await response.text()
@@ -776,46 +839,82 @@ function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
   )
 }
 
-function FeaturedPostCard({ submission, loading = false, onRefresh }) {
+function FeaturedPostCard({ submissions = [], loading = false, onRefresh }) {
+  const [index, setIndex] = useState(0)
+  const count = submissions.length
+  useEffect(() => {
+    if (index >= count) setIndex(0)
+  }, [count, index])
+  const current = count > 0 ? submissions[Math.min(index, count - 1)] : null
+  const goPrev = () => setIndex((i) => (count === 0 ? 0 : (i - 1 + count) % count))
+  const goNext = () => setIndex((i) => (count === 0 ? 0 : (i + 1) % count))
+
   return (
     <Card className="rounded-md">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
-            <CardTitle className="text-lg">Featured Post</CardTitle>
+            <CardTitle className="text-lg">
+              Featured {count > 1 ? `Posts (${index + 1} / ${count})` : 'Post'}
+            </CardTitle>
           </div>
-          <Button onClick={onRefresh} variant="outline" size="sm" disabled={loading}>
-            <RefreshCcw className="mr-2 h-3.5 w-3.5" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {count > 1 && (
+              <>
+                <Button onClick={goPrev} variant="outline" size="sm" aria-label="Previous featured post">
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <Button onClick={goNext} variant="outline" size="sm" aria-label="Next featured post">
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+            <Button onClick={onRefresh} variant="outline" size="sm" disabled={loading}>
+              <RefreshCcw className="mr-2 h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </div>
         </div>
         <CardDescription>Highlighted by the super admin</CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (
           <div className="rounded-md border bg-slate-50 p-6 text-center text-sm text-slate-500">Loading…</div>
-        ) : !submission ? (
+        ) : !current ? (
           <div className="rounded-md border border-dashed bg-slate-50 p-6 text-center text-sm text-slate-500">
-            No featured post yet — check back soon!
+            No featured posts yet — check back soon!
           </div>
         ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              {submission.submitted_at && (
-                <span>{new Date(submission.submitted_at).toLocaleString()}</span>
+              {current.submitted_at && (
+                <span>{new Date(current.submitted_at).toLocaleString()}</span>
               )}
-              {submission.submission_display_name && (
-                <span className="font-medium text-slate-700">By {submission.submission_display_name}</span>
+              {current.submission_display_name && (
+                <span className="font-medium text-slate-700">By {current.submission_display_name}</span>
               )}
             </div>
-            {submission.title && (
-              <h3 className="text-lg font-semibold text-slate-900">{submission.title}</h3>
+            {current.title && (
+              <h3 className="text-lg font-semibold text-slate-900">{current.title}</h3>
             )}
-            {submission.text && (
-              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{submission.text}</p>
+            {current.text && (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{current.text}</p>
             )}
-            <SubmissionImage submission={submission} className="max-h-80" />
+            <SubmissionImage submission={current} className="max-h-80" />
+            {count > 1 && (
+              <div className="flex justify-center gap-1.5 pt-1">
+                {submissions.map((_, dotIdx) => (
+                  <button
+                    key={dotIdx}
+                    type="button"
+                    aria-label={`Show featured post ${dotIdx + 1}`}
+                    onClick={() => setIndex(dotIdx)}
+                    className={`h-2 w-2 rounded-full transition-colors ${dotIdx === index ? 'bg-amber-500' : 'bg-slate-300 hover:bg-slate-400'}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -1609,7 +1708,7 @@ function MapPortal({ app }) {
   const [leaders, setLeaders] = useState([])
   const [leadersLoading, setLeadersLoading] = useState(false)
 
-  const [featuredSubmission, setFeaturedSubmission] = useState(null)
+  const [featuredSubmissions, setFeaturedSubmissions] = useState([])
   const [featuredLoading, setFeaturedLoading] = useState(false)
 
   const [backgroundUrl, setBackgroundUrl] = useState(null)
@@ -1757,7 +1856,10 @@ function MapPortal({ app }) {
       const response = await fetch(`${API_BASE}/map/featured`)
       const result = await readApiResponse(response)
       if (result.ok) {
-        setFeaturedSubmission(result.data?.submission || null)
+        const list = Array.isArray(result.data?.submissions)
+          ? result.data.submissions
+          : (result.data?.submission ? [result.data.submission] : [])
+        setFeaturedSubmissions(list)
       }
     } catch {
       // non-fatal
@@ -1902,9 +2004,10 @@ function MapPortal({ app }) {
         const file = item.getAsFile()
         if (!file) continue
         const typeOk = (item.type || file.type || '').startsWith('image/')
-        // Accept any file item that's an image type, looks like HEIC by name,
-        // or has no recognizable type (let enqueueFile sniff the bytes).
-        if (!typeOk && !isHeicFile(file) && (item.type || file.type)) {
+        // Accept any file item that's an image type, looks like a supported
+        // image by name, or has no recognizable type (let enqueueFile sniff
+        // the bytes).
+        if (!typeOk && !isMapImageFile(file) && (item.type || file.type)) {
           rejectedFile = true
           continue
         }
@@ -2100,14 +2203,14 @@ function MapPortal({ app }) {
 
   const enqueueFile = async (file) => {
     if (!file) return
-    let heic = isHeicFile(file)
-    if (!heic && (!file.type || !MAP_ALLOWED_IMAGE_TYPES.has(file.type))) {
+    let needsConvert = needsServerImageConversion(file)
+    if (!needsConvert && !isMapImageFile(file)) {
       // Clipboard often hands us HEIC bytes with an empty or generic MIME
       // (e.g. `image/png` from Windows clipboard). Sniff the file header.
-      heic = await sniffHeicBytes(file)
+      if (await sniffHeicBytes(file)) needsConvert = true
     }
-    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !heic) {
-      showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, GIF, or HEIC file', 'error')
+    if (!needsConvert && !isMapImageFile(file)) {
+      showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, GIF, AVIF, BMP, ICO, HEIC/HEIF, TIFF, SVG, or camera RAW file', 'error')
       return
     }
     if (file.size > MAP_MAX_IMAGE_BYTES) {
@@ -2115,24 +2218,24 @@ function MapPortal({ app }) {
       return
     }
     const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `img-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const initialPreview = heic ? '' : URL.createObjectURL(file)
+    const initialPreview = needsConvert ? '' : URL.createObjectURL(file)
     setImageItems((prev) => [...prev, {
       id,
-      file: heic ? null : file,
+      file: needsConvert ? null : file,
       name: file.name,
-      status: heic ? 'processing' : 'ready',
-      heicProgress: heic ? { phase: 'uploading', percent: 0 } : null,
+      status: needsConvert ? 'processing' : 'ready',
+      heicProgress: needsConvert ? { phase: 'uploading', percent: 0 } : null,
       previewUrl: initialPreview,
     }])
-    if (!heic) return
+    if (!needsConvert) return
     let working
     try {
       working = await convertHeicViaServer(file, (p) => {
         setImageItems((prev) => prev.map((it) => it.id === id ? { ...it, heicProgress: p } : it))
       })
     } catch (err) {
-      console.error('Server HEIC conversion failed', err)
-      showMessage(`[MAP_IMAGE_HEIC_FAILED] Could not decode HEIC image (${file.name})`, 'error')
+      console.error('Server image conversion failed', err)
+      showMessage(`[MAP_IMAGE_CONVERT_FAILED] Could not decode image (${file.name})`, 'error')
       setImageItems((prev) => prev.filter((it) => it.id !== id))
       return
     }
@@ -2233,7 +2336,7 @@ function MapPortal({ app }) {
     }
     for (const it of imageItems) {
       if (!it.file) continue
-      if (!MAP_ALLOWED_IMAGE_TYPES.has(it.file.type)) {
+      if (!isMapImageFile(it.file)) {
         showMessage(`[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] ${it.name} is not a supported image type`, 'error')
         return
       }
@@ -2459,7 +2562,7 @@ function MapPortal({ app }) {
           <div className="rounded-xl border-2 border-dashed border-white bg-white/90 px-8 py-6 text-center shadow-2xl">
             <Upload className="mx-auto mb-2 h-10 w-10 text-teal-700" />
             <div className="text-lg font-semibold text-slate-900">Drop image to upload</div>
-            <div className="text-xs text-slate-500">JPG, PNG, WebP, GIF, or HEIC up to 50 MB</div>
+            <div className="text-xs text-slate-500">JPG, PNG, WebP, GIF, AVIF, BMP, ICO, HEIC/HEIF, TIFF, SVG, or camera RAW up to 50 MB</div>
           </div>
         </div>
       )}
@@ -2885,13 +2988,13 @@ function MapPortal({ app }) {
                         ? `${imageItems.length} file${imageItems.length === 1 ? '' : 's'} selected — drop more to add`
                         : 'Choose images, drag & drop, or paste (Ctrl/Cmd+V)'}
                     </span>
-                    <span className="text-xs text-slate-500">JPG, PNG, WebP, GIF, or HEIC up to 50 MB each</span>
+                    <span className="text-xs text-slate-500">JPG, PNG, WebP, GIF, AVIF, BMP, ICO, HEIC/HEIF, TIFF, SVG, or camera RAW up to 50 MB each</span>
                     <input
                       ref={fileInputRef}
                       id="map-image"
                       type="file"
                       multiple
-                      accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
+                      accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/bmp,image/vnd.microsoft.icon,image/heic,image/heif,image/tiff,image/svg+xml,.heic,.heif,.tif,.tiff,.svg,.bmp,.dib,.ico,.avif,.cr2,.cr3,.crw,.nef,.nrw,.arw,.srf,.sr2,.raf,.dng,.orf,.rw2,.raw,.pef,.srw,.x3f,.rwl,.iiq,.3fr,.kdc,.dcr,.mrw"
                       className="sr-only"
                       onChange={(event) => {
                         const files = Array.from(event.target.files || [])
@@ -3047,7 +3150,7 @@ function MapPortal({ app }) {
               </div>
               <div className="space-y-6">
                 <FeaturedPostCard
-                  submission={featuredSubmission}
+                  submissions={featuredSubmissions}
                   loading={featuredLoading}
                   onRefresh={loadFeaturedSubmission}
                 />
@@ -3057,7 +3160,7 @@ function MapPortal({ app }) {
           ) : (
             <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.55fr)]">
               <FeaturedPostCard
-                submission={featuredSubmission}
+                submissions={featuredSubmissions}
                 loading={featuredLoading}
                 onRefresh={loadFeaturedSubmission}
               />

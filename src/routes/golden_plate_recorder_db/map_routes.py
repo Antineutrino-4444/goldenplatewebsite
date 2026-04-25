@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import re
 import string
 from datetime import timedelta, timezone
 from io import BytesIO
@@ -34,9 +35,80 @@ MAP_VERIFICATION_PURPOSE = 'map_submission'
 MAX_VERIFICATION_ATTEMPTS = 5
 MAP_EMAIL_VERIFICATION_MAX_AGE_MINUTES = 30
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
-ALLOWED_IMAGE_MIMES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+# Image MIMEs that browsers can render natively in <img> tags.
+BROWSER_NATIVE_IMAGE_MIMES = {
+    'image/jpeg',
+    'image/pjpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/avif',
+    'image/bmp',
+    'image/x-bmp',
+    'image/x-ms-bmp',
+    'image/vnd.microsoft.icon',
+    'image/x-icon',
+}
+# Image MIMEs the server should transcode to PNG before storing/serving,
+# because browsers can't decode them in <img> or because we want to strip
+# any embedded scripts (SVG).
 HEIC_IMAGE_MIMES = {'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'}
+TIFF_IMAGE_MIMES = {'image/tiff', 'image/tif', 'image/x-tiff'}
+SVG_IMAGE_MIMES = {'image/svg+xml', 'image/svg'}
+# Camera RAW formats. We list a representative set of common MIMEs; most
+# browsers don't actually emit MIMEs for these so the file extension below
+# is what usually triggers conversion.
+RAW_IMAGE_MIMES = {
+    'image/x-canon-cr2', 'image/x-canon-cr3', 'image/x-canon-crw',
+    'image/x-nikon-nef', 'image/x-nikon-nrw',
+    'image/x-sony-arw', 'image/x-sony-srf', 'image/x-sony-sr2',
+    'image/x-fuji-raf', 'image/x-fujifilm-raf',
+    'image/x-adobe-dng', 'image/dng',
+    'image/x-olympus-orf',
+    'image/x-panasonic-rw2', 'image/x-panasonic-raw',
+    'image/x-pentax-pef',
+    'image/x-samsung-srw',
+    'image/x-sigma-x3f',
+    'image/x-leica-rwl',
+}
+SERVER_CONVERTIBLE_IMAGE_MIMES = (
+    HEIC_IMAGE_MIMES | TIFF_IMAGE_MIMES | SVG_IMAGE_MIMES | RAW_IMAGE_MIMES
+)
+ALLOWED_IMAGE_MIMES = BROWSER_NATIVE_IMAGE_MIMES  # kept for backward compat
 HEIC_FILE_EXTENSIONS = ('.heic', '.heif')
+TIFF_FILE_EXTENSIONS = ('.tif', '.tiff')
+SVG_FILE_EXTENSIONS = ('.svg',)
+RAW_FILE_EXTENSIONS = (
+    '.cr2', '.cr3', '.crw',
+    '.nef', '.nrw',
+    '.arw', '.srf', '.sr2',
+    '.raf',
+    '.dng',
+    '.orf',
+    '.rw2', '.raw',
+    '.pef',
+    '.srw',
+    '.x3f',
+    '.rwl',
+    '.iiq',
+    '.3fr',
+    '.kdc',
+    '.dcr',
+    '.mrw',
+)
+SERVER_CONVERTIBLE_FILE_EXTENSIONS = (
+    HEIC_FILE_EXTENSIONS + TIFF_FILE_EXTENSIONS
+    + SVG_FILE_EXTENSIONS + RAW_FILE_EXTENSIONS
+)
+ALLOWED_IMAGE_FILE_EXTENSIONS = (
+    '.jpg', '.jpeg', '.jpe', '.jfif',
+    '.png', '.gif', '.webp', '.avif',
+    '.bmp', '.dib', '.ico',
+)
+IMAGE_TYPE_ERROR_MESSAGE = (
+    'Image must be a JPG, PNG, WebP, GIF, AVIF, BMP, ICO, HEIC/HEIF, '
+    'TIFF, SVG, or camera RAW file'
+)
 SAC_EMAIL_SUFFIX = '@sac.on.ca'
 
 # Register HEIC/HEIF support with Pillow if pillow-heif is installed.
@@ -54,6 +126,28 @@ except Exception:  # pragma: no cover - dependency missing
     Image = None  # type: ignore
     _PIL_AVAILABLE = False
 
+# SVG -> PNG (safe pure-Python path: defusedxml + svglib + reportlab).
+try:
+    from defusedxml import ElementTree as _DefusedET  # type: ignore
+    from svglib.svglib import svg2rlg  # type: ignore
+    from reportlab.graphics import renderPM  # type: ignore
+    _SVG_SUPPORTED = True
+except Exception:  # pragma: no cover - dependency missing
+    _DefusedET = None  # type: ignore
+    svg2rlg = None  # type: ignore
+    renderPM = None  # type: ignore
+    _SVG_SUPPORTED = False
+
+# Camera RAW decoding via libraw.
+try:
+    import rawpy  # type: ignore
+    import numpy as _np  # type: ignore
+    _RAW_SUPPORTED = True
+except Exception:  # pragma: no cover - dependency missing
+    rawpy = None  # type: ignore
+    _np = None  # type: ignore
+    _RAW_SUPPORTED = False
+
 
 def _is_heic_upload(filename: str | None, mime: str | None) -> bool:
     if mime and mime.lower() in HEIC_IMAGE_MIMES:
@@ -63,14 +157,108 @@ def _is_heic_upload(filename: str | None, mime: str | None) -> bool:
     return False
 
 
-def _normalize_heic_to_jpeg(raw_bytes: bytes) -> tuple[bytes, str, str] | None:
-    """Decode a HEIC/HEIF blob and re-encode losslessly as PNG.
+def _needs_server_image_conversion(filename: str | None, mime: str | None) -> bool:
+    if mime and mime.lower() in SERVER_CONVERTIBLE_IMAGE_MIMES:
+        return True
+    if filename and filename.lower().endswith(SERVER_CONVERTIBLE_FILE_EXTENSIONS):
+        return True
+    return False
 
-    Returns (png_bytes, 'image/png', '.png') or None if decoding failed.
-    PNG is fully lossless, so no quality is lost during the conversion
-    beyond what HEIC itself stored.
+
+def _is_browser_native_image(filename: str | None, mime: str | None) -> bool:
+    if mime and mime.lower() in BROWSER_NATIVE_IMAGE_MIMES:
+        return True
+    if filename and filename.lower().endswith(ALLOWED_IMAGE_FILE_EXTENSIONS):
+        return True
+    return False
+
+
+def _is_svg_upload(filename: str | None, mime: str | None) -> bool:
+    if mime and mime.lower() in SVG_IMAGE_MIMES:
+        return True
+    if filename and filename.lower().endswith(SVG_FILE_EXTENSIONS):
+        return True
+    return False
+
+
+def _is_raw_upload(filename: str | None, mime: str | None) -> bool:
+    if mime and mime.lower() in RAW_IMAGE_MIMES:
+        return True
+    if filename and filename.lower().endswith(RAW_FILE_EXTENSIONS):
+        return True
+    return False
+
+
+def _normalize_svg_to_png(raw_bytes: bytes) -> tuple[bytes, str, str] | None:
+    """Rasterize an SVG document to a PNG, defusing any embedded scripts.
+
+    SVG is XML and can contain <script> tags or external references; we parse
+    with defusedxml first to block XXE/billion-laughs and strip script/foreign
+    nodes, then rasterize with svglib + reportlab (pure Python — no Cairo).
     """
-    if not (_PIL_AVAILABLE and _HEIC_SUPPORTED):
+    if not _SVG_SUPPORTED:
+        return None
+    try:
+        # Parse safely first (defusedxml blocks XXE / entity expansion).
+        root = _DefusedET.fromstring(raw_bytes)
+        # Strip <script> and on*= event handlers from the tree before
+        # handing to svglib (defense-in-depth — svglib doesn't execute JS,
+        # but the rendered PNG should never embed any active content).
+        ns_strip = re.compile(r'^\{[^}]+\}')
+        for elem in list(root.iter()):
+            tag_local = ns_strip.sub('', elem.tag).lower() if isinstance(elem.tag, str) else ''
+            if tag_local in ('script', 'foreignobject'):
+                # Detach by clearing attributes and tag (we can't easily
+                # remove from parent in ElementTree without traversal).
+                elem.clear()
+                elem.tag = 'removed'
+            for attr in list(elem.attrib.keys()):
+                if attr.lower().startswith('on') or attr.lower() == 'href' and (
+                    elem.attrib[attr].lower().startswith('javascript:')
+                ):
+                    del elem.attrib[attr]
+        cleaned = _DefusedET.tostring(root)
+        drawing = svg2rlg(BytesIO(cleaned))
+        if drawing is None:
+            return None
+        out = BytesIO()
+        renderPM.drawToFile(drawing, out, fmt='PNG')
+        return out.getvalue(), 'image/png', '.png'
+    except Exception:
+        logger.exception('Failed to convert SVG image to PNG')
+        return None
+
+
+def _normalize_raw_to_png(raw_bytes: bytes) -> tuple[bytes, str, str] | None:
+    """Decode a camera RAW file (CR2/NEF/ARW/DNG/...) and re-encode as PNG."""
+    if not (_RAW_SUPPORTED and _PIL_AVAILABLE):
+        return None
+    try:
+        with rawpy.imread(BytesIO(raw_bytes)) as raw:
+            rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=False, output_bps=8)
+        img = Image.fromarray(rgb)
+        out = BytesIO()
+        img.save(out, format='PNG', optimize=True, compress_level=6)
+        return out.getvalue(), 'image/png', '.png'
+    except Exception:
+        logger.exception('Failed to convert RAW image to PNG')
+        return None
+
+
+def _normalize_image_to_png(raw_bytes: bytes, *, filename: str | None = None, mime: str | None = None) -> tuple[bytes, str, str] | None:
+    """Decode any supported image and re-encode losslessly as PNG.
+
+    Used for HEIC/HEIF, TIFF, SVG, camera RAW, and other formats browsers
+    can't render in <img>. PNG is fully lossless, so no quality is lost
+    during conversion beyond what the source format itself stored.
+    Returns (png_bytes, 'image/png', '.png') or None if decoding failed.
+    """
+    # SVG and RAW need dedicated decoders; everything else can go through Pillow.
+    if _is_svg_upload(filename, mime):
+        return _normalize_svg_to_png(raw_bytes)
+    if _is_raw_upload(filename, mime):
+        return _normalize_raw_to_png(raw_bytes)
+    if not _PIL_AVAILABLE:
         return None
     try:
         with Image.open(BytesIO(raw_bytes)) as img:
@@ -83,8 +271,12 @@ def _normalize_heic_to_jpeg(raw_bytes: bytes) -> tuple[bytes, str, str] | None:
             img.save(out, format='PNG', optimize=True, compress_level=6)
             return out.getvalue(), 'image/png', '.png'
     except Exception:
-        logger.exception('Failed to convert HEIC image to PNG')
+        logger.exception('Failed to convert image to PNG')
         return None
+
+
+# Backward-compatible alias kept for any external callers.
+_normalize_heic_to_jpeg = _normalize_image_to_png
 
 
 RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
@@ -101,6 +293,68 @@ def _map_error(code, message, status=400, *, detail=None):
     if detail:
         payload['detail'] = detail
     return jsonify(payload), status
+
+
+def _purge_orphan_image_data():
+    """Sweep image bytes that are no longer associated with a live entry.
+
+    Deletes / nulls:
+      * `MapSubmissionImage` rows whose `submission_id` does not exist in
+        `map_submissions` (broken FK references — should not normally happen,
+        but defensively cleans up legacy data).
+      * `MapSubmissionImage` rows whose parent submission has been rejected
+        (rejected submissions are not displayed, so their image bytes serve
+        no purpose).
+      * `MapSubmission.image_data` blobs on rejected rows (clears legacy
+        rejected entries that pre-date the on-reject purge).
+
+    Safe to call from any read endpoint; commits its own transaction. Errors
+    are logged and swallowed so a sweep failure never blocks the response.
+    """
+    try:
+        live_ids_subquery = map_db_session.query(MapSubmission.id).subquery()
+        rejected_ids_subquery = (
+            map_db_session.query(MapSubmission.id)
+            .filter(MapSubmission.status == 'rejected')
+            .subquery()
+        )
+
+        orphan_count = (
+            map_db_session.query(MapSubmissionImage)
+            .filter(~MapSubmissionImage.submission_id.in_(live_ids_subquery.select()))
+            .delete(synchronize_session=False)
+        )
+        rejected_extra_count = (
+            map_db_session.query(MapSubmissionImage)
+            .filter(MapSubmissionImage.submission_id.in_(rejected_ids_subquery.select()))
+            .delete(synchronize_session=False)
+        )
+        rejected_blob_count = (
+            map_db_session.query(MapSubmission)
+            .filter(
+                MapSubmission.status == 'rejected',
+                MapSubmission.image_data.isnot(None),
+            )
+            .update(
+                {MapSubmission.image_data: None, MapSubmission.image_size: 0},
+                synchronize_session=False,
+            )
+        )
+
+        if orphan_count or rejected_extra_count or rejected_blob_count:
+            map_db_session.commit()
+            logger.info(
+                'Purged orphan map image data (orphan_extras=%d, rejected_extras=%d, rejected_blobs=%d)',
+                orphan_count, rejected_extra_count, rejected_blob_count,
+            )
+        else:
+            map_db_session.rollback()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning('Orphan image sweep failed: %s', exc)
+        try:
+            map_db_session.rollback()
+        except Exception:
+            pass
 
 
 @recorder_bp.app_errorhandler(RequestEntityTooLarge)
@@ -475,6 +729,7 @@ def _upsert_submitter_password(email, password, school_id, submission_id):
 
 @recorder_bp.route('/map/submissions', methods=['GET'])
 def get_approved_map_submissions():
+    _purge_orphan_image_data()
     submissions = (
         map_db_session.query(MapSubmission)
         .filter(MapSubmission.status == 'approved')
@@ -492,6 +747,7 @@ def get_pending_map_submissions():
     if not require_admin():
         return _map_error('MAP_ADMIN_REQUIRED', 'Admin access required', 403)
 
+    _purge_orphan_image_data()
     submissions = (
         map_db_session.query(MapSubmission)
         .filter(MapSubmission.status == 'pending')
@@ -743,17 +999,17 @@ def create_map_submission():
         if image_size > MAX_IMAGE_BYTES:
             return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
 
-        if _is_heic_upload(original_filename, image_mime):
-            converted = _normalize_heic_to_jpeg(image_data)
+        if _needs_server_image_conversion(original_filename, image_mime):
+            converted = _normalize_image_to_png(image_data, filename=original_filename, mime=image_mime)
             if not converted:
-                return _map_error('MAP_IMAGE_HEIC_DECODE_FAILED', 'Could not decode HEIC image', 400)
+                return _map_error('MAP_IMAGE_DECODE_FAILED', 'Could not decode image', 400)
             image_data, image_mime, new_ext = converted
             image_size = len(image_data)
             base = os.path.splitext(secure_filename(original_filename) or 'submission-image')[0] or 'submission-image'
             image_filename = f'{base}{new_ext}'
         else:
-            if image_mime not in ALLOWED_IMAGE_MIMES:
-                return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, GIF, or HEIC file', 400)
+            if not _is_browser_native_image(original_filename, image_mime):
+                return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', IMAGE_TYPE_ERROR_MESSAGE, 400)
             image_filename = secure_filename(original_filename) or 'submission-image'
 
     # Additional images uploaded as field 'images' (one or many).
@@ -768,17 +1024,17 @@ def create_map_submission():
         ext_size = len(ext_data)
         if ext_size > MAX_IMAGE_BYTES:
             return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
-        if _is_heic_upload(ext_original, ext_mime):
-            converted = _normalize_heic_to_jpeg(ext_data)
+        if _needs_server_image_conversion(ext_original, ext_mime):
+            converted = _normalize_image_to_png(ext_data, filename=ext_original, mime=ext_mime)
             if not converted:
-                return _map_error('MAP_IMAGE_HEIC_DECODE_FAILED', 'Could not decode HEIC image', 400)
+                return _map_error('MAP_IMAGE_DECODE_FAILED', 'Could not decode image', 400)
             ext_data, ext_mime, new_ext = converted
             ext_size = len(ext_data)
             base = os.path.splitext(secure_filename(ext_original) or 'submission-image')[0] or 'submission-image'
             ext_filename = f'{base}{new_ext}'
         else:
-            if ext_mime not in ALLOWED_IMAGE_MIMES:
-                return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, GIF, or HEIC file', 400)
+            if not _is_browser_native_image(ext_original, ext_mime):
+                return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', IMAGE_TYPE_ERROR_MESSAGE, 400)
             ext_filename = secure_filename(ext_original) or 'submission-image'
         extra_processed.append({
             'filename': ext_filename,
@@ -961,6 +1217,15 @@ def reject_map_submission(submission_id):
     submission.reviewed_role = identity['role']
     submission.reviewed_at = _map_now_utc()
     submission.rejection_reason = reason or None
+
+    # Purge stored image bytes to reclaim disk space. We keep filename/mime
+    # for the audit trail but the binary blobs are no longer needed once a
+    # submission is rejected (rejected submissions are not displayed).
+    submission.image_data = None
+    submission.image_size = 0
+    map_db_session.query(MapSubmissionImage).filter(
+        MapSubmissionImage.submission_id == submission.id
+    ).delete(synchronize_session=False)
 
     try:
         map_db_session.commit()
@@ -1363,6 +1628,7 @@ def delete_map_submission(submission_id):
 
 @recorder_bp.route('/map/leaderboard', methods=['GET'])
 def map_leaderboard():
+    _purge_orphan_image_data()
     rows = (
         map_db_session.query(
             MapSubmission.email,
@@ -1386,14 +1652,21 @@ def map_leaderboard():
 
 @recorder_bp.route('/map/featured', methods=['GET'])
 def get_featured_submission():
-    submission = (
+    _purge_orphan_image_data()
+    submissions = (
         map_db_session.query(MapSubmission)
         .filter(MapSubmission.status == 'approved', MapSubmission.featured == 1)
         .order_by(MapSubmission.submitted_at.desc())
-        .first()
+        .all()
     )
-    payload = _serialize_submission(submission) if submission else None
-    return jsonify({'status': 'success', 'submission': payload}), 200
+    payload = [_serialize_submission(s) for s in submissions]
+    return jsonify({
+        'status': 'success',
+        'submissions': payload,
+        # Keep the legacy single-submission field for backward compatibility
+        # with any older client cached in the browser.
+        'submission': payload[0] if payload else None,
+    }), 200
 
 
 @recorder_bp.route('/map/submissions/<submission_id>/feature', methods=['POST'])
@@ -1415,15 +1688,7 @@ def set_featured_submission(submission_id):
         return _map_error('MAP_FEATURE_NOT_APPROVED', 'Only approved submissions can be featured', 400)
 
     try:
-        if featured_flag:
-            # Only one featured submission at a time
-            map_db_session.query(MapSubmission).filter(
-                MapSubmission.id != submission_id,
-                MapSubmission.featured == 1,
-            ).update({'featured': 0}, synchronize_session=False)
-            submission.featured = 1
-        else:
-            submission.featured = 0
+        submission.featured = 1 if featured_flag else 0
         map_db_session.commit()
     except Exception as exc:
         logger.exception('Unable to update featured submission: %s', exc)
@@ -1434,28 +1699,33 @@ def set_featured_submission(submission_id):
 
 
 @recorder_bp.route('/map/convert-heic', methods=['POST'])
+@recorder_bp.route('/map/convert-image', methods=['POST'])
 def convert_heic_image():
-    """Convert an uploaded HEIC/HEIF file to JPEG and return the bytes.
+    """Convert any non-browser-renderable image (HEIC/HEIF, TIFF, ...) to PNG.
 
-    Lets browsers (which can't natively decode HEIC) preview/edit HEIC files
-    by round-tripping through the server.
+    Lets browsers preview/edit formats they can't natively decode by
+    round-tripping through the server.
     """
     image_file = request.files.get('image')
     if not image_file or not image_file.filename:
-        return _map_error('MAP_HEIC_FILE_REQUIRED', 'Image file is required', 400)
+        return _map_error('MAP_CONVERT_FILE_REQUIRED', 'Image file is required', 400)
 
-    if not _is_heic_upload(image_file.filename, image_file.mimetype):
-        return _map_error('MAP_HEIC_NOT_HEIC', 'File is not a HEIC/HEIF image', 400)
+    if not _needs_server_image_conversion(image_file.filename, image_file.mimetype):
+        return _map_error(
+            'MAP_CONVERT_NOT_NEEDED',
+            'File is already in a browser-renderable format',
+            400,
+        )
 
     raw = image_file.read()
     if len(raw) > MAX_IMAGE_BYTES:
         return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
 
-    converted = _normalize_heic_to_jpeg(raw)
+    converted = _normalize_image_to_png(raw, filename=image_file.filename, mime=image_file.mimetype)
     if not converted:
-        return _map_error('MAP_IMAGE_HEIC_DECODE_FAILED', 'Could not decode HEIC image', 400)
-    jpeg_bytes, mime, _ext = converted
-    return send_file(BytesIO(jpeg_bytes), mimetype=mime, max_age=0)
+        return _map_error('MAP_IMAGE_DECODE_FAILED', 'Could not decode image', 400)
+    png_bytes, mime, _ext = converted
+    return send_file(BytesIO(png_bytes), mimetype=mime, max_age=0)
 
 
 @recorder_bp.route('/map/background', methods=['GET'])
