@@ -94,7 +94,7 @@ function VerificationCodeInput({ value, onChange, disabled }) {
   }
 
   return (
-    <div className="flex gap-2 justify-center">
+    <div className="flex gap-1.5 sm:gap-2 justify-center">
       {digits.map((digit, index) => (
         <input
           key={index}
@@ -110,7 +110,7 @@ function VerificationCodeInput({ value, onChange, disabled }) {
           onFocus={handleFocus}
           disabled={disabled}
           className={`
-            w-10 h-12 text-center text-xl font-mono font-bold
+            w-9 h-11 sm:w-10 sm:h-12 text-center text-lg sm:text-xl font-mono font-bold
             border-2 rounded-lg
             focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500
             transition-all duration-150

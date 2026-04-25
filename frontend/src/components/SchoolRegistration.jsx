@@ -71,13 +71,13 @@ function SchoolRegistration({ app }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-3 sm:p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
+          <CardTitle className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
             Register Your School
           </CardTitle>
-          <CardDescription className="text-gray-600 mt-2">
+          <CardDescription className="text-gray-600 mt-2 text-sm">
             Submit your school registration request for PLATE administrator approval.
           </CardDescription>
         </CardHeader>
@@ -163,7 +163,7 @@ function SchoolRegistration({ app }) {
               <div className="space-y-3">
                 <div className="space-y-2">
                   <Label htmlFor="school-email">Contact Email</Label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <Input
                       id="school-email"
                       type="email"
@@ -177,7 +177,7 @@ function SchoolRegistration({ app }) {
                       <Button
                         onClick={handleSendVerificationCode}
                         disabled={verificationLoading || !schoolEmail.trim()}
-                        className="bg-amber-600 hover:bg-amber-700 whitespace-nowrap"
+                        className="bg-amber-600 hover:bg-amber-700 whitespace-nowrap w-full sm:w-auto"
                       >
                         {verificationLoading ? 'Sending...' : verificationSent ? 'Resend Code' : 'Send Code'}
                       </Button>

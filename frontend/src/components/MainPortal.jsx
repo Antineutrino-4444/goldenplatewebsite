@@ -198,27 +198,27 @@ function MainPortal({ app }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:h-16 sm:py-0 sm:flex-nowrap">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
                 PLATE
               </h1>
-              <p className="text-sm text-gray-600">
+              <p className="text-xs sm:text-sm text-gray-600 leading-tight">
                 Prevention, Logging &amp; Assessment of Tossed Edibles. Check out{' '}
                 <a href="/map" className="underline text-amber-700 hover:text-amber-800">
                   Ecological Map
                 </a>
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 max-w-full truncate">
                 {user.name} ({user.username})
               </Badge>
               {userSchoolLabel && (
-                <Badge variant="secondary" className="flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200">
-                  <Building2 className="h-3.5 w-3.5" />
-                  {userSchoolLabel}
+                <Badge variant="secondary" className="flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200 max-w-full truncate">
+                  <Building2 className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{userSchoolLabel}</span>
                 </Badge>
               )}
               <Button
@@ -226,22 +226,23 @@ function MainPortal({ app }) {
                 variant="outline"
                 size="sm"
                 className="text-gray-600 hover:text-gray-900"
+                aria-label="GitHub repository"
               >
-                <svg className="h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 sm:mr-2" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                 </svg>
-                GitHub
+                <span className="hidden sm:inline">GitHub</span>
               </Button>
-              <Button onClick={logout} variant="outline" size="sm">
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
+              <Button onClick={logout} variant="outline" size="sm" aria-label="Logout">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Logout</span>
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         {!sessionId ? (
           <div className="text-center py-16">
             <div className="max-w-md mx-auto">
@@ -252,10 +253,10 @@ function MainPortal({ app }) {
                   Create a new session to start tracking plate cleanliness and food waste data.
                 </p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
                 <Button
                   onClick={() => createSession('')}
-                  className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-3 text-lg"
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 text-base sm:px-8 sm:text-lg w-full sm:w-auto"
                   size="lg"
                   disabled={isLoading}
                 >
@@ -268,7 +269,7 @@ function MainPortal({ app }) {
                       setShowAdminPanel(true)
                       loadAdminData()
                     }}
-                    className="relative bg-red-600 hover:bg-red-700 text-white px-8 py-3 text-lg"
+                    className="relative bg-red-600 hover:bg-red-700 text-white px-6 py-3 text-base sm:px-8 sm:text-lg w-full sm:w-auto"
                     size="lg"
                     disabled={isLoading}
                   >
@@ -361,7 +362,7 @@ function MainPortal({ app }) {
               )}
             </div>
 
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -1193,42 +1194,42 @@ function MainPortal({ app }) {
 
               <Button
                 onClick={() => handleCategoryClick('clean')}
-                className="w-full h-20 text-xl font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || user?.role === 'guest'}
               >
                 🥇 CLEAN PLATE
                 <br />
-                <span className="text-sm opacity-90">({sessionStats.clean_count} recorded)</span>
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.clean_count} recorded)</span>
               </Button>
 
               <Button
                 onClick={() => handleCategoryClick('faculty')}
-                className="w-full h-20 text-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || user?.role === 'guest'}
               >
                 🧑‍🏫 FACULTY CLEAN
                 <br />
-                <span className="text-sm opacity-90">({sessionStats.faculty_clean_count} recorded)</span>
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.faculty_clean_count} recorded)</span>
               </Button>
 
               <Button
                 onClick={() => handleCategoryClick('dirty')}
-                className="w-full h-20 text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || user?.role === 'guest'}
               >
                 🍽️ DIRTY PLATE COUNT
                 <br />
-                <span className="text-sm opacity-90">({sessionStats.dirty_count} total)</span>
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.dirty_count} total)</span>
               </Button>
 
               <Button
                 onClick={() => handleCategoryClick('red')}
-                className="w-full h-20 text-xl font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || user?.role === 'guest'}
               >
                 🍝 VERY DIRTY PLATE
                 <br />
-                <span className="text-sm opacity-90">({sessionStats.red_count} recorded)</span>
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.red_count} recorded)</span>
               </Button>
             </div>
 
@@ -1247,16 +1248,16 @@ function MainPortal({ app }) {
                   {scanHistory.length > 0 ? (
                     <div className="space-y-2 max-h-60 overflow-y-auto">
                       {scanHistory.map((record, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 border rounded-lg text-sm">
-                          <div className="flex items-center gap-4">
-                            <div className="text-gray-500">
+                        <div key={index} className="flex flex-wrap items-center justify-between gap-2 p-2 border rounded-lg text-sm">
+                          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                            <div className="text-gray-500 shrink-0 text-xs sm:text-sm">
                               {new Date(record.timestamp).toLocaleTimeString()}
                             </div>
-                            <div className="font-medium">
+                            <div className="font-medium truncate">
                               {record.name}
                             </div>
                           </div>
-                          <div className={`px-2 py-1 rounded text-xs font-medium ${
+                          <div className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
                             record.category === 'CLEAN' ? 'bg-yellow-100 text-yellow-800' :
                             record.category === 'DIRTY' ? 'bg-orange-100 text-orange-800' :
                             record.category === 'FACULTY' ? 'bg-green-100 text-green-800' :
@@ -1264,7 +1265,7 @@ function MainPortal({ app }) {
                           }`}>
                             {record.category === 'CLEAN' ? '🥇 CLEAN' :
                              record.category === 'DIRTY' ? '🍽️ DIRTY' :
-                             record.category === 'FACULTY' ? '🧑‍🏫 FACULTY CLEAN' :
+                             record.category === 'FACULTY' ? '🧑‍🏫 FACULTY' :
                              '🍝 VERY DIRTY'}
                           </div>
                         </div>

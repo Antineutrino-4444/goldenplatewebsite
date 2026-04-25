@@ -72,13 +72,13 @@ function LoginView({ app }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-3 sm:p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
+          <CardTitle className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
             PLATE
           </CardTitle>
-          <CardDescription className="text-gray-600 mt-2">
+          <CardDescription className="text-gray-600 mt-2 text-sm">
             Prevention, Logging & Assessment of Tossed Edibles
           </CardDescription>
         </CardHeader>

@@ -1274,7 +1274,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
           <div
             ref={stageRef}
             onMouseDown={onStageMouseDown}
-            className="relative h-[55vh] w-full select-none overflow-hidden rounded-md border bg-slate-900"
+            className="relative h-[40vh] sm:h-[55vh] w-full select-none overflow-hidden rounded-md border bg-slate-900"
             style={{ cursor: image ? 'grab' : 'default' }}
           >
             {image ? (
@@ -2575,17 +2575,17 @@ function MapPortal({ app }) {
         </div>
       )}
       <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-3 sm:gap-4 sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <a
             href="/map"
-            className="flex items-center gap-3 no-underline text-inherit hover:opacity-90"
+            className="flex items-center gap-3 no-underline text-inherit hover:opacity-90 min-w-0"
           >
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-teal-700 text-white">
+            <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-md bg-teal-700 text-white">
               <MapPinned className="h-5 w-5" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-950">Ecological Map</h1>
-              <p className="text-sm text-slate-500">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-950 leading-tight">Ecological Map</h1>
+              <p className="text-xs sm:text-sm text-slate-500 leading-tight">
                 Brought to you by SAC Environmental Council. Check out{' '}
                 <a
                   href="https://goldenplate.ca"
@@ -2598,10 +2598,10 @@ function MapPortal({ app }) {
             </div>
           </a>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="bg-teal-50 text-teal-800">
+            <Badge variant="outline" className="bg-teal-50 text-teal-800 max-w-full truncate">
               {roleLabel}: @{user?.username || 'guest'}
             </Badge>
-            <Badge variant="secondary">{user?.name || 'Guest User'}</Badge>
+            <Badge variant="secondary" className="max-w-full truncate">{user?.name || 'Guest User'}</Badge>
             <Button asChild variant="outline" size="sm">
               <a href={isSubmissionPage ? '/map' : '/map/submission'}>
                 {isSubmissionPage ? (
@@ -2618,9 +2618,9 @@ function MapPortal({ app }) {
               </a>
             </Button>
             {user ? (
-              <Button onClick={logout} variant="outline" size="sm">
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
+              <Button onClick={logout} variant="outline" size="sm" aria-label="Logout">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Logout</span>
               </Button>
             ) : (
               <Button asChild variant="outline" size="sm">
@@ -2665,15 +2665,15 @@ function MapPortal({ app }) {
         </section>
       )}
 
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,0.55fr)_minmax(28rem,1.45fr)]">
-          <div className="flex flex-col justify-center gap-4 rounded-md border bg-white p-6 shadow-sm">
+      <main className="mx-auto max-w-7xl space-y-6 px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+        <section className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,0.55fr)_minmax(0,1.45fr)]">
+          <div className="flex flex-col justify-center gap-4 rounded-md border bg-white p-4 sm:p-6 shadow-sm">
             <Badge variant="outline" className="w-fit bg-slate-50">
               {roleLabel} access
             </Badge>
             <div>
-              <h2 className="text-4xl font-bold tracking-normal text-slate-950">Ecological Map</h2>
-              <p className="mt-3 max-w-xl text-base leading-7 text-slate-600">
+              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-normal text-slate-950">Ecological Map</h2>
+              <p className="mt-2 sm:mt-3 max-w-xl text-sm sm:text-base leading-6 sm:leading-7 text-slate-600">
                 Approved submissions appear here after review. Click a pin to see its submissions, or click <span className="font-semibold">Others</span> to view submissions without a pin.
               </p>
             </div>
@@ -2704,7 +2704,7 @@ function MapPortal({ app }) {
             backgroundUrl={backgroundUrl}
             imageAspect={imageAspect}
             fillContainer
-            className="h-full min-h-[20rem]"
+            className="h-full min-h-[16rem] sm:min-h-[20rem]"
           />
         </section>
 
@@ -2745,7 +2745,7 @@ function MapPortal({ app }) {
         )}
 
         {isSubmissionPage ? (
-          <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.7fr)]">
+          <section className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)]">
             <Card className="rounded-md">
               <CardHeader>
                 <CardTitle>Map Submission</CardTitle>

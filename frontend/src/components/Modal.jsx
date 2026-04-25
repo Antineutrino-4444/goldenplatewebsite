@@ -37,7 +37,7 @@ export default function Modal({ open, onClose, children, dismissOnOverlayClick =
     <AnimatePresence>
       {open && (
         <Motion.div
-          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 pointer-events-auto"
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4 pointer-events-auto"
           onClick={dismissOnOverlayClick ? onClose : undefined}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -47,7 +47,7 @@ export default function Modal({ open, onClose, children, dismissOnOverlayClick =
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
-            className="relative z-[2001] max-w-sm w-full rounded-lg bg-white p-6 shadow-lg"
+            className="relative z-[2001] w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-lg bg-white p-4 shadow-lg sm:p-6"
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}

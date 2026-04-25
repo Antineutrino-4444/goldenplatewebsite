@@ -114,8 +114,28 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    /* Prevent iOS Safari from auto-resizing text in landscape */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground;
+    /* Avoid horizontal page scroll on small phones if any child overflows */
+    overflow-x: hidden;
+  }
+  /* Prevent iOS Safari from auto-zooming when focusing inputs (font-size <16px triggers zoom) */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  @media (min-width: 768px) {
+    input,
+    select,
+    textarea {
+      font-size: inherit;
+    }
   }
 }
 
