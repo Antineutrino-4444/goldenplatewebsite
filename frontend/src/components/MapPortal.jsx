@@ -32,6 +32,36 @@ import {
 const API_BASE = '/api'
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
 const MAP_MAX_IMAGE_BYTES = 50 * 1024 * 1024
+const MAP_HEIC_MIMES = new Set(['image/heic', 'image/heif'])
+
+function isHeicFile(file) {
+  if (!file) return false
+  const t = (file.type || '').toLowerCase()
+  if (MAP_HEIC_MIMES.has(t)) return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.heic') || n.endsWith('.heif')
+}
+
+async function convertHeicViaServer(file) {
+  const lowerName = (file.name || '').toLowerCase()
+  const formData = new FormData()
+  formData.append('image', file, file.name || 'image.heic')
+  const res = await fetch('/api/map/convert-heic', { method: 'POST', body: formData })
+  if (!res.ok) {
+    let msg = 'HEIC conversion failed'
+    try {
+      const data = await res.json()
+      msg = data?.error || data?.code || msg
+    } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  const blob = await res.blob()
+  const mime = blob.type || 'image/png'
+  const ext = mime === 'image/png' ? '.png' : (mime === 'image/jpeg' ? '.jpg' : '.png')
+  const baseName = (lowerName.replace(/\.(heic|heif)$/i, '') || 'image') + ext
+  return new File([blob], baseName, { type: mime })
+}
+
 const MAP_ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
 
 async function readApiResponse(response) {
@@ -124,6 +154,7 @@ function EcologicalMapGraphic({
   onMapClick = null,
   imageAspect = null,
   naturalSize = null, // {w,h} — if provided, render at this exact pixel size
+  fillContainer = false, // if true, ignore aspectRatio and fill the parent's height
   className = ''
 }) {
   const containerRef = useRef(null)
@@ -143,14 +174,14 @@ function EcologicalMapGraphic({
 
   const containerStyle = naturalSize
     ? { width: naturalSize.w, height: naturalSize.h }
-    : { aspectRatio: `${aspect}` }
+    : (fillContainer ? { height: '100%' } : { aspectRatio: `${aspect}` })
 
   return (
-    <div className={`relative ${naturalSize ? '' : 'w-full'} ${className}`}>
+    <div className={`relative ${naturalSize ? '' : (fillContainer ? 'h-full w-full' : 'w-full')} ${className}`}>
       <div
         ref={containerRef}
         onClick={handleClick}
-        className={`relative overflow-hidden rounded-md border bg-white shadow-sm ${naturalSize ? '' : 'w-full'} ${onMapClick ? 'cursor-crosshair' : ''}`}
+        className={`relative overflow-hidden rounded-md border bg-white shadow-sm ${naturalSize ? '' : (fillContainer ? 'h-full w-full' : 'w-full')} ${onMapClick ? 'cursor-crosshair' : ''}`}
         style={containerStyle}
       >
         {backgroundUrl ? (
@@ -447,21 +478,14 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
 
   const handleFile = async (file) => {
     if (!file) return
-    const lowerName = (file.name || '').toLowerCase()
-    const isHeic = (file.type === 'image/heic' || file.type === 'image/heif'
-      || lowerName.endsWith('.heic') || lowerName.endsWith('.heif'))
-    if (file.type && !MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !isHeic) return
+    const heic = isHeicFile(file)
+    if (file.type && !MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !heic) return
     let working = file
-    if (isHeic) {
+    if (heic) {
       try {
-        const mod = await import('heic2any')
-        const heic2any = mod.default || mod
-        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.95 })
-        const blob = Array.isArray(converted) ? converted[0] : converted
-        const newName = lowerName.replace(/\.(heic|heif)$/i, '.jpg') || 'map-background.jpg'
-        working = new File([blob], newName, { type: 'image/jpeg' })
+        working = await convertHeicViaServer(file)
       } catch (err) {
-        console.error('HEIC conversion failed', err)
+        console.error('Server HEIC conversion failed', err)
         return
       }
     }
@@ -975,8 +999,8 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
       const rawRatio = dist / Math.max(1, pinchRef.current.startDist)
       // Boost sensitivity: small finger spread → larger zoom change.
       const ratio = rawRatio >= 1
-        ? Math.pow(rawRatio, 2.0)
-        : 1 / Math.pow(1 / rawRatio, 2.0)
+        ? Math.pow(rawRatio, 3.5)
+        : 1 / Math.pow(1 / rawRatio, 3.5)
       const newZoom = Math.min(maxZoom, Math.max(minZoom, pinchRef.current.startZoom * ratio))
       const mid = midpoint(pts)
       const focusX = mid.x - rect.left
@@ -1496,11 +1520,9 @@ function MapPortal({ app }) {
       return
     }
 
-    const lowerName = (file.name || '').toLowerCase()
-    const isHeic = (file.type === 'image/heic' || file.type === 'image/heif'
-      || lowerName.endsWith('.heic') || lowerName.endsWith('.heif'))
+    const heic = isHeicFile(file)
 
-    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !isHeic) {
+    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !heic) {
       showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, GIF, or HEIC file', 'error')
       setImageFile(null)
       return
@@ -1513,16 +1535,11 @@ function MapPortal({ app }) {
     }
 
     let working = file
-    if (isHeic) {
+    if (heic) {
       try {
-        const mod = await import('heic2any')
-        const heic2any = mod.default || mod
-        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.95 })
-        const blob = Array.isArray(converted) ? converted[0] : converted
-        const newName = lowerName.replace(/\.(heic|heif)$/i, '.jpg') || 'submission.jpg'
-        working = new File([blob], newName, { type: 'image/jpeg' })
+        working = await convertHeicViaServer(file)
       } catch (err) {
-        console.error('HEIC conversion failed', err)
+        console.error('Server HEIC conversion failed', err)
         showMessage('[MAP_IMAGE_HEIC_FAILED] Could not decode HEIC image', 'error')
         setImageFile(null)
         return
@@ -1919,7 +1936,7 @@ function MapPortal({ app }) {
               </div>
               <div className="rounded-md border bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase text-slate-500">Username</div>
-                <div className="mt-1 truncate text-lg font-bold">@{user?.username || 'guest'}</div>
+                <div className="mt-1 break-all text-lg font-bold leading-snug">@{user?.username || 'guest'}</div>
               </div>
             </div>
             <Button onClick={() => setShowEnlarge(true)} variant="outline" size="sm" className="w-fit">
@@ -1934,6 +1951,8 @@ function MapPortal({ app }) {
             onSelectPin={setSelectedPinId}
             backgroundUrl={backgroundUrl}
             imageAspect={imageAspect}
+            fillContainer
+            className="h-full min-h-[20rem]"
           />
         </section>
 
