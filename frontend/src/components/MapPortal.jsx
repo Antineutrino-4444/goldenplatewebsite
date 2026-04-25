@@ -2247,6 +2247,7 @@ function MapPortal({ app }) {
         await loadApprovedSubmissions()
         await loadPendingSubmissions()
         await loadLeaders()
+        await loadPins()
       } else {
         showMessage(buildApiErrorMessage(result, 'MAP_SUBMISSION_DELETE_FAILED', 'Failed to delete submission'), 'error')
       }
