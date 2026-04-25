@@ -24,7 +24,7 @@ from .map_db import (
     _map_now_utc,
     map_db_session,
 )
-from .security import get_current_user, require_admin, require_auth_or_guest, require_superadmin
+from .security import get_current_user, is_interschool_user, require_admin, require_superadmin
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,19 @@ def handle_map_request_too_large(error):
             413,
         )
     return error.get_response()
+
+
+@recorder_bp.before_app_request
+def _block_interschool_from_map():
+    if not request.path.startswith('/api/map/'):
+        return None
+    if is_interschool_user():
+        return _map_error(
+            'MAP_INTERSCHOOL_FORBIDDEN',
+            'Inter-school admin accounts cannot access the Ecological Map',
+            403,
+        )
+    return None
 
 
 def _verify_recaptcha(token):
@@ -385,13 +398,9 @@ def _upsert_submitter_password(email, password, school_id, submission_id):
 
 @recorder_bp.route('/map/submissions', methods=['GET'])
 def get_approved_map_submissions():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
-    school_id = _current_school_id()
     submissions = (
         map_db_session.query(MapSubmission)
-        .filter(MapSubmission.school_id == school_id, MapSubmission.status == 'approved')
+        .filter(MapSubmission.status == 'approved')
         .order_by(MapSubmission.submitted_at.desc())
         .all()
     )
@@ -406,10 +415,9 @@ def get_pending_map_submissions():
     if not require_admin():
         return _map_error('MAP_ADMIN_REQUIRED', 'Admin access required', 403)
 
-    school_id = _current_school_id()
     submissions = (
         map_db_session.query(MapSubmission)
-        .filter(MapSubmission.school_id == school_id, MapSubmission.status == 'pending')
+        .filter(MapSubmission.status == 'pending')
         .order_by(MapSubmission.submitted_at.desc())
         .all()
     )
@@ -421,13 +429,9 @@ def get_pending_map_submissions():
 
 @recorder_bp.route('/map/submissions/<submission_id>/image', methods=['GET'])
 def get_map_submission_image(submission_id):
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
-    school_id = _current_school_id()
     submission = (
         map_db_session.query(MapSubmission)
-        .filter(MapSubmission.id == submission_id, MapSubmission.school_id == school_id)
+        .filter(MapSubmission.id == submission_id)
         .first()
     )
     if not submission or not submission.image_data:
@@ -445,9 +449,6 @@ def get_map_submission_image(submission_id):
 
 @recorder_bp.route('/map/send-verification-code', methods=['POST'])
 def send_map_verification_code():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
     data = request.get_json(silent=True) or {}
     email = _normalize_email(data.get('email'))
     recaptcha_token = (data.get('recaptcha_token') or '').strip()
@@ -488,9 +489,6 @@ def send_map_verification_code():
 
 @recorder_bp.route('/map/verify-email-code', methods=['POST'])
 def verify_map_email_code_endpoint():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
     data = request.get_json(silent=True) or {}
     email = _normalize_email(data.get('email'))
     code = (data.get('code') or '').strip()
@@ -531,9 +529,6 @@ def verify_map_email_code_endpoint():
 
 @recorder_bp.route('/map/submitter-account/status', methods=['GET'])
 def get_map_submitter_account_status():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
     email = _normalize_email(request.args.get('email'))
     if not email:
         return jsonify({'has_password': False}), 200
@@ -550,9 +545,6 @@ def get_map_submitter_account_status():
 
 @recorder_bp.route('/map/submissions', methods=['POST'])
 def create_map_submission():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
     recaptcha_token = (request.form.get('recaptcha_token') or '').strip()
     if RECAPTCHA_SECRET_KEY and not _verify_recaptcha(recaptcha_token):
         return _map_error('MAP_RECAPTCHA_FAILED', 'reCAPTCHA verification failed. Please try again.', 400)
@@ -790,13 +782,8 @@ def _serialize_pin(pin):
 
 @recorder_bp.route('/map/pins', methods=['GET'])
 def list_map_pins():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
-    school_id = _current_school_id()
     pins = (
         map_db_session.query(MapPin)
-        .filter(MapPin.school_id == school_id)
         .order_by(MapPin.created_at.asc())
         .all()
     )
@@ -873,10 +860,9 @@ def delete_map_pin(pin_id):
     if not require_superadmin():
         return _map_error('MAP_SUPERADMIN_REQUIRED', 'Super admin access required', 403)
 
-    school_id = _current_school_id()
     pin = (
         map_db_session.query(MapPin)
-        .filter(MapPin.id == pin_id, MapPin.school_id == school_id)
+        .filter(MapPin.id == pin_id)
         .first()
     )
     if not pin:
@@ -884,7 +870,6 @@ def delete_map_pin(pin_id):
 
     # Detach submissions from this pin (move to "Others")
     map_db_session.query(MapSubmission).filter(
-        MapSubmission.school_id == school_id,
         MapSubmission.pin_id == pin_id,
     ).update({'pin_id': None}, synchronize_session=False)
 
@@ -904,10 +889,9 @@ def delete_map_submission(submission_id):
     if not require_superadmin():
         return _map_error('MAP_SUPERADMIN_REQUIRED', 'Super admin access required', 403)
 
-    school_id = _current_school_id()
     submission = (
         map_db_session.query(MapSubmission)
-        .filter(MapSubmission.id == submission_id, MapSubmission.school_id == school_id)
+        .filter(MapSubmission.id == submission_id)
         .first()
     )
     if not submission:
@@ -926,17 +910,13 @@ def delete_map_submission(submission_id):
 
 @recorder_bp.route('/map/leaderboard', methods=['GET'])
 def map_leaderboard():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
-    school_id = _current_school_id()
     rows = (
         map_db_session.query(
             MapSubmission.email,
             MapSubmission.submission_display_name,
             func.count(MapSubmission.id).label('count'),
         )
-        .filter(MapSubmission.school_id == school_id, MapSubmission.status == 'approved')
+        .filter(MapSubmission.status == 'approved')
         .group_by(MapSubmission.email, MapSubmission.submission_display_name)
         .all()
     )
@@ -953,13 +933,9 @@ def map_leaderboard():
 
 @recorder_bp.route('/map/background', methods=['GET'])
 def get_map_background():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
-    school_id = _current_school_id()
     background = (
         map_db_session.query(MapBackground)
-        .filter(MapBackground.school_id == school_id)
+        .order_by(MapBackground.uploaded_at.desc())
         .first()
     )
     if not background:
@@ -974,13 +950,9 @@ def get_map_background():
 
 @recorder_bp.route('/map/background/info', methods=['GET'])
 def get_map_background_info():
-    if not require_auth_or_guest():
-        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
-
-    school_id = _current_school_id()
     background = (
         map_db_session.query(MapBackground)
-        .filter(MapBackground.school_id == school_id)
+        .order_by(MapBackground.uploaded_at.desc())
         .first()
     )
     if not background:

@@ -363,6 +363,7 @@ function MapPortal({ app }) {
   const [pins, setPins] = useState([])
   const [selectedPinId, setSelectedPinId] = useState(null)
   const [showEnlarge, setShowEnlarge] = useState(false)
+  const [showPinPickerEnlarged, setShowPinPickerEnlarged] = useState(false)
 
   const [leaders, setLeaders] = useState([])
   const [leadersLoading, setLeadersLoading] = useState(false)
@@ -1056,10 +1057,16 @@ function MapPortal({ app }) {
                 )}
               </a>
             </Button>
-            <Button onClick={logout} variant="outline" size="sm">
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
+            {user ? (
+              <Button onClick={logout} variant="outline" size="sm">
+                <LogOut className="mr-2 h-4 w-4" />
+                Logout
+              </Button>
+            ) : (
+              <Button asChild variant="outline" size="sm">
+                <a href="/">Login</a>
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -1362,9 +1369,20 @@ function MapPortal({ app }) {
                         onChange={(event) => setNewPinName(event.target.value)}
                         maxLength={80}
                       />
-                      <p className="text-xs text-slate-500">
-                        Click anywhere on the map below to place your pin.
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-slate-500">
+                          Click anywhere on the map to place your pin.
+                        </p>
+                        <Button
+                          type="button"
+                          onClick={() => setShowPinPickerEnlarged(true)}
+                          variant="outline"
+                          size="sm"
+                        >
+                          <ZoomIn className="mr-2 h-3.5 w-3.5" />
+                          Enlarge for precise placement
+                        </Button>
+                      </div>
                       <EcologicalMapGraphic
                         pins={pins}
                         submissionsByPin={submissionsByPin}
@@ -1565,6 +1583,45 @@ function MapPortal({ app }) {
               backgroundUrl={backgroundUrl}
               className="h-full"
             />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPinPickerEnlarged} onOpenChange={setShowPinPickerEnlarged}>
+        <DialogContent className="w-full sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Place your pin (enlarged)</DialogTitle>
+            <DialogDescription>
+              Click anywhere on the map to set your pin location. Use this larger view for more precise placement.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="aspect-[4/3] w-full">
+            <EcologicalMapGraphic
+              pins={pins}
+              submissionsByPin={submissionsByPin}
+              backgroundUrl={backgroundUrl}
+              pendingPoint={newPinPoint}
+              onMapClick={handleSubmissionMapClick}
+              className="h-full"
+            />
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-slate-600">
+              {newPinPoint ? (
+                <>
+                  <MapPinIcon className="mr-1 inline h-4 w-4 text-sky-600" />
+                  Placed at ({newPinPoint.x.toFixed(1)}, {newPinPoint.y.toFixed(1)})
+                </>
+              ) : (
+                'No location set yet'
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setNewPinPoint(null)} disabled={!newPinPoint}>
+                Clear
+              </Button>
+              <Button onClick={() => setShowPinPickerEnlarged(false)}>Done</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
