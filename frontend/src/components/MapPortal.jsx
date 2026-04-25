@@ -1507,6 +1507,55 @@ function MapPortal({ app }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmissionPage])
 
+  // Page-wide drag-and-drop image upload while on the submission page.
+  useEffect(() => {
+    if (!isSubmissionPage) return
+    let dragDepth = 0
+    const hasFiles = (event) => {
+      const types = event.dataTransfer?.types
+      if (!types) return false
+      for (let i = 0; i < types.length; i += 1) {
+        if (types[i] === 'Files') return true
+      }
+      return false
+    }
+    const onDragEnter = (event) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      dragDepth += 1
+      setIsDraggingImage(true)
+    }
+    const onDragOver = (event) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+    }
+    const onDragLeave = (event) => {
+      if (!hasFiles(event)) return
+      dragDepth = Math.max(0, dragDepth - 1)
+      if (dragDepth === 0) setIsDraggingImage(false)
+    }
+    const onDrop = (event) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      dragDepth = 0
+      setIsDraggingImage(false)
+      const file = event.dataTransfer?.files?.[0]
+      if (file) handleImageChange(file)
+    }
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSubmissionPage])
+
   const getRecaptchaToken = () => {
     if (!RECAPTCHA_SITE_KEY) {
       return null
@@ -1947,6 +1996,15 @@ function MapPortal({ app }) {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
+      {isSubmissionPage && isDraggingImage && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-teal-900/40 backdrop-blur-sm">
+          <div className="rounded-xl border-2 border-dashed border-white bg-white/90 px-8 py-6 text-center shadow-2xl">
+            <Upload className="mx-auto mb-2 h-10 w-10 text-teal-700" />
+            <div className="text-lg font-semibold text-slate-900">Drop image to upload</div>
+            <div className="text-xs text-slate-500">JPG, PNG, WebP, GIF, or HEIC up to 50 MB</div>
+          </div>
+        </div>
+      )}
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <a
@@ -2274,18 +2332,37 @@ function MapPortal({ app }) {
                   </div>
 
                   {pinChoice !== 'others' && pinChoice !== 'new' && (
-                    <select
-                      value={pins.find((pin) => pin.id === pinChoice) ? pinChoice : ''}
-                      onChange={(event) => setPinChoice(event.target.value || 'others')}
-                      className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm"
-                    >
-                      <option value="">Select a pin…</option>
-                      {pins.map((pin) => (
-                        <option key={pin.id} value={pin.id}>
-                          {pin.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="mt-2 space-y-2">
+                      <select
+                        value={pins.find((pin) => pin.id === pinChoice) ? pinChoice : ''}
+                        onChange={(event) => setPinChoice(event.target.value || 'others')}
+                        className="w-full rounded-md border bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="">Select a pin…</option>
+                        {pins.map((pin) => (
+                          <option key={pin.id} value={pin.id}>
+                            {pin.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-slate-500">Or click a pin on the map below.</p>
+                      <EcologicalMapGraphic
+                        pins={pins}
+                        submissionsByPin={submissionsByPin}
+                        backgroundUrl={backgroundUrl}
+                        imageAspect={imageAspect}
+                        selectedPinId={pins.find((pin) => pin.id === pinChoice) ? pinChoice : null}
+                        onSelectPin={(id) => {
+                          if (id && id !== 'others') setPinChoice(id)
+                        }}
+                      />
+                      {pins.find((pin) => pin.id === pinChoice) && (
+                        <div className="text-xs text-slate-600">
+                          <MapPinIcon className="mr-1 inline h-3.5 w-3.5 text-teal-700" />
+                          Selected: <span className="font-medium">{pins.find((pin) => pin.id === pinChoice)?.name}</span>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {pinChoice === 'new' && (

@@ -811,6 +811,36 @@ def reject_map_submission(submission_id):
     if submission.status != 'pending':
         return _map_error('MAP_SUBMISSION_NOT_PENDING', 'Submission is not pending', 400)
 
+    # If a comment was supplied, send the notification email FIRST. If the
+    # email fails, do not reject the submission — the submitter would otherwise
+    # never learn the reason. Plain rejections (no comment) skip the email.
+    email_status = None
+    if reason:
+        if not submission.email:
+            return _map_error(
+                'MAP_REJECT_NO_EMAIL',
+                'Cannot send rejection comment: submitter has no email on file',
+                400,
+            )
+        try:
+            email_status = _send_rejection_email(
+                to_email=submission.email,
+                submission=submission,
+                reason=reason,
+                reviewer_display_name=identity.get('display_name') or identity.get('username') or 'Admin',
+            )
+        except Exception as exc:
+            logger.exception('Unable to send map rejection email: %s', exc)
+            email_status = {'success': False, 'error': str(exc)}
+        if not email_status or not email_status.get('success'):
+            detail = (email_status or {}).get('error') or 'Unknown email error'
+            return _map_error(
+                'MAP_REJECT_EMAIL_FAILED',
+                'Submission was not rejected: notification email failed',
+                502,
+                detail=detail,
+            )
+
     submission.status = 'rejected'
     submission.reviewed_user_id = identity['user_id']
     submission.reviewed_username = identity['username']
@@ -825,20 +855,6 @@ def reject_map_submission(submission_id):
         logger.exception('Unable to reject map submission: %s', exc)
         map_db_session.rollback()
         return _map_error('MAP_SUBMISSION_REJECT_FAILED', 'Could not reject submission', 500)
-
-    # If an admin rejected with a comment, email the submitter.
-    email_status = None
-    if reason and submission.email:
-        try:
-            email_status = _send_rejection_email(
-                to_email=submission.email,
-                submission=submission,
-                reason=reason,
-                reviewer_display_name=identity.get('display_name') or identity.get('username') or 'Admin',
-            )
-        except Exception as exc:
-            logger.exception('Unable to send map rejection email: %s', exc)
-            email_status = {'success': False, 'error': str(exc)}
 
     response_payload = {
         'status': 'success',
