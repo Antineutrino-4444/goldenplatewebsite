@@ -423,6 +423,7 @@ def _serialize_submission(submission):
             'role': submission.reviewed_role,
         },
         'rejection_reason': submission.rejection_reason,
+        'featured': bool(submission.featured),
     }
 
 
@@ -641,9 +642,19 @@ def get_map_submitter_account_status():
         return jsonify({'has_password': False}), 200
 
     account = _get_submitter_account(email)
+    last_submission = (
+        map_db_session.query(MapSubmission)
+        .filter(func.lower(MapSubmission.email) == email)
+        .filter(MapSubmission.submission_display_name.isnot(None))
+        .filter(MapSubmission.submission_display_name != '')
+        .order_by(MapSubmission.submitted_at.desc())
+        .first()
+    )
+    last_display_name = last_submission.submission_display_name if last_submission else ''
     return jsonify({
         'status': 'success',
         'has_password': bool(account and account.status == 'active'),
+        'last_display_name': last_display_name or '',
     }), 200
 
 
@@ -1370,7 +1381,56 @@ def map_leaderboard():
         if display_name and not bucket['display_name']:
             bucket['display_name'] = display_name
     leaders = sorted(by_email.values(), key=lambda item: item['count'], reverse=True)
-    return jsonify({'status': 'success', 'leaderboard': leaders[:50]}), 200
+    return jsonify({'status': 'success', 'leaderboard': leaders}), 200
+
+
+@recorder_bp.route('/map/featured', methods=['GET'])
+def get_featured_submission():
+    submission = (
+        map_db_session.query(MapSubmission)
+        .filter(MapSubmission.status == 'approved', MapSubmission.featured == 1)
+        .order_by(MapSubmission.submitted_at.desc())
+        .first()
+    )
+    payload = _serialize_submission(submission) if submission else None
+    return jsonify({'status': 'success', 'submission': payload}), 200
+
+
+@recorder_bp.route('/map/submissions/<submission_id>/feature', methods=['POST'])
+def set_featured_submission(submission_id):
+    if not require_superadmin():
+        return _map_error('MAP_SUPERADMIN_REQUIRED', 'Super admin access required', 403)
+
+    data = request.get_json(silent=True) or {}
+    featured_flag = bool(data.get('featured', True))
+
+    submission = (
+        map_db_session.query(MapSubmission)
+        .filter(MapSubmission.id == submission_id)
+        .first()
+    )
+    if not submission:
+        return _map_error('MAP_SUBMISSION_NOT_FOUND', 'Submission not found', 404)
+    if submission.status != 'approved':
+        return _map_error('MAP_FEATURE_NOT_APPROVED', 'Only approved submissions can be featured', 400)
+
+    try:
+        if featured_flag:
+            # Only one featured submission at a time
+            map_db_session.query(MapSubmission).filter(
+                MapSubmission.id != submission_id,
+                MapSubmission.featured == 1,
+            ).update({'featured': 0}, synchronize_session=False)
+            submission.featured = 1
+        else:
+            submission.featured = 0
+        map_db_session.commit()
+    except Exception as exc:
+        logger.exception('Unable to update featured submission: %s', exc)
+        map_db_session.rollback()
+        return _map_error('MAP_FEATURE_UPDATE_FAILED', 'Could not update featured submission', 500)
+
+    return jsonify({'status': 'success', 'submission': _serialize_submission(submission)}), 200
 
 
 @recorder_bp.route('/map/convert-heic', methods=['POST'])

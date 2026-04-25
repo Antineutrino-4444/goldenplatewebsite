@@ -23,6 +23,7 @@ import {
   RefreshCcw,
   Send,
   ShieldCheck,
+  Star,
   Trash2,
   Trophy,
   Upload,
@@ -42,6 +43,26 @@ function isHeicFile(file) {
   if (MAP_HEIC_MIMES.has(t)) return true
   const n = (file.name || '').toLowerCase()
   return n.endsWith('.heic') || n.endsWith('.heif')
+}
+
+// Sniff the ISO BMFF "ftyp" box to detect HEIC/HEIF when MIME and filename
+// are missing (e.g. files pasted from the clipboard often arrive as
+// `image.png` with type `image/png`, but the bytes are still HEIC).
+async function sniffHeicBytes(file) {
+  if (!file || file.size < 12) return false
+  try {
+    const head = await file.slice(0, 32).arrayBuffer()
+    const bytes = new Uint8Array(head)
+    if (bytes.length < 12) return false
+    // bytes 4..8 must be ASCII "ftyp"
+    if (bytes[4] !== 0x66 || bytes[5] !== 0x74 || bytes[6] !== 0x79 || bytes[7] !== 0x70) {
+      return false
+    }
+    const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase()
+    return ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'mif1', 'msf1'].includes(brand)
+  } catch {
+    return false
+  }
 }
 
 async function convertHeicViaServer(file, onProgress) {
@@ -534,7 +555,7 @@ function EcologicalMapGraphic({
   )
 }
 
-function SubmissionDetails({ submission, admin = false, canDelete = false, actionLoading = false, onApprove, onReject, onDelete }) {
+function SubmissionDetails({ submission, admin = false, canDelete = false, canFeature = false, actionLoading = false, onApprove, onReject, onDelete, onFeature }) {
   const [showRejectDialog, setShowRejectDialog] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -560,6 +581,12 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, actio
           <Badge variant={submission.status === 'approved' ? 'default' : submission.status === 'pending' ? 'outline' : 'destructive'}>
             {submission.status}
           </Badge>
+          {submission.featured && (
+            <Badge className="bg-amber-500 hover:bg-amber-600 text-white">
+              <Star className="mr-1 h-3 w-3 fill-white" />
+              Featured
+            </Badge>
+          )}
           <span className="text-sm text-slate-500">
             {submission.submitted_at ? new Date(submission.submitted_at).toLocaleString() : 'No timestamp'}
           </span>
@@ -609,6 +636,17 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, actio
                 Reject with comment
               </Button>
             </>
+          )}
+          {canFeature && submission.status === 'approved' && (
+            <Button
+              onClick={() => onFeature(submission.id, !submission.featured)}
+              disabled={actionLoading}
+              variant={submission.featured ? 'default' : 'outline'}
+              className={submission.featured ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}
+            >
+              <Star className={`mr-2 h-4 w-4 ${submission.featured ? 'fill-white' : ''}`} />
+              {submission.featured ? 'Unfeature' : 'Feature'}
+            </Button>
           )}
           {canDelete && (
             <>
@@ -699,7 +737,7 @@ function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
             Refresh
           </Button>
         </div>
-        <CardDescription>Top contributors (approved submissions)</CardDescription>
+        <CardDescription>All contributors (approved submissions)</CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -708,7 +746,7 @@ function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
           <div className="text-center text-sm text-slate-500">No approved submissions yet</div>
         ) : (
           <ol className="space-y-2">
-            {leaders.slice(0, 10).map((leader, index) => (
+            {leaders.map((leader, index) => (
               <li
                 key={leader.email}
                 className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
@@ -732,6 +770,53 @@ function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
               </li>
             ))}
           </ol>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function FeaturedPostCard({ submission, loading = false, onRefresh }) {
+  return (
+    <Card className="rounded-md">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
+            <CardTitle className="text-lg">Featured Post</CardTitle>
+          </div>
+          <Button onClick={onRefresh} variant="outline" size="sm" disabled={loading}>
+            <RefreshCcw className="mr-2 h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+        <CardDescription>Highlighted by the super admin</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="rounded-md border bg-slate-50 p-6 text-center text-sm text-slate-500">Loading…</div>
+        ) : !submission ? (
+          <div className="rounded-md border border-dashed bg-slate-50 p-6 text-center text-sm text-slate-500">
+            No featured post yet — check back soon!
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              {submission.submitted_at && (
+                <span>{new Date(submission.submitted_at).toLocaleString()}</span>
+              )}
+              {submission.submission_display_name && (
+                <span className="font-medium text-slate-700">By {submission.submission_display_name}</span>
+              )}
+            </div>
+            {submission.title && (
+              <h3 className="text-lg font-semibold text-slate-900">{submission.title}</h3>
+            )}
+            {submission.text && (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{submission.text}</p>
+            )}
+            <SubmissionImage submission={submission} className="max-h-80" />
+          </div>
         )}
       </CardContent>
     </Card>
@@ -1524,6 +1609,9 @@ function MapPortal({ app }) {
   const [leaders, setLeaders] = useState([])
   const [leadersLoading, setLeadersLoading] = useState(false)
 
+  const [featuredSubmission, setFeaturedSubmission] = useState(null)
+  const [featuredLoading, setFeaturedLoading] = useState(false)
+
   const [backgroundUrl, setBackgroundUrl] = useState(null)
   const [backgroundUploading, setBackgroundUploading] = useState(false)
   const [imageAspect, setImageAspect] = useState(null)
@@ -1663,6 +1751,44 @@ function MapPortal({ app }) {
     }
   }
 
+  const loadFeaturedSubmission = async () => {
+    setFeaturedLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/map/featured`)
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        setFeaturedSubmission(result.data?.submission || null)
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setFeaturedLoading(false)
+    }
+  }
+
+  const setSubmissionFeatured = async (submissionId, featured) => {
+    setActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/map/submissions/${submissionId}/feature`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featured: Boolean(featured) }),
+      })
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        showMessage(featured ? 'Submission set as featured post' : 'Featured post cleared', 'success')
+        await loadFeaturedSubmission()
+        await loadApprovedSubmissions()
+      } else {
+        showMessage(buildApiErrorMessage(result, 'MAP_FEATURE_FAILED', 'Failed to update featured submission'), 'error')
+      }
+    } catch (error) {
+      showMessage(buildNetworkErrorMessage('MAP_FEATURE_NETWORK', 'Failed to update featured submission', error), 'error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const loadBackground = async () => {
     try {
       const response = await fetch(`${API_BASE}/map/background/info`)
@@ -1692,6 +1818,10 @@ function MapPortal({ app }) {
       const response = await fetch(`${API_BASE}/map/submitter-account/status?email=${encodeURIComponent(trimmed)}`)
       const result = await readApiResponse(response)
       setHasShortcutPassword(Boolean(result.ok && result.data.has_password))
+      const lastName = result.ok ? (result.data.last_display_name || '') : ''
+      if (lastName) {
+        setDisplayName((current) => (current.trim() ? current : lastName))
+      }
     } catch {
       setHasShortcutPassword(false)
     }
@@ -1711,6 +1841,7 @@ function MapPortal({ app }) {
     loadPins()
     loadLeaders()
     loadBackground()
+    loadFeaturedSubmission()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role])
 
@@ -1761,16 +1892,38 @@ function MapPortal({ app }) {
         return
       }
       let pasted = false
+      let rejectedFile = false
+      let sawNonFile = false
       for (const item of items) {
-        if (item.kind === 'file' && item.type.startsWith('image/')) {
-          const file = item.getAsFile()
-          if (file) {
-            pasted = true
-            enqueueFile(file)
-          }
+        if (item.kind !== 'file') {
+          if (item.kind === 'string') sawNonFile = true
+          continue
+        }
+        const file = item.getAsFile()
+        if (!file) continue
+        const typeOk = (item.type || file.type || '').startsWith('image/')
+        // Accept any file item that's an image type, looks like HEIC by name,
+        // or has no recognizable type (let enqueueFile sniff the bytes).
+        if (!typeOk && !isHeicFile(file) && (item.type || file.type)) {
+          rejectedFile = true
+          continue
+        }
+        pasted = true
+        enqueueFile(file)
+      }
+      if (pasted) {
+        event.preventDefault()
+      } else if (rejectedFile) {
+        event.preventDefault()
+        showMessage('[MAP_PASTE_UNSUPPORTED] Pasted file is not a supported image (JPG, PNG, WebP, GIF, or HEIC).', 'error')
+      } else if (sawNonFile && !pasted) {
+        // Non-file paste (e.g. plain text) lands in a non-text target —
+        // only complain when the user clearly tried to paste an image.
+        const onlyTextLikeTarget = event.target && /input|textarea/i.test(event.target.tagName || '')
+        if (!onlyTextLikeTarget) {
+          showMessage('[MAP_PASTE_NO_IMAGE] Nothing image-like found in the clipboard. Copy an image first, then paste.', 'error')
         }
       }
-      if (pasted) event.preventDefault()
     }
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
@@ -1947,7 +2100,12 @@ function MapPortal({ app }) {
 
   const enqueueFile = async (file) => {
     if (!file) return
-    const heic = isHeicFile(file)
+    let heic = isHeicFile(file)
+    if (!heic && (!file.type || !MAP_ALLOWED_IMAGE_TYPES.has(file.type))) {
+      // Clipboard often hands us HEIC bytes with an empty or generic MIME
+      // (e.g. `image/png` from Windows clipboard). Sniff the file header.
+      heic = await sniffHeicBytes(file)
+    }
     if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !heic) {
       showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, GIF, or HEIC file', 'error')
       return
@@ -2248,6 +2406,7 @@ function MapPortal({ app }) {
         await loadPendingSubmissions()
         await loadLeaders()
         await loadPins()
+        await loadFeaturedSubmission()
       } else {
         showMessage(buildApiErrorMessage(result, 'MAP_SUBMISSION_DELETE_FAILED', 'Failed to delete submission'), 'error')
       }
@@ -2438,7 +2597,7 @@ function MapPortal({ app }) {
           />
         </section>
 
-        {selectedPinId && isAdmin && (
+        {selectedPinId && (
           <section className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-xl font-bold text-slate-950">
@@ -2463,8 +2622,10 @@ function MapPortal({ app }) {
                     key={submission.id}
                     submission={submission}
                     canDelete={isSuperadmin}
+                    canFeature={isSuperadmin}
                     actionLoading={actionLoading}
                     onDelete={deleteSubmission}
+                    onFeature={setSubmissionFeatured}
                   />
                 ))}
               </div>
@@ -2875,17 +3036,31 @@ function MapPortal({ app }) {
                         key={submission.id}
                         submission={submission}
                         canDelete={isSuperadmin}
+                        canFeature={isSuperadmin}
                         actionLoading={actionLoading}
                         onDelete={deleteSubmission}
+                        onFeature={setSubmissionFeatured}
                       />
                     ))}
                   </div>
                 )}
               </div>
-              <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
+              <div className="space-y-6">
+                <FeaturedPostCard
+                  submission={featuredSubmission}
+                  loading={featuredLoading}
+                  onRefresh={loadFeaturedSubmission}
+                />
+                <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
+              </div>
             </section>
           ) : (
-            <section className="flex justify-center">
+            <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.55fr)]">
+              <FeaturedPostCard
+                submission={featuredSubmission}
+                loading={featuredLoading}
+                onRefresh={loadFeaturedSubmission}
+              />
               <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
             </section>
           )
@@ -2909,11 +3084,9 @@ function MapPortal({ app }) {
                   key={submission.id}
                   submission={submission}
                   admin
-                  canDelete={isSuperadmin}
                   actionLoading={actionLoading}
                   onApprove={approveSubmission}
                   onReject={rejectSubmission}
-                  onDelete={deleteSubmission}
                 />
               ))
             )}

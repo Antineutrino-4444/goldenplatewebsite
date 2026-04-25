@@ -100,6 +100,7 @@ class MapSubmission(MapBase):
     reviewed_role = Column(String)
     reviewed_at = Column(DateTime(timezone=True))
     rejection_reason = Column(Text)
+    featured = Column(Integer, nullable=False, default=0)
 
 
 class MapSubmissionImage(MapBase):
@@ -185,6 +186,7 @@ def _bootstrap_map_database() -> None:
         _add_column_if_missing(connection, 'map_submissions', 'title', 'VARCHAR')
         _add_column_if_missing(connection, 'map_submissions', 'submission_display_name', 'VARCHAR')
         _add_column_if_missing(connection, 'map_submissions', 'pin_id', 'VARCHAR')
+        _add_column_if_missing(connection, 'map_submissions', 'featured', 'INTEGER NOT NULL DEFAULT 0')
 
 
 _bootstrap_map_database()
