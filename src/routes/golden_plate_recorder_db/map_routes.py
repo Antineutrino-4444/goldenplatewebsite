@@ -16,13 +16,15 @@ from . import recorder_bp
 from .db import DEFAULT_SCHOOL_ID
 from .email_service import VERIFICATION_CODE_EXPIRY_MINUTES, send_email_via_brevo
 from .map_db import (
+    MapBackground,
     MapEmailVerification,
+    MapPin,
     MapSubmission,
     MapSubmitterAccount,
     _map_now_utc,
     map_db_session,
 )
-from .security import get_current_user, require_admin, require_auth_or_guest
+from .security import get_current_user, require_admin, require_auth_or_guest, require_superadmin
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +310,10 @@ def _serialize_submission(submission):
         'id': submission.id,
         'school_id': submission.school_id,
         'email': submission.email,
+        'title': submission.title or '',
         'text': submission.text_content,
+        'submission_display_name': submission.submission_display_name or '',
+        'pin_id': submission.pin_id,
         'image_filename': submission.image_filename,
         'image_mime': submission.image_mime,
         'image_size': submission.image_size,
@@ -554,6 +559,10 @@ def create_map_submission():
 
     email = _normalize_email(request.form.get('email'))
     text_content = (request.form.get('text') or '').strip()
+    title = (request.form.get('title') or '').strip()
+    submission_display_name = (request.form.get('submission_display_name') or '').strip()
+    pin_id_raw = (request.form.get('pin_id') or '').strip()
+    pin_id = pin_id_raw if pin_id_raw else None
     auth_method = (request.form.get('auth_method') or 'email').strip().lower()
     password = request.form.get('password') or ''
     shortcut_password = request.form.get('shortcut_password') or ''
@@ -565,11 +574,20 @@ def create_map_submission():
     if not _is_sac_email(email):
         return _map_error('MAP_EMAIL_DOMAIN_DENIED', 'Only @sac.on.ca email addresses can submit to the map', 403)
 
+    if not title:
+        return _map_error('MAP_SUBMISSION_TITLE_REQUIRED', 'Submission title is required', 400)
+
+    if len(title) > 200:
+        return _map_error('MAP_SUBMISSION_TITLE_TOO_LONG', 'Submission title must be 200 characters or fewer', 400)
+
     if not text_content:
-        return _map_error('MAP_SUBMISSION_TEXT_REQUIRED', 'Submission text is required', 400)
+        return _map_error('MAP_SUBMISSION_TEXT_REQUIRED', 'Submission description is required', 400)
 
     if len(text_content) > 5000:
-        return _map_error('MAP_SUBMISSION_TEXT_TOO_LONG', 'Submission text must be 5000 characters or fewer', 400)
+        return _map_error('MAP_SUBMISSION_TEXT_TOO_LONG', 'Submission description must be 5000 characters or fewer', 400)
+
+    if len(submission_display_name) > 80:
+        return _map_error('MAP_SUBMISSION_DISPLAY_NAME_TOO_LONG', 'Display name must be 80 characters or fewer', 400)
 
     password_verified = False
     if auth_method == 'password':
@@ -623,10 +641,23 @@ def create_map_submission():
         image_filename = secure_filename(image_file.filename) or 'submission-image'
 
     identity = _current_identity()
+
+    if pin_id:
+        pin = (
+            map_db_session.query(MapPin)
+            .filter(MapPin.id == pin_id, MapPin.school_id == identity['school_id'])
+            .first()
+        )
+        if not pin:
+            return _map_error('MAP_PIN_NOT_FOUND', 'Selected pin does not exist', 404)
+
     submission = MapSubmission(
         school_id=identity['school_id'],
         email=email,
         text_content=text_content,
+        title=title,
+        submission_display_name=submission_display_name or None,
+        pin_id=pin_id,
         image_filename=image_filename,
         image_mime=image_mime,
         image_data=image_data,
@@ -738,6 +769,291 @@ def reject_map_submission(submission_id):
         'status': 'success',
         'message': 'Submission rejected',
         'submission': _serialize_submission(submission),
+    }), 200
+
+
+def _serialize_pin(pin):
+    return {
+        'id': pin.id,
+        'name': pin.name,
+        'x': pin.x,
+        'y': pin.y,
+        'created_at': pin.created_at.isoformat() if pin.created_at else None,
+        'created_by': {
+            'user_id': pin.created_by_user_id,
+            'username': pin.created_by_username,
+            'display_name': pin.created_by_display_name,
+            'email': pin.created_by_email,
+        },
+    }
+
+
+@recorder_bp.route('/map/pins', methods=['GET'])
+def list_map_pins():
+    if not require_auth_or_guest():
+        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
+
+    school_id = _current_school_id()
+    pins = (
+        map_db_session.query(MapPin)
+        .filter(MapPin.school_id == school_id)
+        .order_by(MapPin.created_at.asc())
+        .all()
+    )
+    return jsonify({
+        'status': 'success',
+        'pins': [_serialize_pin(pin) for pin in pins],
+    }), 200
+
+
+@recorder_bp.route('/map/pins', methods=['POST'])
+def create_map_pin():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    x = data.get('x')
+    y = data.get('y')
+    email = _normalize_email(data.get('email'))
+
+    if not name:
+        return _map_error('MAP_PIN_NAME_REQUIRED', 'Pin name is required', 400)
+    if len(name) > 80:
+        return _map_error('MAP_PIN_NAME_TOO_LONG', 'Pin name must be 80 characters or fewer', 400)
+
+    try:
+        x = float(x)
+        y = float(y)
+    except (TypeError, ValueError):
+        return _map_error('MAP_PIN_COORDS_INVALID', 'Pin coordinates must be numeric', 400)
+
+    if not (0 <= x <= 100 and 0 <= y <= 100):
+        return _map_error('MAP_PIN_COORDS_OUT_OF_RANGE', 'Pin coordinates must be within map bounds (0-100)', 400)
+
+    user = get_current_user()
+    if user:
+        identity = _current_identity()
+        creator_email = email or identity['username']
+        creator_username = identity['username']
+        creator_display = identity['display_name']
+        creator_user_id = identity['user_id']
+    else:
+        # Guest / map submitter — must provide a verified SAC email
+        if not email or not _is_sac_email(email):
+            return _map_error('MAP_PIN_EMAIL_REQUIRED', 'A verified @sac.on.ca email is required to create a pin', 403)
+        if not _is_map_email_verified(email):
+            return _map_error('MAP_PIN_EMAIL_NOT_VERIFIED', 'Verify your SAC email before creating a pin', 403)
+        creator_email = email
+        creator_username = email
+        creator_display = email
+        creator_user_id = None
+
+    school_id = _current_school_id()
+    pin = MapPin(
+        school_id=school_id,
+        name=name,
+        x=x,
+        y=y,
+        created_by_user_id=creator_user_id,
+        created_by_username=creator_username,
+        created_by_display_name=creator_display,
+        created_by_email=creator_email,
+    )
+    try:
+        map_db_session.add(pin)
+        map_db_session.commit()
+    except Exception as exc:
+        logger.exception('Unable to create map pin: %s', exc)
+        map_db_session.rollback()
+        return _map_error('MAP_PIN_CREATE_FAILED', 'Could not create pin', 500)
+
+    return jsonify({'status': 'success', 'pin': _serialize_pin(pin)}), 201
+
+
+@recorder_bp.route('/map/pins/<pin_id>', methods=['DELETE'])
+def delete_map_pin(pin_id):
+    if not require_superadmin():
+        return _map_error('MAP_SUPERADMIN_REQUIRED', 'Super admin access required', 403)
+
+    school_id = _current_school_id()
+    pin = (
+        map_db_session.query(MapPin)
+        .filter(MapPin.id == pin_id, MapPin.school_id == school_id)
+        .first()
+    )
+    if not pin:
+        return _map_error('MAP_PIN_NOT_FOUND', 'Pin not found', 404)
+
+    # Detach submissions from this pin (move to "Others")
+    map_db_session.query(MapSubmission).filter(
+        MapSubmission.school_id == school_id,
+        MapSubmission.pin_id == pin_id,
+    ).update({'pin_id': None}, synchronize_session=False)
+
+    try:
+        map_db_session.delete(pin)
+        map_db_session.commit()
+    except Exception as exc:
+        logger.exception('Unable to delete map pin: %s', exc)
+        map_db_session.rollback()
+        return _map_error('MAP_PIN_DELETE_FAILED', 'Could not delete pin', 500)
+
+    return jsonify({'status': 'success', 'message': 'Pin deleted'}), 200
+
+
+@recorder_bp.route('/map/submissions/<submission_id>', methods=['DELETE'])
+def delete_map_submission(submission_id):
+    if not require_superadmin():
+        return _map_error('MAP_SUPERADMIN_REQUIRED', 'Super admin access required', 403)
+
+    school_id = _current_school_id()
+    submission = (
+        map_db_session.query(MapSubmission)
+        .filter(MapSubmission.id == submission_id, MapSubmission.school_id == school_id)
+        .first()
+    )
+    if not submission:
+        return _map_error('MAP_SUBMISSION_NOT_FOUND', 'Submission not found', 404)
+
+    try:
+        map_db_session.delete(submission)
+        map_db_session.commit()
+    except Exception as exc:
+        logger.exception('Unable to delete map submission: %s', exc)
+        map_db_session.rollback()
+        return _map_error('MAP_SUBMISSION_DELETE_FAILED', 'Could not delete submission', 500)
+
+    return jsonify({'status': 'success', 'message': 'Submission deleted'}), 200
+
+
+@recorder_bp.route('/map/leaderboard', methods=['GET'])
+def map_leaderboard():
+    if not require_auth_or_guest():
+        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
+
+    school_id = _current_school_id()
+    rows = (
+        map_db_session.query(
+            MapSubmission.email,
+            MapSubmission.submission_display_name,
+            func.count(MapSubmission.id).label('count'),
+        )
+        .filter(MapSubmission.school_id == school_id, MapSubmission.status == 'approved')
+        .group_by(MapSubmission.email, MapSubmission.submission_display_name)
+        .all()
+    )
+    # Aggregate by email; pick most-recent display name per email
+    by_email = {}
+    for email, display_name, count in rows:
+        bucket = by_email.setdefault(email, {'email': email, 'display_name': '', 'count': 0})
+        bucket['count'] += int(count or 0)
+        if display_name and not bucket['display_name']:
+            bucket['display_name'] = display_name
+    leaders = sorted(by_email.values(), key=lambda item: item['count'], reverse=True)
+    return jsonify({'status': 'success', 'leaderboard': leaders[:50]}), 200
+
+
+@recorder_bp.route('/map/background', methods=['GET'])
+def get_map_background():
+    if not require_auth_or_guest():
+        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
+
+    school_id = _current_school_id()
+    background = (
+        map_db_session.query(MapBackground)
+        .filter(MapBackground.school_id == school_id)
+        .first()
+    )
+    if not background:
+        return _map_error('MAP_BACKGROUND_NOT_FOUND', 'No background uploaded', 404)
+
+    return send_file(
+        BytesIO(background.image_data),
+        mimetype=background.image_mime or 'application/octet-stream',
+        download_name=background.image_filename or 'map-background',
+    )
+
+
+@recorder_bp.route('/map/background/info', methods=['GET'])
+def get_map_background_info():
+    if not require_auth_or_guest():
+        return _map_error('MAP_AUTH_REQUIRED', 'Authentication or guest access required', 401)
+
+    school_id = _current_school_id()
+    background = (
+        map_db_session.query(MapBackground)
+        .filter(MapBackground.school_id == school_id)
+        .first()
+    )
+    if not background:
+        return jsonify({'status': 'success', 'has_background': False}), 200
+
+    return jsonify({
+        'status': 'success',
+        'has_background': True,
+        'image_url': '/api/map/background',
+        'image_mime': background.image_mime,
+        'image_size': background.image_size,
+        'uploaded_at': background.uploaded_at.isoformat() if background.uploaded_at else None,
+    }), 200
+
+
+@recorder_bp.route('/map/background', methods=['POST'])
+def upload_map_background():
+    if not require_superadmin():
+        return _map_error('MAP_SUPERADMIN_REQUIRED', 'Super admin access required', 403)
+
+    image_file = request.files.get('image')
+    if not image_file or not image_file.filename:
+        return _map_error('MAP_BACKGROUND_IMAGE_REQUIRED', 'Image file is required', 400)
+
+    image_mime = (image_file.mimetype or '').lower()
+    if image_mime not in ALLOWED_IMAGE_MIMES:
+        return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, or GIF file', 400)
+
+    image_data = image_file.read()
+    image_size = len(image_data)
+    if image_size > MAX_IMAGE_BYTES:
+        return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
+
+    identity = _current_identity()
+    school_id = identity['school_id']
+    background = (
+        map_db_session.query(MapBackground)
+        .filter(MapBackground.school_id == school_id)
+        .first()
+    )
+    if background:
+        background.image_data = image_data
+        background.image_mime = image_mime
+        background.image_filename = secure_filename(image_file.filename) or 'map-background'
+        background.image_size = image_size
+        background.uploaded_at = _map_now_utc()
+        background.uploaded_by_user_id = identity['user_id']
+        background.uploaded_by_username = identity['username']
+    else:
+        background = MapBackground(
+            school_id=school_id,
+            image_data=image_data,
+            image_mime=image_mime,
+            image_filename=secure_filename(image_file.filename) or 'map-background',
+            image_size=image_size,
+            uploaded_at=_map_now_utc(),
+            uploaded_by_user_id=identity['user_id'],
+            uploaded_by_username=identity['username'],
+        )
+        map_db_session.add(background)
+
+    try:
+        map_db_session.commit()
+    except Exception as exc:
+        logger.exception('Unable to save map background: %s', exc)
+        map_db_session.rollback()
+        return _map_error('MAP_BACKGROUND_SAVE_FAILED', 'Could not save background image', 500)
+
+    return jsonify({
+        'status': 'success',
+        'message': 'Background image saved',
+        'image_url': '/api/map/background',
+        'image_size': image_size,
     }), 200
 
 

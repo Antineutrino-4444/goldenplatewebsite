@@ -39,6 +39,7 @@ def test_map_submission_rejects_non_sac_email(client, login):
 
     response = client.post('/api/map/submissions', data={
         'email': 'student@example.com',
+        'title': 'Note',
         'text': 'A map note',
         'auth_method': 'email',
     })
@@ -64,6 +65,7 @@ def test_map_submission_approval_flow(client, login):
 
     response = client.post('/api/map/submissions', data={
         'email': 'student@sac.on.ca',
+        'title': 'Trip Notes',
         'text': 'Visited Beijing and Shanghai.',
         'auth_method': 'email',
         'verification_code': '123456',
@@ -111,6 +113,7 @@ def test_map_submission_password_shortcut(client, login):
 
     first = client.post('/api/map/submissions', data={
         'email': 'repeat@sac.on.ca',
+        'title': 'First',
         'text': 'First verified submission.',
         'auth_method': 'email',
         'shortcut_password': 'secret123',
@@ -119,6 +122,7 @@ def test_map_submission_password_shortcut(client, login):
 
     second = client.post('/api/map/submissions', data={
         'email': 'repeat@sac.on.ca',
+        'title': 'Second',
         'text': 'Second password submission.',
         'auth_method': 'password',
         'password': 'secret123',

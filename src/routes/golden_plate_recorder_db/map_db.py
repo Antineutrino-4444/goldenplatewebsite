@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
     Index,
     Integer,
     LargeBinary,
@@ -13,6 +14,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 
@@ -75,6 +78,9 @@ class MapSubmission(MapBase):
     school_id = Column(String, nullable=False)
     email = Column(String, nullable=False)
     text_content = Column(Text, nullable=False)
+    title = Column(String)
+    submission_display_name = Column(String)
+    pin_id = Column(String)
     image_filename = Column(String)
     image_mime = Column(String)
     image_data = Column(LargeBinary)
@@ -114,8 +120,54 @@ class MapSubmitterAccount(MapBase):
     created_from_submission_id = Column(String)
 
 
+class MapPin(MapBase):
+    __tablename__ = 'map_pins'
+    __table_args__ = (
+        Index('idx_map_pins_school', 'school_id'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    school_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_map_now_utc)
+    created_by_user_id = Column(String)
+    created_by_username = Column(String)
+    created_by_display_name = Column(String)
+    created_by_email = Column(String)
+
+
+class MapBackground(MapBase):
+    __tablename__ = 'map_backgrounds'
+    __table_args__ = (
+        UniqueConstraint('school_id', name='uq_map_backgrounds_school'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    school_id = Column(String, nullable=False)
+    image_data = Column(LargeBinary, nullable=False)
+    image_mime = Column(String, nullable=False)
+    image_filename = Column(String)
+    image_size = Column(Integer)
+    uploaded_at = Column(DateTime(timezone=True), default=_map_now_utc)
+    uploaded_by_user_id = Column(String)
+    uploaded_by_username = Column(String)
+
+
+def _add_column_if_missing(connection, table_name, column_name, column_ddl):
+    inspector = inspect(connection)
+    existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
+    if column_name not in existing_columns:
+        connection.execute(text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_ddl}'))
+
+
 def _bootstrap_map_database() -> None:
     MapBase.metadata.create_all(bind=map_engine)
+    with map_engine.begin() as connection:
+        _add_column_if_missing(connection, 'map_submissions', 'title', 'VARCHAR')
+        _add_column_if_missing(connection, 'map_submissions', 'submission_display_name', 'VARCHAR')
+        _add_column_if_missing(connection, 'map_submissions', 'pin_id', 'VARCHAR')
 
 
 _bootstrap_map_database()
@@ -123,8 +175,10 @@ _bootstrap_map_database()
 
 __all__ = [
     'MAP_DATABASE_URL',
+    'MapBackground',
     'MapBase',
     'MapEmailVerification',
+    'MapPin',
     'MapSubmission',
     'MapSubmitterAccount',
     '_map_now_utc',

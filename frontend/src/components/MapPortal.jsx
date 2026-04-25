@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReCAPTCHA from 'react-google-recaptcha'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
@@ -12,16 +12,21 @@ import {
   ArrowLeft,
   CheckCircle,
   ClipboardCheck,
-  Image,
+  Image as ImageIcon,
   LogOut,
   Mail,
+  MapPin as MapPinIcon,
   MapPinned,
+  Plus,
   RefreshCcw,
   Send,
   ShieldCheck,
+  Trash2,
+  Trophy,
   Upload,
   X,
-  XCircle
+  XCircle,
+  ZoomIn
 } from 'lucide-react'
 
 const API_BASE = '/api'
@@ -101,58 +106,126 @@ function SubmissionImage({ submission, className = '' }) {
   )
 }
 
-function ChinaMapGraphic({ approvedCount }) {
+/**
+ * Ecological map graphic. Pin coords are percentages (0-100 on each axis).
+ * Props:
+ *   pins: [{id,name,x,y,...}]
+ *   submissionsByPin: { pinId|'others': count }
+ *   selectedPinId: id | 'others' | null
+ *   onSelectPin: (id) => void
+ *   backgroundUrl: string | null
+ *   pendingPoint: {x,y} | null  (ghost pin while picking a location)
+ *   onMapClick: (x,y) => void   (when not null, map is clickable to place)
+ *   className: extra classes
+ */
+function EcologicalMapGraphic({
+  pins = [],
+  submissionsByPin = {},
+  selectedPinId = null,
+  onSelectPin,
+  backgroundUrl = null,
+  pendingPoint = null,
+  onMapClick = null,
+  className = ''
+}) {
+  const svgRef = useRef(null)
+
+  const handleClick = (event) => {
+    if (!onMapClick) return
+    const svg = svgRef.current
+    if (!svg) return
+    const rect = svg.getBoundingClientRect()
+    const x = ((event.clientX - rect.left) / rect.width) * 100
+    const y = ((event.clientY - rect.top) / rect.height) * 100
+    onMapClick(Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y)))
+  }
+
+  const gridLines = []
+  for (let i = 1; i < 10; i++) {
+    gridLines.push(<line key={`h-${i}`} x1="0" y1={i * 10} x2="100" y2={i * 10} stroke="#cbd5e1" strokeWidth="0.15" strokeDasharray="0.6 0.6" />)
+    gridLines.push(<line key={`v-${i}`} x1={i * 10} y1="0" x2={i * 10} y2="100" stroke="#cbd5e1" strokeWidth="0.15" strokeDasharray="0.6 0.6" />)
+  }
+
   return (
-    <div className="relative overflow-hidden rounded-md border bg-white p-4 shadow-sm">
-      <svg viewBox="0 0 720 520" role="img" aria-label="Map of China" className="h-full min-h-[22rem] w-full">
+    <div className={`relative overflow-hidden rounded-md border bg-white shadow-sm ${className}`}>
+      <svg
+        ref={svgRef}
+        viewBox="0 0 100 100"
+        role="img"
+        aria-label="Ecological Map"
+        preserveAspectRatio="none"
+        className={`block h-full min-h-[22rem] w-full ${onMapClick ? 'cursor-crosshair' : ''}`}
+        onClick={handleClick}
+      >
         <defs>
-          <linearGradient id="china-map-fill" x1="0" x2="1" y1="0" y2="1">
+          <linearGradient id="eco-map-fill" x1="0" x2="1" y1="0" y2="1">
             <stop offset="0%" stopColor="#ecfdf5" />
             <stop offset="100%" stopColor="#dbeafe" />
           </linearGradient>
-          <filter id="map-soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="14" stdDeviation="18" floodColor="#0f172a" floodOpacity="0.15" />
-          </filter>
         </defs>
-        <rect x="0" y="0" width="720" height="520" rx="18" fill="#f8fafc" />
-        <path
-          d="M395 36 L456 55 L507 89 L555 96 L585 136 L631 156 L609 197 L646 235 L615 280 L630 328 L579 354 L544 406 L490 386 L452 438 L395 426 L356 469 L301 447 L252 464 L221 422 L168 402 L158 355 L99 328 L123 280 L79 246 L119 205 L110 156 L166 134 L205 91 L263 110 L317 69 Z"
-          fill="url(#china-map-fill)"
-          stroke="#0f766e"
-          strokeWidth="4"
-          filter="url(#map-soft-shadow)"
-        />
-        <path d="M205 91 L238 175 L221 422" fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="8 10" />
-        <path d="M317 69 L346 154 L395 426" fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="8 10" />
-        <path d="M456 55 L429 156 L452 438" fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="8 10" />
-        <path d="M555 96 L508 195 L544 406" fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="8 10" />
-        <path d="M119 205 L285 220 L646 235" fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="8 10" />
-        <path d="M99 328 L288 328 L630 328" fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="8 10" />
-        {[
-          [438, 150],
-          [504, 225],
-          [374, 300],
-          [470, 342],
-          [303, 250],
-          [565, 293]
-        ].map(([cx, cy], index) => (
-          <g key={`${cx}-${cy}`}>
-            <circle cx={cx} cy={cy} r={15} fill="#f97316" opacity="0.14" />
-            <circle cx={cx} cy={cy} r={6} fill={index < approvedCount ? '#f97316' : '#0f766e'} />
+        {backgroundUrl ? (
+          <image href={backgroundUrl} x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice" />
+        ) : (
+          <rect x="0" y="0" width="100" height="100" fill="url(#eco-map-fill)" />
+        )}
+        <g pointerEvents="none">{gridLines}</g>
+        {pins.map((pin) => {
+          const count = submissionsByPin[pin.id] || 0
+          const selected = selectedPinId === pin.id
+          return (
+            <g
+              key={pin.id}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (onSelectPin) onSelectPin(pin.id)
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              <circle cx={pin.x} cy={pin.y} r={3.4} fill="#f97316" opacity="0.18" />
+              <circle
+                cx={pin.x}
+                cy={pin.y}
+                r={selected ? 1.8 : 1.4}
+                fill={selected ? '#dc2626' : '#f97316'}
+                stroke="#ffffff"
+                strokeWidth="0.3"
+              />
+              <text
+                x={pin.x}
+                y={pin.y - 2.6}
+                textAnchor="middle"
+                fontSize="2"
+                fontWeight="600"
+                fill="#0f172a"
+                style={{ paintOrder: 'stroke', stroke: '#ffffff', strokeWidth: 0.5 }}
+              >
+                {pin.name}{count ? ` (${count})` : ''}
+              </text>
+            </g>
+          )
+        })}
+        {pendingPoint && (
+          <g pointerEvents="none">
+            <circle cx={pendingPoint.x} cy={pendingPoint.y} r={3} fill="#0ea5e9" opacity="0.25" />
+            <circle cx={pendingPoint.x} cy={pendingPoint.y} r={1.4} fill="#0ea5e9" stroke="#ffffff" strokeWidth="0.3" />
           </g>
-        ))}
-        <ellipse cx="528" cy="444" rx="18" ry="10" fill="#dbeafe" stroke="#0f766e" strokeWidth="3" />
-        <ellipse cx="596" cy="390" rx="10" ry="18" fill="#dbeafe" stroke="#0f766e" strokeWidth="3" />
+        )}
       </svg>
-      <div className="absolute left-5 top-5 rounded-md border bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approved pins</div>
-        <div className="text-2xl font-bold text-teal-700">{approvedCount}</div>
-      </div>
+      {/* Others tag (bottom-right) */}
+      <button
+        type="button"
+        onClick={() => onSelectPin && onSelectPin('others')}
+        className={`absolute bottom-3 right-3 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm transition ${
+          selectedPinId === 'others' ? 'bg-slate-900 text-white' : 'bg-white/90 text-slate-700 hover:bg-slate-100'
+        }`}
+      >
+        Others ({submissionsByPin.others || 0})
+      </button>
     </div>
   )
 }
 
-function SubmissionDetails({ submission, admin = false, actionLoading = false, onApprove, onReject }) {
+function SubmissionDetails({ submission, admin = false, canDelete = false, actionLoading = false, onApprove, onReject, onDelete }) {
   return (
     <div className="grid gap-4 rounded-md border bg-white p-4 md:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
       <div className="space-y-3">
@@ -164,13 +237,21 @@ function SubmissionDetails({ submission, admin = false, actionLoading = false, o
             {submission.submitted_at ? new Date(submission.submitted_at).toLocaleString() : 'No timestamp'}
           </span>
         </div>
+        {submission.title && (
+          <h3 className="text-lg font-semibold text-slate-900">{submission.title}</h3>
+        )}
         <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{submission.text}</p>
         <div className="grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
+          {submission.submission_display_name && (
+            <div className="sm:col-span-2 font-medium text-slate-700">
+              By: {submission.submission_display_name}
+            </div>
+          )}
           <div>Email: {submission.email}</div>
           <div>Image: {submission.image_filename || 'None'}</div>
           <div>Image size: {formatBytes(submission.image_size)}</div>
           <div>
-            Submitted by: {submission.submitted_by?.display_name || 'Unknown'} (@{submission.submitted_by?.username || 'unknown'})
+            Account: {submission.submitted_by?.display_name || 'Unknown'} (@{submission.submitted_by?.username || 'unknown'})
           </div>
           <div>Submitter role: {formatRole(submission.submitted_by?.role)}</div>
           {submission.reviewed_by && (
@@ -185,21 +266,82 @@ function SubmissionDetails({ submission, admin = false, actionLoading = false, o
             <div>Reason: {submission.rejection_reason}</div>
           )}
         </div>
-        {admin && submission.status === 'pending' && (
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button onClick={() => onApprove(submission.id)} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700">
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Approve
+        <div className="flex flex-wrap gap-2 pt-2">
+          {admin && submission.status === 'pending' && (
+            <>
+              <Button onClick={() => onApprove(submission.id)} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700">
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Approve
+              </Button>
+              <Button onClick={() => onReject(submission.id)} disabled={actionLoading} variant="outline">
+                <XCircle className="mr-2 h-4 w-4" />
+                Reject
+              </Button>
+            </>
+          )}
+          {canDelete && (
+            <Button onClick={() => onDelete(submission.id)} disabled={actionLoading} variant="destructive">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
             </Button>
-            <Button onClick={() => onReject(submission.id)} disabled={actionLoading} variant="outline">
-              <XCircle className="mr-2 h-4 w-4" />
-              Reject
-            </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       <SubmissionImage submission={submission} className="max-h-80" />
     </div>
+  )
+}
+
+function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
+  return (
+    <Card className="rounded-md">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Trophy className="h-5 w-5 text-amber-600" />
+            <CardTitle className="text-lg">Leaderboard</CardTitle>
+          </div>
+          <Button onClick={onRefresh} variant="outline" size="sm" disabled={loading}>
+            <RefreshCcw className="mr-2 h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+        <CardDescription>Top contributors (approved submissions)</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="text-center text-sm text-slate-500">Loading…</div>
+        ) : leaders.length === 0 ? (
+          <div className="text-center text-sm text-slate-500">No approved submissions yet</div>
+        ) : (
+          <ol className="space-y-2">
+            {leaders.slice(0, 10).map((leader, index) => (
+              <li
+                key={leader.email}
+                className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
+                  index === 0 ? 'border-amber-300 bg-amber-50' : 'bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`flex h-7 w-7 flex-none items-center justify-center rounded-full text-xs font-bold ${
+                    index === 0 ? 'bg-amber-500 text-white' : index === 1 ? 'bg-slate-400 text-white' : index === 2 ? 'bg-orange-700 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-slate-900">
+                      {leader.display_name || leader.email}
+                    </div>
+                    <div className="truncate text-xs text-slate-500">{leader.email}</div>
+                  </div>
+                </div>
+                <Badge variant="secondary">{leader.count}</Badge>
+              </li>
+            ))}
+          </ol>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -218,7 +360,18 @@ function MapPortal({ app }) {
   const [showApprovals, setShowApprovals] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const SUBMISSION_DRAFT_KEY = 'mapSubmissionDraft.v1'
+  const [pins, setPins] = useState([])
+  const [selectedPinId, setSelectedPinId] = useState(null)
+  const [showEnlarge, setShowEnlarge] = useState(false)
+
+  const [leaders, setLeaders] = useState([])
+  const [leadersLoading, setLeadersLoading] = useState(false)
+
+  const [backgroundUrl, setBackgroundUrl] = useState(null)
+  const [backgroundUploading, setBackgroundUploading] = useState(false)
+  const backgroundInputRef = useRef(null)
+
+  const SUBMISSION_DRAFT_KEY = 'mapSubmissionDraft.v2'
   const initialDraft = (() => {
     if (typeof window === 'undefined') return {}
     try {
@@ -238,7 +391,15 @@ function MapPortal({ app }) {
   const [emailVerified, setEmailVerified] = useState(false)
   const [verificationLoading, setVerificationLoading] = useState(false)
   const [hasShortcutPassword, setHasShortcutPassword] = useState(false)
+  const [title, setTitle] = useState(initialDraft.title || '')
   const [text, setText] = useState(initialDraft.text || '')
+  const [displayName, setDisplayName] = useState(initialDraft.displayName || '')
+
+  // Pin selection for submission: 'others' | <existingPinId> | 'new'
+  const [pinChoice, setPinChoice] = useState(initialDraft.pinChoice || 'others')
+  const [newPinName, setNewPinName] = useState('')
+  const [newPinPoint, setNewPinPoint] = useState(null)
+
   const [imageFile, setImageFile] = useState(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -248,7 +409,32 @@ function MapPortal({ app }) {
   const mapPath = normalizeMapPath()
   const isSubmissionPage = mapPath === '/map/submission'
   const isAdmin = ['admin', 'superadmin'].includes(user?.role)
+  const isSuperadmin = user?.role === 'superadmin'
   const roleLabel = formatRole(user?.role)
+
+  const submissionsByPin = useMemo(() => {
+    const result = { others: 0 }
+    for (const submission of approvedSubmissions) {
+      const key = submission.pin_id || 'others'
+      result[key] = (result[key] || 0) + 1
+    }
+    return result
+  }, [approvedSubmissions])
+
+  const selectedSubmissions = useMemo(() => {
+    if (!selectedPinId) return []
+    if (selectedPinId === 'others') {
+      return approvedSubmissions.filter((submission) => !submission.pin_id)
+    }
+    return approvedSubmissions.filter((submission) => submission.pin_id === selectedPinId)
+  }, [approvedSubmissions, selectedPinId])
+
+  const selectedPinName = useMemo(() => {
+    if (!selectedPinId) return ''
+    if (selectedPinId === 'others') return 'Others (no pin selected)'
+    const pin = pins.find((candidate) => candidate.id === selectedPinId)
+    return pin ? pin.name : 'Selected pin'
+  }, [pins, selectedPinId])
 
   const loadApprovedSubmissions = async () => {
     setApprovedLoading(true)
@@ -291,6 +477,49 @@ function MapPortal({ app }) {
     }
   }
 
+  const loadPins = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/map/pins`)
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        setPins(Array.isArray(result.data.pins) ? result.data.pins : [])
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  const loadLeaders = async () => {
+    setLeadersLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/map/leaderboard`)
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        setLeaders(Array.isArray(result.data.leaderboard) ? result.data.leaderboard : [])
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setLeadersLoading(false)
+    }
+  }
+
+  const loadBackground = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/map/background/info`)
+      const result = await readApiResponse(response)
+      if (result.ok && result.data.has_background) {
+        // cache-bust on uploaded_at
+        const bust = result.data.uploaded_at ? `?t=${encodeURIComponent(result.data.uploaded_at)}` : ''
+        setBackgroundUrl(`${API_BASE}/map/background${bust}`)
+      } else {
+        setBackgroundUrl(null)
+      }
+    } catch {
+      setBackgroundUrl(null)
+    }
+  }
+
   const loadShortcutStatus = async (nextEmail) => {
     const trimmed = nextEmail.trim().toLowerCase()
     if (!trimmed.endsWith('@sac.on.ca')) {
@@ -318,22 +547,22 @@ function MapPortal({ app }) {
   useEffect(() => {
     loadApprovedSubmissions()
     loadPendingSubmissions()
+    loadPins()
+    loadLeaders()
+    loadBackground()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role])
 
-  // Persist submission draft (text, email, auth method, verification state) so a
-  // page refresh on the submission page doesn't wipe the user's work.
-  // Image files and passwords are intentionally NOT persisted.
   useEffect(() => {
     if (!isSubmissionPage) return
     if (typeof window === 'undefined') return
     try {
-      const draft = { email, authMethod, text, verificationCode, verificationSent }
+      const draft = { email, authMethod, title, text, displayName, verificationCode, verificationSent, pinChoice }
       window.localStorage.setItem(SUBMISSION_DRAFT_KEY, JSON.stringify(draft))
     } catch {
-      // localStorage may be unavailable (private mode / quota) - non-fatal
+      // localStorage may be unavailable - non-fatal
     }
-  }, [isSubmissionPage, email, authMethod, text, verificationCode, verificationSent])
+  }, [isSubmissionPage, email, authMethod, title, text, displayName, verificationCode, verificationSent, pinChoice])
 
   useEffect(() => {
     if (!imageFile) {
@@ -350,9 +579,6 @@ function MapPortal({ app }) {
       return
     }
     const handlePaste = (event) => {
-      const target = event.target
-      const tag = target?.tagName
-      // Allow normal text paste into inputs/textareas/contenteditables; only intercept if image present
       const items = event.clipboardData?.items
       if (!items || items.length === 0) {
         return
@@ -361,15 +587,12 @@ function MapPortal({ app }) {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
           const file = item.getAsFile()
           if (file) {
-            // If the focus is in a text editor and the clipboard also contains text, the image item still wins.
             event.preventDefault()
             handleImageChange(file)
             return
           }
         }
       }
-      // No image in clipboard — do nothing, let normal paste behavior continue
-      void tag
     }
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
@@ -474,7 +697,12 @@ function MapPortal({ app }) {
   }
 
   const resetSubmissionForm = () => {
+    setTitle('')
     setText('')
+    setDisplayName('')
+    setPinChoice('others')
+    setNewPinName('')
+    setNewPinPoint(null)
     setImageFile(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -545,6 +773,11 @@ function MapPortal({ app }) {
     setIsDraggingImage(false)
   }
 
+  const handleSubmissionMapClick = (x, y) => {
+    if (pinChoice !== 'new') return
+    setNewPinPoint({ x, y })
+  }
+
   const submitMapEntry = async () => {
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail.endsWith('@sac.on.ca')) {
@@ -552,8 +785,13 @@ function MapPortal({ app }) {
       return
     }
 
+    if (!title.trim()) {
+      showMessage('[MAP_SUBMISSION_TITLE_REQUIRED_CLIENT] Enter a title', 'error')
+      return
+    }
+
     if (!text.trim()) {
-      showMessage('[MAP_SUBMISSION_TEXT_REQUIRED_CLIENT] Enter submission text', 'error')
+      showMessage('[MAP_SUBMISSION_TEXT_REQUIRED_CLIENT] Enter a description', 'error')
       return
     }
 
@@ -565,6 +803,17 @@ function MapPortal({ app }) {
     if (authMethod === 'password' && !password) {
       showMessage('[MAP_PASSWORD_REQUIRED_CLIENT] Enter your map submission password', 'error')
       return
+    }
+
+    if (pinChoice === 'new') {
+      if (!newPinName.trim()) {
+        showMessage('[MAP_PIN_NAME_REQUIRED_CLIENT] Name your new pin', 'error')
+        return
+      }
+      if (!newPinPoint) {
+        showMessage('[MAP_PIN_LOCATION_REQUIRED_CLIENT] Click on the map to place your pin', 'error')
+        return
+      }
     }
 
     if (imageFile) {
@@ -583,25 +832,57 @@ function MapPortal({ app }) {
       return
     }
 
-    const formData = new FormData()
-    formData.append('email', trimmedEmail)
-    formData.append('text', text.trim())
-    formData.append('auth_method', authMethod)
-    formData.append('recaptcha_token', recaptchaToken || '')
-    if (authMethod === 'email') {
-      formData.append('verification_code', verificationCode.trim())
-      if (shortcutPassword) {
-        formData.append('shortcut_password', shortcutPassword)
-      }
-    } else {
-      formData.append('password', password)
-    }
-    if (imageFile) {
-      formData.append('image', imageFile)
-    }
-
     setSubmitting(true)
     try {
+      // If pin is 'new', create the pin first
+      let resolvedPinId = ''
+      if (pinChoice === 'new') {
+        const pinResponse = await fetch(`${API_BASE}/map/pins`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newPinName.trim(),
+            x: newPinPoint.x,
+            y: newPinPoint.y,
+            email: trimmedEmail
+          })
+        })
+        const pinResult = await readApiResponse(pinResponse)
+        if (!pinResult.ok) {
+          showMessage(buildApiErrorMessage(pinResult, 'MAP_PIN_CREATE_FAILED', 'Failed to create pin'), 'error')
+          setSubmitting(false)
+          return
+        }
+        resolvedPinId = pinResult.data.pin?.id || ''
+        await loadPins()
+      } else if (pinChoice !== 'others') {
+        resolvedPinId = pinChoice
+      }
+
+      const formData = new FormData()
+      formData.append('email', trimmedEmail)
+      formData.append('title', title.trim())
+      formData.append('text', text.trim())
+      if (displayName.trim()) {
+        formData.append('submission_display_name', displayName.trim())
+      }
+      if (resolvedPinId) {
+        formData.append('pin_id', resolvedPinId)
+      }
+      formData.append('auth_method', authMethod)
+      formData.append('recaptcha_token', recaptchaToken || '')
+      if (authMethod === 'email') {
+        formData.append('verification_code', verificationCode.trim())
+        if (shortcutPassword) {
+          formData.append('shortcut_password', shortcutPassword)
+        }
+      } else {
+        formData.append('password', password)
+      }
+      if (imageFile) {
+        formData.append('image', imageFile)
+      }
+
       const response = await fetch(`${API_BASE}/map/submissions`, {
         method: 'POST',
         body: formData
@@ -618,13 +899,10 @@ function MapPortal({ app }) {
         resetSubmissionForm()
         await loadApprovedSubmissions()
         await loadPendingSubmissions()
+        await loadPins()
       } else {
         showMessage(buildApiErrorMessage(result, 'MAP_SUBMIT_FAILED', 'Failed to submit map entry'), 'error')
-        console.error('Map submission failed:', {
-          status: result.status,
-          data: result.data,
-          raw: result.raw
-        })
+        console.error('Map submission failed:', { status: result.status, data: result.data, raw: result.raw })
       }
     } catch (error) {
       showMessage(buildNetworkErrorMessage('MAP_SUBMIT_NETWORK', 'Failed to submit map entry', error), 'error')
@@ -644,6 +922,7 @@ function MapPortal({ app }) {
         showMessage('Map submission approved', 'success')
         await loadApprovedSubmissions()
         await loadPendingSubmissions()
+        await loadLeaders()
       } else {
         showMessage(buildApiErrorMessage(result, 'MAP_APPROVE_FAILED', 'Failed to approve submission'), 'error')
       }
@@ -673,6 +952,62 @@ function MapPortal({ app }) {
       showMessage(buildNetworkErrorMessage('MAP_REJECT_NETWORK', 'Failed to reject submission', error), 'error')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const deleteSubmission = async (submissionId) => {
+    if (typeof window !== 'undefined' && !window.confirm('Permanently delete this submission?')) {
+      return
+    }
+    setActionLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/map/submissions/${submissionId}`, { method: 'DELETE' })
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        showMessage('Submission deleted', 'success')
+        await loadApprovedSubmissions()
+        await loadPendingSubmissions()
+        await loadLeaders()
+      } else {
+        showMessage(buildApiErrorMessage(result, 'MAP_SUBMISSION_DELETE_FAILED', 'Failed to delete submission'), 'error')
+      }
+    } catch (error) {
+      showMessage(buildNetworkErrorMessage('MAP_SUBMISSION_DELETE_NETWORK', 'Failed to delete submission', error), 'error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleBackgroundUpload = async (file) => {
+    if (!file) return
+    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type)) {
+      showMessage('[MAP_BACKGROUND_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, or GIF file', 'error')
+      return
+    }
+    if (file.size > MAP_MAX_IMAGE_BYTES) {
+      showMessage('[MAP_BACKGROUND_TOO_LARGE_CLIENT] Image must be 50 MB or smaller', 'error')
+      return
+    }
+
+    setBackgroundUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('image', file)
+      const response = await fetch(`${API_BASE}/map/background`, { method: 'POST', body: formData })
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        showMessage('Map background updated', 'success')
+        await loadBackground()
+      } else {
+        showMessage(buildApiErrorMessage(result, 'MAP_BACKGROUND_UPLOAD_FAILED', 'Failed to upload background'), 'error')
+      }
+    } catch (error) {
+      showMessage(buildNetworkErrorMessage('MAP_BACKGROUND_UPLOAD_NETWORK', 'Failed to upload background', error), 'error')
+    } finally {
+      setBackgroundUploading(false)
+      if (backgroundInputRef.current) {
+        backgroundInputRef.current.value = ''
+      }
     }
   }
 
@@ -739,7 +1074,7 @@ function MapPortal({ app }) {
                 {pendingSubmissions.length} pending
               </Badge>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={loadPendingSubmissions} variant="outline" size="sm" disabled={pendingLoading}>
                 <RefreshCcw className="mr-2 h-4 w-4" />
                 Refresh
@@ -747,6 +1082,26 @@ function MapPortal({ app }) {
               <Button onClick={() => setShowApprovals(true)} size="sm" className="bg-amber-700 hover:bg-amber-800">
                 Open Approvals
               </Button>
+              {isSuperadmin && (
+                <>
+                  <input
+                    ref={backgroundInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="sr-only"
+                    onChange={(event) => handleBackgroundUpload(event.target.files?.[0] || null)}
+                  />
+                  <Button
+                    onClick={() => backgroundInputRef.current?.click()}
+                    size="sm"
+                    variant="outline"
+                    disabled={backgroundUploading}
+                  >
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    {backgroundUploading ? 'Uploading…' : 'Upload Map Background'}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </section>
@@ -759,31 +1114,75 @@ function MapPortal({ app }) {
               {roleLabel} access
             </Badge>
             <div>
-              <h2 className="text-4xl font-bold tracking-normal text-slate-950">China map</h2>
+              <h2 className="text-4xl font-bold tracking-normal text-slate-950">Ecological Map</h2>
               <p className="mt-3 max-w-xl text-base leading-7 text-slate-600">
-                Approved submissions appear here after review. Your current session is tied to @{user?.username || 'guest'}.
+                Approved submissions appear here after review. Click a pin to see its submissions, or click <span className="font-semibold">Others</span> to view submissions without a pin.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-md border bg-slate-50 p-3">
-                <div className="text-xs font-semibold uppercase text-slate-500">Role</div>
-                <div className="mt-1 text-lg font-bold">{roleLabel}</div>
-              </div>
-              <div className="rounded-md border bg-slate-50 p-3">
-                <div className="text-xs font-semibold uppercase text-slate-500">Username</div>
-                <div className="mt-1 truncate text-lg font-bold">@{user?.username || 'guest'}</div>
+                <div className="text-xs font-semibold uppercase text-slate-500">Pins</div>
+                <div className="mt-1 text-lg font-bold">{pins.length}</div>
               </div>
               <div className="rounded-md border bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase text-slate-500">Approved</div>
                 <div className="mt-1 text-lg font-bold">{approvedSubmissions.length}</div>
               </div>
+              <div className="rounded-md border bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase text-slate-500">Username</div>
+                <div className="mt-1 truncate text-lg font-bold">@{user?.username || 'guest'}</div>
+              </div>
             </div>
+            <Button onClick={() => setShowEnlarge(true)} variant="outline" size="sm" className="w-fit">
+              <ZoomIn className="mr-2 h-4 w-4" />
+              Enlarge map
+            </Button>
           </div>
-          <ChinaMapGraphic approvedCount={approvedSubmissions.length} />
+          <EcologicalMapGraphic
+            pins={pins}
+            submissionsByPin={submissionsByPin}
+            selectedPinId={selectedPinId}
+            onSelectPin={setSelectedPinId}
+            backgroundUrl={backgroundUrl}
+          />
         </section>
 
+        {selectedPinId && (
+          <section className="space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-xl font-bold text-slate-950">
+                {selectedPinName}{' '}
+                <span className="ml-1 text-sm font-medium text-slate-500">
+                  ({selectedSubmissions.length} {selectedSubmissions.length === 1 ? 'submission' : 'submissions'})
+                </span>
+              </h3>
+              <Button onClick={() => setSelectedPinId(null)} variant="ghost" size="sm">
+                <X className="mr-2 h-4 w-4" />
+                Close
+              </Button>
+            </div>
+            {selectedSubmissions.length === 0 ? (
+              <div className="rounded-md border bg-white p-6 text-center text-sm text-slate-500">
+                No approved submissions here yet
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {selectedSubmissions.map((submission) => (
+                  <SubmissionDetails
+                    key={submission.id}
+                    submission={submission}
+                    canDelete={isSuperadmin}
+                    actionLoading={actionLoading}
+                    onDelete={deleteSubmission}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {isSubmissionPage ? (
-          <section className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(22rem,0.65fr)]">
+          <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.7fr)]">
             <Card className="rounded-md">
               <CardHeader>
                 <CardTitle>Map Submission</CardTitle>
@@ -880,14 +1279,108 @@ function MapPortal({ app }) {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="map-text">Submission text</Label>
+                  <Label htmlFor="map-title">Title</Label>
+                  <Input
+                    id="map-title"
+                    placeholder="Short title for your submission"
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    maxLength={200}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-text">Description</Label>
                   <Textarea
                     id="map-text"
-                    placeholder="Enter submission details"
+                    placeholder="Describe your submission"
                     rows={6}
                     value={text}
                     onChange={(event) => setText(event.target.value)}
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="map-display-name">Display name (optional)</Label>
+                  <Input
+                    id="map-display-name"
+                    placeholder="Name to show with your submission"
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    maxLength={80}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Pin location</Label>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => { setPinChoice('others'); setNewPinPoint(null) }}
+                      className={`rounded-md border px-3 py-2 text-sm font-medium ${pinChoice === 'others' ? 'border-teal-700 bg-teal-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+                    >
+                      Others (no pin)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setPinChoice('existing'); setNewPinPoint(null) }}
+                      className={`rounded-md border px-3 py-2 text-sm font-medium ${pinChoice !== 'others' && pinChoice !== 'new' ? 'border-teal-700 bg-teal-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+                      disabled={pins.length === 0}
+                    >
+                      Existing pin
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setPinChoice('new') }}
+                      className={`rounded-md border px-3 py-2 text-sm font-medium ${pinChoice === 'new' ? 'border-teal-700 bg-teal-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+                    >
+                      <Plus className="mr-1 inline h-3.5 w-3.5" />
+                      New pin
+                    </button>
+                  </div>
+
+                  {pinChoice !== 'others' && pinChoice !== 'new' && (
+                    <select
+                      value={pins.find((pin) => pin.id === pinChoice) ? pinChoice : ''}
+                      onChange={(event) => setPinChoice(event.target.value || 'others')}
+                      className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="">Select a pin…</option>
+                      {pins.map((pin) => (
+                        <option key={pin.id} value={pin.id}>
+                          {pin.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {pinChoice === 'new' && (
+                    <div className="mt-2 space-y-2 rounded-md border bg-slate-50 p-3">
+                      <Input
+                        placeholder="Pin name"
+                        value={newPinName}
+                        onChange={(event) => setNewPinName(event.target.value)}
+                        maxLength={80}
+                      />
+                      <p className="text-xs text-slate-500">
+                        Click anywhere on the map below to place your pin.
+                      </p>
+                      <EcologicalMapGraphic
+                        pins={pins}
+                        submissionsByPin={submissionsByPin}
+                        backgroundUrl={backgroundUrl}
+                        pendingPoint={newPinPoint}
+                        onMapClick={handleSubmissionMapClick}
+                        className="min-h-[18rem]"
+                      />
+                      {newPinPoint && (
+                        <div className="text-xs text-slate-600">
+                          <MapPinIcon className="mr-1 inline h-3.5 w-3.5 text-sky-600" />
+                          Placed at ({newPinPoint.x.toFixed(1)}, {newPinPoint.y.toFixed(1)})
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3">
@@ -946,54 +1439,81 @@ function MapPortal({ app }) {
               </CardContent>
             </Card>
 
-            <Card className="rounded-md">
-              <CardHeader>
-                <CardTitle>Preview</CardTitle>
-                <CardDescription>Current draft</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-md border bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Email</div>
-                  <div className="mt-1 break-all text-sm">{email || 'No email entered'}</div>
-                </div>
-                <div className="rounded-md border bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Text</div>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{text || 'No text entered'}</p>
-                </div>
-                {imagePreviewUrl ? (
-                  <img src={imagePreviewUrl} alt="Draft preview" className="max-h-80 w-full rounded-md border object-cover" />
-                ) : (
-                  <div className="flex min-h-48 items-center justify-center rounded-md border border-dashed bg-slate-50 text-sm text-slate-500">
-                    <Image className="mr-2 h-4 w-4" />
-                    No image selected
+            <div className="space-y-6">
+              <Card className="rounded-md">
+                <CardHeader>
+                  <CardTitle>Preview</CardTitle>
+                  <CardDescription>Current draft</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-md border bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase text-slate-500">Title</div>
+                    <div className="mt-1 break-words text-sm font-semibold">{title || 'No title entered'}</div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  <div className="rounded-md border bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase text-slate-500">Description</div>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{text || 'No description entered'}</p>
+                  </div>
+                  <div className="rounded-md border bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase text-slate-500">Display name</div>
+                    <div className="mt-1 break-words text-sm">{displayName || '— (will fall back to email)'}</div>
+                  </div>
+                  <div className="rounded-md border bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase text-slate-500">Pin</div>
+                    <div className="mt-1 break-words text-sm">
+                      {pinChoice === 'others'
+                        ? 'Others (no pin)'
+                        : pinChoice === 'new'
+                        ? `New pin: ${newPinName || '(no name)'}${newPinPoint ? ` @ (${newPinPoint.x.toFixed(1)}, ${newPinPoint.y.toFixed(1)})` : ' — pick a location'}`
+                        : pins.find((pin) => pin.id === pinChoice)?.name || 'Choose a pin'}
+                    </div>
+                  </div>
+                  {imagePreviewUrl ? (
+                    <img src={imagePreviewUrl} alt="Draft preview" className="max-h-80 w-full rounded-md border object-cover" />
+                  ) : (
+                    <div className="flex min-h-48 items-center justify-center rounded-md border border-dashed bg-slate-50 text-sm text-slate-500">
+                      <ImageIcon className="mr-2 h-4 w-4" />
+                      No image selected
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
+            </div>
           </section>
         ) : (
-          <section className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-950">Approved submissions</h2>
-                <p className="text-sm text-slate-500">Visible to signed-in and guest map users.</p>
+          <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.55fr)]">
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-950">All approved submissions</h2>
+                  <p className="text-sm text-slate-500">Visible to signed-in and guest map users.</p>
+                </div>
+                <Button onClick={loadApprovedSubmissions} variant="outline" disabled={approvedLoading}>
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
               </div>
-              <Button onClick={loadApprovedSubmissions} variant="outline" disabled={approvedLoading}>
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                Refresh
-              </Button>
+              {approvedLoading ? (
+                <div className="rounded-md border bg-white p-8 text-center text-slate-500">Loading submissions...</div>
+              ) : approvedSubmissions.length === 0 ? (
+                <div className="rounded-md border bg-white p-8 text-center text-slate-500">No approved submissions yet</div>
+              ) : (
+                <div className="space-y-4">
+                  {approvedSubmissions.map((submission) => (
+                    <SubmissionDetails
+                      key={submission.id}
+                      submission={submission}
+                      canDelete={isSuperadmin}
+                      actionLoading={actionLoading}
+                      onDelete={deleteSubmission}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-            {approvedLoading ? (
-              <div className="rounded-md border bg-white p-8 text-center text-slate-500">Loading submissions...</div>
-            ) : approvedSubmissions.length === 0 ? (
-              <div className="rounded-md border bg-white p-8 text-center text-slate-500">No approved submissions yet</div>
-            ) : (
-              <div className="space-y-4">
-                {approvedSubmissions.map((submission) => (
-                  <SubmissionDetails key={submission.id} submission={submission} />
-                ))}
-              </div>
-            )}
+            <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
           </section>
         )}
       </main>
@@ -1015,9 +1535,11 @@ function MapPortal({ app }) {
                   key={submission.id}
                   submission={submission}
                   admin
+                  canDelete={isSuperadmin}
                   actionLoading={actionLoading}
                   onApprove={approveSubmission}
                   onReject={rejectSubmission}
+                  onDelete={deleteSubmission}
                 />
               ))
             )}
@@ -1025,6 +1547,25 @@ function MapPortal({ app }) {
           <Button onClick={() => setShowApprovals(false)} className="w-full">
             Close
           </Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEnlarge} onOpenChange={setShowEnlarge}>
+        <DialogContent className="w-full sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Ecological Map (enlarged)</DialogTitle>
+            <DialogDescription>Click pins for details. Use this larger view for more precise placement.</DialogDescription>
+          </DialogHeader>
+          <div className="aspect-[4/3] w-full">
+            <EcologicalMapGraphic
+              pins={pins}
+              submissionsByPin={submissionsByPin}
+              selectedPinId={selectedPinId}
+              onSelectPin={(id) => { setSelectedPinId(id); setShowEnlarge(false) }}
+              backgroundUrl={backgroundUrl}
+              className="h-full"
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </div>
