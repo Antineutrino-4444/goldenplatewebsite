@@ -791,16 +791,23 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
 }
 
 /**
- * Wraps a map view in a scrollable viewport with a zoom slider. Renders
- * children as a function that receives the current pixel size to draw at.
- * If naturalSize is missing, falls back to a fitted aspect-ratio container.
+ * Wraps a map view in a transform-based pan/zoom viewport.
+ *
+ * - Wheel: pans the image (vertical + horizontal with shift).
+ * - Ctrl/Cmd + wheel: zooms toward the cursor.
+ * - Touch: single finger drags to pan; two fingers pinch to zoom.
+ * - Mouse drag: pans the image.
+ *
+ * Children is a render-prop receiving the current pixel size to draw at.
  */
 function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, maxZoom = 5 }) {
   const viewportRef = useRef(null)
   const [viewport, setViewport] = useState({ w: 0, h: 0 })
   const [fitMode, setFitMode] = useState(true)
   const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
 
+  // Track viewport size.
   useEffect(() => {
     const node = viewportRef.current
     if (!node) return
@@ -814,7 +821,6 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
     return () => ro.disconnect()
   }, [])
 
-  // Fit zoom: largest scale that fits the natural image inside the viewport.
   const fitZoom = (() => {
     if (!naturalSize || viewport.w === 0 || viewport.h === 0) return 1
     return Math.min(viewport.w / naturalSize.w, viewport.h / naturalSize.h)
@@ -825,13 +831,149 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
     ? { w: Math.max(1, naturalSize.w * effectiveZoom), h: Math.max(1, naturalSize.h * effectiveZoom) }
     : null
 
-  const setManualZoom = (z) => {
+  // When in fit mode (or no manual interaction yet), keep the image centered.
+  const centeredPan = renderSize
+    ? { x: (viewport.w - renderSize.w) / 2, y: (viewport.h - renderSize.h) / 2 }
+    : { x: 0, y: 0 }
+  const effectivePan = fitMode ? centeredPan : pan
+
+  // Clamp pan so the image cannot be dragged completely out of view.
+  const clampPan = (p, size) => {
+    if (!size) return p
+    const margin = 40
+    const minX = Math.min(0, viewport.w - size.w) - margin
+    const maxX = margin
+    const minY = Math.min(0, viewport.h - size.h) - margin
+    const maxY = margin
+    // If image smaller than viewport in a dimension, lock to centered.
+    const x = size.w <= viewport.w ? (viewport.w - size.w) / 2 : Math.min(maxX, Math.max(minX, p.x))
+    const y = size.h <= viewport.h ? (viewport.h - size.h) / 2 : Math.min(maxY, Math.max(minY, p.y))
+    return { x, y }
+  }
+
+  const applyZoomAt = (newZoomRaw, focusX, focusY) => {
+    const newZoom = Math.min(maxZoom, Math.max(minZoom, newZoomRaw))
+    if (!naturalSize) {
+      setFitMode(false)
+      setZoom(newZoom)
+      return
+    }
+    const currentZoom = effectiveZoom
+    const currentPan = effectivePan
+    // Image-space coordinate under focus point: imgPt = (focus - pan) / currentZoom
+    // Want new pan such that newPan = focus - imgPt * newZoom
+    const imgX = (focusX - currentPan.x) / currentZoom
+    const imgY = (focusY - currentPan.y) / currentZoom
+    const newPan = {
+      x: focusX - imgX * newZoom,
+      y: focusY - imgY * newZoom,
+    }
+    const nextSize = { w: naturalSize.w * newZoom, h: naturalSize.h * newZoom }
     setFitMode(false)
-    setZoom(Math.min(maxZoom, Math.max(minZoom, z)))
+    setZoom(newZoom)
+    setPan(clampPan(newPan, nextSize))
+  }
+
+  // Wheel: ctrl/meta -> zoom at cursor; otherwise pan.
+  const onWheel = (event) => {
+    event.preventDefault()
+    const node = viewportRef.current
+    if (!node) return
+    const rect = node.getBoundingClientRect()
+    const focusX = event.clientX - rect.left
+    const focusY = event.clientY - rect.top
+    if (event.ctrlKey || event.metaKey) {
+      const delta = -event.deltaY
+      const factor = Math.exp(delta * 0.0015)
+      applyZoomAt(effectiveZoom * factor, focusX, focusY)
+    } else {
+      // Pan: shift+wheel swaps to horizontal scroll.
+      const dx = event.shiftKey ? event.deltaY : event.deltaX
+      const dy = event.shiftKey ? 0 : event.deltaY
+      setFitMode(false)
+      setPan((prev) => clampPan(
+        { x: (fitMode ? centeredPan.x : prev.x) - dx, y: (fitMode ? centeredPan.y : prev.y) - dy },
+        renderSize,
+      ))
+    }
+  }
+
+  // Attach wheel listener as non-passive so preventDefault works.
+  useEffect(() => {
+    const node = viewportRef.current
+    if (!node) return
+    const handler = (event) => onWheel(event)
+    node.addEventListener('wheel', handler, { passive: false })
+    return () => node.removeEventListener('wheel', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveZoom, effectivePan.x, effectivePan.y, viewport.w, viewport.h, naturalSize?.w, naturalSize?.h, fitMode])
+
+  // Pointer-based pan + pinch zoom.
+  const pointersRef = useRef(new Map())
+  const pinchRef = useRef(null)
+
+  const onPointerDown = (event) => {
+    const node = viewportRef.current
+    if (!node) return
+    node.setPointerCapture?.(event.pointerId)
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pointersRef.current.size === 2) {
+      const pts = Array.from(pointersRef.current.values())
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+      pinchRef.current = { startDist: dist, startZoom: effectiveZoom, lastMid: midpoint(pts), startPan: effectivePan }
+      setFitMode(false)
+    }
+  }
+
+  const midpoint = (pts) => ({ x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 })
+
+  const onPointerMove = (event) => {
+    const ptr = pointersRef.current.get(event.pointerId)
+    if (!ptr) return
+    const prev = { ...ptr }
+    ptr.x = event.clientX
+    ptr.y = event.clientY
+
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const node = viewportRef.current
+      if (!node) return
+      const rect = node.getBoundingClientRect()
+      const pts = Array.from(pointersRef.current.values())
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+      const ratio = dist / Math.max(1, pinchRef.current.startDist)
+      const newZoom = Math.min(maxZoom, Math.max(minZoom, pinchRef.current.startZoom * ratio))
+      const mid = midpoint(pts)
+      const focusX = mid.x - rect.left
+      const focusY = mid.y - rect.top
+      applyZoomAt(newZoom, focusX, focusY)
+    } else if (pointersRef.current.size === 1) {
+      const dx = ptr.x - prev.x
+      const dy = ptr.y - prev.y
+      setFitMode(false)
+      setPan((p) => clampPan(
+        { x: (fitMode ? centeredPan.x : p.x) + dx, y: (fitMode ? centeredPan.y : p.y) + dy },
+        renderSize,
+      ))
+    }
+  }
+
+  const onPointerUp = (event) => {
+    pointersRef.current.delete(event.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
+  }
+
+  const setManualZoom = (z) => {
+    if (!naturalSize) {
+      setFitMode(false)
+      setZoom(Math.min(maxZoom, Math.max(minZoom, z)))
+      return
+    }
+    // Zoom centered on viewport.
+    applyZoomAt(z, viewport.w / 2, viewport.h / 2)
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
         <span className="font-semibold uppercase tracking-wide">Zoom</span>
         <Button size="sm" variant="outline" onClick={() => setManualZoom(effectiveZoom - 0.1)} disabled={effectiveZoom <= minZoom + 0.001}>−</Button>
@@ -846,16 +988,37 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
         />
         <Button size="sm" variant="outline" onClick={() => setManualZoom(effectiveZoom + 0.1)} disabled={effectiveZoom >= maxZoom - 0.001}>+</Button>
         <span className="w-14 text-right tabular-nums">{(effectiveZoom * 100).toFixed(0)}%</span>
-        <Button size="sm" variant={fitMode ? 'default' : 'outline'} onClick={() => setFitMode(true)}>Fit</Button>
+        <Button size="sm" variant={fitMode ? 'default' : 'outline'} onClick={() => { setFitMode(true); setPan({ x: 0, y: 0 }) }}>Fit</Button>
         <Button size="sm" variant="outline" onClick={() => setManualZoom(1)}>100%</Button>
+      </div>
+      <div className="text-[10px] text-slate-500">
+        Scroll to pan · Ctrl/Cmd + scroll or pinch to zoom · drag to move
       </div>
       <div
         ref={viewportRef}
-        className="relative max-h-[80vh] w-full overflow-auto rounded-md border bg-slate-100"
-        style={{ minHeight: '40vh' }}
+        className="relative min-h-0 flex-1 w-full overflow-hidden rounded-md border bg-slate-100"
+        style={{ touchAction: 'none', cursor: 'grab' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       >
-        {renderSize ? children(renderSize) : (
-          <div className="w-full" style={{ aspectRatio: `${imageAspect || 4 / 3}` }}>
+        {renderSize ? (
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: renderSize.w,
+              height: renderSize.h,
+              transform: `translate(${effectivePan.x}px, ${effectivePan.y}px)`,
+              transformOrigin: '0 0',
+            }}
+          >
+            {children(renderSize)}
+          </div>
+        ) : (
+          <div className="absolute inset-0 w-full" style={{ aspectRatio: `${imageAspect || 4 / 3}` }}>
             {children(null)}
           </div>
         )}
@@ -2119,11 +2282,11 @@ function MapPortal({ app }) {
       />
 
       <Dialog open={showEnlarge} onOpenChange={setShowEnlarge}>
-        <DialogContent className="w-full sm:max-w-[95vw] max-h-[95vh] overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="flex w-full sm:max-w-[95vw] h-[95vh] max-h-[95vh] flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Ecological Map (enlarged)</DialogTitle>
             <DialogDescription>
-              Use the zoom controls to inspect the map at any size. Drag scrollbars when zoomed in.
+              Scroll to pan, Ctrl/Cmd + scroll or pinch to zoom, drag to move.
             </DialogDescription>
           </DialogHeader>
           <ZoomableMapView naturalSize={imageNaturalSize} imageAspect={imageAspect}>
@@ -2143,11 +2306,11 @@ function MapPortal({ app }) {
       </Dialog>
 
       <Dialog open={showPinPickerEnlarged} onOpenChange={setShowPinPickerEnlarged}>
-        <DialogContent className="w-full sm:max-w-[95vw] max-h-[95vh] overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="flex w-full sm:max-w-[95vw] h-[95vh] max-h-[95vh] flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Place your pin (enlarged)</DialogTitle>
             <DialogDescription>
-              Click anywhere on the map to set your pin location. Zoom in for more precision.
+              Click to drop your pin. Scroll to pan, Ctrl/Cmd + scroll or pinch to zoom.
             </DialogDescription>
           </DialogHeader>
           <ZoomableMapView naturalSize={imageNaturalSize} imageAspect={imageAspect}>
@@ -2163,7 +2326,7 @@ function MapPortal({ app }) {
               />
             )}
           </ZoomableMapView>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-slate-600">
               {newPinPoint ? (
                 <>
