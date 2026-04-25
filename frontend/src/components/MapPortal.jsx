@@ -42,20 +42,54 @@ function isHeicFile(file) {
   return n.endsWith('.heic') || n.endsWith('.heif')
 }
 
-async function convertHeicViaServer(file) {
+async function convertHeicViaServer(file, onProgress) {
   const lowerName = (file.name || '').toLowerCase()
   const formData = new FormData()
   formData.append('image', file, file.name || 'image.heic')
-  const res = await fetch('/api/map/convert-heic', { method: 'POST', body: formData })
-  if (!res.ok) {
-    let msg = 'HEIC conversion failed'
-    try {
-      const data = await res.json()
-      msg = data?.error || data?.code || msg
-    } catch { /* ignore */ }
-    throw new Error(msg)
-  }
-  const blob = await res.blob()
+
+  // Use XHR so we can report upload progress + indeterminate "decoding" stage.
+  const xhrPromise = new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/map/convert-heic')
+    xhr.responseType = 'blob'
+    if (xhr.upload && typeof onProgress === 'function') {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          // Map upload to 0..70% of total progress.
+          const pct = Math.round((event.loaded / event.total) * 70)
+          onProgress({ phase: 'uploading', percent: pct })
+        }
+      }
+      xhr.upload.onload = () => onProgress({ phase: 'decoding', percent: 75 })
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (typeof onProgress === 'function') onProgress({ phase: 'done', percent: 100 })
+        resolve(xhr.response)
+      } else {
+        let msg = `HEIC conversion failed (HTTP ${xhr.status})`
+        try {
+          // Best-effort: try to read JSON error from the blob.
+          const reader = new FileReader()
+          reader.onload = () => {
+            try {
+              const data = JSON.parse(reader.result)
+              msg = data?.error || data?.code || msg
+            } catch { /* ignore */ }
+            reject(new Error(msg))
+          }
+          reader.onerror = () => reject(new Error(msg))
+          reader.readAsText(xhr.response)
+        } catch {
+          reject(new Error(msg))
+        }
+      }
+    }
+    xhr.onerror = () => reject(new Error('Network error during HEIC conversion'))
+    xhr.send(formData)
+  })
+
+  const blob = await xhrPromise
   const mime = blob.type || 'image/png'
   const ext = mime === 'image/png' ? '.png' : (mime === 'image/jpeg' ? '.jpg' : '.png')
   const baseName = (lowerName.replace(/\.(heic|heif)$/i, '') || 'image') + ext
@@ -161,15 +195,21 @@ function EcologicalMapGraphic({
   const aspect = imageAspect && imageAspect > 0 ? imageAspect : 4 / 3
 
   const handleClick = (event) => {
-    if (!onMapClick) return
-    const node = containerRef.current
-    if (!node) return
-    const rect = node.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) return
-    const x = ((event.clientX - rect.left) / rect.width) * 100
-    const y = ((event.clientY - rect.top) / rect.height) * 100
-    if (x < 0 || x > 100 || y < 0 || y > 100) return
-    onMapClick(Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y)))
+    if (onMapClick) {
+      const node = containerRef.current
+      if (!node) return
+      const rect = node.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return
+      const x = ((event.clientX - rect.left) / rect.width) * 100
+      const y = ((event.clientY - rect.top) / rect.height) * 100
+      if (x < 0 || x > 100 || y < 0 || y > 100) return
+      onMapClick(Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y)))
+      return
+    }
+    // Not in placement mode: clicking the map background deselects any pin.
+    if (onSelectPin && selectedPinId !== null && selectedPinId !== undefined) {
+      onSelectPin(null)
+    }
   }
 
   const containerStyle = naturalSize
@@ -267,6 +307,15 @@ function EcologicalMapGraphic({
 }
 
 function SubmissionDetails({ submission, admin = false, canDelete = false, actionLoading = false, onApprove, onReject, onDelete }) {
+  const [showRejectDialog, setShowRejectDialog] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const submitReject = () => {
+    const trimmed = rejectReason.trim()
+    if (!trimmed) return
+    onReject(submission.id, trimmed)
+    setShowRejectDialog(false)
+    setRejectReason('')
+  }
   return (
     <div className="grid gap-4 rounded-md border bg-white p-4 md:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
       <div className="space-y-3">
@@ -314,9 +363,13 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, actio
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Approve
               </Button>
-              <Button onClick={() => onReject(submission.id)} disabled={actionLoading} variant="outline">
+              <Button onClick={() => onReject(submission.id, '')} disabled={actionLoading} variant="outline">
                 <XCircle className="mr-2 h-4 w-4" />
                 Reject
+              </Button>
+              <Button onClick={() => setShowRejectDialog(true)} disabled={actionLoading} variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
+                <XCircle className="mr-2 h-4 w-4" />
+                Reject with comment
               </Button>
             </>
           )}
@@ -329,6 +382,34 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, actio
         </div>
       </div>
       <SubmissionImage submission={submission} className="max-h-80" />
+
+      <Dialog open={showRejectDialog} onOpenChange={(next) => { if (!next) { setShowRejectDialog(false); setRejectReason('') } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject with comment</DialogTitle>
+            <DialogDescription>
+              The comment will be emailed to the submitter at <span className="font-medium">{submission.email}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor={`reject-reason-${submission.id}`}>Reason</Label>
+            <Textarea
+              id={`reject-reason-${submission.id}`}
+              value={rejectReason}
+              onChange={(event) => setRejectReason(event.target.value)}
+              placeholder="Explain what should be changed for resubmission…"
+              rows={5}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => { setShowRejectDialog(false); setRejectReason('') }} disabled={actionLoading}>Cancel</Button>
+              <Button variant="destructive" onClick={submitReject} disabled={actionLoading || !rejectReason.trim()}>
+                <XCircle className="mr-2 h-4 w-4" />
+                Send rejection
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -407,6 +488,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
   const [image, setImage] = useState(null) // HTMLImageElement
   const [originalFile, setOriginalFile] = useState(null)
   const [filename, setFilename] = useState('map-background.png')
+  const [heicProgress, setHeicProgress] = useState(null) // {phase, percent} | null
   // image transform (rendered into stage)
   const [scale, setScale] = useState(1)
   const [rotation, setRotation] = useState(0)
@@ -482,12 +564,15 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
     if (file.type && !MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !heic) return
     let working = file
     if (heic) {
+      setHeicProgress({ phase: 'uploading', percent: 0 })
       try {
-        working = await convertHeicViaServer(file)
+        working = await convertHeicViaServer(file, (p) => setHeicProgress(p))
       } catch (err) {
         console.error('Server HEIC conversion failed', err)
+        setHeicProgress(null)
         return
       }
+      setHeicProgress(null)
     }
     setOriginalFile(working)
     setFilename(working.name || 'map-background.png')
@@ -687,6 +772,23 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
             </Button>
             <span className="text-xs text-slate-500">{image ? `${image.naturalWidth}×${image.naturalHeight}` : 'No image loaded'}</span>
           </div>
+
+          {heicProgress && (
+            <div className="rounded-md border bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="mb-1 flex items-center justify-between font-medium">
+                <span>{heicProgress.phase === 'uploading' ? 'Uploading HEIC…'
+                  : heicProgress.phase === 'decoding' ? 'Decoding HEIC on server…'
+                  : 'Finishing…'}</span>
+                <span className="tabular-nums">{Math.round(heicProgress.percent)}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded bg-amber-200">
+                <div
+                  className="h-full bg-amber-600 transition-all"
+                  style={{ width: `${Math.max(2, Math.min(100, heicProgress.percent))}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-1">
             <span className="mr-2 text-xs font-semibold uppercase text-slate-500">Aspect:</span>
@@ -917,6 +1019,18 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
     setPan(clampPan(newPan, nextSize))
   }
 
+  // Switch from fit mode to manual mode without changing the visible zoom or position.
+  // Returns the snapshotted (zoom, pan) the caller should base its delta on.
+  const enterManualMode = () => {
+    if (!fitMode) return { z: zoom, p: pan }
+    const z = effectiveZoom
+    const p = effectivePan
+    setZoom(z)
+    setPan(p)
+    setFitMode(false)
+    return { z, p }
+  }
+
   // Wheel: ctrl/meta -> zoom at cursor; otherwise pan.
   const onWheel = (event) => {
     event.preventDefault()
@@ -933,9 +1047,9 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
       // Pan: shift+wheel swaps to horizontal scroll.
       const dx = event.shiftKey ? event.deltaY : event.deltaX
       const dy = event.shiftKey ? 0 : event.deltaY
-      setFitMode(false)
-      setPan((prev) => clampPan(
-        { x: (fitMode ? centeredPan.x : prev.x) - dx, y: (fitMode ? centeredPan.y : prev.y) - dy },
+      const base = enterManualMode()
+      setPan(clampPan(
+        { x: base.p.x - dx, y: base.p.y - dy },
         renderSize,
       ))
     }
@@ -999,8 +1113,8 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
       const rawRatio = dist / Math.max(1, pinchRef.current.startDist)
       // Boost sensitivity: small finger spread → larger zoom change.
       const ratio = rawRatio >= 1
-        ? Math.pow(rawRatio, 3.5)
-        : 1 / Math.pow(1 / rawRatio, 3.5)
+        ? Math.pow(rawRatio, 6.0)
+        : 1 / Math.pow(1 / rawRatio, 6.0)
       const newZoom = Math.min(maxZoom, Math.max(minZoom, pinchRef.current.startZoom * ratio))
       const mid = midpoint(pts)
       const focusX = mid.x - rect.left
@@ -1019,9 +1133,9 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
       }
       const dx = ptr.x - prev.x
       const dy = ptr.y - prev.y
-      setFitMode(false)
-      setPan((p) => clampPan(
-        { x: (fitMode ? centeredPan.x : p.x) + dx, y: (fitMode ? centeredPan.y : p.y) + dy },
+      const base = enterManualMode()
+      setPan(clampPan(
+        { x: base.p.x + dx, y: base.p.y + dy },
         renderSize,
       ))
     }
@@ -1172,13 +1286,14 @@ function MapPortal({ app }) {
 
   // Pin selection for submission: 'others' | <existingPinId> | 'new'
   const [pinChoice, setPinChoice] = useState(initialDraft.pinChoice || 'others')
-  const [newPinName, setNewPinName] = useState('')
-  const [newPinPoint, setNewPinPoint] = useState(null)
+  const [newPinName, setNewPinName] = useState(initialDraft.newPinName || '')
+  const [newPinPoint, setNewPinPoint] = useState(initialDraft.newPinPoint || null)
 
   const [imageFile, setImageFile] = useState(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [isDraggingImage, setIsDraggingImage] = useState(false)
+  const [heicProgress, setHeicProgress] = useState(null) // {phase, percent} | null
   const fileInputRef = useRef(null)
 
   const mapPath = normalizeMapPath()
@@ -1350,12 +1465,12 @@ function MapPortal({ app }) {
     if (!isSubmissionPage) return
     if (typeof window === 'undefined') return
     try {
-      const draft = { email, authMethod, title, text, displayName, verificationCode, verificationSent, pinChoice }
+      const draft = { email, authMethod, title, text, displayName, verificationCode, verificationSent, pinChoice, newPinName, newPinPoint }
       window.localStorage.setItem(SUBMISSION_DRAFT_KEY, JSON.stringify(draft))
     } catch {
       // localStorage may be unavailable - non-fatal
     }
-  }, [isSubmissionPage, email, authMethod, title, text, displayName, verificationCode, verificationSent, pinChoice])
+  }, [isSubmissionPage, email, authMethod, title, text, displayName, verificationCode, verificationSent, pinChoice, newPinName, newPinPoint])
 
   useEffect(() => {
     if (!imageFile) {
@@ -1536,14 +1651,17 @@ function MapPortal({ app }) {
 
     let working = file
     if (heic) {
+      setHeicProgress({ phase: 'uploading', percent: 0 })
       try {
-        working = await convertHeicViaServer(file)
+        working = await convertHeicViaServer(file, (p) => setHeicProgress(p))
       } catch (err) {
         console.error('Server HEIC conversion failed', err)
         showMessage('[MAP_IMAGE_HEIC_FAILED] Could not decode HEIC image', 'error')
         setImageFile(null)
+        setHeicProgress(null)
         return
       }
+      setHeicProgress(null)
     }
 
     setImageFile(working)
@@ -1740,17 +1858,24 @@ function MapPortal({ app }) {
     }
   }
 
-  const rejectSubmission = async (submissionId) => {
+  const rejectSubmission = async (submissionId, reason = '') => {
     setActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/map/submissions/${submissionId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: '' })
+        body: JSON.stringify({ reason: reason || '' })
       })
       const result = await readApiResponse(response)
       if (result.ok) {
-        showMessage('Map submission rejected', 'success')
+        const emailStatus = result.data?.notification_email
+        if (reason && emailStatus && emailStatus.success === false) {
+          showMessage('Submission rejected, but the notification email failed to send', 'warning')
+        } else if (reason) {
+          showMessage('Submission rejected and email sent to submitter', 'success')
+        } else {
+          showMessage('Map submission rejected', 'success')
+        }
         await loadPendingSubmissions()
       } else {
         showMessage(buildApiErrorMessage(result, 'MAP_REJECT_FAILED', 'Failed to reject submission'), 'error')
@@ -1925,7 +2050,7 @@ function MapPortal({ app }) {
                 Approved submissions appear here after review. Click a pin to see its submissions, or click <span className="font-semibold">Others</span> to view submissions without a pin.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase text-slate-500">Pins</div>
                 <div className="mt-1 text-lg font-bold">{pins.length}</div>
@@ -1934,10 +2059,10 @@ function MapPortal({ app }) {
                 <div className="text-xs font-semibold uppercase text-slate-500">Approved</div>
                 <div className="mt-1 text-lg font-bold">{approvedSubmissions.length}</div>
               </div>
-              <div className="rounded-md border bg-slate-50 p-3">
-                <div className="text-xs font-semibold uppercase text-slate-500">Username</div>
-                <div className="mt-1 break-all text-lg font-bold leading-snug">@{user?.username || 'guest'}</div>
-              </div>
+            </div>
+            <div className="flex flex-wrap items-baseline gap-2 rounded-md border bg-slate-50 px-3 py-2">
+              <span className="text-xs font-semibold uppercase text-slate-500">Username</span>
+              <span className="break-all text-base font-bold leading-snug text-slate-800">@{user?.username || 'guest'}</span>
             </div>
             <Button onClick={() => setShowEnlarge(true)} variant="outline" size="sm" className="w-fit">
               <ZoomIn className="mr-2 h-4 w-4" />
@@ -2231,6 +2356,22 @@ function MapPortal({ app }) {
                       onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
                     />
                   </label>
+                  {heicProgress && (
+                    <div className="rounded-md border bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      <div className="mb-1 flex items-center justify-between font-medium">
+                        <span>{heicProgress.phase === 'uploading' ? 'Uploading HEIC…'
+                          : heicProgress.phase === 'decoding' ? 'Decoding HEIC on server…'
+                          : 'Finishing…'}</span>
+                        <span className="tabular-nums">{Math.round(heicProgress.percent)}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded bg-amber-200">
+                        <div
+                          className="h-full bg-amber-600 transition-all"
+                          style={{ width: `${Math.max(2, Math.min(100, heicProgress.percent))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                   {imagePreviewUrl && (
                     <div className="relative">
                       <img src={imagePreviewUrl} alt="Selected preview" className="max-h-72 w-full rounded-md border object-cover" />

@@ -4,6 +4,7 @@ import random
 import string
 from datetime import timedelta, timezone
 from io import BytesIO
+import html as _html_lib
 
 import requests as http_requests
 from flask import jsonify, request, send_file, session
@@ -825,11 +826,98 @@ def reject_map_submission(submission_id):
         map_db_session.rollback()
         return _map_error('MAP_SUBMISSION_REJECT_FAILED', 'Could not reject submission', 500)
 
-    return jsonify({
+    # If an admin rejected with a comment, email the submitter.
+    email_status = None
+    if reason and submission.email:
+        try:
+            email_status = _send_rejection_email(
+                to_email=submission.email,
+                submission=submission,
+                reason=reason,
+                reviewer_display_name=identity.get('display_name') or identity.get('username') or 'Admin',
+            )
+        except Exception as exc:
+            logger.exception('Unable to send map rejection email: %s', exc)
+            email_status = {'success': False, 'error': str(exc)}
+
+    response_payload = {
         'status': 'success',
         'message': 'Submission rejected',
         'submission': _serialize_submission(submission),
-    }), 200
+    }
+    if email_status is not None:
+        response_payload['notification_email'] = email_status
+    return jsonify(response_payload), 200
+
+
+def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_display_name: str) -> dict:
+    """Send a formatted rejection email to the submitter via Brevo."""
+    title = (submission.title or '').strip() or 'your submission'
+    safe_title = _html_lib.escape(title)
+    safe_reason = _html_lib.escape(reason).replace('\n', '<br/>')
+    safe_reviewer = _html_lib.escape(reviewer_display_name)
+    submitted_at = ''
+    if submission.submitted_at:
+        try:
+            submitted_at = submission.submitted_at.strftime('%B %d, %Y at %I:%M %p UTC')
+        except Exception:
+            submitted_at = str(submission.submitted_at)
+    safe_submitted_at = _html_lib.escape(submitted_at)
+    excerpt = (submission.text or '').strip()
+    if len(excerpt) > 400:
+        excerpt = excerpt[:400] + '…'
+    safe_excerpt = _html_lib.escape(excerpt).replace('\n', '<br/>')
+
+    subject = f'Your Ecological Map submission was not approved'
+    html_content = f"""
+<!doctype html>
+<html>
+  <body style=\"margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;\">
+    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f1f5f9;padding:24px 0;\">
+      <tr><td align=\"center\">
+        <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 14px rgba(15,23,42,0.06);\">
+          <tr>
+            <td style=\"background:linear-gradient(135deg,#0f766e,#0ea5e9);padding:24px 28px;color:#ffffff;\">
+              <div style=\"font-size:12px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;\">Ecological Map</div>
+              <div style=\"font-size:22px;font-weight:700;margin-top:6px;\">Submission was not approved</div>
+            </td>
+          </tr>
+          <tr>
+            <td style=\"padding:24px 28px;\">
+              <p style=\"margin:0 0 14px 0;font-size:15px;line-height:1.55;\">Hi,</p>
+              <p style=\"margin:0 0 14px 0;font-size:15px;line-height:1.55;\">
+                Thanks for contributing to the Ecological Map. After review, <strong>{safe_title}</strong> was not approved.
+              </p>
+              <div style=\"background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;margin:16px 0;\">
+                <div style=\"font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#991b1b;margin-bottom:6px;\">Reviewer comment</div>
+                <div style=\"font-size:14px;line-height:1.55;color:#7f1d1d;\">{safe_reason}</div>
+              </div>
+              <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin:16px 0;\">
+                <tr>
+                  <td style=\"padding:14px 16px;font-size:13px;line-height:1.55;color:#334155;\">
+                    <div><strong>Title:</strong> {safe_title}</div>
+                    <div><strong>Submitted:</strong> {safe_submitted_at or '—'}</div>
+                    <div><strong>Reviewed by:</strong> {safe_reviewer}</div>
+                  </td>
+                </tr>
+              </table>
+              {('<div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin:18px 0 6px 0;">Your submission</div><div style="font-size:14px;line-height:1.55;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:14px 16px;color:#334155;">' + safe_excerpt + '</div>') if safe_excerpt else ''}
+              <p style=\"margin:18px 0 6px 0;font-size:14px;line-height:1.55;\">You're welcome to revise it and submit again.</p>
+              <p style=\"margin:0;font-size:14px;line-height:1.55;color:#475569;\">— The Ecological Map team</p>
+            </td>
+          </tr>
+          <tr>
+            <td style=\"padding:14px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;\">
+              You're receiving this email because you submitted an entry to the Ecological Map.
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>
+"""
+    return send_email_via_brevo(to_email, subject, html_content)
 
 
 def _serialize_pin(pin):
