@@ -107,16 +107,12 @@ function SubmissionImage({ submission, className = '' }) {
 }
 
 /**
- * Ecological map graphic. Pin coords are percentages (0-100 on each axis).
- * Props:
- *   pins: [{id,name,x,y,...}]
- *   submissionsByPin: { pinId|'others': count }
- *   selectedPinId: id | 'others' | null
- *   onSelectPin: (id) => void
- *   backgroundUrl: string | null
- *   pendingPoint: {x,y} | null  (ghost pin while picking a location)
- *   onMapClick: (x,y) => void   (when not null, map is clickable to place)
- *   className: extra classes
+ * Ecological map graphic. Pin coords are percentages (0-100 on each axis,
+ * relative to the displayed background image's full extent).
+ *
+ * The container's aspect ratio matches the background image (or 4:3 default),
+ * so circles/labels never get stretched. Pins/labels are HTML overlays
+ * positioned by percentage so they remain perfectly round at any size.
  */
 function EcologicalMapGraphic({
   pins = [],
@@ -126,91 +122,98 @@ function EcologicalMapGraphic({
   backgroundUrl = null,
   pendingPoint = null,
   onMapClick = null,
+  imageAspect = null,
   className = ''
 }) {
-  const svgRef = useRef(null)
+  const containerRef = useRef(null)
+  const aspect = imageAspect && imageAspect > 0 ? imageAspect : 4 / 3
 
   const handleClick = (event) => {
     if (!onMapClick) return
-    const svg = svgRef.current
-    if (!svg) return
-    const rect = svg.getBoundingClientRect()
+    const node = containerRef.current
+    if (!node) return
+    const rect = node.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
     const x = ((event.clientX - rect.left) / rect.width) * 100
     const y = ((event.clientY - rect.top) / rect.height) * 100
+    if (x < 0 || x > 100 || y < 0 || y > 100) return
     onMapClick(Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y)))
   }
 
-  const gridLines = []
-  for (let i = 1; i < 10; i++) {
-    gridLines.push(<line key={`h-${i}`} x1="0" y1={i * 10} x2="100" y2={i * 10} stroke="#cbd5e1" strokeWidth="0.15" strokeDasharray="0.6 0.6" />)
-    gridLines.push(<line key={`v-${i}`} x1={i * 10} y1="0" x2={i * 10} y2="100" stroke="#cbd5e1" strokeWidth="0.15" strokeDasharray="0.6 0.6" />)
-  }
-
   return (
-    <div className={`relative overflow-hidden rounded-md border bg-white shadow-sm ${className}`}>
-      <svg
-        ref={svgRef}
-        viewBox="0 0 100 100"
-        role="img"
-        aria-label="Ecological Map"
-        preserveAspectRatio="none"
-        className={`block h-full min-h-[22rem] w-full ${onMapClick ? 'cursor-crosshair' : ''}`}
+    <div className={`relative w-full ${className}`}>
+      <div
+        ref={containerRef}
         onClick={handleClick}
+        className={`relative w-full overflow-hidden rounded-md border bg-white shadow-sm ${onMapClick ? 'cursor-crosshair' : ''}`}
+        style={{ aspectRatio: `${aspect}` }}
       >
-        <defs>
-          <linearGradient id="eco-map-fill" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#ecfdf5" />
-            <stop offset="100%" stopColor="#dbeafe" />
-          </linearGradient>
-        </defs>
         {backgroundUrl ? (
-          <image href={backgroundUrl} x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice" />
+          <img
+            src={backgroundUrl}
+            alt="Ecological Map background"
+            className="absolute inset-0 h-full w-full select-none object-fill"
+            draggable={false}
+          />
         ) : (
-          <rect x="0" y="0" width="100" height="100" fill="url(#eco-map-fill)" />
+          <div
+            className="absolute inset-0"
+            style={{ background: 'linear-gradient(135deg, #ecfdf5 0%, #dbeafe 100%)' }}
+          />
         )}
-        <g pointerEvents="none">{gridLines}</g>
+        {/* Grid overlay */}
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {Array.from({ length: 9 }, (_, i) => i + 1).map((i) => (
+            <g key={i}>
+              <line x1="0" y1={i * 10} x2="100" y2={i * 10} stroke="#cbd5e1" strokeWidth="0.15" strokeDasharray="0.6 0.6" vectorEffect="non-scaling-stroke" />
+              <line x1={i * 10} y1="0" x2={i * 10} y2="100" stroke="#cbd5e1" strokeWidth="0.15" strokeDasharray="0.6 0.6" vectorEffect="non-scaling-stroke" />
+            </g>
+          ))}
+        </svg>
+
+        {/* Pin markers (HTML, always round) */}
         {pins.map((pin) => {
           const count = submissionsByPin[pin.id] || 0
           const selected = selectedPinId === pin.id
           return (
-            <g
+            <button
               key={pin.id}
+              type="button"
               onClick={(event) => {
                 event.stopPropagation()
                 if (onSelectPin) onSelectPin(pin.id)
               }}
-              style={{ cursor: 'pointer' }}
+              className="group absolute -translate-x-1/2 -translate-y-1/2 focus:outline-none"
+              style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+              title={pin.name}
             >
-              <circle cx={pin.x} cy={pin.y} r={3.4} fill="#f97316" opacity="0.18" />
-              <circle
-                cx={pin.x}
-                cy={pin.y}
-                r={selected ? 1.8 : 1.4}
-                fill={selected ? '#dc2626' : '#f97316'}
-                stroke="#ffffff"
-                strokeWidth="0.3"
-              />
-              <text
-                x={pin.x}
-                y={pin.y - 2.6}
-                textAnchor="middle"
-                fontSize="2"
-                fontWeight="600"
-                fill="#0f172a"
-                style={{ paintOrder: 'stroke', stroke: '#ffffff', strokeWidth: 0.5 }}
+              <span className={`absolute left-1/2 top-1/2 block h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full ${selected ? 'bg-red-500/30' : 'bg-orange-400/25'}`} />
+              <span className={`relative block rounded-full border-2 border-white shadow ${selected ? 'h-4 w-4 bg-red-600' : 'h-3 w-3 bg-orange-500 group-hover:bg-orange-600'}`} />
+              <span
+                className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900 shadow-sm"
               >
                 {pin.name}{count ? ` (${count})` : ''}
-              </text>
-            </g>
+              </span>
+            </button>
           )
         })}
+
+        {/* Pending point (during placement) */}
         {pendingPoint && (
-          <g pointerEvents="none">
-            <circle cx={pendingPoint.x} cy={pendingPoint.y} r={3} fill="#0ea5e9" opacity="0.25" />
-            <circle cx={pendingPoint.x} cy={pendingPoint.y} r={1.4} fill="#0ea5e9" stroke="#ffffff" strokeWidth="0.3" />
-          </g>
+          <div
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ left: `${pendingPoint.x}%`, top: `${pendingPoint.y}%` }}
+          >
+            <span className="absolute left-1/2 top-1/2 block h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-400/30" />
+            <span className="relative block h-3 w-3 rounded-full border-2 border-white bg-sky-500 shadow" />
+          </div>
         )}
-      </svg>
+      </div>
       {/* Others tag (bottom-right) */}
       <button
         type="button"
@@ -345,6 +348,407 @@ function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
   )
 }
 
+const ASPECT_PRESETS = [
+  { label: 'Free', value: null },
+  { label: '1:1', value: 1 },
+  { label: '4:3', value: 4 / 3 },
+  { label: '3:4', value: 3 / 4 },
+  { label: '3:2', value: 3 / 2 },
+  { label: '2:3', value: 2 / 3 },
+  { label: '16:9', value: 16 / 9 },
+  { label: '9:16', value: 9 / 16 },
+]
+
+/**
+ * Mini image editor: load file, pan, zoom, rotate, with crop rectangle that
+ * supports common aspect-ratio presets. Output is a Blob (PNG by default).
+ */
+function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
+  const fileInputRef = useRef(null)
+  const stageRef = useRef(null)
+  const [image, setImage] = useState(null) // HTMLImageElement
+  const [filename, setFilename] = useState('map-background.png')
+  // image transform (rendered into stage)
+  const [scale, setScale] = useState(1)
+  const [rotation, setRotation] = useState(0)
+  const [translate, setTranslate] = useState({ x: 0, y: 0 })
+  // crop rectangle (in stage pixel coords)
+  const [aspectRatio, setAspectRatio] = useState(null)
+  const [crop, setCrop] = useState({ x: 0, y: 0, w: 0, h: 0 })
+  const [stageSize, setStageSize] = useState({ w: 600, h: 400 })
+
+  // drag state
+  const dragRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) {
+      setImage(null)
+      setScale(1)
+      setRotation(0)
+      setTranslate({ x: 0, y: 0 })
+      setAspectRatio(null)
+      setCrop({ x: 0, y: 0, w: 0, h: 0 })
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }, [open])
+
+  // measure stage on mount/resize
+  useEffect(() => {
+    if (!open) return
+    const node = stageRef.current
+    if (!node) return
+    const update = () => {
+      const rect = node.getBoundingClientRect()
+      setStageSize({ w: rect.width, h: rect.height })
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(node)
+    return () => ro.disconnect()
+  }, [open, image])
+
+  // when the image or stage changes, fit it
+  useEffect(() => {
+    if (!image || stageSize.w === 0 || stageSize.h === 0) return
+    const fit = Math.min(stageSize.w / image.naturalWidth, stageSize.h / image.naturalHeight)
+    setScale(fit)
+    setTranslate({ x: 0, y: 0 })
+    setRotation(0)
+    // initial crop = inner 80% with current aspect
+    initCrop(stageSize.w, stageSize.h, aspectRatio)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image, stageSize.w, stageSize.h])
+
+  const initCrop = (sw, sh, ar) => {
+    const margin = 0.1
+    let w = sw * (1 - margin * 2)
+    let h = sh * (1 - margin * 2)
+    if (ar && ar > 0) {
+      if (w / h > ar) w = h * ar
+      else h = w / ar
+    }
+    setCrop({ x: (sw - w) / 2, y: (sh - h) / 2, w, h })
+  }
+
+  const handleFile = (file) => {
+    if (!file) return
+    if (file.type && !MAP_ALLOWED_IMAGE_TYPES.has(file.type)) return
+    setFilename(file.name || 'map-background.png')
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => setImage(img)
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const onAspectChange = (ar) => {
+    setAspectRatio(ar)
+    if (stageSize.w > 0 && stageSize.h > 0) initCrop(stageSize.w, stageSize.h, ar)
+  }
+
+  // Image pan via drag on stage (when not on crop handle)
+  const onStageMouseDown = (event) => {
+    if (event.button !== 0) return
+    const target = event.target
+    if (target && target.dataset && target.dataset.handle) return // crop handle handles itself
+    dragRef.current = {
+      kind: 'pan',
+      startX: event.clientX,
+      startY: event.clientY,
+      origX: translate.x,
+      origY: translate.y,
+    }
+  }
+
+  const onMouseMove = (event) => {
+    const drag = dragRef.current
+    if (!drag) return
+    const dx = event.clientX - drag.startX
+    const dy = event.clientY - drag.startY
+    if (drag.kind === 'pan') {
+      setTranslate({ x: drag.origX + dx, y: drag.origY + dy })
+    } else if (drag.kind === 'crop-move') {
+      const nx = Math.max(0, Math.min(stageSize.w - crop.w, drag.origX + dx))
+      const ny = Math.max(0, Math.min(stageSize.h - crop.h, drag.origY + dy))
+      setCrop({ ...crop, x: nx, y: ny })
+    } else if (drag.kind === 'crop-resize') {
+      const dir = drag.dir
+      let { x, y, w, h } = drag.orig
+      if (dir.includes('e')) w = Math.max(20, drag.orig.w + dx)
+      if (dir.includes('s')) h = Math.max(20, drag.orig.h + dy)
+      if (dir.includes('w')) {
+        const newW = Math.max(20, drag.orig.w - dx)
+        x = drag.orig.x + (drag.orig.w - newW)
+        w = newW
+      }
+      if (dir.includes('n')) {
+        const newH = Math.max(20, drag.orig.h - dy)
+        y = drag.orig.y + (drag.orig.h - newH)
+        h = newH
+      }
+      if (aspectRatio) {
+        // Lock to aspect: prefer adjusting height from width unless dragging vertical-only
+        if (dir === 'n' || dir === 's') {
+          w = h * aspectRatio
+          if (dir.includes('w')) x = drag.orig.x + (drag.orig.w - w)
+          else x = drag.orig.x
+        } else {
+          h = w / aspectRatio
+          if (dir.includes('n')) y = drag.orig.y + (drag.orig.h - h)
+          else y = drag.orig.y
+        }
+      }
+      // clamp to stage
+      x = Math.max(0, Math.min(stageSize.w - w, x))
+      y = Math.max(0, Math.min(stageSize.h - h, y))
+      w = Math.min(w, stageSize.w - x)
+      h = Math.min(h, stageSize.h - y)
+      setCrop({ x, y, w, h })
+    }
+  }
+
+  const onMouseUp = () => { dragRef.current = null }
+
+  useEffect(() => {
+    if (!open) return
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, crop, translate, stageSize, aspectRatio])
+
+  const startCropMove = (event) => {
+    event.stopPropagation()
+    if (event.button !== 0) return
+    dragRef.current = {
+      kind: 'crop-move',
+      startX: event.clientX,
+      startY: event.clientY,
+      origX: crop.x,
+      origY: crop.y,
+    }
+  }
+
+  const startCropResize = (dir) => (event) => {
+    event.stopPropagation()
+    if (event.button !== 0) return
+    dragRef.current = {
+      kind: 'crop-resize',
+      dir,
+      startX: event.clientX,
+      startY: event.clientY,
+      orig: { ...crop },
+    }
+  }
+
+  const handleApply = async () => {
+    if (!image || crop.w <= 0 || crop.h <= 0) return
+    // Output canvas at crop pixel size (use stage units; sufficient quality for backgrounds)
+    const out = document.createElement('canvas')
+    out.width = Math.round(crop.w)
+    out.height = Math.round(crop.h)
+    const ctx = out.getContext('2d')
+    if (!ctx) return
+    ctx.imageSmoothingQuality = 'high'
+    // We render the rotated/scaled image onto a temp canvas the size of the
+    // stage, then crop from it. Keeps the math straightforward.
+    const stage = document.createElement('canvas')
+    stage.width = Math.round(stageSize.w)
+    stage.height = Math.round(stageSize.h)
+    const sctx = stage.getContext('2d')
+    if (!sctx) return
+    sctx.fillStyle = '#0f172a'
+    sctx.fillRect(0, 0, stage.width, stage.height)
+    const cx = stage.width / 2 + translate.x
+    const cy = stage.height / 2 + translate.y
+    sctx.translate(cx, cy)
+    sctx.rotate((rotation * Math.PI) / 180)
+    sctx.scale(scale, scale)
+    sctx.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2)
+    sctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.drawImage(stage, crop.x, crop.y, crop.w, crop.h, 0, 0, out.width, out.height)
+    const blob = await new Promise((resolve) => out.toBlob(resolve, 'image/png', 0.95))
+    if (!blob) return
+    const outName = filename.replace(/\.[^.]+$/, '') + '-cropped.png'
+    await onUpload(blob, outName)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent className="w-full sm:max-w-5xl max-h-[92vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Map Background Editor</DialogTitle>
+          <DialogDescription>
+            Pick an image, then pan, zoom, rotate, and crop. Choose an aspect ratio to lock the crop.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="sr-only"
+              onChange={(event) => handleFile(event.target.files?.[0] || null)}
+            />
+            <Button onClick={() => fileInputRef.current?.click()} variant="outline" size="sm">
+              <Upload className="mr-2 h-4 w-4" />
+              {image ? 'Replace image' : 'Choose image'}
+            </Button>
+            <span className="text-xs text-slate-500">{image ? `${image.naturalWidth}×${image.naturalHeight}` : 'No image loaded'}</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-2 text-xs font-semibold uppercase text-slate-500">Aspect:</span>
+            {ASPECT_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => onAspectChange(preset.value)}
+                className={`rounded-md border px-2 py-1 text-xs font-medium transition ${
+                  (aspectRatio === preset.value || (preset.value === null && aspectRatio === null))
+                    ? 'border-teal-700 bg-teal-700 text-white'
+                    : 'bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            ref={stageRef}
+            onMouseDown={onStageMouseDown}
+            className="relative h-[55vh] w-full select-none overflow-hidden rounded-md border bg-slate-900"
+            style={{ cursor: image ? 'grab' : 'default' }}
+          >
+            {image ? (
+              <>
+                <img
+                  src={image.src}
+                  alt="Editing"
+                  draggable={false}
+                  className="pointer-events-none absolute left-1/2 top-1/2"
+                  style={{
+                    transform: `translate(-50%, -50%) translate(${translate.x}px, ${translate.y}px) rotate(${rotation}deg) scale(${scale})`,
+                    transformOrigin: 'center center',
+                    maxWidth: 'none',
+                  }}
+                />
+                {/* Dim outside crop with 4 overlay rectangles */}
+                <div className="pointer-events-none absolute bg-black/60" style={{ left: 0, top: 0, width: '100%', height: crop.y }} />
+                <div className="pointer-events-none absolute bg-black/60" style={{ left: 0, top: crop.y + crop.h, width: '100%', height: Math.max(0, stageSize.h - (crop.y + crop.h)) }} />
+                <div className="pointer-events-none absolute bg-black/60" style={{ left: 0, top: crop.y, width: crop.x, height: crop.h }} />
+                <div className="pointer-events-none absolute bg-black/60" style={{ left: crop.x + crop.w, top: crop.y, width: Math.max(0, stageSize.w - (crop.x + crop.w)), height: crop.h }} />
+                {/* Crop rectangle */}
+                <div
+                  className="absolute border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.4)]"
+                  style={{ left: crop.x, top: crop.y, width: crop.w, height: crop.h, cursor: 'move' }}
+                  data-handle="move"
+                  onMouseDown={startCropMove}
+                >
+                  {/* Resize handles */}
+                  {['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((dir) => {
+                    const styles = {
+                      nw: { left: -6, top: -6, cursor: 'nwse-resize' },
+                      n: { left: '50%', top: -6, marginLeft: -6, cursor: 'ns-resize' },
+                      ne: { right: -6, top: -6, cursor: 'nesw-resize' },
+                      e: { right: -6, top: '50%', marginTop: -6, cursor: 'ew-resize' },
+                      se: { right: -6, bottom: -6, cursor: 'nwse-resize' },
+                      s: { left: '50%', bottom: -6, marginLeft: -6, cursor: 'ns-resize' },
+                      sw: { left: -6, bottom: -6, cursor: 'nesw-resize' },
+                      w: { left: -6, top: '50%', marginTop: -6, cursor: 'ew-resize' },
+                    }[dir]
+                    return (
+                      <span
+                        key={dir}
+                        data-handle={dir}
+                        onMouseDown={startCropResize(dir)}
+                        className="absolute h-3 w-3 rounded-sm border border-slate-700 bg-white"
+                        style={styles}
+                      />
+                    )
+                  })}
+                  {/* Rule-of-thirds */}
+                  <div className="pointer-events-none absolute inset-0">
+                    <div className="absolute left-1/3 top-0 h-full w-px bg-white/40" />
+                    <div className="absolute left-2/3 top-0 h-full w-px bg-white/40" />
+                    <div className="absolute top-1/3 left-0 w-full border-t border-white/40" />
+                    <div className="absolute top-2/3 left-0 w-full border-t border-white/40" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-sm text-slate-300">
+                Load an image to begin editing
+              </div>
+            )}
+          </div>
+
+          {image && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center gap-3 text-sm">
+                <span className="w-16 font-medium text-slate-700">Zoom</span>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="5"
+                  step="0.01"
+                  value={scale}
+                  onChange={(event) => setScale(parseFloat(event.target.value))}
+                  className="flex-1"
+                />
+                <span className="w-12 text-right text-xs text-slate-500">{(scale * 100).toFixed(0)}%</span>
+              </label>
+              <label className="flex items-center gap-3 text-sm">
+                <span className="w-16 font-medium text-slate-700">Rotate</span>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="1"
+                  value={rotation}
+                  onChange={(event) => setRotation(parseFloat(event.target.value))}
+                  className="flex-1"
+                />
+                <span className="w-12 text-right text-xs text-slate-500">{rotation}°</span>
+              </label>
+              <div className="flex flex-wrap gap-2 sm:col-span-2">
+                <Button size="sm" variant="outline" onClick={() => setRotation((rotation - 90 + 360) % 360 - (rotation < 0 ? 360 : 0))}>
+                  Rotate −90°
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setRotation((rotation + 90) % 360)}>
+                  Rotate +90°
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setScale(1); setRotation(0); setTranslate({ x: 0, y: 0 }) }}>
+                  Reset transform
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onAspectChange(aspectRatio)}>
+                  Reset crop
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={onClose} disabled={uploading}>Cancel</Button>
+            <Button onClick={handleApply} disabled={!image || uploading}>
+              <Upload className="mr-2 h-4 w-4" />
+              {uploading ? 'Uploading…' : 'Apply & Upload'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function MapPortal({ app }) {
   const {
     user,
@@ -370,6 +774,8 @@ function MapPortal({ app }) {
 
   const [backgroundUrl, setBackgroundUrl] = useState(null)
   const [backgroundUploading, setBackgroundUploading] = useState(false)
+  const [imageAspect, setImageAspect] = useState(null)
+  const [showBackgroundEditor, setShowBackgroundEditor] = useState(false)
   const backgroundInputRef = useRef(null)
 
   const SUBMISSION_DRAFT_KEY = 'mapSubmissionDraft.v2'
@@ -515,9 +921,11 @@ function MapPortal({ app }) {
         setBackgroundUrl(`${API_BASE}/map/background${bust}`)
       } else {
         setBackgroundUrl(null)
+        setImageAspect(null)
       }
     } catch {
       setBackgroundUrl(null)
+      setImageAspect(null)
     }
   }
 
@@ -553,6 +961,20 @@ function MapPortal({ app }) {
     loadBackground()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role])
+
+  useEffect(() => {
+    if (!backgroundUrl) {
+      setImageAspect(null)
+      return
+    }
+    const img = new Image()
+    img.onload = () => {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setImageAspect(img.naturalWidth / img.naturalHeight)
+      }
+    }
+    img.src = backgroundUrl
+  }, [backgroundUrl])
 
   useEffect(() => {
     if (!isSubmissionPage) return
@@ -979,13 +1401,14 @@ function MapPortal({ app }) {
     }
   }
 
-  const handleBackgroundUpload = async (file) => {
-    if (!file) return
-    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type)) {
+  const handleBackgroundUpload = async (fileOrBlob, filename = null) => {
+    if (!fileOrBlob) return
+    const type = fileOrBlob.type || ''
+    if (type && !MAP_ALLOWED_IMAGE_TYPES.has(type)) {
       showMessage('[MAP_BACKGROUND_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, or GIF file', 'error')
       return
     }
-    if (file.size > MAP_MAX_IMAGE_BYTES) {
+    if (fileOrBlob.size > MAP_MAX_IMAGE_BYTES) {
       showMessage('[MAP_BACKGROUND_TOO_LARGE_CLIENT] Image must be 50 MB or smaller', 'error')
       return
     }
@@ -993,7 +1416,8 @@ function MapPortal({ app }) {
     setBackgroundUploading(true)
     try {
       const formData = new FormData()
-      formData.append('image', file)
+      const name = filename || fileOrBlob.name || 'map-background.png'
+      formData.append('image', fileOrBlob, name)
       const response = await fetch(`${API_BASE}/map/background`, { method: 'POST', body: formData })
       const result = await readApiResponse(response)
       if (result.ok) {
@@ -1090,24 +1514,15 @@ function MapPortal({ app }) {
                 Open Approvals
               </Button>
               {isSuperadmin && (
-                <>
-                  <input
-                    ref={backgroundInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="sr-only"
-                    onChange={(event) => handleBackgroundUpload(event.target.files?.[0] || null)}
-                  />
-                  <Button
-                    onClick={() => backgroundInputRef.current?.click()}
-                    size="sm"
-                    variant="outline"
-                    disabled={backgroundUploading}
-                  >
-                    <ImageIcon className="mr-2 h-4 w-4" />
-                    {backgroundUploading ? 'Uploading…' : 'Upload Map Background'}
-                  </Button>
-                </>
+                <Button
+                  onClick={() => setShowBackgroundEditor(true)}
+                  size="sm"
+                  variant="outline"
+                  disabled={backgroundUploading}
+                >
+                  <ImageIcon className="mr-2 h-4 w-4" />
+                  {backgroundUploading ? 'Uploading…' : 'Edit Map Background'}
+                </Button>
               )}
             </div>
           </div>
@@ -1115,7 +1530,7 @@ function MapPortal({ app }) {
       )}
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(28rem,1.05fr)]">
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,0.55fr)_minmax(28rem,1.45fr)]">
           <div className="flex flex-col justify-center gap-4 rounded-md border bg-white p-6 shadow-sm">
             <Badge variant="outline" className="w-fit bg-slate-50">
               {roleLabel} access
@@ -1151,10 +1566,11 @@ function MapPortal({ app }) {
             selectedPinId={selectedPinId}
             onSelectPin={setSelectedPinId}
             backgroundUrl={backgroundUrl}
+            imageAspect={imageAspect}
           />
         </section>
 
-        {selectedPinId && (
+        {selectedPinId && isAdmin && (
           <section className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-xl font-bold text-slate-950">
@@ -1387,9 +1803,9 @@ function MapPortal({ app }) {
                         pins={pins}
                         submissionsByPin={submissionsByPin}
                         backgroundUrl={backgroundUrl}
+                        imageAspect={imageAspect}
                         pendingPoint={newPinPoint}
                         onMapClick={handleSubmissionMapClick}
-                        className="min-h-[18rem]"
                       />
                       {newPinPoint && (
                         <div className="text-xs text-slate-600">
@@ -1501,38 +1917,44 @@ function MapPortal({ app }) {
             </div>
           </section>
         ) : (
-          <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.55fr)]">
-            <div className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-950">All approved submissions</h2>
-                  <p className="text-sm text-slate-500">Visible to signed-in and guest map users.</p>
+          isAdmin ? (
+            <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.55fr)]">
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-950">All approved submissions</h2>
+                    <p className="text-sm text-slate-500">Visible to admins and super admins.</p>
+                  </div>
+                  <Button onClick={loadApprovedSubmissions} variant="outline" disabled={approvedLoading}>
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Refresh
+                  </Button>
                 </div>
-                <Button onClick={loadApprovedSubmissions} variant="outline" disabled={approvedLoading}>
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  Refresh
-                </Button>
+                {approvedLoading ? (
+                  <div className="rounded-md border bg-white p-8 text-center text-slate-500">Loading submissions...</div>
+                ) : approvedSubmissions.length === 0 ? (
+                  <div className="rounded-md border bg-white p-8 text-center text-slate-500">No approved submissions yet</div>
+                ) : (
+                  <div className="space-y-4">
+                    {approvedSubmissions.map((submission) => (
+                      <SubmissionDetails
+                        key={submission.id}
+                        submission={submission}
+                        canDelete={isSuperadmin}
+                        actionLoading={actionLoading}
+                        onDelete={deleteSubmission}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              {approvedLoading ? (
-                <div className="rounded-md border bg-white p-8 text-center text-slate-500">Loading submissions...</div>
-              ) : approvedSubmissions.length === 0 ? (
-                <div className="rounded-md border bg-white p-8 text-center text-slate-500">No approved submissions yet</div>
-              ) : (
-                <div className="space-y-4">
-                  {approvedSubmissions.map((submission) => (
-                    <SubmissionDetails
-                      key={submission.id}
-                      submission={submission}
-                      canDelete={isSuperadmin}
-                      actionLoading={actionLoading}
-                      onDelete={deleteSubmission}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-            <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
-          </section>
+              <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
+            </section>
+          ) : (
+            <section className="flex justify-center">
+              <LeaderboardCard leaders={leaders} loading={leadersLoading} onRefresh={loadLeaders} />
+            </section>
+          )
         )}
       </main>
 
@@ -1568,20 +1990,30 @@ function MapPortal({ app }) {
         </DialogContent>
       </Dialog>
 
+      <MapBackgroundEditor
+        open={showBackgroundEditor}
+        onClose={() => setShowBackgroundEditor(false)}
+        uploading={backgroundUploading}
+        onUpload={async (blob, name) => {
+          await handleBackgroundUpload(blob, name)
+          setShowBackgroundEditor(false)
+        }}
+      />
+
       <Dialog open={showEnlarge} onOpenChange={setShowEnlarge}>
         <DialogContent className="w-full sm:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Ecological Map (enlarged)</DialogTitle>
             <DialogDescription>Click pins for details. Use this larger view for more precise placement.</DialogDescription>
           </DialogHeader>
-          <div className="aspect-[4/3] w-full">
+          <div className="w-full">
             <EcologicalMapGraphic
               pins={pins}
               submissionsByPin={submissionsByPin}
               selectedPinId={selectedPinId}
               onSelectPin={(id) => { setSelectedPinId(id); setShowEnlarge(false) }}
               backgroundUrl={backgroundUrl}
-              className="h-full"
+              imageAspect={imageAspect}
             />
           </div>
         </DialogContent>
@@ -1595,14 +2027,14 @@ function MapPortal({ app }) {
               Click anywhere on the map to set your pin location. Use this larger view for more precise placement.
             </DialogDescription>
           </DialogHeader>
-          <div className="aspect-[4/3] w-full">
+          <div className="w-full">
             <EcologicalMapGraphic
               pins={pins}
               submissionsByPin={submissionsByPin}
               backgroundUrl={backgroundUrl}
+              imageAspect={imageAspect}
               pendingPoint={newPinPoint}
               onMapClick={handleSubmissionMapClick}
-              className="h-full"
             />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

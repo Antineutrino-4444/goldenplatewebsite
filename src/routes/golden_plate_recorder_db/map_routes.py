@@ -665,6 +665,15 @@ def create_map_submission():
     try:
         map_db_session.add(submission)
         map_db_session.flush()
+        # Backfill: any prior submissions from the same email take on the latest display name
+        if submission_display_name:
+            map_db_session.query(MapSubmission).filter(
+                func.lower(MapSubmission.email) == email.lower(),
+                MapSubmission.id != submission.id,
+            ).update(
+                {'submission_display_name': submission_display_name},
+                synchronize_session=False,
+            )
         password_created = False
         if shortcut_password:
             _upsert_submitter_password(email, shortcut_password, identity['school_id'], submission.id)
@@ -897,8 +906,22 @@ def delete_map_submission(submission_id):
     if not submission:
         return _map_error('MAP_SUBMISSION_NOT_FOUND', 'Submission not found', 404)
 
+    pin_id = submission.pin_id
+
     try:
         map_db_session.delete(submission)
+        map_db_session.flush()
+        # If the pin no longer has any submissions attached, remove it too.
+        if pin_id:
+            remaining = (
+                map_db_session.query(MapSubmission)
+                .filter(MapSubmission.pin_id == pin_id)
+                .count()
+            )
+            if remaining == 0:
+                map_db_session.query(MapPin).filter(MapPin.id == pin_id).delete(
+                    synchronize_session=False
+                )
         map_db_session.commit()
     except Exception as exc:
         logger.exception('Unable to delete map submission: %s', exc)
