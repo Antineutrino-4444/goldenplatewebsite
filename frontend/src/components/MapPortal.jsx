@@ -537,12 +537,21 @@ function EcologicalMapGraphic({
 function SubmissionDetails({ submission, admin = false, canDelete = false, actionLoading = false, onApprove, onReject, onDelete }) {
   const [showRejectDialog, setShowRejectDialog] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
   const submitReject = () => {
     const trimmed = rejectReason.trim()
     if (!trimmed) return
     onReject(submission.id, trimmed)
     setShowRejectDialog(false)
     setRejectReason('')
+  }
+  const submitDelete = () => {
+    const trimmed = deleteReason.trim()
+    if (!trimmed) return
+    onDelete(submission.id, trimmed)
+    setShowDeleteDialog(false)
+    setDeleteReason('')
   }
   return (
     <div className="grid gap-4 rounded-md border bg-white p-4 md:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
@@ -602,10 +611,16 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, actio
             </>
           )}
           {canDelete && (
-            <Button onClick={() => onDelete(submission.id)} disabled={actionLoading} variant="destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </Button>
+            <>
+              <Button onClick={() => onDelete(submission.id, '')} disabled={actionLoading} variant="destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+              <Button onClick={() => setShowDeleteDialog(true)} disabled={actionLoading} variant="destructive" className="bg-red-700 hover:bg-red-800">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete with comment
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -633,6 +648,34 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, actio
               <Button variant="destructive" onClick={submitReject} disabled={actionLoading || !rejectReason.trim()}>
                 <XCircle className="mr-2 h-4 w-4" />
                 Send rejection
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteDialog} onOpenChange={(next) => { if (!next) { setShowDeleteDialog(false); setDeleteReason('') } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete with comment</DialogTitle>
+            <DialogDescription>
+              The submission will be permanently deleted and the comment emailed to <span className="font-medium">{submission.email}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor={`delete-reason-${submission.id}`}>Reason</Label>
+            <Textarea
+              id={`delete-reason-${submission.id}`}
+              value={deleteReason}
+              onChange={(event) => setDeleteReason(event.target.value)}
+              placeholder="Explain why this submission is being deleted…"
+              rows={5}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => { setShowDeleteDialog(false); setDeleteReason('') }} disabled={actionLoading}>Cancel</Button>
+              <Button variant="destructive" onClick={submitDelete} disabled={actionLoading || !deleteReason.trim()} className="bg-red-700 hover:bg-red-800">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete and notify
               </Button>
             </div>
           </div>
@@ -2180,16 +2223,27 @@ function MapPortal({ app }) {
     }
   }
 
-  const deleteSubmission = async (submissionId) => {
-    if (typeof window !== 'undefined' && !window.confirm('Permanently delete this submission?')) {
+  const deleteSubmission = async (submissionId, reason = '') => {
+    if (!reason && typeof window !== 'undefined' && !window.confirm('Permanently delete this submission?')) {
       return
     }
     setActionLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/map/submissions/${submissionId}`, { method: 'DELETE' })
+      const response = await fetch(`${API_BASE}/map/submissions/${submissionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason || '' }),
+      })
       const result = await readApiResponse(response)
       if (result.ok) {
-        showMessage('Submission deleted', 'success')
+        const emailStatus = result.data?.notification_email
+        if (reason && emailStatus && emailStatus.success === false) {
+          showMessage('Submission deleted, but the notification email failed to send', 'warning')
+        } else if (reason) {
+          showMessage('Submission deleted and email sent to submitter', 'success')
+        } else {
+          showMessage('Submission deleted', 'success')
+        }
         await loadApprovedSubmissions()
         await loadPendingSubmissions()
         await loadLeaders()
