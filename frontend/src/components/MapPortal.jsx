@@ -11,6 +11,8 @@ import VerificationCodeInput from '@/components/VerificationCodeInput.jsx'
 import {
   ArrowLeft,
   CheckCircle,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Image as ImageIcon,
   LogOut,
@@ -153,7 +155,12 @@ function formatBytes(value) {
 }
 
 function SubmissionImage({ submission, className = '' }) {
-  if (!submission?.image_url) {
+  const images = (submission?.images && submission.images.length > 0)
+    ? submission.images
+    : (submission?.image_url ? [{ id: 'primary', url: submission.image_url, filename: submission.image_filename }] : [])
+  const [lightboxIndex, setLightboxIndex] = useState(null)
+
+  if (images.length === 0) {
     return (
       <div className={`flex min-h-44 items-center justify-center rounded-md border border-dashed bg-slate-50 text-sm text-slate-500 ${className}`}>
         No image attached
@@ -162,11 +169,232 @@ function SubmissionImage({ submission, className = '' }) {
   }
 
   return (
-    <img
-      src={submission.image_url}
-      alt={submission.image_filename || 'Map submission'}
-      className={`w-full rounded-md border object-cover ${className}`}
-    />
+    <>
+      {images.length === 1 ? (
+        <button
+          type="button"
+          onClick={() => setLightboxIndex(0)}
+          className={`group relative block w-full overflow-hidden rounded-md border ${className}`}
+          aria-label="View image"
+        >
+          <img
+            src={images[0].url}
+            alt={images[0].filename || 'Map submission'}
+            className="w-full object-cover transition-transform group-hover:scale-[1.01]"
+          />
+          <span className="pointer-events-none absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+            <ZoomIn className="h-3 w-3" /> Click to enlarge
+          </span>
+        </button>
+      ) : (
+        <div className={`space-y-2 ${className}`}>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            {images.map((img, idx) => (
+              <button
+                key={img.id || idx}
+                type="button"
+                onClick={() => setLightboxIndex(idx)}
+                className="group relative aspect-square overflow-hidden rounded-md border bg-slate-100"
+                aria-label={`View image ${idx + 1} of ${images.length}`}
+              >
+                <img
+                  src={img.url}
+                  alt={img.filename || `Image ${idx + 1}`}
+                  className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                />
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100">
+                  <ZoomIn className="h-5 w-5" />
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-slate-500">{images.length} images — click any to enlarge</div>
+        </div>
+      )}
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={images}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
+    </>
+  )
+}
+
+function ImageLightbox({ images, startIndex = 0, onClose }) {
+  const [index, setIndex] = useState(startIndex)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const draggingRef = useRef(false)
+  const lastPointerRef = useRef(null)
+  const pointersRef = useRef(new Map())
+  const pinchRef = useRef(null)
+  const containerRef = useRef(null)
+  const minZoom = 1
+  const maxZoom = 8
+
+  const current = images[index]
+
+  // Reset zoom/pan when switching images.
+  useEffect(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [index])
+
+  // Keyboard navigation.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose()
+      else if (event.key === 'ArrowRight') setIndex((i) => Math.min(images.length - 1, i + 1))
+      else if (event.key === 'ArrowLeft') setIndex((i) => Math.max(0, i - 1))
+      else if (event.key === '+' || event.key === '=') setZoom((z) => Math.min(maxZoom, z * 1.25))
+      else if (event.key === '-') setZoom((z) => Math.max(minZoom, z / 1.25))
+      else if (event.key === '0') { setZoom(1); setPan({ x: 0, y: 0 }) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [images.length, onClose])
+
+  const clampPan = (next, z) => {
+    const node = containerRef.current
+    if (!node) return next
+    const rect = node.getBoundingClientRect()
+    const overshootX = Math.max(0, (rect.width * (z - 1)) / 2)
+    const overshootY = Math.max(0, (rect.height * (z - 1)) / 2)
+    return {
+      x: Math.max(-overshootX, Math.min(overshootX, next.x)),
+      y: Math.max(-overshootY, Math.min(overshootY, next.y)),
+    }
+  }
+
+  const onWheel = (event) => {
+    event.preventDefault()
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15
+    setZoom((z) => {
+      const next = Math.max(minZoom, Math.min(maxZoom, z * factor))
+      if (next === 1) setPan({ x: 0, y: 0 })
+      return next
+    })
+  }
+
+  const onPointerDown = (event) => {
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pointersRef.current.size === 1) {
+      draggingRef.current = true
+      lastPointerRef.current = { x: event.clientX, y: event.clientY }
+    } else if (pointersRef.current.size === 2) {
+      const [a, b] = Array.from(pointersRef.current.values())
+      pinchRef.current = {
+        startDist: Math.hypot(a.x - b.x, a.y - b.y),
+        startZoom: zoom,
+      }
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const onPointerMove = (event) => {
+    if (!pointersRef.current.has(event.pointerId)) return
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const [a, b] = Array.from(pointersRef.current.values())
+      const dist = Math.hypot(a.x - b.x, a.y - b.y)
+      if (pinchRef.current.startDist > 0) {
+        const ratio = dist / pinchRef.current.startDist
+        const next = Math.max(minZoom, Math.min(maxZoom, pinchRef.current.startZoom * Math.pow(ratio, 1.4)))
+        setZoom(next)
+        if (next === 1) setPan({ x: 0, y: 0 })
+      }
+      return
+    }
+    if (draggingRef.current && zoom > 1 && lastPointerRef.current) {
+      const dx = event.clientX - lastPointerRef.current.x
+      const dy = event.clientY - lastPointerRef.current.y
+      lastPointerRef.current = { x: event.clientX, y: event.clientY }
+      setPan((p) => clampPan({ x: p.x + dx, y: p.y + dy }, zoom))
+    }
+  }
+
+  const onPointerUp = (event) => {
+    pointersRef.current.delete(event.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
+    if (pointersRef.current.size === 0) {
+      draggingRef.current = false
+      lastPointerRef.current = null
+    }
+  }
+
+  const onDoubleClick = () => {
+    if (zoom > 1) { setZoom(1); setPan({ x: 0, y: 0 }) }
+    else setZoom(2)
+  }
+
+  return (
+    <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent className="w-full max-w-[95vw] max-h-[95vh] p-0 bg-black/95 border-slate-800">
+        <DialogHeader className="px-4 pt-3 pb-2 text-white">
+          <DialogTitle className="truncate text-sm font-medium text-white">
+            {current?.filename || `Image ${index + 1}`} ({index + 1} / {images.length})
+          </DialogTitle>
+          <DialogDescription className="text-xs text-slate-400">
+            Scroll / pinch to zoom • drag to pan • double-click to reset • ←/→ to navigate
+          </DialogDescription>
+        </DialogHeader>
+        <div
+          ref={containerRef}
+          className="relative flex h-[78vh] w-full select-none items-center justify-center overflow-hidden bg-black touch-none"
+          onWheel={onWheel}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onDoubleClick={onDoubleClick}
+          style={{ cursor: zoom > 1 ? 'grab' : 'zoom-in' }}
+        >
+          <img
+            src={current?.url}
+            alt={current?.filename || `Image ${index + 1}`}
+            draggable={false}
+            className="max-h-full max-w-full"
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: 'center center',
+              transition: draggingRef.current || pinchRef.current ? 'none' : 'transform 120ms ease-out',
+              willChange: 'transform',
+            }}
+          />
+          {images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setIndex((i) => Math.max(0, i - 1))}
+                disabled={index === 0}
+                aria-label="Previous image"
+                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 disabled:opacity-30"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIndex((i) => Math.min(images.length - 1, i + 1))}
+                disabled={index === images.length - 1}
+                aria-label="Next image"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 disabled:opacity-30"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
+          <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-xs text-white">
+            <button type="button" onClick={() => { setZoom((z) => Math.max(minZoom, z / 1.25)) }} className="rounded px-1 hover:bg-white/10" aria-label="Zoom out">−</button>
+            <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
+            <button type="button" onClick={() => { setZoom((z) => Math.min(maxZoom, z * 1.25)) }} className="rounded px-1 hover:bg-white/10" aria-label="Zoom in">+</button>
+            <span className="mx-1 h-3 w-px bg-white/30" />
+            <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} className="rounded px-2 hover:bg-white/10">Reset</button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1289,11 +1517,9 @@ function MapPortal({ app }) {
   const [newPinName, setNewPinName] = useState(initialDraft.newPinName || '')
   const [newPinPoint, setNewPinPoint] = useState(initialDraft.newPinPoint || null)
 
-  const [imageFile, setImageFile] = useState(null)
-  const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+  const [imageItems, setImageItems] = useState([]) // [{id, file, name, status, heicProgress?, previewUrl, error?}]
   const [submitting, setSubmitting] = useState(false)
   const [isDraggingImage, setIsDraggingImage] = useState(false)
-  const [heicProgress, setHeicProgress] = useState(null) // {phase, percent} | null
   const fileInputRef = useRef(null)
 
   const mapPath = normalizeMapPath()
@@ -1473,14 +1699,14 @@ function MapPortal({ app }) {
   }, [isSubmissionPage, email, authMethod, title, text, displayName, verificationCode, verificationSent, pinChoice, newPinName, newPinPoint])
 
   useEffect(() => {
-    if (!imageFile) {
-      setImagePreviewUrl('')
-      return
+    return () => {
+      // Revoke any preview URLs when component unmounts.
+      setImageItems((prev) => {
+        prev.forEach((it) => { if (it.previewUrl) URL.revokeObjectURL(it.previewUrl) })
+        return prev
+      })
     }
-    const url = URL.createObjectURL(imageFile)
-    setImagePreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [imageFile])
+  }, [])
 
   useEffect(() => {
     if (!isSubmissionPage) {
@@ -1491,16 +1717,17 @@ function MapPortal({ app }) {
       if (!items || items.length === 0) {
         return
       }
+      let pasted = false
       for (const item of items) {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
           const file = item.getAsFile()
           if (file) {
-            event.preventDefault()
-            handleImageChange(file)
-            return
+            pasted = true
+            enqueueFile(file)
           }
         }
       }
+      if (pasted) event.preventDefault()
     }
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
@@ -1540,8 +1767,8 @@ function MapPortal({ app }) {
       event.preventDefault()
       dragDepth = 0
       setIsDraggingImage(false)
-      const file = event.dataTransfer?.files?.[0]
-      if (file) handleImageChange(file)
+      const files = Array.from(event.dataTransfer?.files || [])
+      files.forEach((file) => { enqueueFile(file) })
     }
     window.addEventListener('dragenter', onDragEnter)
     window.addEventListener('dragover', onDragOver)
@@ -1660,10 +1887,7 @@ function MapPortal({ app }) {
     setPinChoice('others')
     setNewPinName('')
     setNewPinPoint(null)
-    setImageFile(null)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    clearImageItems()
     setPassword('')
     setShortcutPassword('')
     setVerificationCode('')
@@ -1678,58 +1902,70 @@ function MapPortal({ app }) {
     }
   }
 
-  const handleImageChange = async (file) => {
-    if (!file) {
-      setImageFile(null)
-      return
-    }
-
+  const enqueueFile = async (file) => {
+    if (!file) return
     const heic = isHeicFile(file)
-
     if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !heic) {
       showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, GIF, or HEIC file', 'error')
-      setImageFile(null)
       return
     }
-
     if (file.size > MAP_MAX_IMAGE_BYTES) {
       showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 50 MB or smaller', 'error')
-      setImageFile(null)
       return
     }
-
-    let working = file
-    if (heic) {
-      setHeicProgress({ phase: 'uploading', percent: 0 })
-      try {
-        working = await convertHeicViaServer(file, (p) => setHeicProgress(p))
-      } catch (err) {
-        console.error('Server HEIC conversion failed', err)
-        showMessage('[MAP_IMAGE_HEIC_FAILED] Could not decode HEIC image', 'error')
-        setImageFile(null)
-        setHeicProgress(null)
-        return
-      }
-      setHeicProgress(null)
+    const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `img-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const initialPreview = heic ? '' : URL.createObjectURL(file)
+    setImageItems((prev) => [...prev, {
+      id,
+      file: heic ? null : file,
+      name: file.name,
+      status: heic ? 'processing' : 'ready',
+      heicProgress: heic ? { phase: 'uploading', percent: 0 } : null,
+      previewUrl: initialPreview,
+    }])
+    if (!heic) return
+    let working
+    try {
+      working = await convertHeicViaServer(file, (p) => {
+        setImageItems((prev) => prev.map((it) => it.id === id ? { ...it, heicProgress: p } : it))
+      })
+    } catch (err) {
+      console.error('Server HEIC conversion failed', err)
+      showMessage(`[MAP_IMAGE_HEIC_FAILED] Could not decode HEIC image (${file.name})`, 'error')
+      setImageItems((prev) => prev.filter((it) => it.id !== id))
+      return
     }
-
-    setImageFile(working)
+    const previewUrl = URL.createObjectURL(working)
+    setImageItems((prev) => prev.map((it) => it.id === id
+      ? { ...it, file: working, name: working.name, status: 'ready', heicProgress: null, previewUrl }
+      : it))
   }
 
-  const handleRemoveImage = () => {
-    setImageFile(null)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+  const handleImageChange = async (file) => {
+    await enqueueFile(file)
+  }
+
+  const handleRemoveImageById = (id) => {
+    setImageItems((prev) => {
+      const target = prev.find((it) => it.id === id)
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter((it) => it.id !== id)
+    })
+  }
+
+  const clearImageItems = () => {
+    setImageItems((prev) => {
+      prev.forEach((it) => { if (it.previewUrl) URL.revokeObjectURL(it.previewUrl) })
+      return []
+    })
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleImageDrop = (event) => {
     event.preventDefault()
     setIsDraggingImage(false)
-    const file = event.dataTransfer?.files?.[0]
-    if (file) {
-      handleImageChange(file)
-    }
+    const files = Array.from(event.dataTransfer?.files || [])
+    files.forEach((file) => { enqueueFile(file) })
   }
 
   const handleImageDragOver = (event) => {
@@ -1790,13 +2026,18 @@ function MapPortal({ app }) {
       }
     }
 
-    if (imageFile) {
-      if (!MAP_ALLOWED_IMAGE_TYPES.has(imageFile.type)) {
-        showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, or GIF file', 'error')
+    if (imageItems.some((it) => it.status !== 'ready')) {
+      showMessage('[MAP_IMAGE_PROCESSING_CLIENT] Wait for images to finish processing before submitting', 'error')
+      return
+    }
+    for (const it of imageItems) {
+      if (!it.file) continue
+      if (!MAP_ALLOWED_IMAGE_TYPES.has(it.file.type)) {
+        showMessage(`[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] ${it.name} is not a supported image type`, 'error')
         return
       }
-      if (imageFile.size > MAP_MAX_IMAGE_BYTES) {
-        showMessage('[MAP_IMAGE_TOO_LARGE_CLIENT] Image must be 50 MB or smaller', 'error')
+      if (it.file.size > MAP_MAX_IMAGE_BYTES) {
+        showMessage(`[MAP_IMAGE_TOO_LARGE_CLIENT] ${it.name} is larger than 50 MB`, 'error')
         return
       }
     }
@@ -1853,8 +2094,11 @@ function MapPortal({ app }) {
       } else {
         formData.append('password', password)
       }
-      if (imageFile) {
-        formData.append('image', imageFile)
+      if (imageItems.length > 0) {
+        formData.append('image', imageItems[0].file)
+        for (let i = 1; i < imageItems.length; i += 1) {
+          formData.append('images', imageItems[i].file)
+        }
       }
 
       const response = await fetch(`${API_BASE}/map/submissions`, {
@@ -2421,45 +2665,65 @@ function MapPortal({ app }) {
                   >
                     <Upload className="mb-2 h-6 w-6 text-slate-500" />
                     <span className="text-sm font-medium text-slate-700">
-                      {imageFile ? imageFile.name : 'Choose image, drag & drop, or paste (Ctrl/Cmd+V)'}
+                      {imageItems.length > 0
+                        ? `${imageItems.length} file${imageItems.length === 1 ? '' : 's'} selected — drop more to add`
+                        : 'Choose images, drag & drop, or paste (Ctrl/Cmd+V)'}
                     </span>
-                    <span className="text-xs text-slate-500">JPG, PNG, WebP, GIF, or HEIC up to 50 MB</span>
+                    <span className="text-xs text-slate-500">JPG, PNG, WebP, GIF, or HEIC up to 50 MB each</span>
                     <input
                       ref={fileInputRef}
                       id="map-image"
                       type="file"
+                      multiple
                       accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
                       className="sr-only"
-                      onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
+                      onChange={(event) => {
+                        const files = Array.from(event.target.files || [])
+                        files.forEach((file) => { enqueueFile(file) })
+                        if (fileInputRef.current) fileInputRef.current.value = ''
+                      }}
                     />
                   </label>
-                  {heicProgress && (
-                    <div className="rounded-md border bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                      <div className="mb-1 flex items-center justify-between font-medium">
-                        <span>{heicProgress.phase === 'uploading' ? 'Uploading HEIC…'
-                          : heicProgress.phase === 'decoding' ? 'Decoding HEIC on server…'
-                          : 'Finishing…'}</span>
-                        <span className="tabular-nums">{Math.round(heicProgress.percent)}%</span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded bg-amber-200">
-                        <div
-                          className="h-full bg-amber-600 transition-all"
-                          style={{ width: `${Math.max(2, Math.min(100, heicProgress.percent))}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {imagePreviewUrl && (
-                    <div className="relative">
-                      <img src={imagePreviewUrl} alt="Selected preview" className="max-h-72 w-full rounded-md border object-cover" />
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        aria-label="Remove image"
-                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white shadow hover:bg-black/80 focus:outline-none focus:ring-2 focus:ring-white"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
+                  {imageItems.length > 0 && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {imageItems.map((it) => (
+                        <div key={it.id} className="relative rounded-md border bg-white p-2">
+                          <div className="relative h-32 w-full overflow-hidden rounded bg-slate-100">
+                            {it.previewUrl ? (
+                              <img src={it.previewUrl} alt={it.name} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
+                                Processing…
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveImageById(it.id)}
+                              aria-label={`Remove ${it.name}`}
+                              className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white shadow hover:bg-black/80"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="mt-2 truncate text-xs font-medium text-slate-700" title={it.name}>{it.name}</div>
+                          {it.heicProgress && (
+                            <div className="mt-1">
+                              <div className="mb-1 flex items-center justify-between text-[11px] text-amber-900">
+                                <span>{it.heicProgress.phase === 'uploading' ? 'Uploading HEIC…'
+                                  : it.heicProgress.phase === 'decoding' ? 'Decoding HEIC…'
+                                  : 'Finishing…'}</span>
+                                <span className="tabular-nums">{Math.round(it.heicProgress.percent)}%</span>
+                              </div>
+                              <div className="h-1.5 w-full overflow-hidden rounded bg-amber-200">
+                                <div
+                                  className="h-full bg-amber-600 transition-all"
+                                  style={{ width: `${Math.max(2, Math.min(100, it.heicProgress.percent))}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

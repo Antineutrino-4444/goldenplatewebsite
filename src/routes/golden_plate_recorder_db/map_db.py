@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     LargeBinary,
@@ -99,6 +100,22 @@ class MapSubmission(MapBase):
     reviewed_role = Column(String)
     reviewed_at = Column(DateTime(timezone=True))
     rejection_reason = Column(Text)
+
+
+class MapSubmissionImage(MapBase):
+    __tablename__ = 'map_submission_images'
+    __table_args__ = (
+        Index('idx_map_submission_images_submission', 'submission_id', 'position'),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    submission_id = Column(String, ForeignKey('map_submissions.id', ondelete='CASCADE'), nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+    image_filename = Column(String)
+    image_mime = Column(String)
+    image_data = Column(LargeBinary, nullable=False)
+    image_size = Column(Integer)
+    created_at = Column(DateTime(timezone=True), default=_map_now_utc)
 
 
 class MapSubmitterAccount(MapBase):

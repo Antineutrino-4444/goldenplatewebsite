@@ -21,6 +21,7 @@ from .map_db import (
     MapEmailVerification,
     MapPin,
     MapSubmission,
+    MapSubmissionImage,
     MapSubmitterAccount,
     _map_now_utc,
     map_db_session,
@@ -370,6 +371,29 @@ def _current_school_id():
 
 
 def _serialize_submission(submission):
+    images = []
+    if submission.image_data:
+        images.append({
+            'id': 'primary',
+            'filename': submission.image_filename,
+            'mime': submission.image_mime,
+            'size': submission.image_size,
+            'url': f'/api/map/submissions/{submission.id}/image',
+        })
+    extras = (
+        map_db_session.query(MapSubmissionImage)
+        .filter(MapSubmissionImage.submission_id == submission.id)
+        .order_by(MapSubmissionImage.position.asc(), MapSubmissionImage.created_at.asc())
+        .all()
+    )
+    for extra in extras:
+        images.append({
+            'id': extra.id,
+            'filename': extra.image_filename,
+            'mime': extra.image_mime,
+            'size': extra.image_size,
+            'url': f'/api/map/submissions/{submission.id}/images/{extra.id}',
+        })
     return {
         'id': submission.id,
         'school_id': submission.school_id,
@@ -381,7 +405,8 @@ def _serialize_submission(submission):
         'image_filename': submission.image_filename,
         'image_mime': submission.image_mime,
         'image_size': submission.image_size,
-        'image_url': f'/api/map/submissions/{submission.id}/image' if submission.image_data else None,
+        'image_url': images[0]['url'] if images else None,
+        'images': images,
         'status': submission.status,
         'submitted_at': submission.submitted_at.isoformat() if submission.submitted_at else None,
         'submitted_by': {
@@ -495,6 +520,34 @@ def get_map_submission_image(submission_id):
         BytesIO(submission.image_data),
         mimetype=submission.image_mime or 'application/octet-stream',
         download_name=submission.image_filename or 'map-submission-image',
+    )
+
+
+@recorder_bp.route('/map/submissions/<submission_id>/images/<image_id>', methods=['GET'])
+def get_map_submission_extra_image(submission_id, image_id):
+    submission = (
+        map_db_session.query(MapSubmission)
+        .filter(MapSubmission.id == submission_id)
+        .first()
+    )
+    if not submission:
+        return _map_error('MAP_IMAGE_NOT_FOUND', 'Image not found', 404)
+    if submission.status != 'approved' and not require_admin():
+        return _map_error('MAP_ADMIN_REQUIRED', 'Admin access required', 403)
+    image = (
+        map_db_session.query(MapSubmissionImage)
+        .filter(
+            MapSubmissionImage.id == image_id,
+            MapSubmissionImage.submission_id == submission_id,
+        )
+        .first()
+    )
+    if not image or not image.image_data:
+        return _map_error('MAP_IMAGE_NOT_FOUND', 'Image not found', 404)
+    return send_file(
+        BytesIO(image.image_data),
+        mimetype=image.image_mime or 'application/octet-stream',
+        download_name=image.image_filename or 'map-submission-image',
     )
 
 
@@ -692,6 +745,45 @@ def create_map_submission():
                 return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, GIF, or HEIC file', 400)
             image_filename = secure_filename(original_filename) or 'submission-image'
 
+    # Additional images uploaded as field 'images' (one or many).
+    extra_uploads = request.files.getlist('images')
+    extra_processed = []  # list of dicts: filename, mime, data, size
+    for extra in extra_uploads:
+        if not extra or not extra.filename:
+            continue
+        ext_mime = (extra.mimetype or '').lower()
+        ext_original = extra.filename
+        ext_data = extra.read()
+        ext_size = len(ext_data)
+        if ext_size > MAX_IMAGE_BYTES:
+            return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
+        if _is_heic_upload(ext_original, ext_mime):
+            converted = _normalize_heic_to_jpeg(ext_data)
+            if not converted:
+                return _map_error('MAP_IMAGE_HEIC_DECODE_FAILED', 'Could not decode HEIC image', 400)
+            ext_data, ext_mime, new_ext = converted
+            ext_size = len(ext_data)
+            base = os.path.splitext(secure_filename(ext_original) or 'submission-image')[0] or 'submission-image'
+            ext_filename = f'{base}{new_ext}'
+        else:
+            if ext_mime not in ALLOWED_IMAGE_MIMES:
+                return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, GIF, or HEIC file', 400)
+            ext_filename = secure_filename(ext_original) or 'submission-image'
+        extra_processed.append({
+            'filename': ext_filename,
+            'mime': ext_mime,
+            'data': ext_data,
+            'size': ext_size,
+        })
+
+    # If no primary 'image' field but extras exist, promote the first extra.
+    if image_data is None and extra_processed:
+        first = extra_processed.pop(0)
+        image_filename = first['filename']
+        image_mime = first['mime']
+        image_data = first['data']
+        image_size = first['size']
+
     identity = _current_identity()
 
     if pin_id:
@@ -725,6 +817,16 @@ def create_map_submission():
     try:
         map_db_session.add(submission)
         map_db_session.flush()
+        # Persist any additional gallery images.
+        for index, extra in enumerate(extra_processed):
+            map_db_session.add(MapSubmissionImage(
+                submission_id=submission.id,
+                position=index + 1,
+                image_filename=extra['filename'],
+                image_mime=extra['mime'],
+                image_data=extra['data'],
+                image_size=extra['size'],
+            ))
         # Backfill: any prior submissions from the same email take on the latest display name
         if submission_display_name:
             map_db_session.query(MapSubmission).filter(
@@ -879,7 +981,7 @@ def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_di
         except Exception:
             submitted_at = str(submission.submitted_at)
     safe_submitted_at = _html_lib.escape(submitted_at)
-    excerpt = (submission.text or '').strip()
+    excerpt = (submission.text_content or '').strip()
     if len(excerpt) > 400:
         excerpt = excerpt[:400] + '…'
     safe_excerpt = _html_lib.escape(excerpt).replace('\n', '<br/>')
@@ -1097,6 +1199,11 @@ def delete_map_submission(submission_id):
     pin_id = submission.pin_id
 
     try:
+        # Explicitly remove gallery rows (SQLite ignores ON DELETE CASCADE
+        # unless PRAGMA foreign_keys=ON is set per-connection).
+        map_db_session.query(MapSubmissionImage).filter(
+            MapSubmissionImage.submission_id == submission.id
+        ).delete(synchronize_session=False)
         map_db_session.delete(submission)
         map_db_session.flush()
         # If the pin no longer has any submissions attached, remove it too.
