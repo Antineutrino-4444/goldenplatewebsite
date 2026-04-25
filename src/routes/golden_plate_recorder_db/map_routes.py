@@ -1126,16 +1126,20 @@ def _serialize_pin(pin):
 
 @recorder_bp.route('/map/pins', methods=['GET'])
 def list_map_pins():
-    # Auto-cleanup: remove pins that have no submissions attached. Skip pins
-    # created in the last 10 minutes so a freshly created pin awaiting its
-    # first submission isn't yanked out from under the submitter.
+    # Auto-cleanup: remove pins that have no non-rejected submissions attached.
+    # Skip pins created in the last 10 minutes so a freshly created pin
+    # awaiting its first submission isn't yanked out from under the submitter.
     grace_cutoff = _map_now_utc() - timedelta(minutes=10)
     try:
         empty_pin_ids = [
             row[0]
             for row in (
                 map_db_session.query(MapPin.id)
-                .outerjoin(MapSubmission, MapSubmission.pin_id == MapPin.id)
+                .outerjoin(
+                    MapSubmission,
+                    (MapSubmission.pin_id == MapPin.id)
+                    & (MapSubmission.status != 'rejected'),
+                )
                 .filter(MapPin.created_at < grace_cutoff)
                 .group_by(MapPin.id)
                 .having(func.count(MapSubmission.id) == 0)
@@ -1143,6 +1147,10 @@ def list_map_pins():
             )
         ]
         if empty_pin_ids:
+            # Detach any rejected submissions still pointing at these pins.
+            map_db_session.query(MapSubmission).filter(
+                MapSubmission.pin_id.in_(empty_pin_ids)
+            ).update({'pin_id': None}, synchronize_session=False)
             map_db_session.query(MapPin).filter(MapPin.id.in_(empty_pin_ids)).delete(
                 synchronize_session=False
             )
@@ -1310,14 +1318,23 @@ def delete_map_submission(submission_id):
         ).delete(synchronize_session=False)
         map_db_session.delete(submission)
         map_db_session.flush()
-        # If the pin no longer has any submissions attached, remove it too.
+        # If the pin no longer has any non-rejected submissions, remove it
+        # (and any orphan rejected submissions still pointing at it).
         if pin_id:
             remaining = (
                 map_db_session.query(MapSubmission)
-                .filter(MapSubmission.pin_id == pin_id)
+                .filter(
+                    MapSubmission.pin_id == pin_id,
+                    MapSubmission.status != 'rejected',
+                )
                 .count()
             )
             if remaining == 0:
+                # Detach any leftover rejected submissions so the FK doesn't
+                # block the pin delete.
+                map_db_session.query(MapSubmission).filter(
+                    MapSubmission.pin_id == pin_id
+                ).update({'pin_id': None}, synchronize_session=False)
                 map_db_session.query(MapPin).filter(MapPin.id == pin_id).delete(
                     synchronize_session=False
                 )
