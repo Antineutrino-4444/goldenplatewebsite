@@ -415,9 +415,11 @@ function ImageLightbox({ images, startIndex = 0, onClose }) {
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
-      <DialogContent className="w-full max-w-[95vw] max-h-[95vh] p-0 bg-black/95 border-slate-800">
-        <DialogHeader className="px-4 pt-3 pb-2 text-white">
-          <DialogTitle className="truncate text-sm font-medium text-white">
+      <DialogContent
+        className="!w-[95vw] !max-w-[95vw] sm:!max-w-[95vw] h-[95vh] max-h-[95vh] p-0 bg-black/95 border-slate-800 flex flex-col gap-0"
+      >
+        <DialogHeader className="px-4 pt-3 pb-2 text-white shrink-0">
+          <DialogTitle className="truncate text-sm font-medium text-white pr-10">
             {current?.filename || `Image ${index + 1}`} ({index + 1} / {images.length})
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-400">
@@ -426,7 +428,7 @@ function ImageLightbox({ images, startIndex = 0, onClose }) {
         </DialogHeader>
         <div
           ref={containerRef}
-          className="relative flex h-[78vh] w-full select-none items-center justify-center overflow-hidden bg-black touch-none"
+          className="relative flex w-full flex-1 min-h-0 select-none items-center justify-center overflow-hidden bg-black touch-none"
           onWheel={onWheel}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -451,25 +453,31 @@ function ImageLightbox({ images, startIndex = 0, onClose }) {
             <>
               <button
                 type="button"
-                onClick={() => setIndex((i) => Math.max(0, i - 1))}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setIndex((i) => Math.max(0, i - 1)) }}
                 disabled={index === 0}
                 aria-label="Previous image"
-                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 disabled:opacity-30"
+                className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 disabled:opacity-30"
               >
-                <ChevronLeft className="h-5 w-5" />
+                <ChevronLeft className="h-6 w-6" />
               </button>
               <button
                 type="button"
-                onClick={() => setIndex((i) => Math.min(images.length - 1, i + 1))}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setIndex((i) => Math.min(images.length - 1, i + 1)) }}
                 disabled={index === images.length - 1}
                 aria-label="Next image"
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 disabled:opacity-30"
+                className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 disabled:opacity-30"
               >
-                <ChevronRight className="h-5 w-5" />
+                <ChevronRight className="h-6 w-6" />
               </button>
             </>
           )}
-          <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-xs text-white">
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-xs text-white"
+          >
             <button type="button" onClick={() => { setZoom((z) => Math.max(minZoom, z / 1.25)) }} className="rounded px-1 hover:bg-white/10" aria-label="Zoom out">−</button>
             <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
             <button type="button" onClick={() => { setZoom((z) => Math.min(maxZoom, z * 1.25)) }} className="rounded px-1 hover:bg-white/10" aria-label="Zoom in">+</button>
