@@ -790,6 +790,80 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
   )
 }
 
+/**
+ * Wraps a map view in a scrollable viewport with a zoom slider. Renders
+ * children as a function that receives the current pixel size to draw at.
+ * If naturalSize is missing, falls back to a fitted aspect-ratio container.
+ */
+function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, maxZoom = 5 }) {
+  const viewportRef = useRef(null)
+  const [viewport, setViewport] = useState({ w: 0, h: 0 })
+  const [fitMode, setFitMode] = useState(true)
+  const [zoom, setZoom] = useState(1)
+
+  useEffect(() => {
+    const node = viewportRef.current
+    if (!node) return
+    const update = () => {
+      const rect = node.getBoundingClientRect()
+      setViewport({ w: rect.width, h: rect.height })
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(node)
+    return () => ro.disconnect()
+  }, [])
+
+  // Fit zoom: largest scale that fits the natural image inside the viewport.
+  const fitZoom = (() => {
+    if (!naturalSize || viewport.w === 0 || viewport.h === 0) return 1
+    return Math.min(viewport.w / naturalSize.w, viewport.h / naturalSize.h)
+  })()
+  const effectiveZoom = fitMode ? fitZoom : zoom
+
+  const renderSize = naturalSize
+    ? { w: Math.max(1, naturalSize.w * effectiveZoom), h: Math.max(1, naturalSize.h * effectiveZoom) }
+    : null
+
+  const setManualZoom = (z) => {
+    setFitMode(false)
+    setZoom(Math.min(maxZoom, Math.max(minZoom, z)))
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+        <span className="font-semibold uppercase tracking-wide">Zoom</span>
+        <Button size="sm" variant="outline" onClick={() => setManualZoom(effectiveZoom - 0.1)} disabled={effectiveZoom <= minZoom + 0.001}>−</Button>
+        <input
+          type="range"
+          min={minZoom}
+          max={maxZoom}
+          step="0.01"
+          value={Number.isFinite(effectiveZoom) ? effectiveZoom : 1}
+          onChange={(event) => setManualZoom(parseFloat(event.target.value))}
+          className="flex-1 min-w-[10rem]"
+        />
+        <Button size="sm" variant="outline" onClick={() => setManualZoom(effectiveZoom + 0.1)} disabled={effectiveZoom >= maxZoom - 0.001}>+</Button>
+        <span className="w-14 text-right tabular-nums">{(effectiveZoom * 100).toFixed(0)}%</span>
+        <Button size="sm" variant={fitMode ? 'default' : 'outline'} onClick={() => setFitMode(true)}>Fit</Button>
+        <Button size="sm" variant="outline" onClick={() => setManualZoom(1)}>100%</Button>
+      </div>
+      <div
+        ref={viewportRef}
+        className="relative max-h-[80vh] w-full overflow-auto rounded-md border bg-slate-100"
+        style={{ minHeight: '40vh' }}
+      >
+        {renderSize ? children(renderSize) : (
+          <div className="w-full" style={{ aspectRatio: `${imageAspect || 4 / 3}` }}>
+            {children(null)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function MapPortal({ app }) {
   const {
     user,
@@ -2049,41 +2123,46 @@ function MapPortal({ app }) {
           <DialogHeader>
             <DialogTitle>Ecological Map (enlarged)</DialogTitle>
             <DialogDescription>
-              Full image at original resolution. Scroll if larger than the viewport.
+              Use the zoom controls to inspect the map at any size. Drag scrollbars when zoomed in.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[80vh] w-full overflow-auto rounded-md border bg-slate-100">
-            <EcologicalMapGraphic
-              pins={pins}
-              submissionsByPin={submissionsByPin}
-              selectedPinId={selectedPinId}
-              onSelectPin={(id) => { setSelectedPinId(id); setShowEnlarge(false) }}
-              backgroundUrl={backgroundUrl}
-              imageAspect={imageAspect}
-              naturalSize={imageNaturalSize}
-            />
-          </div>
+          <ZoomableMapView naturalSize={imageNaturalSize} imageAspect={imageAspect}>
+            {(size) => (
+              <EcologicalMapGraphic
+                pins={pins}
+                submissionsByPin={submissionsByPin}
+                selectedPinId={selectedPinId}
+                onSelectPin={(id) => { setSelectedPinId(id); setShowEnlarge(false) }}
+                backgroundUrl={backgroundUrl}
+                imageAspect={imageAspect}
+                naturalSize={size}
+              />
+            )}
+          </ZoomableMapView>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showPinPickerEnlarged} onOpenChange={setShowPinPickerEnlarged}>
-        <DialogContent className="w-full sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-full sm:max-w-[95vw] max-h-[95vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Place your pin (enlarged)</DialogTitle>
             <DialogDescription>
-              Click anywhere on the map to set your pin location. Use this larger view for more precise placement.
+              Click anywhere on the map to set your pin location. Zoom in for more precision.
             </DialogDescription>
           </DialogHeader>
-          <div className="w-full">
-            <EcologicalMapGraphic
-              pins={pins}
-              submissionsByPin={submissionsByPin}
-              backgroundUrl={backgroundUrl}
-              imageAspect={imageAspect}
-              pendingPoint={newPinPoint}
-              onMapClick={handleSubmissionMapClick}
-            />
-          </div>
+          <ZoomableMapView naturalSize={imageNaturalSize} imageAspect={imageAspect}>
+            {(size) => (
+              <EcologicalMapGraphic
+                pins={pins}
+                submissionsByPin={submissionsByPin}
+                backgroundUrl={backgroundUrl}
+                imageAspect={imageAspect}
+                pendingPoint={newPinPoint}
+                onMapClick={handleSubmissionMapClick}
+                naturalSize={size}
+              />
+            )}
+          </ZoomableMapView>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-slate-600">
               {newPinPoint ? (
