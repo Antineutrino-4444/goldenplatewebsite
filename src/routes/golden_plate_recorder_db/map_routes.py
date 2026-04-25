@@ -33,7 +33,57 @@ MAX_VERIFICATION_ATTEMPTS = 5
 MAP_EMAIL_VERIFICATION_MAX_AGE_MINUTES = 30
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
 ALLOWED_IMAGE_MIMES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+HEIC_IMAGE_MIMES = {'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'}
+HEIC_FILE_EXTENSIONS = ('.heic', '.heif')
 SAC_EMAIL_SUFFIX = '@sac.on.ca'
+
+# Register HEIC/HEIF support with Pillow if pillow-heif is installed.
+try:
+    from pillow_heif import register_heif_opener  # type: ignore
+    register_heif_opener()
+    _HEIC_SUPPORTED = True
+except Exception:  # pragma: no cover - dependency missing
+    _HEIC_SUPPORTED = False
+
+try:
+    from PIL import Image  # type: ignore
+    _PIL_AVAILABLE = True
+except Exception:  # pragma: no cover - dependency missing
+    Image = None  # type: ignore
+    _PIL_AVAILABLE = False
+
+
+def _is_heic_upload(filename: str | None, mime: str | None) -> bool:
+    if mime and mime.lower() in HEIC_IMAGE_MIMES:
+        return True
+    if filename and filename.lower().endswith(HEIC_FILE_EXTENSIONS):
+        return True
+    return False
+
+
+def _normalize_heic_to_jpeg(raw_bytes: bytes) -> tuple[bytes, str, str] | None:
+    """Decode a HEIC/HEIF blob and re-encode losslessly as PNG.
+
+    Returns (png_bytes, 'image/png', '.png') or None if decoding failed.
+    PNG is fully lossless, so no quality is lost during the conversion
+    beyond what HEIC itself stored.
+    """
+    if not (_PIL_AVAILABLE and _HEIC_SUPPORTED):
+        return None
+    try:
+        with Image.open(BytesIO(raw_bytes)) as img:
+            img.load()
+            # Preserve transparency if present; otherwise keep RGB.
+            if img.mode not in ('RGB', 'RGBA', 'L', 'LA', 'I', 'I;16'):
+                img = img.convert('RGBA' if 'A' in img.getbands() else 'RGB')
+            out = BytesIO()
+            # PNG is lossless. compress_level only affects file size / CPU.
+            img.save(out, format='PNG', optimize=True, compress_level=6)
+            return out.getvalue(), 'image/png', '.png'
+    except Exception:
+        logger.exception('Failed to convert HEIC image to PNG')
+        return None
+
 
 RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
 RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify'
@@ -622,15 +672,24 @@ def create_map_submission():
 
     if image_file and image_file.filename:
         image_mime = (image_file.mimetype or '').lower()
-        if image_mime not in ALLOWED_IMAGE_MIMES:
-            return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, or GIF file', 400)
-
+        original_filename = image_file.filename
         image_data = image_file.read()
         image_size = len(image_data)
         if image_size > MAX_IMAGE_BYTES:
             return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
 
-        image_filename = secure_filename(image_file.filename) or 'submission-image'
+        if _is_heic_upload(original_filename, image_mime):
+            converted = _normalize_heic_to_jpeg(image_data)
+            if not converted:
+                return _map_error('MAP_IMAGE_HEIC_DECODE_FAILED', 'Could not decode HEIC image', 400)
+            image_data, image_mime, new_ext = converted
+            image_size = len(image_data)
+            base = os.path.splitext(secure_filename(original_filename) or 'submission-image')[0] or 'submission-image'
+            image_filename = f'{base}{new_ext}'
+        else:
+            if image_mime not in ALLOWED_IMAGE_MIMES:
+                return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, GIF, or HEIC file', 400)
+            image_filename = secure_filename(original_filename) or 'submission-image'
 
     identity = _current_identity()
 
@@ -979,6 +1038,31 @@ def map_leaderboard():
     return jsonify({'status': 'success', 'leaderboard': leaders[:50]}), 200
 
 
+@recorder_bp.route('/map/convert-heic', methods=['POST'])
+def convert_heic_image():
+    """Convert an uploaded HEIC/HEIF file to JPEG and return the bytes.
+
+    Lets browsers (which can't natively decode HEIC) preview/edit HEIC files
+    by round-tripping through the server.
+    """
+    image_file = request.files.get('image')
+    if not image_file or not image_file.filename:
+        return _map_error('MAP_HEIC_FILE_REQUIRED', 'Image file is required', 400)
+
+    if not _is_heic_upload(image_file.filename, image_file.mimetype):
+        return _map_error('MAP_HEIC_NOT_HEIC', 'File is not a HEIC/HEIF image', 400)
+
+    raw = image_file.read()
+    if len(raw) > MAX_IMAGE_BYTES:
+        return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
+
+    converted = _normalize_heic_to_jpeg(raw)
+    if not converted:
+        return _map_error('MAP_IMAGE_HEIC_DECODE_FAILED', 'Could not decode HEIC image', 400)
+    jpeg_bytes, mime, _ext = converted
+    return send_file(BytesIO(jpeg_bytes), mimetype=mime, max_age=0)
+
+
 @recorder_bp.route('/map/background', methods=['GET'])
 def get_map_background():
     background = (
@@ -1026,13 +1110,24 @@ def upload_map_background():
         return _map_error('MAP_BACKGROUND_IMAGE_REQUIRED', 'Image file is required', 400)
 
     image_mime = (image_file.mimetype or '').lower()
-    if image_mime not in ALLOWED_IMAGE_MIMES:
-        return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, or GIF file', 400)
-
+    original_filename = image_file.filename
     image_data = image_file.read()
     image_size = len(image_data)
     if image_size > MAX_IMAGE_BYTES:
         return _map_error('MAP_IMAGE_TOO_LARGE', 'Image must be 50 MB or smaller', 413)
+
+    if _is_heic_upload(original_filename, image_mime):
+        converted = _normalize_heic_to_jpeg(image_data)
+        if not converted:
+            return _map_error('MAP_IMAGE_HEIC_DECODE_FAILED', 'Could not decode HEIC image', 400)
+        image_data, image_mime, new_ext = converted
+        image_size = len(image_data)
+        base = os.path.splitext(secure_filename(original_filename) or 'map-background')[0] or 'map-background'
+        stored_filename = f'{base}{new_ext}'
+    else:
+        if image_mime not in ALLOWED_IMAGE_MIMES:
+            return _map_error('MAP_IMAGE_TYPE_UNSUPPORTED', 'Image must be a JPG, PNG, WebP, GIF, or HEIC file', 400)
+        stored_filename = secure_filename(original_filename) or 'map-background'
 
     identity = _current_identity()
     school_id = identity['school_id']
@@ -1044,7 +1139,7 @@ def upload_map_background():
     if background:
         background.image_data = image_data
         background.image_mime = image_mime
-        background.image_filename = secure_filename(image_file.filename) or 'map-background'
+        background.image_filename = stored_filename
         background.image_size = image_size
         background.uploaded_at = _map_now_utc()
         background.uploaded_by_user_id = identity['user_id']
@@ -1054,7 +1149,7 @@ def upload_map_background():
             school_id=school_id,
             image_data=image_data,
             image_mime=image_mime,
-            image_filename=secure_filename(image_file.filename) or 'map-background',
+            image_filename=stored_filename,
             image_size=image_size,
             uploaded_at=_map_now_utc(),
             uploaded_by_user_id=identity['user_id'],

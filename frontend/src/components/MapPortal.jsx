@@ -32,7 +32,7 @@ import {
 const API_BASE = '/api'
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
 const MAP_MAX_IMAGE_BYTES = 50 * 1024 * 1024
-const MAP_ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+const MAP_ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'])
 
 async function readApiResponse(response) {
   const raw = await response.text()
@@ -219,16 +219,18 @@ function EcologicalMapGraphic({
           </div>
         )}
       </div>
-      {/* Others tag (bottom-right) */}
-      <button
-        type="button"
-        onClick={() => onSelectPin && onSelectPin('others')}
-        className={`absolute bottom-3 right-3 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm transition ${
-          selectedPinId === 'others' ? 'bg-slate-900 text-white' : 'bg-white/90 text-slate-700 hover:bg-slate-100'
-        }`}
-      >
-        Others ({submissionsByPin.others || 0})
-      </button>
+      {/* Others tag (bottom-right) — hidden in placement mode */}
+      {!onMapClick && (
+        <button
+          type="button"
+          onClick={() => onSelectPin && onSelectPin('others')}
+          className={`absolute bottom-3 right-3 rounded-full border px-3 py-1 text-xs font-semibold shadow-sm transition ${
+            selectedPinId === 'others' ? 'bg-slate-900 text-white' : 'bg-white/90 text-slate-700 hover:bg-slate-100'
+          }`}
+        >
+          Others ({submissionsByPin.others || 0})
+        </button>
+      )}
     </div>
   )
 }
@@ -443,18 +445,35 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
     setCrop({ x: (sw - w) / 2, y: (sh - h) / 2, w, h })
   }
 
-  const handleFile = (file) => {
+  const handleFile = async (file) => {
     if (!file) return
-    if (file.type && !MAP_ALLOWED_IMAGE_TYPES.has(file.type)) return
-    setOriginalFile(file)
-    setFilename(file.name || 'map-background.png')
+    const lowerName = (file.name || '').toLowerCase()
+    const isHeic = (file.type === 'image/heic' || file.type === 'image/heif'
+      || lowerName.endsWith('.heic') || lowerName.endsWith('.heif'))
+    if (file.type && !MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !isHeic) return
+    let working = file
+    if (isHeic) {
+      try {
+        const mod = await import('heic2any')
+        const heic2any = mod.default || mod
+        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.95 })
+        const blob = Array.isArray(converted) ? converted[0] : converted
+        const newName = lowerName.replace(/\.(heic|heif)$/i, '.jpg') || 'map-background.jpg'
+        working = new File([blob], newName, { type: 'image/jpeg' })
+      } catch (err) {
+        console.error('HEIC conversion failed', err)
+        return
+      }
+    }
+    setOriginalFile(working)
+    setFilename(working.name || 'map-background.png')
     const reader = new FileReader()
     reader.onload = () => {
       const img = new Image()
       img.onload = () => setImage(img)
       img.src = reader.result
     }
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(working)
   }
 
   const onAspectChange = (ar) => {
@@ -911,17 +930,30 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
   // Pointer-based pan + pinch zoom.
   const pointersRef = useRef(new Map())
   const pinchRef = useRef(null)
+  const dragStartRef = useRef(null)
+  const draggingRef = useRef(false)
+  const justDraggedRef = useRef(false)
 
   const onPointerDown = (event) => {
     const node = viewportRef.current
     if (!node) return
-    node.setPointerCapture?.(event.pointerId)
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pointersRef.current.size === 1) {
+      dragStartRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+      draggingRef.current = false
+    }
     if (pointersRef.current.size === 2) {
       const pts = Array.from(pointersRef.current.values())
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
       pinchRef.current = { startDist: dist, startZoom: effectiveZoom, lastMid: midpoint(pts), startPan: effectivePan }
       setFitMode(false)
+      // Capture both pointers so pinch tracks even outside viewport.
+      try { node.setPointerCapture?.(event.pointerId) } catch { /* ignore */ }
+      pointersRef.current.forEach((_, id) => {
+        try { node.setPointerCapture?.(id) } catch { /* ignore */ }
+      })
+      // Pinch counts as drag — suppress click.
+      draggingRef.current = true
     }
   }
 
@@ -940,13 +972,27 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
       const rect = node.getBoundingClientRect()
       const pts = Array.from(pointersRef.current.values())
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
-      const ratio = dist / Math.max(1, pinchRef.current.startDist)
+      const rawRatio = dist / Math.max(1, pinchRef.current.startDist)
+      // Boost sensitivity: small finger spread → larger zoom change.
+      const ratio = rawRatio >= 1
+        ? Math.pow(rawRatio, 2.0)
+        : 1 / Math.pow(1 / rawRatio, 2.0)
       const newZoom = Math.min(maxZoom, Math.max(minZoom, pinchRef.current.startZoom * ratio))
       const mid = midpoint(pts)
       const focusX = mid.x - rect.left
       const focusY = mid.y - rect.top
       applyZoomAt(newZoom, focusX, focusY)
     } else if (pointersRef.current.size === 1) {
+      // Defer turning into a drag until movement crosses a threshold,
+      // so a simple click still propagates to the inner map.
+      if (!draggingRef.current) {
+        const start = dragStartRef.current
+        if (!start || start.id !== event.pointerId) return
+        if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 6) return
+        draggingRef.current = true
+        const node = viewportRef.current
+        try { node?.setPointerCapture?.(event.pointerId) } catch { /* ignore */ }
+      }
       const dx = ptr.x - prev.x
       const dy = ptr.y - prev.y
       setFitMode(false)
@@ -959,7 +1005,25 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
 
   const onPointerUp = (event) => {
     pointersRef.current.delete(event.pointerId)
+    if (draggingRef.current) {
+      // Suppress the imminent click event so panning/pinching never drops a pin.
+      justDraggedRef.current = true
+    }
+    if (pointersRef.current.size === 0) {
+      draggingRef.current = false
+      dragStartRef.current = null
+    }
     if (pointersRef.current.size < 2) pinchRef.current = null
+  }
+
+  // Capture-phase click handler: blocks click after a drag/pinch so children
+  // don't see it (e.g. the pin-placement crosshair).
+  const onClickCapture = (event) => {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false
+      event.stopPropagation()
+      event.preventDefault()
+    }
   }
 
   const setManualZoom = (z) => {
@@ -1002,6 +1066,7 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onClickCapture={onClickCapture}
       >
         {renderSize ? (
           <div
@@ -1425,14 +1490,18 @@ function MapPortal({ app }) {
     }
   }
 
-  const handleImageChange = (file) => {
+  const handleImageChange = async (file) => {
     if (!file) {
       setImageFile(null)
       return
     }
 
-    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type)) {
-      showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, or GIF file', 'error')
+    const lowerName = (file.name || '').toLowerCase()
+    const isHeic = (file.type === 'image/heic' || file.type === 'image/heif'
+      || lowerName.endsWith('.heic') || lowerName.endsWith('.heif'))
+
+    if (!MAP_ALLOWED_IMAGE_TYPES.has(file.type) && !isHeic) {
+      showMessage('[MAP_IMAGE_TYPE_UNSUPPORTED_CLIENT] Image must be a JPG, PNG, WebP, GIF, or HEIC file', 'error')
       setImageFile(null)
       return
     }
@@ -1443,7 +1512,24 @@ function MapPortal({ app }) {
       return
     }
 
-    setImageFile(file)
+    let working = file
+    if (isHeic) {
+      try {
+        const mod = await import('heic2any')
+        const heic2any = mod.default || mod
+        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.95 })
+        const blob = Array.isArray(converted) ? converted[0] : converted
+        const newName = lowerName.replace(/\.(heic|heif)$/i, '.jpg') || 'submission.jpg'
+        working = new File([blob], newName, { type: 'image/jpeg' })
+      } catch (err) {
+        console.error('HEIC conversion failed', err)
+        showMessage('[MAP_IMAGE_HEIC_FAILED] Could not decode HEIC image', 'error')
+        setImageFile(null)
+        return
+      }
+    }
+
+    setImageFile(working)
   }
 
   const handleRemoveImage = () => {
@@ -2116,12 +2202,12 @@ function MapPortal({ app }) {
                     <span className="text-sm font-medium text-slate-700">
                       {imageFile ? imageFile.name : 'Choose image, drag & drop, or paste (Ctrl/Cmd+V)'}
                     </span>
-                    <span className="text-xs text-slate-500">JPG, PNG, WebP, or GIF up to 50 MB</span>
+                    <span className="text-xs text-slate-500">JPG, PNG, WebP, GIF, or HEIC up to 50 MB</span>
                     <input
                       ref={fileInputRef}
                       id="map-image"
                       type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
                       className="sr-only"
                       onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
                     />
