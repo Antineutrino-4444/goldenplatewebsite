@@ -2770,8 +2770,19 @@ function MapPortal({ app }) {
                         : pins.find((pin) => pin.id === pinChoice)?.name || 'Choose a pin'}
                     </div>
                   </div>
-                  {imagePreviewUrl ? (
-                    <img src={imagePreviewUrl} alt="Draft preview" className="max-h-80 w-full rounded-md border object-cover" />
+                  {imageItems.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {imageItems.map((it) => (
+                          it.previewUrl ? (
+                            <img key={it.id} src={it.previewUrl} alt={it.name} className="h-32 w-full rounded-md border object-cover" />
+                          ) : (
+                            <div key={it.id} className="flex h-32 items-center justify-center rounded-md border bg-slate-100 text-xs text-slate-500">Processing…</div>
+                          )
+                        ))}
+                      </div>
+                      <div className="text-xs text-slate-500">{imageItems.length} image{imageItems.length === 1 ? '' : 's'} attached</div>
+                    </div>
                   ) : (
                     <div className="flex min-h-48 items-center justify-center rounded-md border border-dashed bg-slate-50 text-sm text-slate-500">
                       <ImageIcon className="mr-2 h-4 w-4" />
