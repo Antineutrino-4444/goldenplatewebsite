@@ -206,7 +206,7 @@ function MainPortal({ app }) {
               </h1>
               <p className="text-xs sm:text-sm text-gray-600 leading-tight">
                 Prevention, Logging &amp; Assessment of Tossed Edibles. Check out{' '}
-                <a href="/map" className="underline text-amber-700 hover:text-amber-800">
+                <a href="https://map.goldenplate.ca/" className="underline text-amber-700 hover:text-amber-800">
                   Ecological Map
                 </a>
               </p>
