@@ -215,9 +215,39 @@ function buildNetworkErrorMessage(code, message, error) {
   return `[${code}] ${message}${detail}`
 }
 
+function isMapHost() {
+  if (typeof window === 'undefined') return false
+  const host = (window.location.hostname || '').toLowerCase()
+  return host === 'map.goldenplate.ca' || host.startsWith('map.')
+}
+
+// Returns the canonical logical path for the map app, regardless of whether
+// it is being served from the legacy `/map` URL space on the main site or
+// from the dedicated `map.goldenplate.ca` subdomain.
+//   main site:                /map               -> '/map'
+//                             /map/submission    -> '/map/submission'
+//   map subdomain:            /                  -> '/map'
+//                             /submit            -> '/map/submission'
 function normalizeMapPath() {
-  const path = window.location.pathname.replace(/\/+$/, '') || '/'
-  return path
+  const raw = window.location.pathname.replace(/\/+$/, '') || '/'
+  if (isMapHost()) {
+    if (raw === '/' || raw === '') return '/map'
+    if (raw === '/submit') return '/map/submission'
+    if (raw.startsWith('/map')) return raw
+    return `/map${raw}`
+  }
+  return raw
+}
+
+// Returns the URL path to use in <a href> attributes when navigating to the
+// map root or submission page, taking the current host into account so links
+// stay on the correct host (subdomain vs. main site).
+function mapHref(target) {
+  const onMapHost = isMapHost()
+  if (target === 'submit') {
+    return onMapHost ? '/submit' : '/map/submission'
+  }
+  return onMapHost ? '/' : '/map'
 }
 
 function formatRole(role) {
@@ -2603,7 +2633,7 @@ function MapPortal({ app }) {
             </Badge>
             <Badge variant="secondary" className="max-w-full truncate">{user?.name || 'Guest User'}</Badge>
             <Button asChild variant="outline" size="sm">
-              <a href={isSubmissionPage ? '/map' : '/map/submission'}>
+              <a href={isSubmissionPage ? mapHref('root') : mapHref('submit')}>
                 {isSubmissionPage ? (
                   <>
                     <ArrowLeft className="mr-2 h-4 w-4" />

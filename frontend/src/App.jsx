@@ -9,9 +9,22 @@ import SchoolRegistration from '@/components/SchoolRegistration.jsx'
 
 const MapPortal = lazy(() => import('@/components/MapPortal.jsx'))
 
+function isMapHost() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  const host = (window.location.hostname || '').toLowerCase()
+  // Treat any host beginning with `map.` as the dedicated Ecological Map
+  // subdomain (e.g. map.goldenplate.ca, map.localhost, map.staging.example).
+  return host === 'map.goldenplate.ca' || host.startsWith('map.')
+}
+
 function isMapPath() {
   if (typeof window === 'undefined') {
     return false
+  }
+  if (isMapHost()) {
+    return true
   }
   const path = window.location.pathname.replace(/\/+$/, '') || '/'
   return path === '/map' || path.startsWith('/map/')
