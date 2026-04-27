@@ -35,6 +35,14 @@ MAP_VERIFICATION_PURPOSE = 'map_submission'
 MAX_VERIFICATION_ATTEMPTS = 5
 MAP_EMAIL_VERIFICATION_MAX_AGE_MINUTES = 30
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
+# Recipients notified whenever a new map submission is awaiting approval.
+# Override at runtime via the MAP_APPROVAL_NOTIFY_EMAILS env var (comma-separated).
+DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS = (
+    'antineutrino-044@outlook.com',
+    'leo.li2026@sac.on.ca',
+    'nick.wang@sac.on.ca',
+    'matthew.jaekel@sac.on.ca',
+)
 # Image MIMEs that browsers can render natively in <img> tags.
 BROWSER_NATIVE_IMAGE_MIMES = {
     'image/jpeg',
@@ -409,6 +417,85 @@ def _normalize_email(value):
 
 def _is_sac_email(email):
     return _normalize_email(email).endswith(SAC_EMAIL_SUFFIX)
+
+
+def _get_map_approval_notify_recipients():
+    """Return the list of emails to notify when a new map submission arrives."""
+    raw = os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS', '')
+    if raw.strip():
+        recipients = [part.strip() for part in raw.split(',') if part.strip()]
+    else:
+        recipients = list(DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS)
+    # Deduplicate while preserving order, ignoring case.
+    seen = set()
+    unique = []
+    for email_addr in recipients:
+        normalized = email_addr.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(email_addr)
+    return unique
+
+
+def _notify_pending_map_submission(submission):
+    """Send a notification email to the configured reviewers about a new
+    pending map submission. Failures are logged and never raised so they
+    cannot block the submission flow."""
+    try:
+        recipients = _get_map_approval_notify_recipients()
+        if not recipients:
+            return
+
+        title = (submission.title or '').strip() or '(no title)'
+        submitter_email = submission.email or ''
+        submitter_name = (
+            submission.submission_display_name
+            or submission.submitted_display_name
+            or submission.submitted_username
+            or 'Anonymous'
+        )
+        text_excerpt = (submission.text_content or '').strip()
+        if len(text_excerpt) > 500:
+            text_excerpt = text_excerpt[:500] + '…'
+
+        safe_title = _html_lib.escape(title)
+        safe_name = _html_lib.escape(submitter_name)
+        safe_email = _html_lib.escape(submitter_email)
+        safe_text = _html_lib.escape(text_excerpt).replace('\n', '<br>') or '<em>(no description)</em>'
+        submission_id = _html_lib.escape(submission.id or '')
+
+        subject = f'[Golden Plate Map] New submission pending approval: {title}'
+        html = f"""
+        <div style="font-family: Arial, sans-serif; color: #1f2937; max-width: 640px;">
+          <h2 style="color: #0f766e; margin-bottom: 8px;">New Ecological Map submission awaiting approval</h2>
+          <p style="margin: 0 0 16px;">A new submission has been received and is pending review.</p>
+          <table style="border-collapse: collapse; font-size: 14px;">
+            <tr><td style="padding: 4px 12px 4px 0; color:#475569;"><strong>Title</strong></td><td style="padding:4px 0;">{safe_title}</td></tr>
+            <tr><td style="padding: 4px 12px 4px 0; color:#475569;"><strong>Submitted by</strong></td><td style="padding:4px 0;">{safe_name} &lt;{safe_email}&gt;</td></tr>
+            <tr><td style="padding: 4px 12px 4px 0; color:#475569;"><strong>Submission ID</strong></td><td style="padding:4px 0;"><code>{submission_id}</code></td></tr>
+          </table>
+          <h3 style="margin-top: 20px; margin-bottom: 6px; font-size: 14px; color:#475569;">Description</h3>
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px; font-size:14px; line-height:1.5;">{safe_text}</div>
+          <p style="margin-top: 20px; font-size: 13px; color:#475569;">
+            Open the Ecological Map admin view to approve or reject this submission.
+          </p>
+        </div>
+        """.strip()
+
+        for recipient in recipients:
+            try:
+                result = send_email_via_brevo(recipient, subject, html)
+                if not result.get('success'):
+                    logger.warning(
+                        'Map approval notification failed for %s: %s',
+                        recipient,
+                        result.get('error'),
+                    )
+            except Exception:
+                logger.exception('Unexpected error sending map approval notification to %s', recipient)
+    except Exception:
+        logger.exception('Failed to dispatch map approval notifications')
 
 
 def _generate_verification_code():
@@ -1112,6 +1199,9 @@ def create_map_submission():
         logger.exception('Unable to create map submission: %s', exc)
         map_db_session.rollback()
         return _map_error('MAP_SUBMISSION_CREATE_FAILED', 'Could not submit map entry', 500)
+
+    # Notify reviewers (best-effort; never fails the request).
+    _notify_pending_map_submission(submission)
 
     return jsonify({
         'status': 'success',

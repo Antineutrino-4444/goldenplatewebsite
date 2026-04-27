@@ -2654,7 +2654,7 @@ function MapPortal({ app }) {
               </Button>
             ) : (
               <Button asChild variant="outline" size="sm">
-                <a href="/">Login</a>
+                <a href="/login">Login</a>
               </Button>
             )}
           </div>
@@ -2726,16 +2726,17 @@ function MapPortal({ app }) {
               Enlarge map
             </Button>
           </div>
-          <EcologicalMapGraphic
-            pins={pins}
-            submissionsByPin={submissionsByPin}
-            selectedPinId={selectedPinId}
-            onSelectPin={setSelectedPinId}
-            backgroundUrl={backgroundUrl}
-            imageAspect={imageAspect}
-            fillContainer
-            className="h-full min-h-[16rem] sm:min-h-[20rem]"
-          />
+          <div className="w-full self-center">
+            <EcologicalMapGraphic
+              pins={pins}
+              submissionsByPin={submissionsByPin}
+              selectedPinId={selectedPinId}
+              onSelectPin={setSelectedPinId}
+              backgroundUrl={backgroundUrl}
+              imageAspect={imageAspect}
+              className="w-full"
+            />
+          </div>
         </section>
 
         {selectedPinId && (

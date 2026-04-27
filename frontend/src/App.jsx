@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import './App.css'
 import { usePlateApp } from '@/hooks/usePlateApp.js'
 import LoginView from '@/components/LoginView.jsx'
@@ -28,6 +28,49 @@ function isMapPath() {
   }
   const path = window.location.pathname.replace(/\/+$/, '') || '/'
   return path === '/map' || path.startsWith('/map/')
+}
+
+function isLoginPath() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/login' || path.startsWith('/login/')
+}
+
+function LoginRoute({ app }) {
+  // After successful login on /login, send the user to the appropriate landing
+  // page based on the current host (map subdomain stays on the map; otherwise
+  // the main portal). This avoids leaving them on the /login URL.
+  useEffect(() => {
+    if (app.isAuthenticated) {
+      const target = isMapHost() ? '/' : '/'
+      if (window.location.pathname !== target) {
+        window.location.replace(target)
+      }
+    }
+  }, [app.isAuthenticated])
+
+  if (app.isAuthenticated) {
+    // Brief blank while the redirect runs.
+    return <div className="min-h-screen bg-gray-50" />
+  }
+
+  if (app.showSchoolRegistration) {
+    return (
+      <>
+        <SchoolRegistration app={app} />
+        <OverlayElements app={app} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <LoginView app={app} />
+      <OverlayElements app={app} />
+    </>
+  )
 }
 
 function PlateApp() {
@@ -98,11 +141,24 @@ function MapApp() {
 }
 
 function App() {
+  if (isLoginPath()) {
+    // Dedicated /login route: always show the login screen regardless of host
+    // (e.g. works on map.goldenplate.ca/login as well as goldenplate.ca/login).
+    // This avoids relying on the implicit "/" → login redirect, which could
+    // get swallowed by the map subdomain.
+    return <LoginRouteWrapper />
+  }
+
   if (isMapPath()) {
     return <MapApp />
   }
 
   return <PlateApp />
+}
+
+function LoginRouteWrapper() {
+  const app = usePlateApp()
+  return <LoginRoute app={app} />
 }
 
 export default App
