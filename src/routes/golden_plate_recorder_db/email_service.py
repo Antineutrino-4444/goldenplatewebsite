@@ -30,8 +30,13 @@ def generate_verification_code() -> str:
     return ''.join(random.choices(string.digits, k=VERIFICATION_CODE_LENGTH))
 
 
-def send_email_via_brevo(to_email: str, subject: str, html_content: str) -> dict:
-    """Send an email using Brevo's API."""
+def send_email_via_brevo(to_email: str, subject: str, html_content: str, attachments: list | None = None) -> dict:
+    """Send an email using Brevo's API.
+
+    `attachments` is an optional list of dicts shaped like
+    ``{"name": "image.png", "content": "<base64 string>"}`` per the Brevo
+    SMTP API spec. The ``content`` value MUST already be base64-encoded.
+    """
     config = _get_brevo_config()
     api_key = config['api_key']
     sender_email = config['sender_email']
@@ -52,6 +57,8 @@ def send_email_via_brevo(to_email: str, subject: str, html_content: str) -> dict
         'subject': subject,
         'htmlContent': html_content,
     }
+    if attachments:
+        payload['attachment'] = attachments
 
     try:
         logger.info(f'Sending verification email to {to_email}')

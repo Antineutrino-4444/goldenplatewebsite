@@ -1756,6 +1756,13 @@ function MapPortal({ app }) {
   const [showBackgroundEditor, setShowBackgroundEditor] = useState(false)
   const backgroundInputRef = useRef(null)
 
+  // Approval-recipient settings (managed in a dialog by superadmins).
+  const [showRecipientsEditor, setShowRecipientsEditor] = useState(false)
+  const [recipientsLoading, setRecipientsLoading] = useState(false)
+  const [recipientsSaving, setRecipientsSaving] = useState(false)
+  const [recipientsInfo, setRecipientsInfo] = useState(null) // server payload
+  const [recipientsDraft, setRecipientsDraft] = useState('') // textarea contents
+
   const SUBMISSION_DRAFT_KEY = 'mapSubmissionDraft.v2'
   const initialDraft = (() => {
     if (typeof window === 'undefined') return {}
@@ -2593,6 +2600,83 @@ function MapPortal({ app }) {
     }
   }
 
+  const loadApprovalRecipients = async () => {
+    setRecipientsLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/map/settings/approval-recipients`, {
+        credentials: 'include',
+      })
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        setRecipientsInfo(result.data)
+        // Prefer DB value in the editor; fall back to whatever is currently
+        // active (env or default) so the textarea is never blank on first load.
+        const initialList = (result.data.database_recipients && result.data.database_recipients.length)
+          ? result.data.database_recipients
+          : (result.data.recipients || [])
+        setRecipientsDraft(initialList.join('\n'))
+      } else {
+        showMessage(
+          buildApiErrorMessage(result, 'MAP_RECIPIENTS_LOAD_FAILED', 'Failed to load notification recipients'),
+          'error',
+        )
+      }
+    } catch (error) {
+      showMessage(
+        buildNetworkErrorMessage('MAP_RECIPIENTS_LOAD_NETWORK', 'Failed to load notification recipients', error),
+        'error',
+      )
+    } finally {
+      setRecipientsLoading(false)
+    }
+  }
+
+  const openRecipientsEditor = async () => {
+    setShowRecipientsEditor(true)
+    await loadApprovalRecipients()
+  }
+
+  const saveApprovalRecipients = async () => {
+    setRecipientsSaving(true)
+    try {
+      // Server accepts either a list or a freeform string; sending a list keeps
+      // intent unambiguous and lets the server validate each address.
+      const recipients = recipientsDraft
+        .split(/[\s,;]+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+      const response = await fetch(`${API_BASE}/map/settings/approval-recipients`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ recipients }),
+      })
+      const result = await readApiResponse(response)
+      if (result.ok) {
+        setRecipientsInfo(result.data)
+        setRecipientsDraft((result.data.database_recipients || []).join('\n'))
+        showMessage(
+          recipients.length
+            ? `Saved ${recipients.length} approval recipient${recipients.length === 1 ? '' : 's'}`
+            : 'Cleared approval recipients (will fall back to defaults)',
+          'success',
+        )
+      } else {
+        showMessage(
+          buildApiErrorMessage(result, 'MAP_RECIPIENTS_SAVE_FAILED', 'Failed to save notification recipients'),
+          'error',
+        )
+      }
+    } catch (error) {
+      showMessage(
+        buildNetworkErrorMessage('MAP_RECIPIENTS_SAVE_NETWORK', 'Failed to save notification recipients', error),
+        'error',
+      )
+    } finally {
+      setRecipientsSaving(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {isSubmissionPage && isDraggingImage && (
@@ -2688,6 +2772,16 @@ function MapPortal({ app }) {
                 >
                   <ImageIcon className="mr-2 h-4 w-4" />
                   {backgroundUploading ? 'Uploading…' : 'Edit Map Background'}
+                </Button>
+              )}
+              {isSuperadmin && (
+                <Button
+                  onClick={openRecipientsEditor}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Mail className="mr-2 h-4 w-4" />
+                  Notification Recipients
                 </Button>
               )}
             </div>
@@ -3248,6 +3342,94 @@ function MapPortal({ app }) {
           setShowBackgroundEditor(false)
         }}
       />
+
+      <Dialog open={showRecipientsEditor} onOpenChange={setShowRecipientsEditor}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5 text-teal-700" />
+              Approval notification recipients
+            </DialogTitle>
+            <DialogDescription>
+              These email addresses receive a notification (with the submission images and a
+              single-use speed-approval link) every time someone submits an Ecological Map entry
+              for approval. One address per line, or separated by commas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {recipientsLoading ? (
+              <div className="text-sm text-slate-500">Loading current recipients…</div>
+            ) : (
+              <>
+                <div>
+                  <Label htmlFor="map-recipients-textarea" className="text-sm font-semibold">
+                    Recipients
+                  </Label>
+                  <Textarea
+                    id="map-recipients-textarea"
+                    value={recipientsDraft}
+                    onChange={(e) => setRecipientsDraft(e.target.value)}
+                    rows={6}
+                    placeholder="alice@example.com&#10;bob@example.com"
+                    className="mt-2 font-mono text-sm"
+                    disabled={recipientsSaving}
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    Leave the box empty to fall back to the <code>MAP_APPROVAL_NOTIFY_EMAILS</code>{' '}
+                    environment variable, or to the built-in default list if that is also unset.
+                  </p>
+                </div>
+
+                {recipientsInfo && (
+                  <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                    <div>
+                      <span className="font-semibold text-slate-700">Currently active source:</span>{' '}
+                      <Badge variant="outline" className="ml-1">
+                        {recipientsInfo.source === 'database'
+                          ? 'Database (this dialog)'
+                          : recipientsInfo.source === 'env'
+                            ? 'Environment variable'
+                            : 'Built-in default'}
+                      </Badge>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-700">Currently active list:</span>{' '}
+                      <span className="break-all">
+                        {(recipientsInfo.recipients || []).join(', ') || '(none)'}
+                      </span>
+                    </div>
+                    {recipientsInfo.updated_at && (
+                      <div>
+                        <span className="font-semibold text-slate-700">Last edited:</span>{' '}
+                        {new Date(recipientsInfo.updated_at).toLocaleString()}
+                        {recipientsInfo.updated_by ? ` by @${recipientsInfo.updated_by}` : ''}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowRecipientsEditor(false)}
+                    disabled={recipientsSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={saveApprovalRecipients}
+                    disabled={recipientsSaving}
+                    className="bg-teal-700 hover:bg-teal-800"
+                  >
+                    {recipientsSaving ? 'Saving…' : 'Save recipients'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showEnlarge} onOpenChange={setShowEnlarge}>
         <DialogContent className="flex w-full sm:max-w-[95vw] h-[95vh] max-h-[95vh] flex-col overflow-hidden">

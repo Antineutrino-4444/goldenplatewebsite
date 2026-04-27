@@ -2,7 +2,9 @@ import logging
 import os
 import random
 import re
+import secrets
 import string
+import base64
 from datetime import timedelta, timezone
 from io import BytesIO
 import html as _html_lib
@@ -21,6 +23,7 @@ from .map_db import (
     MapBackground,
     MapEmailVerification,
     MapPin,
+    MapSetting,
     MapSubmission,
     MapSubmissionImage,
     MapSubmitterAccount,
@@ -36,13 +39,16 @@ MAX_VERIFICATION_ATTEMPTS = 5
 MAP_EMAIL_VERIFICATION_MAX_AGE_MINUTES = 30
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
 # Recipients notified whenever a new map submission is awaiting approval.
-# Override at runtime via the MAP_APPROVAL_NOTIFY_EMAILS env var (comma-separated).
+# Override at runtime via the MAP_APPROVAL_NOTIFY_EMAILS env var (comma-separated)
+# or — preferred — from the Map admin UI (stored in the ``map_settings`` table
+# under the key below).
 DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS = (
     'antineutrino-044@outlook.com',
     'leo.li2026@sac.on.ca',
     'nick.wang@sac.on.ca',
     'matthew.jaekel@sac.on.ca',
 )
+MAP_SETTING_APPROVAL_RECIPIENTS = 'approval_notify_emails'
 # Image MIMEs that browsers can render natively in <img> tags.
 BROWSER_NATIVE_IMAGE_MIMES = {
     'image/jpeg',
@@ -420,12 +426,35 @@ def _is_sac_email(email):
 
 
 def _get_map_approval_notify_recipients():
-    """Return the list of emails to notify when a new map submission arrives."""
-    raw = os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS', '')
+    """Return the list of emails to notify when a new map submission arrives.
+
+    Resolution order (first non-empty wins):
+      1. ``map_settings.approval_notify_emails`` row in the DB (managed
+         from the Map admin UI by superadmins).
+      2. ``MAP_APPROVAL_NOTIFY_EMAILS`` env var (comma-separated).
+      3. ``DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS`` constant.
+    """
+    raw = ''
+    try:
+        setting = (
+            map_db_session.query(MapSetting)
+            .filter(MapSetting.key == MAP_SETTING_APPROVAL_RECIPIENTS)
+            .first()
+        )
+        if setting and (setting.value or '').strip():
+            raw = setting.value
+    except Exception:
+        logger.exception('Failed to read approval recipients from map_settings')
+        raw = ''
+
+    if not raw.strip():
+        raw = os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS', '')
+
     if raw.strip():
-        recipients = [part.strip() for part in raw.split(',') if part.strip()]
+        recipients = _parse_email_list(raw)
     else:
         recipients = list(DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS)
+
     # Deduplicate while preserving order, ignoring case.
     seen = set()
     unique = []
@@ -438,10 +467,108 @@ def _get_map_approval_notify_recipients():
     return unique
 
 
-def _notify_pending_map_submission(submission):
+_EMAIL_SPLIT_RE = re.compile(r'[\s,;]+')
+# Loose RFC-5322-ish check; we are not delivering ourselves, just keeping
+# obvious garbage out of the recipients list.
+_EMAIL_VALIDATE_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+
+def _parse_email_list(raw):
+    """Split a free-form input ("a@b.com, c@d.com\nfoo@bar.com") into a
+    cleaned list of email addresses. Whitespace, commas, semicolons, and
+    newlines are all valid separators."""
+    if not raw:
+        return []
+    parts = [p.strip() for p in _EMAIL_SPLIT_RE.split(raw) if p.strip()]
+    return parts
+
+
+def _collect_submission_image_attachments(submission, max_total_bytes: int = 9 * 1024 * 1024):
+    """Return ``(attachments, descriptions)`` for emails.
+
+    * ``attachments`` is a list of Brevo-shaped ``{"name", "content"}`` dicts
+      where ``content`` is base64-encoded image bytes, ready to pass to
+      :func:`send_email_via_brevo`.
+    * ``descriptions`` is a parallel-ish list of human-readable strings
+      describing what was (or was not) attached, suitable for embedding in
+      the HTML body.
+
+    Attachments are skipped (and noted in the descriptions) if adding them
+    would push the total payload past ``max_total_bytes`` so we stay under
+    Brevo's per-message limit.
+    """
+    attachments: list[dict] = []
+    descriptions: list[str] = []
+    total_bytes = 0
+
+    def _safe_attach(filename, mime, data):
+        nonlocal total_bytes
+        if not data:
+            return False, 'no image data'
+        size = len(data)
+        if total_bytes + size > max_total_bytes:
+            return False, f'skipped — too large to attach ({size} bytes)'
+        try:
+            encoded = base64.b64encode(data).decode('ascii')
+        except Exception:
+            logger.exception('Failed to base64-encode attachment %s', filename)
+            return False, 'failed to encode'
+        attachments.append({
+            'name': filename or 'image',
+            'content': encoded,
+        })
+        total_bytes += size
+        return True, f'{mime or "?"}, {size} bytes'
+
+    if submission.image_data:
+        primary_name = submission.image_filename or f'submission-{submission.id}.bin'
+        ok, info = _safe_attach(primary_name, submission.image_mime, submission.image_data)
+        descriptions.append(f'{primary_name} ({info})' if ok else f'{primary_name} ({info})')
+
+    try:
+        extras = (
+            map_db_session.query(MapSubmissionImage)
+            .filter(MapSubmissionImage.submission_id == submission.id)
+            .order_by(MapSubmissionImage.position.asc(), MapSubmissionImage.created_at.asc())
+            .all()
+        )
+    except Exception:
+        logger.exception('Failed to load extra images for email attachments')
+        extras = []
+
+    for idx, extra in enumerate(extras, start=1):
+        extra_name = extra.image_filename or f'submission-{submission.id}-extra-{idx}.bin'
+        ok, info = _safe_attach(extra_name, extra.image_mime, extra.image_data)
+        descriptions.append(f'{extra_name} ({info})' if ok else f'{extra_name} ({info})')
+
+    return attachments, descriptions
+
+
+def _render_image_descriptions_html(descriptions):
+    """Render the attachment description list as HTML for inclusion in emails."""
+    if not descriptions:
+        return '<em style="color:#64748b;">No images.</em>'
+    items = ''.join(
+        f'<li style="font-size:13px;color:#334155;">{_html_lib.escape(desc)}</li>'
+        for desc in descriptions
+    )
+    return f'<ul style="margin:6px 0 0 18px; padding:0;">{items}</ul>'
+
+
+def _notify_pending_map_submission(submission, base_url=None):
     """Send a notification email to the configured reviewers about a new
-    pending map submission. Failures are logged and never raised so they
-    cannot block the submission flow."""
+    pending map submission.
+
+    The email includes:
+      * full submission metadata (title, submitter, pin, description)
+      * every attached image, embedded as a base64 attachment so it
+        renders/downloads without an authenticated session
+      * a single-use "quick approve" link that approves the submission
+        without requiring the reviewer to log in (it works once)
+
+    Failures are logged and never raised so they cannot block the
+    submission flow.
+    """
     try:
         recipients = _get_map_approval_notify_recipients()
         if not recipients:
@@ -455,37 +582,129 @@ def _notify_pending_map_submission(submission):
             or submission.submitted_username
             or 'Anonymous'
         )
-        text_excerpt = (submission.text_content or '').strip()
-        if len(text_excerpt) > 500:
-            text_excerpt = text_excerpt[:500] + '…'
+        text_full = (submission.text_content or '').strip()
 
+        # Pin (if any).
+        pin_label = '(no pin / "Others")'
+        if submission.pin_id:
+            try:
+                pin = (
+                    map_db_session.query(MapPin)
+                    .filter(MapPin.id == submission.pin_id)
+                    .first()
+                )
+                if pin:
+                    pin_label = f'{pin.name} ({pin.x:.1f}, {pin.y:.1f})'
+                else:
+                    pin_label = f'(unknown pin: {submission.pin_id})'
+            except Exception:
+                logger.exception('Failed to look up pin %s for notification', submission.pin_id)
+
+        submitted_at_str = ''
+        if submission.submitted_at:
+            try:
+                submitted_at_str = submission.submitted_at.strftime('%B %d, %Y at %I:%M %p UTC')
+            except Exception:
+                submitted_at_str = str(submission.submitted_at)
+
+        # Quick-approve link.
+        public_base = (
+            os.environ.get('MAP_PUBLIC_BASE_URL', '').strip().rstrip('/')
+            or (base_url or '').strip().rstrip('/')
+        )
+        approval_url = None
+        if submission.approval_token and public_base:
+            approval_url = (
+                f'{public_base}/api/map/submissions/{submission.id}'
+                f'/quick-approve?token={submission.approval_token}'
+            )
+
+        # Collect images as Brevo attachments (base64).
+        attachments, image_descriptions = _collect_submission_image_attachments(submission)
+
+        # Build HTML.
         safe_title = _html_lib.escape(title)
         safe_name = _html_lib.escape(submitter_name)
         safe_email = _html_lib.escape(submitter_email)
-        safe_text = _html_lib.escape(text_excerpt).replace('\n', '<br>') or '<em>(no description)</em>'
-        submission_id = _html_lib.escape(submission.id or '')
+        safe_text = (_html_lib.escape(text_full).replace('\n', '<br>')
+                     if text_full else '<em>(no description)</em>')
+        safe_pin = _html_lib.escape(pin_label)
+        safe_submission_id = _html_lib.escape(submission.id or '')
+        safe_submitted_at = _html_lib.escape(submitted_at_str)
+        safe_school_id = _html_lib.escape(submission.school_id or '')
+        safe_status = _html_lib.escape(submission.status or '')
+        safe_submitted_by_role = _html_lib.escape(submission.submitted_role or '')
+        safe_submitted_by_username = _html_lib.escape(submission.submitted_username or '(guest)')
+
+        if image_descriptions:
+            images_html = _render_image_descriptions_html(image_descriptions)
+        else:
+            images_html = '<em style="color:#64748b;">No images.</em>'
+
+        if approval_url:
+            safe_url = _html_lib.escape(approval_url, quote=True)
+            quick_approve_html = f'''
+              <div style="margin-top: 24px; padding: 16px; border:1px solid #fcd34d; background:#fffbeb; border-radius:8px;">
+                <div style="font-weight:700; color:#78350f; margin-bottom:8px;">⚡ Speed approval link (single use)</div>
+                <p style="margin:0 0 12px; font-size:13px; color:#78350f;">
+                  Clicking this approves the submission immediately. No login required.
+                  The link works <strong>once</strong> and is invalidated as soon as it is used
+                  (or as soon as anyone reviews the submission).
+                </p>
+                <a href="{safe_url}" style="display:inline-block; background:#16a34a; color:#ffffff; text-decoration:none; padding:10px 18px; border-radius:6px; font-weight:600;">
+                  Approve submission
+                </a>
+                <div style="margin-top:10px; font-size:11px; color:#92400e; word-break:break-all;">
+                  {safe_url}
+                </div>
+              </div>
+            '''
+        else:
+            quick_approve_html = (
+                '<p style="margin-top:16px; font-size:13px; color:#64748b;">'
+                '(Quick approval link unavailable — server could not determine its public URL.)'
+                '</p>'
+            )
 
         subject = f'[Golden Plate Map] New submission pending approval: {title}'
         html = f"""
-        <div style="font-family: Arial, sans-serif; color: #1f2937; max-width: 640px;">
-          <h2 style="color: #0f766e; margin-bottom: 8px;">New Ecological Map submission awaiting approval</h2>
-          <p style="margin: 0 0 16px;">A new submission has been received and is pending review.</p>
-          <table style="border-collapse: collapse; font-size: 14px;">
-            <tr><td style="padding: 4px 12px 4px 0; color:#475569;"><strong>Title</strong></td><td style="padding:4px 0;">{safe_title}</td></tr>
-            <tr><td style="padding: 4px 12px 4px 0; color:#475569;"><strong>Submitted by</strong></td><td style="padding:4px 0;">{safe_name} &lt;{safe_email}&gt;</td></tr>
-            <tr><td style="padding: 4px 12px 4px 0; color:#475569;"><strong>Submission ID</strong></td><td style="padding:4px 0;"><code>{submission_id}</code></td></tr>
+        <div style="font-family: Arial, sans-serif; color: #0f172a; max-width: 680px;">
+          <h2 style="color:#0f766e; margin-bottom:8px;">New Ecological Map submission awaiting approval</h2>
+          <p style="margin:0 0 16px;">A new submission has been received and is pending review.</p>
+
+          <table style="border-collapse: collapse; font-size: 14px; width:100%;">
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Title</strong></td><td style="padding:4px 0;">{safe_title}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submitted by</strong></td><td style="padding:4px 0;">{safe_name} &lt;{safe_email}&gt;</td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Account</strong></td><td style="padding:4px 0;">@{safe_submitted_by_username} ({safe_submitted_by_role or 'guest'})</td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Pin</strong></td><td style="padding:4px 0;">{safe_pin}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submitted at</strong></td><td style="padding:4px 0;">{safe_submitted_at or '—'}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Status</strong></td><td style="padding:4px 0;">{safe_status}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submission ID</strong></td><td style="padding:4px 0;"><code>{safe_submission_id}</code></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>School ID</strong></td><td style="padding:4px 0;"><code>{safe_school_id}</code></td></tr>
           </table>
-          <h3 style="margin-top: 20px; margin-bottom: 6px; font-size: 14px; color:#475569;">Description</h3>
-          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px; font-size:14px; line-height:1.5;">{safe_text}</div>
-          <p style="margin-top: 20px; font-size: 13px; color:#475569;">
-            Open the Ecological Map admin view to approve or reject this submission.
+
+          <h3 style="margin-top:20px; margin-bottom:6px; font-size:14px; color:#475569;">Description</h3>
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px; font-size:14px; line-height:1.5; white-space:pre-wrap;">{safe_text}</div>
+
+          <h3 style="margin-top:20px; margin-bottom:6px; font-size:14px; color:#475569;">Images attached to this email</h3>
+          {images_html}
+
+          {quick_approve_html}
+
+          <p style="margin-top:24px; font-size:12px; color:#94a3b8;">
+            You can also open the Ecological Map admin view in your browser to review/reject this submission.
           </p>
         </div>
         """.strip()
 
         for recipient in recipients:
             try:
-                result = send_email_via_brevo(recipient, subject, html)
+                result = send_email_via_brevo(
+                    recipient,
+                    subject,
+                    html,
+                    attachments=attachments or None,
+                )
                 if not result.get('success'):
                     logger.warning(
                         'Map approval notification failed for %s: %s',
@@ -1161,6 +1380,9 @@ def create_map_submission():
         image_data=image_data,
         image_size=image_size,
         status='pending',
+        # 256-bit URL-safe token used by the email "speed approval" link.
+        # Cleared the moment it (or any normal review action) is consumed.
+        approval_token=secrets.token_urlsafe(32),
         submitted_user_id=identity['user_id'],
         submitted_username=identity['username'],
         submitted_display_name=identity['display_name'],
@@ -1201,7 +1423,11 @@ def create_map_submission():
         return _map_error('MAP_SUBMISSION_CREATE_FAILED', 'Could not submit map entry', 500)
 
     # Notify reviewers (best-effort; never fails the request).
-    _notify_pending_map_submission(submission)
+    try:
+        notify_base_url = request.host_url
+    except Exception:
+        notify_base_url = None
+    _notify_pending_map_submission(submission, base_url=notify_base_url)
 
     return jsonify({
         'status': 'success',
@@ -1236,6 +1462,8 @@ def approve_map_submission(submission_id):
     submission.reviewed_role = identity['role']
     submission.reviewed_at = _map_now_utc()
     submission.rejection_reason = None
+    # Burn the speed-approval token so the email link can't be reused.
+    submission.approval_token = None
 
     try:
         map_db_session.commit()
@@ -1249,6 +1477,124 @@ def approve_map_submission(submission_id):
         'message': 'Submission approved',
         'submission': _serialize_submission(submission),
     }), 200
+
+
+@recorder_bp.route('/map/submissions/<submission_id>/quick-approve', methods=['GET', 'POST'])
+def quick_approve_map_submission(submission_id):
+    """Single-use, login-free approval endpoint reached from the reviewer
+    notification email.
+
+    Security model:
+      * The approval token is a 256-bit URL-safe random string generated when
+        the submission is created and only ever sent to the configured
+        reviewer email recipients.
+      * Token comparison uses :func:`secrets.compare_digest` to avoid timing
+        attacks.
+      * The token is cleared (set to NULL) atomically with the status change,
+        so the link works exactly once. Any subsequent click — whether by a
+        forwarded email, a refreshed browser tab, or an attacker who somehow
+        guessed the token — will see an "already used" page.
+      * If the submission has already been reviewed (approved/rejected) by any
+        other path, the token is cleared and the link is rejected.
+    """
+    provided_token = (request.args.get('token') or request.form.get('token') or '').strip()
+
+    submission = (
+        map_db_session.query(MapSubmission)
+        .filter(MapSubmission.id == submission_id)
+        .first()
+    )
+    if not submission:
+        return _quick_approve_html_response(
+            'Submission not found',
+            'No submission matches this approval link. It may have been deleted.',
+            ok=False,
+        ), 404
+
+    stored_token = submission.approval_token or ''
+
+    if not provided_token or not stored_token or not secrets.compare_digest(provided_token, stored_token):
+        return _quick_approve_html_response(
+            'Approval link no longer valid',
+            'This speed-approval link is invalid or has already been used. Please open the '
+            'Ecological Map admin view to review the submission instead.',
+            ok=False,
+        ), 410
+
+    if submission.status != 'pending':
+        # Defensive: clear any leftover token on an already-reviewed row.
+        submission.approval_token = None
+        try:
+            map_db_session.commit()
+        except Exception:
+            map_db_session.rollback()
+        return _quick_approve_html_response(
+            'Already reviewed',
+            f'This submission has already been {submission.status}. The link will not work again.',
+            ok=False,
+        ), 410
+
+    submission.status = 'approved'
+    submission.reviewed_user_id = None
+    submission.reviewed_username = 'email-quick-approve'
+    submission.reviewed_display_name = 'Email quick-approve link'
+    submission.reviewed_role = 'admin'
+    submission.reviewed_at = _map_now_utc()
+    submission.rejection_reason = None
+    # Single-use: burn the token now.
+    submission.approval_token = None
+
+    try:
+        map_db_session.commit()
+    except Exception as exc:
+        logger.exception('Unable to quick-approve map submission: %s', exc)
+        map_db_session.rollback()
+        return _quick_approve_html_response(
+            'Server error',
+            'Could not approve the submission due to a server error. Please try again from the admin view.',
+            ok=False,
+        ), 500
+
+    title = (submission.title or '').strip() or '(no title)'
+    return _quick_approve_html_response(
+        'Submission approved ✓',
+        f'\u201c{title}\u201d has been approved and is now visible on the Ecological Map. '
+        'This link has been used and will no longer work.',
+        ok=True,
+    ), 200
+
+
+def _quick_approve_html_response(heading: str, message: str, *, ok: bool):
+    """Render a tiny self-contained HTML page for the quick-approve endpoint.
+    No JS, no external assets — works from any email client's web view."""
+    safe_heading = _html_lib.escape(heading)
+    safe_message = _html_lib.escape(message)
+    accent = '#16a34a' if ok else '#b91c1c'
+    bg = '#f0fdf4' if ok else '#fef2f2'
+    border = '#bbf7d0' if ok else '#fecaca'
+    body = f"""
+<!doctype html>
+<html lang=\"en\">
+<head>
+<meta charset=\"utf-8\">
+<title>{safe_heading}</title>
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+</head>
+<body style=\"margin:0;padding:32px 16px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;\">
+  <div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 4px 14px rgba(15,23,42,0.06);overflow:hidden;\">
+    <div style=\"background:{bg};border-bottom:1px solid {border};padding:20px 28px;\">
+      <div style=\"font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#475569;\">Ecological Map</div>
+      <div style=\"font-size:22px;font-weight:700;color:{accent};margin-top:4px;\">{safe_heading}</div>
+    </div>
+    <div style=\"padding:24px 28px;font-size:15px;line-height:1.55;\">
+      {safe_message}
+    </div>
+  </div>
+</body>
+</html>
+""".strip()
+    from flask import Response
+    return Response(body, mimetype='text/html')
 
 
 @recorder_bp.route('/map/submissions/<submission_id>/reject', methods=['POST'])
@@ -1307,6 +1653,8 @@ def reject_map_submission(submission_id):
     submission.reviewed_role = identity['role']
     submission.reviewed_at = _map_now_utc()
     submission.rejection_reason = reason or None
+    # Burn the speed-approval token so the email link can't be reused.
+    submission.approval_token = None
 
     # Purge stored image bytes to reclaim disk space. We keep filename/mime
     # for the audit trail but the binary blobs are no longer needed once a
@@ -1335,7 +1683,11 @@ def reject_map_submission(submission_id):
 
 
 def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_display_name: str) -> dict:
-    """Send a formatted deletion email to the submitter via Brevo."""
+    """Send a formatted deletion email to the submitter via Brevo.
+
+    Includes the full submission text and every attached image so the user
+    has a complete record of what was removed.
+    """
     title = (submission.title or '').strip() or 'your submission'
     safe_title = _html_lib.escape(title)
     safe_reason = _html_lib.escape(reason).replace('\n', '<br/>')
@@ -1347,10 +1699,18 @@ def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_dis
         except Exception:
             submitted_at = str(submission.submitted_at)
     safe_submitted_at = _html_lib.escape(submitted_at)
-    excerpt = (submission.text_content or '').strip()
-    if len(excerpt) > 400:
-        excerpt = excerpt[:400] + '…'
-    safe_excerpt = _html_lib.escape(excerpt).replace('\n', '<br/>')
+    full_text = (submission.text_content or '').strip()
+    safe_full_text = _html_lib.escape(full_text).replace('\n', '<br/>')
+
+    attachments, image_descriptions = _collect_submission_image_attachments(submission)
+    images_html = _render_image_descriptions_html(image_descriptions)
+
+    body_html = (
+        '<div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin:18px 0 6px 0;">Your submission</div>'
+        f'<div style="font-size:14px;line-height:1.55;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:14px 16px;color:#334155;white-space:pre-wrap;">{safe_full_text or "<em>(no description)</em>"}</div>'
+        '<div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin:18px 0 6px 0;">Images (attached to this email)</div>'
+        f'<div style="font-size:14px;line-height:1.55;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:14px 16px;color:#334155;">{images_html}</div>'
+    )
 
     subject = 'Your Ecological Map submission was deleted'
     html_content = f"""
@@ -1385,7 +1745,7 @@ def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_dis
                   </td>
                 </tr>
               </table>
-              {('<div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin:18px 0 6px 0;">Your submission</div><div style="font-size:14px;line-height:1.55;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:14px 16px;color:#334155;">' + safe_excerpt + '</div>') if safe_excerpt else ''}
+              {body_html}
               <p style=\"margin:18px 0 6px 0;font-size:14px;line-height:1.55;\">If you believe this was a mistake, please contact a site administrator.</p>
               <p style=\"margin:0;font-size:14px;line-height:1.55;color:#475569;\">— The Ecological Map team</p>
             </td>
@@ -1401,11 +1761,15 @@ def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_dis
   </body>
 </html>
 """
-    return send_email_via_brevo(to_email, subject, html_content)
+    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None)
 
 
 def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_display_name: str) -> dict:
-    """Send a formatted rejection email to the submitter via Brevo."""
+    """Send a formatted rejection email to the submitter via Brevo.
+
+    Includes the full submission text and every attached image so the user
+    has a complete record of what was reviewed.
+    """
     title = (submission.title or '').strip() or 'your submission'
     safe_title = _html_lib.escape(title)
     safe_reason = _html_lib.escape(reason).replace('\n', '<br/>')
@@ -1417,10 +1781,18 @@ def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_di
         except Exception:
             submitted_at = str(submission.submitted_at)
     safe_submitted_at = _html_lib.escape(submitted_at)
-    excerpt = (submission.text_content or '').strip()
-    if len(excerpt) > 400:
-        excerpt = excerpt[:400] + '…'
-    safe_excerpt = _html_lib.escape(excerpt).replace('\n', '<br/>')
+    full_text = (submission.text_content or '').strip()
+    safe_full_text = _html_lib.escape(full_text).replace('\n', '<br/>')
+
+    attachments, image_descriptions = _collect_submission_image_attachments(submission)
+    images_html = _render_image_descriptions_html(image_descriptions)
+
+    body_html = (
+        '<div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin:18px 0 6px 0;">Your submission</div>'
+        f'<div style="font-size:14px;line-height:1.55;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:14px 16px;color:#334155;white-space:pre-wrap;">{safe_full_text or "<em>(no description)</em>"}</div>'
+        '<div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin:18px 0 6px 0;">Images (attached to this email)</div>'
+        f'<div style="font-size:14px;line-height:1.55;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:14px 16px;color:#334155;">{images_html}</div>'
+    )
 
     subject = f'Your Ecological Map submission was not approved'
     html_content = f"""
@@ -1455,7 +1827,7 @@ def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_di
                   </td>
                 </tr>
               </table>
-              {('<div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#475569;margin:18px 0 6px 0;">Your submission</div><div style="font-size:14px;line-height:1.55;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;padding:14px 16px;color:#334155;">' + safe_excerpt + '</div>') if safe_excerpt else ''}
+              {body_html}
               <p style=\"margin:18px 0 6px 0;font-size:14px;line-height:1.55;\">You're welcome to revise it and submit again.</p>
               <p style=\"margin:0;font-size:14px;line-height:1.55;color:#475569;\">— The Ecological Map team</p>
             </td>
@@ -1471,7 +1843,7 @@ def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_di
   </body>
 </html>
 """
-    return send_email_via_brevo(to_email, subject, html_content)
+    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None)
 
 
 def _serialize_pin(pin):
@@ -1816,6 +2188,137 @@ def convert_heic_image():
         return _map_error('MAP_IMAGE_DECODE_FAILED', 'Could not decode image', 400)
     png_bytes, mime, _ext = converted
     return send_file(BytesIO(png_bytes), mimetype=mime, max_age=0)
+
+
+@recorder_bp.route('/map/settings/approval-recipients', methods=['GET'])
+def get_map_approval_recipients_setting():
+    """Return the current approval-notification recipient list and the
+    fallback chain that produced it. Restricted to admins/superadmins so
+    we don't leak email addresses publicly."""
+    if not require_admin():
+        return _map_error('MAP_ADMIN_REQUIRED', 'Admin access required', 403)
+
+    setting = (
+        map_db_session.query(MapSetting)
+        .filter(MapSetting.key == MAP_SETTING_APPROVAL_RECIPIENTS)
+        .first()
+    )
+    db_value = (setting.value or '').strip() if setting else ''
+    db_emails = _parse_email_list(db_value) if db_value else []
+    env_value = (os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS', '') or '').strip()
+    env_emails = _parse_email_list(env_value) if env_value else []
+
+    if db_emails:
+        source = 'database'
+    elif env_emails:
+        source = 'env'
+    else:
+        source = 'default'
+
+    return jsonify({
+        'status': 'success',
+        'recipients': _get_map_approval_notify_recipients(),
+        'source': source,
+        'database_recipients': db_emails,
+        'env_recipients': env_emails,
+        'default_recipients': list(DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS),
+        'updated_at': setting.updated_at.isoformat() if setting and setting.updated_at else None,
+        'updated_by': (
+            setting.updated_by_username
+            if setting and setting.updated_by_username
+            else None
+        ),
+    }), 200
+
+
+@recorder_bp.route('/map/settings/approval-recipients', methods=['PUT'])
+def update_map_approval_recipients_setting():
+    """Persist a new approval-notification recipient list. Superadmin only."""
+    if not require_superadmin():
+        return _map_error('MAP_SUPERADMIN_REQUIRED', 'Super admin access required', 403)
+
+    data = request.get_json(silent=True) or {}
+    raw_recipients = data.get('recipients')
+
+    if isinstance(raw_recipients, list):
+        candidates = [str(item).strip() for item in raw_recipients if str(item).strip()]
+    elif isinstance(raw_recipients, str):
+        candidates = _parse_email_list(raw_recipients)
+    else:
+        return _map_error(
+            'MAP_RECIPIENTS_INVALID',
+            'recipients must be a list of strings or a comma/newline-separated string',
+            400,
+        )
+
+    cleaned = []
+    seen = set()
+    invalid = []
+    for candidate in candidates:
+        if not _EMAIL_VALIDATE_RE.match(candidate):
+            invalid.append(candidate)
+            continue
+        normalized = candidate.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned.append(candidate)
+
+    if invalid:
+        return _map_error(
+            'MAP_RECIPIENTS_INVALID',
+            f'Invalid email address(es): {", ".join(invalid)}',
+            400,
+        )
+
+    if len(cleaned) > 50:
+        return _map_error(
+            'MAP_RECIPIENTS_TOO_MANY',
+            'A maximum of 50 recipients is allowed',
+            400,
+        )
+
+    identity = _current_identity()
+    setting = (
+        map_db_session.query(MapSetting)
+        .filter(MapSetting.key == MAP_SETTING_APPROVAL_RECIPIENTS)
+        .first()
+    )
+    serialized = ','.join(cleaned)
+    now = _map_now_utc()
+
+    if setting is None:
+        setting = MapSetting(
+            key=MAP_SETTING_APPROVAL_RECIPIENTS,
+            value=serialized,
+            updated_at=now,
+            updated_by_user_id=identity.get('user_id'),
+            updated_by_username=identity.get('username'),
+        )
+        map_db_session.add(setting)
+    else:
+        setting.value = serialized
+        setting.updated_at = now
+        setting.updated_by_user_id = identity.get('user_id')
+        setting.updated_by_username = identity.get('username')
+
+    try:
+        map_db_session.commit()
+    except Exception as exc:
+        logger.exception('Unable to update approval recipients setting: %s', exc)
+        map_db_session.rollback()
+        return _map_error('MAP_RECIPIENTS_SAVE_FAILED', 'Could not save recipients', 500)
+
+    return jsonify({
+        'status': 'success',
+        'recipients': _get_map_approval_notify_recipients(),
+        'source': 'database' if cleaned else (
+            'env' if (os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS') or '').strip() else 'default'
+        ),
+        'database_recipients': cleaned,
+        'updated_at': setting.updated_at.isoformat() if setting.updated_at else None,
+        'updated_by': setting.updated_by_username,
+    }), 200
 
 
 @recorder_bp.route('/map/background', methods=['GET'])

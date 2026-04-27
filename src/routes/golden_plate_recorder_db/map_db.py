@@ -102,6 +102,12 @@ class MapSubmission(MapBase):
     rejection_reason = Column(Text)
     featured = Column(Integer, nullable=False, default=0)
 
+    # Single-use token for the email "quick approve" link. Set when a
+    # submission is created (status='pending'); cleared (set to NULL) the
+    # moment the link is used or the submission is otherwise reviewed, so
+    # the link only ever works once.
+    approval_token = Column(String)
+
 
 class MapSubmissionImage(MapBase):
     __tablename__ = 'map_submission_images'
@@ -173,6 +179,21 @@ class MapBackground(MapBase):
     uploaded_by_username = Column(String)
 
 
+class MapSetting(MapBase):
+    """Generic key/value store for map-portal-scoped configuration that needs
+    to live in the database (so it survives restarts and can be edited from
+    the UI without redeploying). Currently used for the approval-notification
+    recipient list, but intentionally generic so future map-only settings can
+    reuse it without another schema change."""
+    __tablename__ = 'map_settings'
+
+    key = Column(String, primary_key=True)
+    value = Column(Text)
+    updated_at = Column(DateTime(timezone=True), default=_map_now_utc, onupdate=_map_now_utc)
+    updated_by_user_id = Column(String)
+    updated_by_username = Column(String)
+
+
 def _add_column_if_missing(connection, table_name, column_name, column_ddl):
     inspector = inspect(connection)
     existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
@@ -187,6 +208,7 @@ def _bootstrap_map_database() -> None:
         _add_column_if_missing(connection, 'map_submissions', 'submission_display_name', 'VARCHAR')
         _add_column_if_missing(connection, 'map_submissions', 'pin_id', 'VARCHAR')
         _add_column_if_missing(connection, 'map_submissions', 'featured', 'INTEGER NOT NULL DEFAULT 0')
+        _add_column_if_missing(connection, 'map_submissions', 'approval_token', 'VARCHAR')
 
 
 _bootstrap_map_database()
@@ -198,6 +220,7 @@ __all__ = [
     'MapBase',
     'MapEmailVerification',
     'MapPin',
+    'MapSetting',
     'MapSubmission',
     'MapSubmitterAccount',
     '_map_now_utc',
