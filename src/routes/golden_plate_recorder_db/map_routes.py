@@ -483,47 +483,194 @@ def _parse_email_list(raw):
     return parts
 
 
-def _collect_submission_image_attachments(submission, max_total_bytes: int = 9 * 1024 * 1024):
-    """Return ``(attachments, descriptions)`` for emails.
+def _try_lossless_recompress(data: bytes, mime: str | None, filename: str | None):
+    """Attempt to losslessly recompress an image into smaller bytes.
+
+    Returns ``(new_bytes, new_mime, new_filename)`` if a smaller, fully
+    lossless representation was produced, otherwise ``None``. We try a
+    handful of strategies and pick whichever yields the smallest output:
+
+    * Re-save PNG with maximum DEFLATE effort (``compress_level=9``,
+      ``optimize=True``). Pixel-identical, often a meaningful win for
+      PNGs saved with low effort.
+    * Re-encode as **lossless WebP** (``lossless=True``, ``method=6``,
+      ``quality=100``). Lossless WebP frequently beats PNG by 20–40%
+      for photographic content while remaining bit-exact pixel-wise.
+
+    JPEGs are skipped (no truly lossless re-encoding gain), as are
+    formats Pillow can't decode. The returned filename has its extension
+    swapped to match the new format so the attachment opens correctly.
+    """
+    if not data or not _PIL_AVAILABLE:
+        return None
+    normalized_mime = (mime or '').lower()
+    # Don't bother with JPEG — there's no meaningful lossless re-pack.
+    if normalized_mime in ('image/jpeg', 'image/jpg'):
+        return None
+    try:
+        with Image.open(BytesIO(data)) as img:
+            img.load()
+            # Pillow's WebP encoder requires RGB/RGBA; keep alpha if present.
+            if img.mode not in ('RGB', 'RGBA'):
+                img = img.convert('RGBA' if 'A' in img.getbands() else 'RGB')
+
+            candidates: list[tuple[bytes, str, str]] = []
+
+            # Try optimized PNG (always pixel-identical).
+            try:
+                buf = BytesIO()
+                img.save(buf, format='PNG', optimize=True, compress_level=9)
+                candidates.append((buf.getvalue(), 'image/png', '.png'))
+            except Exception:
+                logger.exception('Lossless PNG re-encode failed for %s', filename)
+
+            # Try lossless WebP (also pixel-identical when lossless=True).
+            try:
+                buf = BytesIO()
+                img.save(buf, format='WEBP', lossless=True, quality=100, method=6)
+                candidates.append((buf.getvalue(), 'image/webp', '.webp'))
+            except Exception:
+                logger.exception('Lossless WebP re-encode failed for %s', filename)
+
+            if not candidates:
+                return None
+
+            best_bytes, best_mime, best_ext = min(candidates, key=lambda c: len(c[0]))
+            # Only return the recompressed version if it actually saved bytes.
+            if len(best_bytes) >= len(data):
+                return None
+
+            base = (filename or 'image').rsplit('.', 1)[0] or 'image'
+            new_name = f'{base}{best_ext}'
+            return best_bytes, best_mime, new_name
+    except Exception:
+        logger.exception('Lossless recompression failed for %s', filename)
+        return None
+
+
+def _collect_submission_image_attachments(submission, max_total_bytes: int = 20 * 1024 * 1024):
+    """Return ``(attachments, image_infos)`` for emails.
 
     * ``attachments`` is a list of Brevo-shaped ``{"name", "content"}`` dicts
       where ``content`` is base64-encoded image bytes, ready to pass to
       :func:`send_email_via_brevo`.
-    * ``descriptions`` is a parallel-ish list of human-readable strings
-      describing what was (or was not) attached, suitable for embedding in
-      the HTML body.
+    * ``image_infos`` is a parallel list of dicts shaped like::
 
-    Attachments are skipped (and noted in the descriptions) if adding them
-    would push the total payload past ``max_total_bytes`` so we stay under
-    Brevo's per-message limit.
+          {
+            "name": str,           # filename
+            "mime": str | None,    # content-type
+            "size": int,           # bytes (0 if missing)
+            "attached": bool,      # True if included in attachments list
+            "data_uri": str | None,# data: URI for inline <img>, if embeddable
+            "note": str,           # human-readable status string
+          }
+
+      ``data_uri`` is populated only when the image looked like a real
+      raster/vector image and inlining it stays within the inline budget,
+      so callers can render it directly inside the HTML body.
+
+    Attachments are skipped (and noted in ``note``) if adding them would
+    push the total payload past ``max_total_bytes`` (default 20 MB) so we
+    stay under Brevo's per-message limit. When a single image won't fit,
+    we first try a fully-lossless recompression pass (optimized PNG /
+    lossless WebP) and use the smaller version when available.
     """
     attachments: list[dict] = []
-    descriptions: list[str] = []
+    image_infos: list[dict] = []
     total_bytes = 0
+    inline_bytes = 0
 
-    def _safe_attach(filename, mime, data):
-        nonlocal total_bytes
-        if not data:
-            return False, 'no image data'
-        size = len(data)
-        if total_bytes + size > max_total_bytes:
-            return False, f'skipped — too large to attach ({size} bytes)'
-        try:
-            encoded = base64.b64encode(data).decode('ascii')
-        except Exception:
-            logger.exception('Failed to base64-encode attachment %s', filename)
-            return False, 'failed to encode'
-        attachments.append({
+    # Inline embedding budgets. Each inlined image is base64-encoded inside
+    # the HTML body, which is roughly +33% over the raw size, and it lives
+    # *in addition to* the binary attachment. Keep these conservative so
+    # we don't blow past Brevo's overall message size limit.
+    inline_total_budget = 14 * 1024 * 1024  # ~14 MB of raw bytes inlined total
+    inline_per_image_budget = 5 * 1024 * 1024  # never inline images > 5 MB
+    inline_image_mimes = {
+        'image/png', 'image/jpeg', 'image/jpg', 'image/gif',
+        'image/webp', 'image/bmp', 'image/svg+xml',
+    }
+
+    def _consider(filename, mime, data):
+        """Try to attach + inline a single image. Always appends one entry
+        to ``image_infos`` describing the outcome.
+
+        If the raw image won't fit in the remaining attachment budget, we
+        attempt a fully-lossless recompression (optimized PNG / lossless
+        WebP) and use the smaller version when it actually fits.
+        """
+        nonlocal total_bytes, inline_bytes
+        info = {
             'name': filename or 'image',
-            'content': encoded,
-        })
-        total_bytes += size
-        return True, f'{mime or "?"}, {size} bytes'
+            'mime': mime,
+            'size': len(data) if data else 0,
+            'attached': False,
+            'data_uri': None,
+            'note': '',
+        }
+        if not data:
+            info['note'] = 'no image data'
+            image_infos.append(info)
+            return
+
+        original_size = info['size']
+        recompressed_note = ''
+
+        # If it doesn't fit as-is, try a lossless recompression pass.
+        if total_bytes + original_size > max_total_bytes:
+            recompressed = _try_lossless_recompress(data, mime, filename)
+            if recompressed is not None:
+                new_data, new_mime, new_name = recompressed
+                if total_bytes + len(new_data) <= max_total_bytes:
+                    saved = original_size - len(new_data)
+                    recompressed_note = (
+                        f' (losslessly recompressed: {original_size} → {len(new_data)} bytes, '
+                        f'saved {saved})'
+                    )
+                    data = new_data
+                    mime = new_mime
+                    info['name'] = new_name
+                    info['mime'] = new_mime
+                    info['size'] = len(new_data)
+
+        size = info['size']
+
+        # Try to attach.
+        if total_bytes + size > max_total_bytes:
+            info['note'] = (
+                f'skipped — too large to attach ({original_size} bytes, would exceed '
+                f'{max_total_bytes // (1024 * 1024)} MB cap)'
+                + (recompressed_note if recompressed_note else '')
+            )
+        else:
+            try:
+                encoded = base64.b64encode(data).decode('ascii')
+            except Exception:
+                logger.exception('Failed to base64-encode attachment %s', filename)
+                info['note'] = 'failed to encode'
+                image_infos.append(info)
+                return
+            attachments.append({'name': info['name'], 'content': encoded})
+            total_bytes += size
+            info['attached'] = True
+            info['note'] = f'{mime or "?"}, {size} bytes' + recompressed_note
+
+            # Try to inline-embed (only for genuine image MIME types, and
+            # only if we haven't blown the inline budget).
+            normalized_mime = (mime or '').lower()
+            if (
+                normalized_mime in inline_image_mimes
+                and size <= inline_per_image_budget
+                and inline_bytes + size <= inline_total_budget
+            ):
+                info['data_uri'] = f'data:{normalized_mime};base64,{encoded}'
+                inline_bytes += size
+
+        image_infos.append(info)
 
     if submission.image_data:
         primary_name = submission.image_filename or f'submission-{submission.id}.bin'
-        ok, info = _safe_attach(primary_name, submission.image_mime, submission.image_data)
-        descriptions.append(f'{primary_name} ({info})' if ok else f'{primary_name} ({info})')
+        _consider(primary_name, submission.image_mime, submission.image_data)
 
     try:
         extras = (
@@ -538,21 +685,67 @@ def _collect_submission_image_attachments(submission, max_total_bytes: int = 9 *
 
     for idx, extra in enumerate(extras, start=1):
         extra_name = extra.image_filename or f'submission-{submission.id}-extra-{idx}.bin'
-        ok, info = _safe_attach(extra_name, extra.image_mime, extra.image_data)
-        descriptions.append(f'{extra_name} ({info})' if ok else f'{extra_name} ({info})')
+        _consider(extra_name, extra.image_mime, extra.image_data)
 
-    return attachments, descriptions
+    return attachments, image_infos
 
 
-def _render_image_descriptions_html(descriptions):
-    """Render the attachment description list as HTML for inclusion in emails."""
-    if not descriptions:
+def _render_image_descriptions_html(image_infos):
+    """Render the image list as HTML for inclusion in emails.
+
+    Each image gets a labeled card. When a ``data_uri`` is available the
+    image is embedded inline so reviewers see it without opening the
+    attachment; otherwise we just describe what was attached (or skipped).
+
+    For backwards compatibility, plain strings are accepted and rendered
+    as a simple bulleted list.
+    """
+    if not image_infos:
         return '<em style="color:#64748b;">No images.</em>'
-    items = ''.join(
-        f'<li style="font-size:13px;color:#334155;">{_html_lib.escape(desc)}</li>'
-        for desc in descriptions
-    )
-    return f'<ul style="margin:6px 0 0 18px; padding:0;">{items}</ul>'
+
+    # Legacy: list of plain strings.
+    if all(isinstance(item, str) for item in image_infos):
+        items = ''.join(
+            f'<li style="font-size:13px;color:#334155;">{_html_lib.escape(item)}</li>'
+            for item in image_infos
+        )
+        return f'<ul style="margin:6px 0 0 18px; padding:0;">{items}</ul>'
+
+    cards = []
+    for info in image_infos:
+        if not isinstance(info, dict):
+            continue
+        name = _html_lib.escape(info.get('name') or 'image')
+        note = _html_lib.escape(info.get('note') or '')
+        data_uri = info.get('data_uri')
+        if data_uri:
+            # Inline preview. Cap rendered width so wide images don't break
+            # email layouts. The data URI is safe to drop into src as-is
+            # because base64 is URL-safe in this context.
+            preview = (
+                f'<div style="margin-top:6px;">'
+                f'<img src="{data_uri}" alt="{name}" '
+                f'style="max-width:100%; height:auto; border:1px solid #e2e8f0; '
+                f'border-radius:6px; display:block;" />'
+                f'</div>'
+            )
+        else:
+            preview = (
+                '<div style="margin-top:6px; font-size:12px; color:#64748b;">'
+                '(Inline preview unavailable — see attachment.)'
+                '</div>'
+            )
+        cards.append(
+            '<div style="margin:10px 0; padding:10px; border:1px solid #e2e8f0; '
+            'border-radius:8px; background:#f8fafc;">'
+            f'<div style="font-size:13px; color:#0f172a;">'
+            f'<strong>{name}</strong> '
+            f'<span style="color:#64748b;">— {note}</span>'
+            f'</div>'
+            f'{preview}'
+            '</div>'
+        )
+    return ''.join(cards)
 
 
 def _notify_pending_map_submission(submission, base_url=None):
