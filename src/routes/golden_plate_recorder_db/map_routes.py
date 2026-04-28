@@ -1677,18 +1677,27 @@ def quick_approve_map_submission(submission_id):
     """Single-use, login-free approval endpoint reached from the reviewer
     notification email.
 
+    Flow:
+      * **GET** — validates the token *without consuming it* and renders a
+        small HTML confirmation page with a POST form ("Confirm approval").
+        This is critical because many email infrastructures (Outlook Safe
+        Links, Gmail link previews, antivirus scanners, corporate proxies,
+        etc.) silently issue a GET to every URL in an email **before the
+        human ever clicks it**. If we burned the token on GET, the link
+        would always be "already used" by the time the reviewer opened it.
+      * **POST** — re-validates the token, atomically flips the status to
+        ``approved``, and clears the token so the link is single-use.
+
     Security model:
-      * The approval token is a 256-bit URL-safe random string generated when
-        the submission is created and only ever sent to the configured
-        reviewer email recipients.
-      * Token comparison uses :func:`secrets.compare_digest` to avoid timing
-        attacks.
-      * The token is cleared (set to NULL) atomically with the status change,
-        so the link works exactly once. Any subsequent click — whether by a
-        forwarded email, a refreshed browser tab, or an attacker who somehow
-        guessed the token — will see an "already used" page.
-      * If the submission has already been reviewed (approved/rejected) by any
-        other path, the token is cleared and the link is rejected.
+      * The approval token is a 256-bit URL-safe random string generated
+        when the submission is created and only ever sent to the
+        configured reviewer email recipients.
+      * Token comparison uses :func:`secrets.compare_digest` to avoid
+        timing attacks.
+      * The token is cleared (set to NULL) atomically with the status
+        change on POST, so the approval action runs exactly once.
+      * If the submission has already been reviewed (approved/rejected) by
+        any other path, the token is cleared and the link is rejected.
     """
     provided_token = (request.args.get('token') or request.form.get('token') or '').strip()
 
@@ -1727,6 +1736,12 @@ def quick_approve_map_submission(submission_id):
             ok=False,
         ), 410
 
+    # GET = show confirmation page (do NOT consume the token — link
+    # scanners/previewers send GETs ahead of the human click).
+    if request.method == 'GET':
+        return _quick_approve_confirm_page(submission, provided_token)
+
+    # POST = actually approve. The token has already been validated above.
     submission.status = 'approved'
     submission.reviewed_user_id = None
     submission.reviewed_username = 'email-quick-approve'
@@ -1755,6 +1770,76 @@ def quick_approve_map_submission(submission_id):
         'This link has been used and will no longer work.',
         ok=True,
     ), 200
+
+
+def _quick_approve_confirm_page(submission, token: str):
+    """Render the GET-side confirmation page that POSTs back to actually
+    consume the token. Pure HTML, no JS — works inside any email web view."""
+    from flask import Response
+
+    title = (submission.title or '').strip() or '(no title)'
+    submitter = (
+        submission.submission_display_name
+        or submission.submitted_display_name
+        or submission.email
+        or '(unknown submitter)'
+    )
+    safe_title = _html_lib.escape(title)
+    safe_submitter = _html_lib.escape(submitter)
+    safe_id = _html_lib.escape(submission.id or '')
+    safe_token = _html_lib.escape(token, quote=True)
+    action = _html_lib.escape(
+        f'/api/map/submissions/{submission.id}/quick-approve', quote=True,
+    )
+
+    body = f"""
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Confirm approval</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+</head>
+<body style="margin:0;padding:32px 16px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 4px 14px rgba(15,23,42,0.06);overflow:hidden;">
+    <div style="background:#fffbeb;border-bottom:1px solid #fcd34d;padding:20px 28px;">
+      <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#475569;">Ecological Map</div>
+      <div style="font-size:22px;font-weight:700;color:#b45309;margin-top:4px;">Confirm speed approval</div>
+    </div>
+    <div style="padding:24px 28px;font-size:15px;line-height:1.55;">
+      <p style="margin:0 0 16px;">You are about to approve the following submission. This action cannot be undone from this page, and the link will only work once.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
+        <tr><td style="padding:6px 0;color:#64748b;width:120px;">Title</td><td style="padding:6px 0;font-weight:600;">{safe_title}</td></tr>
+        <tr><td style="padding:6px 0;color:#64748b;">Submitted by</td><td style="padding:6px 0;">{safe_submitter}</td></tr>
+        <tr><td style="padding:6px 0;color:#64748b;">Submission ID</td><td style="padding:6px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#475569;">{safe_id}</td></tr>
+      </table>
+      <form method="POST" action="{action}" style="margin:0;">
+        <input type="hidden" name="token" value="{safe_token}">
+        <button type="submit" style="display:inline-block;background:#16a34a;color:#ffffff;border:none;border-radius:8px;padding:12px 22px;font-size:15px;font-weight:600;cursor:pointer;">
+          Approve submission
+        </button>
+      </form>
+      <p style="margin:18px 0 0;font-size:12px;color:#64748b;">
+        If you didn't expect this email, you can simply close this page — no action will be taken.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+""".strip()
+    # Cache-Control: no-store prevents intermediaries from caching the
+    # confirmation page (and thus the token) anywhere.
+    return Response(
+        body,
+        mimetype='text/html',
+        headers={
+            'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+            'Pragma': 'no-cache',
+            'X-Robots-Tag': 'noindex, nofollow',
+        },
+    )
 
 
 def _quick_approve_html_response(heading: str, message: str, *, ok: bool):
