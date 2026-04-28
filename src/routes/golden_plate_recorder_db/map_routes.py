@@ -1655,8 +1655,11 @@ def approve_map_submission(submission_id):
     submission.reviewed_role = identity['role']
     submission.reviewed_at = _map_now_utc()
     submission.rejection_reason = None
-    # Burn the speed-approval token so the email link can't be reused.
-    submission.approval_token = None
+    # NOTE: deliberately keep submission.approval_token intact so that if
+    # a reviewer later clicks the email link, the quick-approve handler
+    # can still validate the token and show an idempotent success page
+    # (instead of a confusing "no longer valid" message). The link is
+    # gated by ``status == 'pending'`` so it cannot re-trigger anything.
 
     try:
         map_db_session.commit()
@@ -1674,30 +1677,43 @@ def approve_map_submission(submission_id):
 
 @recorder_bp.route('/map/submissions/<submission_id>/quick-approve', methods=['GET', 'POST'])
 def quick_approve_map_submission(submission_id):
-    """Single-use, login-free approval endpoint reached from the reviewer
-    notification email.
+    """Single-action, login-free approval endpoint reached from the
+    reviewer notification email.
 
     Flow:
       * **GET** — validates the token *without consuming it* and renders a
-        small HTML confirmation page with a POST form ("Confirm approval").
-        This is critical because many email infrastructures (Outlook Safe
-        Links, Gmail link previews, antivirus scanners, corporate proxies,
-        etc.) silently issue a GET to every URL in an email **before the
-        human ever clicks it**. If we burned the token on GET, the link
-        would always be "already used" by the time the reviewer opened it.
-      * **POST** — re-validates the token, atomically flips the status to
-        ``approved``, and clears the token so the link is single-use.
+        small HTML confirmation page with a POST form ("Approve
+        submission"). Necessary because many email infrastructures
+        (Outlook Safe Links, Gmail link previews, antivirus scanners,
+        corporate proxies, etc.) silently issue a GET to every URL in an
+        email **before the human ever clicks it**.
+      * **POST** — re-validates the token and, if the submission is still
+        pending, atomically flips the status to ``approved``. If the
+        submission is already approved with a still-matching token, the
+        success page is shown again (idempotent re-click — see below).
+
+    Why the token is *not* nulled after use:
+      Some advanced email security sandboxes (notably Microsoft Defender
+      for Office 365 "Safe Links Detonation") don't just GET URLs — they
+      also submit forms inside the page during their pre-delivery scan.
+      If we cleared the token on POST, the sandbox would consume it and
+      the human's later click would always show "no longer valid", even
+      though the submission *was* correctly approved.
+
+      Instead, single-action semantics are enforced by the **status**:
+      the status flip from ``pending`` → ``approved`` only happens once.
+      Re-submissions of the same valid token are treated as a confirming
+      no-op and return the success page, so a real reviewer always sees
+      a positive confirmation regardless of who fired the POST first.
 
     Security model:
-      * The approval token is a 256-bit URL-safe random string generated
-        when the submission is created and only ever sent to the
-        configured reviewer email recipients.
-      * Token comparison uses :func:`secrets.compare_digest` to avoid
-        timing attacks.
-      * The token is cleared (set to NULL) atomically with the status
-        change on POST, so the approval action runs exactly once.
-      * If the submission has already been reviewed (approved/rejected) by
-        any other path, the token is cleared and the link is rejected.
+      * 256-bit URL-safe random token, only ever sent to the configured
+        reviewer email recipients.
+      * :func:`secrets.compare_digest` for constant-time comparison.
+      * State transitions are gated by ``status == 'pending'`` so the
+        actual approval action runs at most once.
+      * If the submission has been *rejected* via another path, the
+        link refuses to override that decision.
     """
     provided_token = (request.args.get('token') or request.form.get('token') or '').strip()
 
@@ -1718,30 +1734,44 @@ def quick_approve_map_submission(submission_id):
     if not provided_token or not stored_token or not secrets.compare_digest(provided_token, stored_token):
         return _quick_approve_html_response(
             'Approval link no longer valid',
-            'This speed-approval link is invalid or has already been used. Please open the '
-            'Ecological Map admin view to review the submission instead.',
+            'This speed-approval link is invalid. Please open the Ecological Map admin '
+            'view to review the submission instead.',
             ok=False,
         ), 410
 
-    if submission.status != 'pending':
-        # Defensive: clear any leftover token on an already-reviewed row.
-        submission.approval_token = None
-        try:
-            map_db_session.commit()
-        except Exception:
-            map_db_session.rollback()
+    title = (submission.title or '').strip() or '(no title)'
+    success_message = (
+        f'\u201c{title}\u201d has been approved and is now visible on the Ecological Map.'
+    )
+
+    # If the submission was already rejected via some other path, don't
+    # let the email link silently override that decision.
+    if submission.status == 'rejected':
         return _quick_approve_html_response(
-            'Already reviewed',
-            f'This submission has already been {submission.status}. The link will not work again.',
+            'Already rejected',
+            'This submission has already been rejected by a reviewer. The speed-approval '
+            'link will not override that decision.',
             ok=False,
         ), 410
 
-    # GET = show confirmation page (do NOT consume the token — link
+    # Already-approved with a matching token: idempotent success. This
+    # covers re-clicks, the human-after-sandbox-detonation case, and
+    # browser back/refresh.
+    if submission.status == 'approved':
+        return _quick_approve_html_response(
+            'Submission approved ✓',
+            success_message + ' (This link has already been used; no further action was needed.)',
+            ok=True,
+        ), 200
+
+    # Status must now be 'pending'.
+
+    # GET = show confirmation page (do NOT change state — link
     # scanners/previewers send GETs ahead of the human click).
     if request.method == 'GET':
         return _quick_approve_confirm_page(submission, provided_token)
 
-    # POST = actually approve. The token has already been validated above.
+    # POST = actually approve.
     submission.status = 'approved'
     submission.reviewed_user_id = None
     submission.reviewed_username = 'email-quick-approve'
@@ -1749,8 +1779,10 @@ def quick_approve_map_submission(submission_id):
     submission.reviewed_role = 'admin'
     submission.reviewed_at = _map_now_utc()
     submission.rejection_reason = None
-    # Single-use: burn the token now.
-    submission.approval_token = None
+    # NOTE: deliberately do NOT clear submission.approval_token here.
+    # See the docstring above — keeping the token lets re-clicks (e.g.
+    # after a Defender Safe Links sandbox detonated the form) still
+    # render the success page for the actual reviewer.
 
     try:
         map_db_session.commit()
@@ -1763,11 +1795,9 @@ def quick_approve_map_submission(submission_id):
             ok=False,
         ), 500
 
-    title = (submission.title or '').strip() or '(no title)'
     return _quick_approve_html_response(
         'Submission approved ✓',
-        f'\u201c{title}\u201d has been approved and is now visible on the Ecological Map. '
-        'This link has been used and will no longer work.',
+        success_message,
         ok=True,
     ), 200
 
@@ -1809,7 +1839,7 @@ def _quick_approve_confirm_page(submission, token: str):
       <div style="font-size:22px;font-weight:700;color:#b45309;margin-top:4px;">Confirm speed approval</div>
     </div>
     <div style="padding:24px 28px;font-size:15px;line-height:1.55;">
-      <p style="margin:0 0 16px;">You are about to approve the following submission. This action cannot be undone from this page, and the link will only work once.</p>
+      <p style="margin:0 0 16px;">You are about to approve the following submission. This will publish it to the Ecological Map immediately.</p>
       <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
         <tr><td style="padding:6px 0;color:#64748b;width:120px;">Title</td><td style="padding:6px 0;font-weight:600;">{safe_title}</td></tr>
         <tr><td style="padding:6px 0;color:#64748b;">Submitted by</td><td style="padding:6px 0;">{safe_submitter}</td></tr>
@@ -1931,8 +1961,11 @@ def reject_map_submission(submission_id):
     submission.reviewed_role = identity['role']
     submission.reviewed_at = _map_now_utc()
     submission.rejection_reason = reason or None
-    # Burn the speed-approval token so the email link can't be reused.
-    submission.approval_token = None
+    # NOTE: deliberately keep submission.approval_token intact. The
+    # quick-approve handler now uses ``status`` (not token nullity) for
+    # single-action gating, so a reviewer who later clicks the email
+    # link will see a clean "Already rejected" page instead of a
+    # confusing "no longer valid" error.
 
     # Purge stored image bytes to reclaim disk space. We keep filename/mime
     # for the audit trail but the binary blobs are no longer needed once a
