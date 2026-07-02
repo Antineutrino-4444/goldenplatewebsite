@@ -30,12 +30,8 @@ Golden Plate Recorder is a web application for tracking student attendance and c
 pip install -r requirements.txt
 
 cd frontend
-npm install --legacy-peer-deps
 npm run build
 cd ..
-
-# Copy compiled frontend to Flask static directory
-cp -r frontend/dist/* src/static/
 
 # Start the application
 python src/main.py
