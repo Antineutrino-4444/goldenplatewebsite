@@ -64,7 +64,7 @@ This default login is only meant for development. Environment mode controls whet
 
 Before switching a live site to production mode, make sure a real admin account exists with a known strong password. To change an existing account username or password, run:
 ```bash
-python scripts/change_user_credentials.py
+venv/bin/python scripts/change_user_credentials.py
 ```
 
 The `SECRET_KEY` value is separate from user passwords. It secures Flask session cookies and should be a long random string in production. Keep it stable after deployment; changing it logs users out but does not change database passwords.

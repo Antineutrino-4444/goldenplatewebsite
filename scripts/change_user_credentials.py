@@ -9,7 +9,6 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
-from dotenv import load_dotenv
 from sqlalchemy.exc import SQLAlchemyError
 
 
@@ -17,7 +16,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-load_dotenv(PROJECT_ROOT / ".env")
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv(PROJECT_ROOT / ".env")
 
 from src.routes.golden_plate_recorder_db.db import _now_utc, db_session
 from src.routes.golden_plate_recorder_db.app_config import default_admin_credentials_enabled
