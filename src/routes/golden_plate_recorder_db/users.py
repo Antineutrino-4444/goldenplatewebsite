@@ -13,10 +13,11 @@ from .db import (
     _now_utc,
     db_session,
 )
+from .passwords import hash_password, is_password_hash, verify_password
 
 DEFAULT_SUPERADMIN = {
     'username': 'antineutrino',
-    'password': 'b-decay',
+    'password_hash': 'pbkdf2:sha256:1000000$defaultsuperadminseed2026$77a9adc96609bdd6578665b877e2cf457646c35af105b62545651ad0d221063a',
     'role': 'superadmin',
     'display_name': 'Lead Admin',
     'status': 'active',
@@ -25,7 +26,7 @@ DEFAULT_SUPERADMIN = {
 
 DEFAULT_INTERSCHOOL_USER = {
     'username': 'inter-school-admin',
-    'password': 'bridge-control',
+    'password_hash': 'pbkdf2:sha256:1000000$defaultinterschoolseed2026$ca93c711149f17b9ab5355842c315e6524bc0411a05fa933b2c0fc8da1de494f',
     'role': 'inter_school',
     'display_name': 'Inter-School Controller',
     'status': 'active',
@@ -77,7 +78,7 @@ def serialize_school(school):
     }
 
 
-def serialize_user_model(user, *, include_password=False):
+def serialize_user_model(user):
     if not user:
         return None
     school = getattr(user, 'school', None)
@@ -91,8 +92,6 @@ def serialize_user_model(user, *, include_password=False):
         'school': serialize_school(school) if school else None,
         'last_login_at': user.last_login_at.isoformat() if user.last_login_at else None,
     }
-    if include_password:
-        data['password'] = user.password_hash
     return data
 
 
@@ -107,24 +106,33 @@ def get_user_by_username(username, *, school_id=None):
     return query.options(joinedload(User.school)).first()
 
 
-def list_all_users(*, school_id=None, include_password=False):
+def list_all_users(*, school_id=None):
     query = db_session.query(User).options(joinedload(User.school)).order_by(User.username.asc())
     if school_id:
         query = query.filter(User.school_id == school_id)
     users = query.all()
-    return [serialize_user_model(user, include_password=include_password) for user in users]
+    return [serialize_user_model(user) for user in users]
 
 
-def create_user_record(username, password, display_name, role='user', status='active', *, school_id=None):
+def _password_for_storage(password, *, already_hashed=False):
+    if password is None:
+        return None
+    if already_hashed or is_password_hash(password):
+        return password
+    return hash_password(password)
+
+
+def create_user_record(username, password, display_name, role='user', status='active', *, school_id=None, password_is_hash=False):
     school_id = _resolve_school_id(school_id)
     existing = get_user_by_username(username, school_id=school_id)
     if existing:
         return existing
+    stored_password = _password_for_storage(password, already_hashed=password_is_hash)
     user = User(
         id=str(uuid.uuid4()),
         school_id=school_id,
         username=username,
-        password_hash=password,
+        password_hash=stored_password,
         display_name=display_name,
         role=role,
         status=status,
@@ -140,11 +148,17 @@ def create_user_record(username, password, display_name, role='user', status='ac
     return user
 
 
-def update_user_credentials(user, *, password=None, display_name=None, role=None, status=None, school_id=None, auto_commit=True):
+def update_user_credentials(user, *, password=None, display_name=None, role=None, status=None, school_id=None, auto_commit=True, password_is_hash=False):
     updated = False
-    if password is not None and user.password_hash != password:
-        user.password_hash = password
-        updated = True
+    if password is not None:
+        if password_is_hash or is_password_hash(password):
+            stored_password = password
+            if user.password_hash != stored_password:
+                user.password_hash = stored_password
+                updated = True
+        elif not (is_password_hash(user.password_hash) and verify_password(user.password_hash, password)):
+            user.password_hash = hash_password(password)
+            updated = True
     if display_name is not None and user.display_name != display_name:
         user.display_name = display_name
         updated = True
@@ -173,15 +187,15 @@ def ensure_default_superadmin():
     if not user:
         return create_user_record(
             DEFAULT_SUPERADMIN['username'],
-            DEFAULT_SUPERADMIN['password'],
+            DEFAULT_SUPERADMIN['password_hash'],
             DEFAULT_SUPERADMIN['display_name'],
             role=DEFAULT_SUPERADMIN['role'],
             status=DEFAULT_SUPERADMIN['status'],
             school_id=DEFAULT_SUPERADMIN['school_id'],
+            password_is_hash=True,
         )
     return update_user_credentials(
         user,
-        password=DEFAULT_SUPERADMIN['password'],
         display_name=DEFAULT_SUPERADMIN['display_name'],
         role=DEFAULT_SUPERADMIN['role'],
         status=DEFAULT_SUPERADMIN['status'],
@@ -197,15 +211,15 @@ def ensure_interschool_user():
     if not user:
         return create_user_record(
             DEFAULT_INTERSCHOOL_USER['username'],
-            DEFAULT_INTERSCHOOL_USER['password'],
+            DEFAULT_INTERSCHOOL_USER['password_hash'],
             DEFAULT_INTERSCHOOL_USER['display_name'],
             role=DEFAULT_INTERSCHOOL_USER['role'],
             status=DEFAULT_INTERSCHOOL_USER['status'],
             school_id=DEFAULT_INTERSCHOOL_USER['school_id'],
+            password_is_hash=True,
         )
     return update_user_credentials(
         user,
-        password=DEFAULT_INTERSCHOOL_USER['password'],
         display_name=DEFAULT_INTERSCHOOL_USER['display_name'],
         role=DEFAULT_INTERSCHOOL_USER['role'],
         status=DEFAULT_INTERSCHOOL_USER['status'],
@@ -222,7 +236,8 @@ def migrate_legacy_users(legacy_users):
             if not isinstance(payload, dict):
                 continue
             print(f"Migrating legacy user: {username}")
-            password = payload.get('password') or DEFAULT_SUPERADMIN['password']
+            password = payload.get('password') or DEFAULT_SUPERADMIN['password_hash']
+            password_is_hash = is_password_hash(password)
             role = payload.get('role', 'user')
             name = payload.get('name') or username
             status = payload.get('status', 'active')
@@ -237,13 +252,14 @@ def migrate_legacy_users(legacy_users):
                     status=status,
                     school_id=school_id,
                     auto_commit=False,  # Don't commit yet
+                    password_is_hash=password_is_hash,
                 )
             else:
                 user = User(
                     id=str(uuid.uuid4()),
                     school_id=school_id,
                     username=username,
-                    password_hash=password,
+                    password_hash=_password_for_storage(password, already_hashed=password_is_hash),
                     display_name=name,
                     role=role,
                     status=status,
@@ -405,7 +421,6 @@ def reset_user_store():
         raise
     update_user_credentials(
         default_user,
-        password=DEFAULT_SUPERADMIN['password'],
         display_name=DEFAULT_SUPERADMIN['display_name'],
         role=DEFAULT_SUPERADMIN['role'],
         status=DEFAULT_SUPERADMIN['status'],

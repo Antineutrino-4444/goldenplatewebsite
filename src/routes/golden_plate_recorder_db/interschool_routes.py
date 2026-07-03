@@ -24,6 +24,7 @@ from .email_service import (
     send_verification_email,
     verify_code as verify_email_code,
 )
+from .passwords import hash_password, is_password_hash
 from .security import get_current_user, is_interschool_user, require_auth
 from .users import (
     create_school_invite_code_record,
@@ -363,7 +364,7 @@ def register_school():
             id=str(uuid.uuid4()),
             school_id=school_id,
             username=admin_username,
-            password_hash=admin_password,
+            password_hash=hash_password(admin_password),
             display_name=admin_display_name,
             role='superadmin',
             status='active',
@@ -403,7 +404,7 @@ def register_school():
             school_name=school_name,
             school_slug=school_slug or None,
             admin_username=admin_username,
-            admin_password_hash=admin_password,
+            admin_password_hash=hash_password(admin_password),
             admin_display_name=admin_display_name,
             status='pending',
             requested_at=_now_utc(),
@@ -562,11 +563,16 @@ def approve_registration_request(request_id):
         updated_at=_now_utc(),
     )
 
+    admin_password_hash = reg_request.admin_password_hash
+    if not is_password_hash(admin_password_hash):
+        admin_password_hash = hash_password(admin_password_hash)
+        reg_request.admin_password_hash = admin_password_hash
+
     admin_user = User(
         id=str(uuid.uuid4()),
         school_id=school_id,
         username=reg_request.admin_username,
-        password_hash=reg_request.admin_password_hash,
+        password_hash=admin_password_hash,
         display_name=reg_request.admin_display_name,
         role='superadmin',
         status='active',

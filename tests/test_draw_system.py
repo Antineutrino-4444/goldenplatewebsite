@@ -219,7 +219,7 @@ class TestDrawOperations:
     def test_override_allows_superadmin_to_pick_winner(self, client, login):
         """Super admin can override while recording a standard draw."""
         # Login as superadmin
-        login(username='antineutrino', password='b-decay')
+        login(username='antineutrino')
         upload_csv(client)
         client.post('/api/session/create', json={'session_name': 'override_test'})
         

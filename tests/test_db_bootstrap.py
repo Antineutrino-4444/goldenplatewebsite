@@ -34,7 +34,9 @@ def test_empty_sqlite_database_bootstraps_successfully():
                 (
                     "import sys; "
                     f"sys.path.insert(0, {str(project_root)!r}); "
-                    "import src.routes.golden_plate_recorder_db.db"
+                    "import src.routes.golden_plate_recorder_db.db; "
+                    "from src.routes.golden_plate_recorder_db.users import ensure_default_superadmin; "
+                    "ensure_default_superadmin()"
                 ),
             ],
             cwd=project_root,
@@ -52,9 +54,14 @@ def test_empty_sqlite_database_bootstraps_successfully():
                     "SELECT name FROM sqlite_master WHERE type='table'"
                 ).fetchall()
             }
+            superadmin_row = connection.execute(
+                "SELECT password_hash FROM users WHERE username = 'antineutrino'"
+            ).fetchone()
 
         assert 'user_invite_codes' in table_names
         assert 'schools' in table_names
+        assert superadmin_row is not None
+        assert superadmin_row[0].startswith(('pbkdf2:', 'scrypt:'))
     finally:
         _remove_with_retries(db_path)
         for suffix in ('-journal', '-wal', '-shm'):

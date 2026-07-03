@@ -36,6 +36,7 @@ from src.routes.golden_plate_recorder_db.db import (
     SessionFactory,
     _now_utc,
 )
+from src.routes.golden_plate_recorder_db.passwords import hash_password
 
 
 def parse_iso(dt: Optional[str]) -> Optional[datetime]:
@@ -75,7 +76,13 @@ def find_or_create_user(session: Session, username: Optional[str], display_name:
     # Create minimal user record to preserve referential integrity.
     new_username = username or f"migrated_user_{uuid.uuid4().hex[:8]}"
     new_display = display_name or new_username
-    user = User(username=new_username, password_hash="migrated", display_name=new_display, role="user", status="active")
+    user = User(
+        username=new_username,
+        password_hash=hash_password(f"migrated-{uuid.uuid4().hex}"),
+        display_name=new_display,
+        role="user",
+        status="active",
+    )
     session.add(user)
     session.flush()
     return user.id

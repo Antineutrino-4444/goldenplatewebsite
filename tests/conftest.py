@@ -110,6 +110,26 @@ _DB_CLEANUP_CALLBACK = _prepare_test_database()
 
 from src.main import app
 
+TEST_SUPERADMIN_USERNAME = 'antineutrino'
+TEST_SUPERADMIN_PASSWORD = 'pytest-superadmin-password'
+TEST_SUPERADMIN_PASSWORD_HASH = 'pbkdf2:sha256:1000000$pytestsuperadminseed2026$5f5f27b9cdbfe89a6094f76b14e9cce3a4b557f3bb5fd70606630d7773f5f703'
+TEST_INTERSCHOOL_USERNAME = 'inter-school-admin'
+TEST_INTERSCHOOL_PASSWORD = 'pytest-interschool-password'
+TEST_INTERSCHOOL_PASSWORD_HASH = 'pbkdf2:sha256:1000000$pytestinterschoolseed2026$0d64cd3efe24867d8b049404cfe1966a6261bd10c7493049d9697f911c289b90'
+
+
+def ensure_test_account_passwords():
+    from src.routes.golden_plate_recorder_db.users import (
+        ensure_default_superadmin,
+        ensure_interschool_user,
+        update_user_credentials,
+    )
+
+    default_user = ensure_default_superadmin()
+    interschool_user = ensure_interschool_user()
+    update_user_credentials(default_user, password=TEST_SUPERADMIN_PASSWORD_HASH, password_is_hash=True)
+    update_user_credentials(interschool_user, password=TEST_INTERSCHOOL_PASSWORD_HASH, password_is_hash=True)
+
 
 def _clear_ticket_tables():
     """Remove ticket-related rows so tests start from a clean slate."""
@@ -173,8 +193,14 @@ def client():
 @pytest.fixture
 def login(client):
     """Helper to log in a user"""
-    def _login(username='antineutrino', password='b-decay'):
+    def _login(username=TEST_SUPERADMIN_USERNAME, password=None):
+        ensure_test_account_passwords()
+        if password is None:
+            password = (
+                TEST_INTERSCHOOL_PASSWORD
+                if username == TEST_INTERSCHOOL_USERNAME
+                else TEST_SUPERADMIN_PASSWORD
+            )
         return client.post('/api/auth/login', json={'username': username, 'password': password})
 
     return _login
-

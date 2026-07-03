@@ -5,9 +5,11 @@ import sys
 sys.path.insert(0, os.path.abspath('.'))
 
 from src.main import app
+from conftest import TEST_SUPERADMIN_PASSWORD, TEST_SUPERADMIN_USERNAME, ensure_test_account_passwords
 
 
-def login(client, username='antineutrino', password='b-decay'):
+def login(client, username=TEST_SUPERADMIN_USERNAME, password=TEST_SUPERADMIN_PASSWORD):
+    ensure_test_account_passwords()
     return client.post('/api/auth/login', json={'username': username, 'password': password})
 
 
@@ -18,4 +20,3 @@ def upload_sample_csv(client):
         'file': (io.BytesIO(csv_content.encode('utf-8')), 'students.csv')
     }
     return client.post('/api/csv/upload', data=data, content_type='multipart/form-data')
-

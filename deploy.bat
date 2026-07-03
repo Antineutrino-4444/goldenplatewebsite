@@ -163,7 +163,8 @@ if exist "src\static\index.html" (
 
 echo.
 echo [7/7] Starting the Application...
-echo The application will be running at http://127.0.0.1:5000 (default Flask port)
+if not defined PORT set "PORT=59237"
+echo The application will be running at http://127.0.0.1:%PORT%
 echo Press Ctrl+C to stop the server.
 echo.
 python src\main.py

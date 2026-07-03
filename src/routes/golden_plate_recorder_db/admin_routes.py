@@ -89,8 +89,7 @@ def admin_get_users():
     users_list = []
     current_user = get_current_user()
     current_school_id = current_user['school_id']
-    include_password = current_user['role'] == 'superadmin'
-    for user in list_all_users(school_id=current_school_id, include_password=include_password):
+    for user in list_all_users(school_id=current_school_id):
         payload = {
             'id': user['id'],
             'username': user['username'],
@@ -99,8 +98,6 @@ def admin_get_users():
             'status': user.get('status'),
             'school': user.get('school')
         }
-        if include_password:
-            payload['password'] = user.get('password')
         users_list.append(payload)
 
     return jsonify({'users': users_list}), 200
@@ -287,9 +284,8 @@ def admin_overview():
 
     current_user = get_current_user()
     current_school_id = current_user['school_id']
-    include_password = current_user['role'] == 'superadmin'
     users = []
-    for user in list_all_users(school_id=current_school_id, include_password=include_password):
+    for user in list_all_users(school_id=current_school_id):
         payload = {
             'username': user['username'],
             'name': user['name'],
@@ -297,8 +293,6 @@ def admin_overview():
             'status': user.get('status'),
             'school': user.get('school')
         }
-        if include_password:
-            payload['password'] = user.get('password')
         users.append(payload)
 
     # Get sessions from database with cached counts

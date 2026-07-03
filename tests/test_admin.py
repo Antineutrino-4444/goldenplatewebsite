@@ -1,3 +1,7 @@
+from src.routes.golden_plate_recorder_db.db import User, db_session
+from src.routes.golden_plate_recorder_db.passwords import is_password_hash, verify_password
+
+
 def test_non_admin_cannot_generate_invite(client, login):
     client.post('/api/auth/signup', json={
         'username': 'regular',
@@ -25,6 +29,10 @@ def test_invite_signup_flow(client, login):
         'invite_code': code
     })
     assert signup.status_code == 201
+    created_user = db_session.query(User).filter_by(username='pytestuser').first()
+    assert created_user is not None
+    assert is_password_hash(created_user.password_hash)
+    assert verify_password(created_user.password_hash, 'pass123')
 
     # Reusing code should fail
     reuse = client.post('/api/auth/signup', json={
@@ -40,7 +48,7 @@ def test_invite_signup_flow(client, login):
     client.post('/api/auth/logout')
 
     # Cleanup the created user
-    login(username='antineutrino', password='b-decay')
+    login()
     delete = client.post('/api/superadmin/delete-account', json={'username': 'pytestuser'})
     assert delete.status_code == 200
 
@@ -55,6 +63,8 @@ def test_admin_users_include_school_metadata(client, login):
     assert 'school' in super_admin
     assert super_admin['school'] is None or 'name' in super_admin['school']
     assert 'status' in super_admin
+    assert 'password' not in super_admin
+    assert 'password_hash' not in super_admin
 
 
 def test_admin_overview_includes_school_metadata(client, login):
@@ -67,4 +77,5 @@ def test_admin_overview_includes_school_metadata(client, login):
     assert 'school' in first_user
     assert first_user['school'] is None or 'name' in first_user['school']
     assert 'status' in first_user
-
+    assert 'password' not in first_user
+    assert 'password_hash' not in first_user

@@ -8,6 +8,8 @@ import json
 import random
 import re
 
+from src.routes.golden_plate_recorder_db.passwords import hash_password, is_password_hash, verify_password
+
 recorder_bp = Blueprint('recorder', __name__)
 
 # Data storage directory - use absolute path
@@ -147,7 +149,7 @@ global_teacher_data = load_data_from_file(TEACHER_LIST_FILE, {})
 # Initialize users database with default super admin if file doesn't exist
 default_users = {
     'antineutrino': {
-        'password': 'b-decay',
+        'password': 'pbkdf2:sha256:1000000$defaultsuperadminseed2026$77a9adc96609bdd6578665b877e2cf457646c35af105b62545651ad0d221063a',
         'role': 'superadmin',
         'name': 'Lead Admin',
         'status': 'active'
@@ -523,12 +525,16 @@ def login():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     
-    if username in users_db and users_db[username]['password'] == password:
+    if username in users_db and verify_password(users_db[username].get('password'), password):
         user = users_db[username]
         
         # Check account status
         if user.get('status', 'active') != 'active':
             return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
+
+        if not is_password_hash(user.get('password')):
+            user['password'] = hash_password(password)
+            save_users_db()
         
         session['user_id'] = username
 
@@ -593,7 +599,7 @@ def signup():
 
     # Create new user with role from invite code (default to 'user')
     users_db[username] = {
-        'password': password,
+        'password': hash_password(password),
         'role': code_data.get('role', 'user'),
         'name': name,
         'status': 'active'
@@ -2583,4 +2589,3 @@ def delete_user_account():
         'status': 'success',
         'message': 'User account deleted successfully'
     }), 200
-

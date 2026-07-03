@@ -23,7 +23,7 @@ from src.routes.golden_plate_recorder_db.map_db import map_db_session
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
-app.config['SECRET_KEY'] = 'asdf#FGSgvasgf$5$WGT'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-only-change-me')
 
 # Enable CORS for all routes
 CORS(app, supports_credentials=True)
@@ -54,4 +54,4 @@ def _shutdown_scoped_session(exception=None):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', '59237')), debug=True)

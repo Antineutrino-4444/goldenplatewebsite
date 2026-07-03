@@ -4,6 +4,7 @@ from flask import jsonify, request, session
 
 from . import recorder_bp
 from .db import AccountCreationRequest, _now_utc, db_session
+from .passwords import is_password_hash
 from .security import get_current_user, require_superadmin
 from .storage import save_session_data, session_data
 from .users import create_user_record, get_user_by_username, serialize_school, update_user_credentials
@@ -191,7 +192,9 @@ def approve_account_request(request_id):
             role='user',
             status='active',
             school_id=school_id,
+            password_is_hash=is_password_hash(account_request.password_hash),
         )
+        account_request.password_hash = new_user.password_hash
 
         # Update the request status
         account_request.status = 'approved'

@@ -1,13 +1,20 @@
+import uuid
+from datetime import timedelta
+
 from src.routes.golden_plate_recorder_db.db import (
+    EmailVerification,
     School,
     SchoolInviteCode,
+    SchoolRegistrationRequest,
     User,
+    _now_utc,
     db_session,
 )
+from src.routes.golden_plate_recorder_db.passwords import is_password_hash, verify_password
 
 
 def test_interschool_can_generate_school_invite(client, login):
-    login(username='inter-school-admin', password='bridge-control')
+    login(username='inter-school-admin')
     resp = client.post('/api/interschool/school-invite')
     assert resp.status_code == 201
 
@@ -30,7 +37,7 @@ def test_non_interschool_cannot_generate_school_invite(client, login):
 
 def test_school_registration_flow(client, login):
     # Interschool user issues invite
-    login(username='inter-school-admin', password='bridge-control')
+    login(username='inter-school-admin')
     invite_resp = client.post('/api/interschool/school-invite')
     assert invite_resp.status_code == 201
     invite_data = invite_resp.get_json()
@@ -58,6 +65,10 @@ def test_school_registration_flow(client, login):
     status = client.get('/api/auth/status').get_json()
     assert status['authenticated'] is True
     assert status['user']['school_id'] == school_id
+    created_admin = db_session.query(User).filter_by(username='pytest-admin').first()
+    assert created_admin is not None
+    assert is_password_hash(created_admin.password_hash)
+    assert verify_password(created_admin.password_hash, 'pytest-pass')
 
     # Attempting to reuse the invite should fail
     reuse_resp = client.post('/api/auth/register-school', json={
@@ -86,3 +97,47 @@ def test_school_registration_flow(client, login):
     except Exception:
         db_session.rollback()
         raise
+
+
+def test_school_registration_request_and_approval_store_hashes(client, login):
+    client.get('/api/auth/status')
+    email = f'registration-{uuid.uuid4().hex[:8]}@example.com'
+    password = 'approved-pass'
+    verification = EmailVerification(
+        email=email,
+        code='123456',
+        purpose='school_registration',
+        expires_at=_now_utc() + timedelta(minutes=5),
+        verified_at=_now_utc(),
+        attempts=0,
+    )
+    db_session.add(verification)
+    db_session.commit()
+
+    register = client.post('/api/auth/register-school', json={
+        'email': email,
+        'school_name': 'Approval Academy',
+        'school_slug': f'approval-academy-{uuid.uuid4().hex[:8]}',
+        'admin_username': f'approval-admin-{uuid.uuid4().hex[:8]}',
+        'admin_password': password,
+        'admin_display_name': 'Approval Admin',
+    })
+    assert register.status_code == 201
+
+    registration_request = (
+        db_session.query(SchoolRegistrationRequest)
+        .filter_by(email=email, status='pending')
+        .first()
+    )
+    assert registration_request is not None
+    assert is_password_hash(registration_request.admin_password_hash)
+    assert verify_password(registration_request.admin_password_hash, password)
+
+    login(username='inter-school-admin')
+    approved = client.post(f'/api/interschool/registration-requests/{registration_request.id}/approve')
+    assert approved.status_code == 200
+
+    created_admin = db_session.query(User).filter_by(username=registration_request.admin_username).first()
+    assert created_admin is not None
+    assert is_password_hash(created_admin.password_hash)
+    assert verify_password(created_admin.password_hash, password)

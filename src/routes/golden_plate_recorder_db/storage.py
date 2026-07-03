@@ -14,8 +14,8 @@ from .db import (
     db_session,
 )
 from .users import (
-    DEFAULT_SUPERADMIN,
     ensure_default_superadmin,
+    ensure_interschool_user,
     list_all_users,
     migrate_legacy_invite_codes,
     migrate_legacy_users,
@@ -697,6 +697,7 @@ _refresh_delete_requests_cache()
 
 # Ensure default superadmin exists
 default_user = ensure_default_superadmin()
+ensure_interschool_user()
 
 # Backfill session data from database
 #backfill_session_data_from_db()

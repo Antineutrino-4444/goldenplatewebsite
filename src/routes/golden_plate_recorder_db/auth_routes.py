@@ -6,6 +6,7 @@ from flask import jsonify, request, session
 
 from . import recorder_bp
 from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, User, _now_utc, db_session
+from .passwords import hash_password, is_password_hash, verify_password
 from .security import get_current_user, is_guest, require_auth
 from .users import (
     create_user_record,
@@ -58,12 +59,14 @@ def login():
     password = data.get('password', '').strip()
 
     user = get_user_by_username(username)
-    if not user or user.password_hash != password:
+    if not user or not verify_password(user.password_hash, password):
         return jsonify({'error': 'Invalid username or password'}), 401
 
     if user.status != 'active':
         return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
 
+    if not is_password_hash(user.password_hash):
+        user.password_hash = hash_password(password)
     session['user_uuid'] = user.id
     session['user_id'] = username
     session['username'] = username
@@ -203,7 +206,7 @@ def signup():
                 id=str(uuid.uuid4()),
                 school_id=invite.school_id,
                 username=username,
-                password_hash=password,
+                password_hash=hash_password(password),
                 display_name=name,
                 role=invite.role or 'user',
                 status='active',
@@ -256,7 +259,7 @@ def signup():
         account_request = AccountCreationRequest(
             school_id=school.id,
             username=username,
-            password_hash=password,
+            password_hash=hash_password(password),
             display_name=name,
             status='pending',
             requested_at=_now_utc(),

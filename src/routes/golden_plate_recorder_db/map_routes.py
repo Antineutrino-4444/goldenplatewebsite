@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 import random
@@ -13,7 +15,6 @@ import requests as http_requests
 from flask import jsonify, request, send_file, session
 from sqlalchemy import func
 from werkzeug.exceptions import RequestEntityTooLarge
-from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from . import recorder_bp
@@ -30,6 +31,7 @@ from .map_db import (
     _map_now_utc,
     map_db_session,
 )
+from .passwords import hash_password, is_password_hash, verify_password
 from .security import get_current_user, is_interschool_user, require_admin, require_superadmin
 
 logger = logging.getLogger(__name__)
@@ -1193,8 +1195,10 @@ def _verify_submitter_password(email, password):
     account = _get_submitter_account(email)
     if not account or account.status != 'active':
         return False, None
-    if not check_password_hash(account.password_hash, password or ''):
+    if not verify_password(account.password_hash, password or ''):
         return False, account
+    if not is_password_hash(account.password_hash):
+        account.password_hash = hash_password(password or '')
     account.last_used_at = _map_now_utc()
     account.updated_at = _map_now_utc()
     return True, account
@@ -1202,7 +1206,7 @@ def _verify_submitter_password(email, password):
 
 def _upsert_submitter_password(email, password, school_id, submission_id):
     account = _get_submitter_account(email)
-    password_hash = generate_password_hash(password)
+    password_hash = hash_password(password)
     now = _map_now_utc()
 
     if account:

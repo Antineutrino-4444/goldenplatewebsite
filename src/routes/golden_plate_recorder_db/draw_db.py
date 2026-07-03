@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlalchemy import func
 
 from .db import (
+    DEFAULT_SCHOOL_ID,
     DraftPool,
     Session as SessionModel,
     SessionDrawEvent,
@@ -17,6 +18,18 @@ from .db import (
 )
 
 secure_random = random.SystemRandom()
+
+
+def _resolve_school_id(session_id: Optional[str] = None, student_id: Optional[str] = None) -> str:
+    if session_id:
+        session = db_session.query(SessionModel.school_id).filter_by(id=session_id).first()
+        if session and session[0]:
+            return session[0]
+    if student_id:
+        student = db_session.query(Student.school_id).filter_by(id=student_id).first()
+        if student and student[0]:
+            return student[0]
+    return DEFAULT_SCHOOL_ID
 
 
 def get_or_create_session_draw(session_id: str) -> SessionModel:
@@ -182,6 +195,7 @@ def record_draw_event(
 ) -> SessionDrawEvent:
     """Record a draw event in the database."""
     event = SessionDrawEvent(
+        school_id=draw.school_id,
         session_id=draw.id,
         draw_number=draw.draw_number,
         event_type=event_type,
@@ -209,6 +223,7 @@ def record_ticket_event(
 ) -> SessionTicketEvent:
     """Record a ticket event in the database."""
     event = SessionTicketEvent(
+        school_id=_resolve_school_id(session_id=session_id, student_id=student_id),
         session_id=session_id,
         session_record_id=session_record_id,
         student_id=student_id,
@@ -246,7 +261,7 @@ def reset_student_tickets(
         event_metadata=reason,
     )
 
-    update_draft_pool(student_id, 0.0)
+    update_draft_pool(student_id, 0.0, session_id=session_id)
     return True
 
 
@@ -353,18 +368,22 @@ def get_student_ticket_balance(student_id: str) -> float:
     return float(pool_entry.ticket_number) if pool_entry else 0.0
 
 
-def update_draft_pool(student_id: str, new_balance: float) -> None:
+def update_draft_pool(student_id: str, new_balance: float, session_id: Optional[str] = None) -> None:
     """Update or create the draft_pool entry for a student."""
+    school_id = _resolve_school_id(session_id=session_id, student_id=student_id)
     pool_entry = (
         db_session.query(DraftPool)
-        .filter_by(student_id=student_id)
+        .filter_by(school_id=school_id, student_id=student_id)
         .first()
     )
     
     if pool_entry:
+        pool_entry.session_id = session_id or pool_entry.session_id
         pool_entry.ticket_number = int(new_balance)
     else:
         pool_entry = DraftPool(
+            school_id=school_id,
+            session_id=session_id,
             student_id=student_id,
             ticket_number=int(new_balance),
         )
@@ -404,7 +423,7 @@ def update_tickets_for_record(
         )
         
         # Update draft pool
-        update_draft_pool(student_id, new_balance)
+        update_draft_pool(student_id, new_balance, session_id=session_id)
         
     elif category == 'red':
         # Reset tickets for red plate

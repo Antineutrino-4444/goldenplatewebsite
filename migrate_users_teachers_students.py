@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.routes.golden_plate_recorder_db.db import User, Teacher, Student, SessionRecord, db_session, engine, Base
+from src.routes.golden_plate_recorder_db.passwords import hash_password, is_password_hash
 
 DATABASE_PATH = 'data/golden_plate_recorder.db'
 USERS_JSON = 'persistent_data/users.json'
@@ -53,12 +54,13 @@ def migrate_users():
             skipped += 1
             continue
         
+        password = user_info.get('password', '')
+        password_hash = password if is_password_hash(password) else hash_password(password)
+
         # Create new user
-        # Note: passwords in the JSON are stored as plain text (not ideal, but that's the existing format)
-        # In production, these should be hashed
         new_user = User(
             username=username,
-            password_hash=user_info.get('password', ''),  # Storing as-is for now
+            password_hash=password_hash,
             display_name=user_info.get('name', username),
             role=user_info.get('role', 'user'),
             status=user_info.get('status', 'active')
