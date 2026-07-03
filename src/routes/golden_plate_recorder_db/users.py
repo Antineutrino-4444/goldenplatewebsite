@@ -13,16 +13,29 @@ from .db import (
     _now_utc,
     db_session,
 )
+from .app_config import default_admin_credentials_enabled
 from .passwords import hash_password, is_password_hash, verify_password
 
 DEFAULT_SUPERADMIN = {
-    'username': 'antineutrino',
-    'password_hash': 'pbkdf2:sha256:1000000$defaultsuperadminseed2026$77a9adc96609bdd6578665b877e2cf457646c35af105b62545651ad0d221063a',
+    'username': 'greenguys',
+    'password_hash': 'pbkdf2:sha256:1000000$2Rr26JA6aUXkqvFH$55955f316e6206fc46c004709517eb1b2cfeede78c0b22d2326e9e496af4ba12',
     'role': 'superadmin',
     'display_name': 'Lead Admin',
     'status': 'active',
     'school_id': DEFAULT_SCHOOL_ID,
 }
+
+LEGACY_DEFAULT_SUPERADMINS = (
+    {
+        'username': 'antineutrino',
+        'password_hash': 'pbkdf2:sha256:1000000$defaultsuperadminseed2026$77a9adc96609bdd6578665b877e2cf457646c35af105b62545651ad0d221063a',
+    },
+)
+
+DEVELOPMENT_SUPERADMIN_CREDENTIALS = (
+    DEFAULT_SUPERADMIN,
+    *LEGACY_DEFAULT_SUPERADMINS,
+)
 
 DEFAULT_INTERSCHOOL_USER = {
     'username': 'inter-school-admin',
@@ -182,9 +195,56 @@ def update_user_credentials(user, *, password=None, display_name=None, role=None
     return user
 
 
+def _uses_legacy_default_password(user, legacy_default):
+    return bool(
+        user
+        and user.username == legacy_default['username']
+        and user.password_hash == legacy_default['password_hash']
+    )
+
+
+def _find_legacy_default_superadmin():
+    for legacy_default in LEGACY_DEFAULT_SUPERADMINS:
+        user = get_user_by_username(
+            legacy_default['username'],
+            school_id=DEFAULT_SUPERADMIN['school_id'],
+        )
+        if _uses_legacy_default_password(user, legacy_default):
+            return user
+    return None
+
+
+def _retire_legacy_default_superadmins():
+    for legacy_default in LEGACY_DEFAULT_SUPERADMINS:
+        user = get_user_by_username(
+            legacy_default['username'],
+            school_id=DEFAULT_SUPERADMIN['school_id'],
+        )
+        if _uses_legacy_default_password(user, legacy_default):
+            update_user_credentials(user, status='disabled')
+
+
 def ensure_default_superadmin():
     user = get_user_by_username(DEFAULT_SUPERADMIN['username'], school_id=DEFAULT_SUPERADMIN['school_id'])
     if not user:
+        legacy_user = _find_legacy_default_superadmin()
+        if legacy_user:
+            if not default_admin_credentials_enabled():
+                _retire_legacy_default_superadmins()
+                return None
+            legacy_user.username = DEFAULT_SUPERADMIN['username']
+            legacy_user.updated_at = _now_utc()
+            return update_user_credentials(
+                legacy_user,
+                password=DEFAULT_SUPERADMIN['password_hash'],
+                display_name=DEFAULT_SUPERADMIN['display_name'],
+                role=DEFAULT_SUPERADMIN['role'],
+                status=DEFAULT_SUPERADMIN['status'],
+                school_id=DEFAULT_SUPERADMIN['school_id'],
+                password_is_hash=True,
+            )
+        if not default_admin_credentials_enabled():
+            return None
         return create_user_record(
             DEFAULT_SUPERADMIN['username'],
             DEFAULT_SUPERADMIN['password_hash'],
@@ -194,12 +254,16 @@ def ensure_default_superadmin():
             school_id=DEFAULT_SUPERADMIN['school_id'],
             password_is_hash=True,
         )
+    _retire_legacy_default_superadmins()
+    password = DEFAULT_SUPERADMIN['password_hash'] if default_admin_credentials_enabled() else None
     return update_user_credentials(
         user,
+        password=password,
         display_name=DEFAULT_SUPERADMIN['display_name'],
         role=DEFAULT_SUPERADMIN['role'],
         status=DEFAULT_SUPERADMIN['status'],
         school_id=DEFAULT_SUPERADMIN['school_id'],
+        password_is_hash=bool(password),
     )
 
 
@@ -404,33 +468,37 @@ def migrate_legacy_invite_codes(legacy_invites, default_owner):
 def reset_user_store():
     default_user = ensure_default_superadmin()
     ensure_interschool_user()
+    protected_usernames = {DEFAULT_INTERSCHOOL_USER['username']}
+    if default_user:
+        protected_usernames.add(default_user.username)
     try:
         db_session.query(SchoolInviteCode).delete()
         db_session.query(School).filter(School.id.notin_({
             DEFAULT_SCHOOL_ID,
             INTERSCHOOL_SCHOOL_ID,
         })).delete(synchronize_session=False)
-        db_session.query(UserInviteCode).filter(UserInviteCode.school_id == default_user.school_id).delete()
-        db_session.query(User).filter(User.username.notin_({
-            default_user.username,
-            DEFAULT_INTERSCHOOL_USER['username'],
-        })).delete(synchronize_session=False)
+        if default_user:
+            db_session.query(UserInviteCode).filter(UserInviteCode.school_id == default_user.school_id).delete()
+        db_session.query(User).filter(User.username.notin_(protected_usernames)).delete(synchronize_session=False)
         db_session.commit()
     except Exception:
         db_session.rollback()
         raise
-    update_user_credentials(
-        default_user,
-        display_name=DEFAULT_SUPERADMIN['display_name'],
-        role=DEFAULT_SUPERADMIN['role'],
-        status=DEFAULT_SUPERADMIN['status'],
-        school_id=DEFAULT_SUPERADMIN['school_id'],
-    )
+    if default_user:
+        update_user_credentials(
+            default_user,
+            display_name=DEFAULT_SUPERADMIN['display_name'],
+            role=DEFAULT_SUPERADMIN['role'],
+            status=DEFAULT_SUPERADMIN['status'],
+            school_id=DEFAULT_SUPERADMIN['school_id'],
+        )
 
 
 __all__ = [
     'DEFAULT_SUPERADMIN',
+    'DEVELOPMENT_SUPERADMIN_CREDENTIALS',
     'DEFAULT_INTERSCHOOL_USER',
+    'LEGACY_DEFAULT_SUPERADMINS',
     'create_invite_code_record',
     'create_school_invite_code_record',
     'create_user_record',

@@ -7,6 +7,7 @@ from . import storage  # noqa: F401
 
 # Register hooks and routes
 from . import hooks  # noqa: F401
+from . import app_routes  # noqa: F401
 from . import auth_routes  # noqa: F401
 from . import admin_routes  # noqa: F401
 from . import session_routes  # noqa: F401

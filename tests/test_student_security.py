@@ -9,6 +9,7 @@ from conftest import TEST_SUPERADMIN_PASSWORD, TEST_SUPERADMIN_USERNAME, ensure_
 
 
 def login(client, username=TEST_SUPERADMIN_USERNAME, password=TEST_SUPERADMIN_PASSWORD):
+    client.get('/api/auth/status')
     ensure_test_account_passwords()
     return client.post('/api/auth/login', json={'username': username, 'password': password})
 

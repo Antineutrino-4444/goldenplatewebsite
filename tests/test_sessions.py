@@ -47,7 +47,7 @@ def test_custom_name_duplicate_rejected(client, login):
 
 
 def _seed_record_and_draw_event(session_id: str) -> None:
-    user = db_session.query(User).filter_by(username='antineutrino').first()
+    user = db_session.query(User).filter_by(username='greenguys').first()
     session_model = db_session.query(SessionModel).filter_by(id=session_id).first()
     school_id = session_model.school_id if session_model else (user.school_id if user else None)
     record = SessionRecord(
@@ -103,4 +103,3 @@ def test_admin_delete_request_removes_related_rows(client, login):
     assert resp.status_code == 200
     assert db_session.query(SessionRecord).filter_by(session_id=session_id).count() == 0
     assert db_session.query(SessionDrawEvent).filter_by(session_id=session_id).count() == 0
-

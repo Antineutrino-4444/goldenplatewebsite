@@ -5,6 +5,7 @@ import requests
 from flask import jsonify, request, session
 
 from . import recorder_bp
+from .app_config import default_admin_credentials_enabled
 from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, User, _now_utc, db_session
 from .passwords import hash_password, is_password_hash, verify_password
 from .security import get_current_user, is_guest, require_auth
@@ -16,6 +17,7 @@ from .users import (
     get_user_by_username,
     mark_invite_code_used,
     serialize_school,
+    DEVELOPMENT_SUPERADMIN_CREDENTIALS,
 )
 
 RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
@@ -51,12 +53,28 @@ def verify_recaptcha(token):
         return False
 
 
+def _is_default_superadmin_login_attempt(username, password):
+    normalized_username = (username or '').strip()
+    for default_credentials in DEVELOPMENT_SUPERADMIN_CREDENTIALS:
+        if normalized_username != default_credentials['username']:
+            continue
+        if verify_password(default_credentials['password_hash'], password or ''):
+            return True
+    return False
+
+
 @recorder_bp.route('/auth/login', methods=['POST'])
 def login():
     """User login."""
     data = request.get_json() or {}
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
+
+    if (
+        _is_default_superadmin_login_attempt(username, password)
+        and not default_admin_credentials_enabled()
+    ):
+        return jsonify({'error': 'Default development admin credentials are disabled'}), 401
 
     user = get_user_by_username(username)
     if not user or not verify_password(user.password_hash, password):

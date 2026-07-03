@@ -55,7 +55,7 @@ def test_empty_sqlite_database_bootstraps_successfully():
                 ).fetchall()
             }
             superadmin_row = connection.execute(
-                "SELECT password_hash FROM users WHERE username = 'antineutrino'"
+                "SELECT password_hash FROM users WHERE username = 'greenguys'"
             ).fetchone()
 
         assert 'user_invite_codes' in table_names

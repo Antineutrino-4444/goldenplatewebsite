@@ -148,8 +148,8 @@ global_teacher_data = load_data_from_file(TEACHER_LIST_FILE, {})
 
 # Initialize users database with default super admin if file doesn't exist
 default_users = {
-    'antineutrino': {
-        'password': 'pbkdf2:sha256:1000000$defaultsuperadminseed2026$77a9adc96609bdd6578665b877e2cf457646c35af105b62545651ad0d221063a',
+    'greenguys': {
+        'password': 'pbkdf2:sha256:1000000$2Rr26JA6aUXkqvFH$55955f316e6206fc46c004709517eb1b2cfeede78c0b22d2326e9e496af4ba12',
         'role': 'superadmin',
         'name': 'Lead Admin',
         'status': 'active'

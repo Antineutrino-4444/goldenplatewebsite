@@ -59,7 +59,7 @@ def test_admin_users_include_school_metadata(client, login):
     assert resp.status_code == 200
     payload = resp.get_json()
     assert payload and 'users' in payload and payload['users'], 'Expected users list in response'
-    super_admin = next((user for user in payload['users'] if user['username'] == 'antineutrino'), payload['users'][0])
+    super_admin = next((user for user in payload['users'] if user['username'] == 'greenguys'), payload['users'][0])
     assert 'school' in super_admin
     assert super_admin['school'] is None or 'name' in super_admin['school']
     assert 'status' in super_admin

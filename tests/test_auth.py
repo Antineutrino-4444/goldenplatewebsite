@@ -10,7 +10,16 @@ from src.routes.golden_plate_recorder_db.db import (
     db_session,
 )
 from src.routes.golden_plate_recorder_db.passwords import is_password_hash, verify_password
-from src.routes.golden_plate_recorder_db.users import DEFAULT_SUPERADMIN, get_user_by_username
+from src.routes.golden_plate_recorder_db.users import (
+    DEFAULT_SUPERADMIN,
+    LEGACY_DEFAULT_SUPERADMINS,
+    ensure_default_superadmin,
+    get_user_by_username,
+    update_user_credentials,
+)
+
+DEFAULT_DEVELOPMENT_PASSWORD = 'begreendogood'
+LEGACY_DEVELOPMENT_PASSWORD = 'b-decay'
 
 
 def test_login_logout_status(client, login):
@@ -30,7 +39,7 @@ def test_login_logout_status(client, login):
 
 
 def test_login_failure(client):
-    resp = client.post('/api/auth/login', json={'username': 'antineutrino', 'password': 'wrong'})
+    resp = client.post('/api/auth/login', json={'username': DEFAULT_SUPERADMIN['username'], 'password': 'wrong'})
     assert resp.status_code == 401
 
 
@@ -46,12 +55,118 @@ def test_default_superadmin_stores_hash():
 
 
 def test_login_accepts_stored_hash(client):
+    client.get('/api/auth/status')
     ensure_test_account_passwords()
     resp = client.post('/api/auth/login', json={
         'username': DEFAULT_SUPERADMIN['username'],
         'password': TEST_SUPERADMIN_PASSWORD,
     })
     assert resp.status_code == 200
+
+
+def test_default_development_login_works_in_development(client, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'development')
+    client.get('/api/auth/status')
+    ensure_default_superadmin()
+
+    resp = client.post('/api/auth/login', json={
+        'username': DEFAULT_SUPERADMIN['username'],
+        'password': DEFAULT_DEVELOPMENT_PASSWORD,
+    })
+    assert resp.status_code == 200
+
+
+def test_default_development_login_is_disabled_in_production(client, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'development')
+    client.get('/api/auth/status')
+    user = ensure_default_superadmin()
+    update_user_credentials(
+        user,
+        password=DEFAULT_SUPERADMIN['password_hash'],
+        password_is_hash=True,
+    )
+
+    monkeypatch.setenv('APP_ENV', 'production')
+    resp = client.post('/api/auth/login', json={
+        'username': DEFAULT_SUPERADMIN['username'],
+        'password': DEFAULT_DEVELOPMENT_PASSWORD,
+    })
+    assert resp.status_code == 401
+    assert resp.get_json()['error'] == 'Default development admin credentials are disabled'
+
+
+def test_legacy_default_development_login_is_disabled_in_production(client, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'development')
+    client.get('/api/auth/status')
+    legacy_default = LEGACY_DEFAULT_SUPERADMINS[0]
+    legacy_user = User(
+        id=str(uuid.uuid4()),
+        school_id=DEFAULT_SUPERADMIN['school_id'],
+        username=legacy_default['username'],
+        password_hash=legacy_default['password_hash'],
+        display_name='Legacy Default Admin',
+        role='superadmin',
+        status='active',
+        created_at=_now_utc(),
+        updated_at=_now_utc(),
+    )
+    db_session.add(legacy_user)
+    db_session.commit()
+
+    monkeypatch.setenv('APP_ENV', 'production')
+    resp = client.post('/api/auth/login', json={
+        'username': legacy_default['username'],
+        'password': LEGACY_DEVELOPMENT_PASSWORD,
+    })
+    assert resp.status_code == 401
+    assert resp.get_json()['error'] == 'Default development admin credentials are disabled'
+
+
+def test_legacy_default_superadmin_migrates_to_current_default(client, monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'development')
+    client.get('/api/auth/status')
+
+    current = get_user_by_username(
+        DEFAULT_SUPERADMIN['username'],
+        school_id=DEFAULT_SUPERADMIN['school_id'],
+    )
+    if current:
+        db_session.delete(current)
+        db_session.commit()
+
+    legacy_default = LEGACY_DEFAULT_SUPERADMINS[0]
+    legacy_user = User(
+        id=str(uuid.uuid4()),
+        school_id=DEFAULT_SUPERADMIN['school_id'],
+        username=legacy_default['username'],
+        password_hash=legacy_default['password_hash'],
+        display_name='Legacy Default Admin',
+        role='superadmin',
+        status='active',
+        created_at=_now_utc(),
+        updated_at=_now_utc(),
+    )
+    db_session.add(legacy_user)
+    db_session.commit()
+
+    migrated = ensure_default_superadmin()
+
+    assert migrated.username == DEFAULT_SUPERADMIN['username']
+    assert get_user_by_username(legacy_default['username'], school_id=DEFAULT_SUPERADMIN['school_id']) is None
+    assert verify_password(migrated.password_hash, DEFAULT_DEVELOPMENT_PASSWORD)
+
+
+def test_app_environment_endpoint_reflects_environment(client, monkeypatch):
+    client.get('/api/auth/status')
+    monkeypatch.setenv('APP_ENV', 'production')
+    resp = client.get('/api/app/environment')
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['environment'] == 'production'
+    assert data['is_production'] is True
+    assert data['is_development'] is False
+    assert data['default_admin_credentials_enabled'] is False
 
 
 def test_login_upgrades_legacy_plaintext_password(client):

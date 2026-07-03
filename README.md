@@ -27,6 +27,7 @@ Golden Plate Recorder is a web application for tracking student attendance and c
 # Clone repository and enter directory
 # python -m venv venv
 # source venv/bin/activate  # or venv\Scripts\activate on Windows
+cp .env.example .env
 pip install -r requirements.txt
 
 cd frontend
@@ -51,6 +52,22 @@ npm run dev
 ```bash
 pytest
 ```
+
+## Passwords and Environment Mode
+The app has a built-in development super admin account for local setup:
+- Username: `greenguys`
+- Password: `begreendogood`
+
+This default login is only meant for development. Environment mode controls whether it works:
+- `APP_ENV=development` enables the built-in development login and shows a warning banner in the site.
+- `APP_ENV=production` disables the built-in development login. Set this on the live server.
+
+Before switching a live site to production mode, make sure a real admin account exists with a known strong password. To change an existing account username or password, run:
+```bash
+python scripts/change_user_credentials.py
+```
+
+The `SECRET_KEY` value is separate from user passwords. It secures Flask session cookies and should be a long random string in production. Keep it stable after deployment; changing it logs users out but does not change database passwords.
 
 ## License
 This project is released under the MIT License.

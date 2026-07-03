@@ -6,8 +6,35 @@ import InterschoolPortal from '@/components/InterschoolPortal.jsx'
 import MainPortal from '@/components/MainPortal.jsx'
 import OverlayElements from '@/components/OverlayElements.jsx'
 import SchoolRegistration from '@/components/SchoolRegistration.jsx'
+import { AlertTriangle } from 'lucide-react'
 
 const MapPortal = lazy(() => import('@/components/MapPortal.jsx'))
+
+function DevelopmentModeBanner({ app }) {
+  if (!app.appEnvironment?.is_development) {
+    return null
+  }
+
+  return (
+    <div className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-950">
+      <div className="mx-auto flex max-w-7xl items-center justify-center gap-2 text-center text-sm font-medium">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+        <span>
+          Development mode is active. Default development admin credentials are enabled. Set APP_ENV=production before deploying.
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function AppFrame({ app, children }) {
+  return (
+    <>
+      <DevelopmentModeBanner app={app} />
+      {children}
+    </>
+  )
+}
 
 function isMapHost() {
   if (typeof window === 'undefined') {
@@ -53,23 +80,27 @@ function LoginRoute({ app }) {
 
   if (app.isAuthenticated) {
     // Brief blank while the redirect runs.
-    return <div className="min-h-screen bg-gray-50" />
+    return (
+      <AppFrame app={app}>
+        <div className="min-h-screen bg-gray-50" />
+      </AppFrame>
+    )
   }
 
   if (app.showSchoolRegistration) {
     return (
-      <>
+      <AppFrame app={app}>
         <SchoolRegistration app={app} />
         <OverlayElements app={app} />
-      </>
+      </AppFrame>
     )
   }
 
   return (
-    <>
+    <AppFrame app={app}>
       <LoginView app={app} />
       <OverlayElements app={app} />
-    </>
+    </AppFrame>
   )
 }
 
@@ -79,34 +110,34 @@ function PlateApp() {
   if (!app.isAuthenticated) {
     if (app.showSchoolRegistration) {
       return (
-        <>
+        <AppFrame app={app}>
           <SchoolRegistration app={app} />
           <OverlayElements app={app} />
-        </>
+        </AppFrame>
       )
     }
     return (
-      <>
+      <AppFrame app={app}>
         <LoginView app={app} />
         <OverlayElements app={app} />
-      </>
+      </AppFrame>
     )
   }
 
   if (app.isInterschoolUser) {
     return (
-      <>
+      <AppFrame app={app}>
         <InterschoolPortal app={app} />
         <OverlayElements app={app} />
-      </>
+      </AppFrame>
     )
   }
 
   return (
-    <>
+    <AppFrame app={app}>
       <MainPortal app={app} />
       <OverlayElements app={app} />
-    </>
+    </AppFrame>
   )
 }
 
@@ -114,7 +145,7 @@ function MapApp() {
   const app = usePlateApp()
 
   return (
-    <>
+    <AppFrame app={app}>
       <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
         {app.isAuthenticated && app.isInterschoolUser ? (
           <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -136,7 +167,7 @@ function MapApp() {
         )}
       </Suspense>
       <OverlayElements app={app} />
-    </>
+    </AppFrame>
   )
 }
 
@@ -162,4 +193,3 @@ function LoginRouteWrapper() {
 }
 
 export default App
-

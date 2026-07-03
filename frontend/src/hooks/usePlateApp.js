@@ -4,6 +4,13 @@ import { makeStudentKey, normalizeName, sanitizeSelection } from '@/lib/names.js
 const API_BASE = '/api'
 
 export function usePlateApp() {
+  const [appEnvironment, setAppEnvironment] = useState({
+    environment: 'unknown',
+    is_development: false,
+    is_production: false,
+    default_admin_credentials_enabled: false
+  })
+
   // Authentication state
   const [user, setUser] = useState(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -256,6 +263,7 @@ export function usePlateApp() {
 
   // Check authentication status on load
   useEffect(() => {
+    loadAppEnvironment()
     checkAuthStatus()
   }, [])
 
@@ -263,6 +271,24 @@ export function usePlateApp() {
     setNotification({ text, type, size })
     if (size === 'small') {
       setTimeout(() => setNotification(null), 3000)
+    }
+  }
+
+  const loadAppEnvironment = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/app/environment`)
+      if (!response.ok) {
+        return
+      }
+      const data = await response.json()
+      setAppEnvironment({
+        environment: data.environment || 'unknown',
+        is_development: Boolean(data.is_development),
+        is_production: Boolean(data.is_production),
+        default_admin_credentials_enabled: Boolean(data.default_admin_credentials_enabled)
+      })
+    } catch (error) {
+      console.error('Environment check failed:', error)
     }
   }
 
@@ -2333,6 +2359,7 @@ export function usePlateApp() {
 
   return {
     // state
+    appEnvironment,
     user,
     setUser,
     isAuthenticated,
