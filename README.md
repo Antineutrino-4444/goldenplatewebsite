@@ -53,6 +53,29 @@ npm run dev
 pytest
 ```
 
+## reCAPTCHA
+
+The frontend uses Google's reCAPTCHA v2 checkbox through `react-google-recaptcha`
+3.1.0. The wrapper loads Google's hosted `api.js` on each page load; the challenge
+is not bundled with the site. Set `VITE_RECAPTCHA_SITE_KEY` in the frontend build
+environment and the matching `RECAPTCHA_SECRET_KEY` in the backend environment.
+
+Account signup allows interaction outside its dialog because Google mounts the
+image challenge iframe directly under the page body. Keep
+`allowExternalInteraction` enabled on that dialog when reCAPTCHA is configured;
+otherwise Radix's modal pointer blocking and focus trap interfere with phone taps.
+The dialog retains its backdrop, body scroll lock, and explicit close controls.
+
+Upgrade investigation (October 9, 2026): the wrapper's upstream package is still
+3.1.0. [reCAPTCHA v3](https://developers.google.com/recaptcha/docs/v3) is an
+available migration, but requires v3 keys, frontend token execution for each
+protected action, and backend checks for both the expected action and risk score.
+The current backend only checks v2 verification success, so replacing keys alone
+is insufficient. Google Cloud migration is separate: [existing v2/v3 keys and
+SiteVerify integrations remain compatible](https://docs.cloud.google.com/recaptcha/docs/migration-overview).
+Confirm the key's project ownership and migration status in the Google Cloud
+console before changing its configuration.
+
 ## Passwords and Environment Mode
 The app has a built-in development super admin account for local setup:
 - Username: `greenguys`

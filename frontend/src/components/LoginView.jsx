@@ -204,8 +204,12 @@ function LoginView({ app }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSignupDialog} onOpenChange={handleSignupDialogChange}>
-        <DialogContent dismissOnOverlayClick={false}>
+      <Dialog
+        open={showSignupDialog}
+        onOpenChange={handleSignupDialogChange}
+        allowExternalInteraction={Boolean(RECAPTCHA_SITE_KEY)}
+      >
+        <DialogContent dismissOnOverlayClick={false} className="max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Request Account</DialogTitle>
             <DialogDescription>

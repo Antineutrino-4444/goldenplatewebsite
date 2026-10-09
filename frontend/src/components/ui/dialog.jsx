@@ -4,10 +4,23 @@ import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+const ExternalInteractionContext = React.createContext(false);
+
 function Dialog({
+  allowExternalInteraction = false,
   ...props
 }) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+  // reCAPTCHA mounts its challenge iframe under document.body, outside Content.
+  // A modal Radix dialog blocks its pointer events and pulls focus back to inputs.
+  return (
+    <ExternalInteractionContext.Provider value={allowExternalInteraction}>
+      <DialogPrimitive.Root
+        data-slot="dialog"
+        {...props}
+        modal={allowExternalInteraction ? false : (props.modal ?? true)}
+      />
+    </ExternalInteractionContext.Provider>
+  );
 }
 
 function DialogTrigger({
@@ -32,6 +45,28 @@ function DialogOverlay({
   className,
   ...props
 }) {
+  const allowExternalInteraction = React.useContext(ExternalInteractionContext);
+
+  React.useEffect(() => {
+    if (!allowExternalInteraction) return;
+    // Radix omits both Overlay and its scroll lock in non-modal mode. Keep the
+    // backdrop and scroll lock without blocking the external challenge iframe.
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = originalOverflow; };
+  }, [allowExternalInteraction]);
+
+  if (allowExternalInteraction) {
+    return (
+      <div
+        data-slot="dialog-overlay"
+        aria-hidden="true"
+        className={cn("fixed inset-0 z-50 bg-black/50", className)}
+        {...props}
+      />
+    );
+  }
+
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
