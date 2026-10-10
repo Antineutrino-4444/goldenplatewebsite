@@ -9,6 +9,7 @@ import SchoolRegistration from '@/components/SchoolRegistration.jsx'
 import { AlertTriangle } from 'lucide-react'
 
 const MapPortal = lazy(() => import('@/components/MapPortal.jsx'))
+const LiveCounterPage = lazy(() => import('@/components/LiveCounterPage.jsx'))
 
 function DevelopmentModeBanner({ app }) {
   if (!app.appEnvironment?.is_development) {
@@ -172,6 +173,9 @@ function MapApp() {
 }
 
 function App() {
+  if ((window.location.pathname.replace(/\/+$/, '') || '/') === '/live-counter') {
+    return <Suspense fallback={<div className="min-h-screen bg-slate-50" />}><LiveCounterPage /></Suspense>
+  }
   if (isLoginPath()) {
     // Dedicated /login route: always show the login screen regardless of host
     // (e.g. works on map.goldenplate.ca/login as well as goldenplate.ca/login).

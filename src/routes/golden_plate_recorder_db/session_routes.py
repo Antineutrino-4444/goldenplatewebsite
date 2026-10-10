@@ -22,6 +22,7 @@ from .db import (
 )
 from .domain import serialize_draw_info
 from .draw_db import record_draw_event
+from .house_scoring import house_score_settings
 from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
 from .storage import (
     delete_requests,
@@ -819,12 +820,7 @@ def get_house_stats(session_id):
         Student.house != ''
     ).first() is not None
 
-    if not has_house_data:
-        return jsonify({
-            'has_house_data': False,
-            'message': 'No house data available in the student database',
-            'house_stats': []
-        }), 200
+    score_settings = house_score_settings(school_id)
 
     # Get house statistics from session records
     records = (
@@ -842,11 +838,15 @@ def get_house_stats(session_id):
     total_with_house = 0
 
     for record in records:
+        # Anonymous counts never earn or deduct points, even if legacy data
+        # accidentally includes a house. Only identifiable student plates rank.
+        if not (record.student_id or (record.preferred_name or '').strip() or (record.last_name or '').strip()):
+            continue
         house = normalize_house(record.house)
         if not house:
             # Try to get house from linked student
             if record.student_id:
-                student = db_session.query(Student).filter_by(id=record.student_id).first()
+                student = db_session.query(Student).filter_by(id=record.student_id, school_id=school_id).first()
                 if student:
                     house = normalize_house(student.house)
 
@@ -869,14 +869,21 @@ def get_house_stats(session_id):
             'dirty_count': counts['dirty'],
             'total_count': counts['total'],
             'percentage': round(percentage, 1),
-            'clean_rate': round(clean_rate, 1)
+            'clean_rate': round(clean_rate, 1),
+            'score': (
+                counts['clean'] * score_settings['clean_points']
+                - counts['dirty'] * score_settings['dirty_penalty']
+                - counts['red'] * score_settings['very_dirty_penalty']
+            ),
         })
 
-    # Rank by clean plates as a percentage of each house's own records.
-    house_stats.sort(key=lambda x: (-x['clean_rate'], -x['total_count'], x['house']))
+    # Recalculate from current settings so historical sessions update too.
+    house_stats.sort(key=lambda x: (-x['score'], x['house']))
 
     return jsonify({
-        'has_house_data': True,
+        'has_house_data': has_house_data or bool(house_stats),
+        'message': 'No house data available in the student database' if not has_house_data and not house_stats else '',
+        'score_settings': score_settings,
         'session_id': session_id,
         'session_name': db_sess.session_name,
         'total_records_with_house': total_with_house,

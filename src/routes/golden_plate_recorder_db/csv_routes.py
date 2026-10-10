@@ -51,17 +51,25 @@ def upload_csv():
         return jsonify({'error': 'File must be a CSV'}), 400
 
     try:
-        content = file.read().decode('utf-8')
+        content = file.read().decode('utf-8-sig')
         csv_reader = csv.DictReader(io.StringIO(content))
+        if csv_reader.fieldnames:
+            csv_reader.fieldnames = [name.strip() for name in csv_reader.fieldnames]
 
         rows = list(csv_reader)
         if not rows:
             return jsonify({'error': 'CSV file is empty'}), 400
 
-        required_columns = ['Student ID', 'Last', 'Preferred', 'Grade', 'Advisor', 'House', 'Clan']
-        if not all(col in csv_reader.fieldnames for col in required_columns):
-            columns = ', '.join(required_columns)
-            return jsonify({'error': f'CSV must contain columns: {columns}'}), 400
+        required_columns = ['Student ID', 'Last']
+        if (not all(col in csv_reader.fieldnames for col in required_columns)
+                or not any(col in csv_reader.fieldnames for col in ('Preferred', 'First'))):
+            return jsonify({'error': 'CSV must contain Student ID, Last, and either Preferred or First. Columns may be in any order.'}), 400
+
+        # Use Preferred whenever its column exists, even if First is also supplied.
+        # Canonicalize First-only rosters for storage and downstream name lookups.
+        if 'Preferred' not in csv_reader.fieldnames:
+            for row in rows:
+                row['Preferred'] = row.get('First')
 
         user_id = session['user_id']
         school_id = current_user['school_id']
@@ -74,7 +82,7 @@ def upload_csv():
             return jsonify({'error': 'Student roster could not be stored in the database'}), 500
 
         if not sync_result['processed']:
-            return jsonify({'error': 'CSV must contain students with an ID, preferred name, and last name'}), 400
+            return jsonify({'error': 'CSV must contain students with a Student ID, Last, and a name in Preferred (or First when the Preferred column is absent)'}), 400
         storage.global_csv_data[school_id] = {
             'data': rows,
             'columns': csv_reader.fieldnames,

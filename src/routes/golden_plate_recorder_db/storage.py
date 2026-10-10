@@ -149,9 +149,9 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
     return result
 
 
-def sync_teacher_table_from_list(teachers, *, school_id=None):
-    """Persist uploaded teacher roster into the teachers table."""
-    result = {'processed': 0, 'created': 0, 'updated': 0}
+def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, uploaded_by=None):
+    """Replace a school's teacher roster, keeping retained teachers' identities."""
+    result = {'processed': 0, 'created': 0, 'updated': 0, 'removed': 0}
     if not isinstance(teachers, list) or not teachers:
         return result
 
@@ -174,13 +174,16 @@ def sync_teacher_table_from_list(teachers, *, school_id=None):
     if not unique_entries:
         return result
 
-    names = [item[0] for item in unique_entries.values()]
     existing_teachers = (
         db_session.query(Teacher)
-        .filter(Teacher.school_id == school_id, Teacher.name.in_(names))
+        .filter(Teacher.school_id == school_id)
         .all()
     )
     existing_map = {teacher.name.lower(): teacher for teacher in existing_teachers}
+    for teacher in existing_teachers:
+        if teacher.name.lower() not in unique_entries:
+            db_session.delete(teacher)
+            result['removed'] += 1
 
     for key, (name, display) in unique_entries.items():
         teacher = existing_map.get(key)
@@ -205,6 +208,11 @@ def sync_teacher_table_from_list(teachers, *, school_id=None):
 
     if result['processed']:
         try:
+            if filename is not None:
+                school = db_session.get(School, school_id)
+                school.teacher_roster_filename = filename
+                school.teacher_roster_uploaded_at = datetime.now()
+                school.teacher_roster_uploaded_by = uploaded_by
             db_session.commit()
         except Exception:
             db_session.rollback()

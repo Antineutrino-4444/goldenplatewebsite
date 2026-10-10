@@ -1,7 +1,10 @@
 import React from 'react'
+import HouseRanking from '@/components/HouseRanking.jsx'
+import HouseScoreSettings from '@/components/HouseScoreSettings.jsx'
 import PortalHeader from '@/components/PortalHeader.jsx'
 import SessionSwitcher from '@/components/SessionSwitcher.jsx'
 import StudentRosterUpload from '@/components/StudentRosterUpload.jsx'
+import RosterUpload from '@/components/RosterUpload.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
@@ -12,8 +15,6 @@ import { Label } from '@/components/ui/label.jsx'
 import { SearchableNameInput } from '@/components/SearchableNameInput.jsx'
 import {
   AlertCircle,
-  ArrowDownNarrowWide,
-  ArrowUpNarrowWide,
   Ban,
   BarChart3,
   CheckCircle,
@@ -24,7 +25,6 @@ import {
   Download,
   FileText,
   History,
-  Home,
   ListOrdered,
   Plus,
   RefreshCcw,
@@ -130,6 +130,8 @@ function MainPortal({ app }) {
     setShowTeacherPreview,
     teacherPreviewData,
     teacherPreviewPage,
+    teacherPreviewSearch,
+    setTeacherPreviewSearch,
     uploadTeachers,
     exportCSV,
     exportDetailedCSV,
@@ -160,11 +162,6 @@ function MainPortal({ app }) {
     loadAccountRequests,
     approveAccountRequest,
     rejectAccountRequest,
-    houseStats,
-    houseStatsLoading,
-    houseSortBy,
-    setHouseSortBy,
-    loadHouseStats,
     isExtraSession,
     currentMainSessionId,
     showMergeDialog,
@@ -320,7 +317,7 @@ function MainPortal({ app }) {
                     Student Database
                   </CardTitle>
                   <CardDescription>
-                    Upload the current student roster (Student ID, Last, Preferred, Grade, Advisor, House, Clan). Students missing from the new roster are excluded from ticket draws.
+                    Upload a CSV with columns in any order. Student ID, Last, and Preferred (or First if there is no Preferred column) are required. Preferred is always used when present. Grade, Advisor, House, and Clan can be blank or omitted. Students missing from the new roster are excluded from ticket draws.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -374,12 +371,7 @@ function MainPortal({ app }) {
                       </AlertDescription>
                     </Alert>
                   ) : (
-                    <Input
-                      type="file"
-                      accept=".csv,.txt"
-                      onChange={(e) => e.target.files[0] && uploadTeachers(e.target.files[0])}
-                      className="mb-4"
-                    />
+                    <RosterUpload roster={app.teacherRoster} kind="teacher" accept=".csv,.txt" isLoading={isLoading} upload={uploadTeachers} setModal={app.setModal} />
                   )}
                   {['admin', 'superadmin'].includes(user?.role) && (
                     <div className="flex flex-wrap gap-2 mb-4">
@@ -428,122 +420,7 @@ function MainPortal({ app }) {
                     </CardContent>
                   </Card>
 
-                  <Card className="flex-1 flex flex-col min-h-0">
-                    <CardHeader>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <CardTitle className="flex flex-wrap items-center gap-2">
-                          <Home className="h-5 w-5" />
-                          House Data
-                        </CardTitle>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm text-gray-500">Sort by:</span>
-                          <div className="flex border rounded-lg overflow-hidden">
-                            <button
-                              onClick={() => setHouseSortBy('count')}
-                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                                houseSortBy === 'count'
-                                  ? 'bg-teal-600 text-white'
-                                  : 'bg-white text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <ArrowDownNarrowWide className="h-3.5 w-3.5" />
-                              Count
-                            </button>
-                            <button
-                              onClick={() => setHouseSortBy('percentage')}
-                              className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                                houseSortBy === 'percentage'
-                                  ? 'bg-teal-600 text-white'
-                                  : 'bg-white text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <ArrowUpNarrowWide className="h-3.5 w-3.5" />
-                              Clean Rate
-                            </button>
-                          </div>
-                          <Button
-                            onClick={() => loadHouseStats({ silent: false })}
-                            variant="outline"
-                            size="sm"
-                          >
-                            <RefreshCcw className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <CardDescription>
-                        Clean rate = clean plates ÷ all recorded plates in that house.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex-1 overflow-x-hidden overflow-y-auto">
-                      {!sessionId ? (
-                        <div className="py-8 text-center text-gray-500">
-                          No active session selected. Switch to a session to view house data.
-                        </div>
-                      ) : houseStatsLoading ? (
-                        <div className="py-8 text-center text-gray-500">
-                          Loading house statistics...
-                        </div>
-                      ) : !houseStats?.has_house_data ? (
-                        <div className="py-8 text-center text-gray-500">
-                          <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                          <p className="text-lg font-medium">No House Data Available</p>
-                          <p className="text-sm mt-2">
-                            {houseStats?.message || 'The student database does not contain house information.'}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <div className="text-sm text-gray-500">
-                            Total records with house data: <span className="font-medium">{houseStats.total_records_with_house}</span>
-                          </div>
-                          <div className="space-y-2">
-                            {(houseStats.house_stats || [])
-                              .slice()
-                              .sort((a, b) => {
-                                if (houseSortBy === 'percentage') {
-                                  return b.clean_rate - a.clean_rate || b.total_count - a.total_count || a.house.localeCompare(b.house)
-                                }
-                                return b.total_count - a.total_count
-                              })
-                              .map((house, index) => (
-                                <div
-                                  key={house.house}
-                                  className="flex min-w-0 flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0"
-                                >
-                                  <div className="flex items-center gap-4">
-                                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
-                                      #{index + 1}
-                                    </div>
-                                    <div>
-                                      <div className="font-semibold text-gray-900">{house.house}</div>
-                                      <div className="text-sm text-gray-500">
-                                        Clean: {house.clean_count} • Dirty: {house.dirty_count ?? 0} • Very Dirty: {house.red_count}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="text-right">
-                                    <div className="text-2xl font-bold text-emerald-600">
-                                      {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      {houseSortBy === 'percentage' ? `${house.clean_count} of ${house.total_count} plates clean` : `${house.clean_rate}% clean rate`}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      {house.percentage}% of all records
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                          {(houseStats.house_stats || []).length === 0 && (
-                            <div className="py-8 text-center text-gray-500">
-                              No house data recorded in this session yet.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                  <HouseRanking app={app} fillHeight />
                 </div>
               )}
 
@@ -1024,122 +901,7 @@ function MainPortal({ app }) {
               )}
 
               {!showExportCard && (
-                <Card className="lg:col-span-2">
-                  <CardHeader>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <CardTitle className="flex flex-wrap items-center gap-2">
-                        <Home className="h-5 w-5" />
-                        House Data
-                      </CardTitle>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm text-gray-500">Sort by:</span>
-                        <div className="flex border rounded-lg overflow-hidden">
-                          <button
-                            onClick={() => setHouseSortBy('count')}
-                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                              houseSortBy === 'count'
-                                ? 'bg-teal-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <ArrowDownNarrowWide className="h-3.5 w-3.5" />
-                            Count
-                          </button>
-                          <button
-                            onClick={() => setHouseSortBy('percentage')}
-                            className={`px-3 py-1.5 text-sm flex items-center gap-1 transition-colors ${
-                              houseSortBy === 'percentage'
-                                ? 'bg-teal-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <ArrowUpNarrowWide className="h-3.5 w-3.5" />
-                            Clean Rate
-                          </button>
-                        </div>
-                        <Button
-                          onClick={() => loadHouseStats({ silent: false })}
-                          variant="outline"
-                          size="sm"
-                        >
-                          <RefreshCcw className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    <CardDescription>
-                      Clean rate = clean plates ÷ all recorded plates in that house.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {!sessionId ? (
-                      <div className="py-8 text-center text-gray-500">
-                        No active session selected. Switch to a session to view house data.
-                      </div>
-                    ) : houseStatsLoading ? (
-                      <div className="py-8 text-center text-gray-500">
-                        Loading house statistics...
-                      </div>
-                    ) : !houseStats?.has_house_data ? (
-                      <div className="py-8 text-center text-gray-500">
-                        <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                        <p className="text-lg font-medium">No House Data Available</p>
-                        <p className="text-sm mt-2">
-                          {houseStats?.message || 'The student database does not contain house information.'}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="text-sm text-gray-500">
-                          Total records with house data: <span className="font-medium">{houseStats.total_records_with_house}</span>
-                        </div>
-                        <div className="space-y-2">
-                          {(houseStats.house_stats || [])
-                            .slice()
-                            .sort((a, b) => {
-                              if (houseSortBy === 'percentage') {
-                                return b.clean_rate - a.clean_rate || b.total_count - a.total_count || a.house.localeCompare(b.house)
-                              }
-                              return b.total_count - a.total_count
-                            })
-                            .map((house, index) => (
-                              <div
-                                key={house.house}
-                                className="flex min-w-0 flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0"
-                              >
-                                <div className="flex items-center gap-4">
-                                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
-                                    #{index + 1}
-                                  </div>
-                                  <div>
-                                    <div className="font-semibold text-gray-900">{house.house}</div>
-                                    <div className="text-sm text-gray-500">
-                                      Clean: {house.clean_count} • Dirty: {house.dirty_count ?? 0} • Very Dirty: {house.red_count}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-2xl font-bold text-emerald-600">
-                                    {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {houseSortBy === 'percentage' ? `${house.clean_count} of ${house.total_count} plates clean` : `${house.clean_rate}% clean rate`}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {house.percentage}% of all records
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                        {(houseStats.house_stats || []).length === 0 && (
-                          <div className="py-8 text-center text-gray-500">
-                            No house data recorded in this session yet.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                <HouseRanking app={app} />
               )}
                 </div>
 
@@ -1564,6 +1326,11 @@ function MainPortal({ app }) {
               </DialogDescription>
             </DialogHeader>
             <div className="flex min-h-0 flex-col gap-4">
+              <form className="flex shrink-0 flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); previewTeachers(1) }}>
+                <Input className="min-w-0 flex-1" aria-label="Search teacher names" placeholder="Search teacher names" value={teacherPreviewSearch} onChange={(event) => setTeacherPreviewSearch(event.target.value)} />
+                <Button type="submit" variant="outline" disabled={teacherPreviewLoading}>Search</Button>
+                {teacherPreviewSearch && <Button type="button" variant="ghost" onClick={() => { setTeacherPreviewSearch(''); previewTeachers(1, '') }}>Clear</Button>}
+              </form>
               {teacherPreviewLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="text-muted-foreground">Loading teacher list...</div>
@@ -1573,14 +1340,15 @@ function MainPortal({ app }) {
                   <div className="shrink-0 text-sm text-muted-foreground">
                     <p><strong>Total Teachers:</strong> {teacherPreviewData.pagination.total_records}</p>
                     <p><strong>Uploaded by:</strong> {teacherPreviewData.metadata.uploaded_by}</p>
-                    <p><strong>Uploaded at:</strong> {new Date(teacherPreviewData.metadata.uploaded_at).toLocaleString()}</p>
+                    <p><strong>Uploaded at:</strong> {teacherPreviewData.metadata.uploaded_at ? new Date(teacherPreviewData.metadata.uploaded_at).toLocaleString() : 'Unknown'}</p>
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto border rounded-lg">
+                    {teacherPreviewData.data.length === 0 && <p className="py-4 text-center text-sm text-gray-500">No teachers match this name.</p>}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4">
                       {teacherPreviewData.data.map((teacher, index) => (
-                        <div key={index} className="p-2 bg-gray-50 rounded text-sm">
-                          {teacher.name}
+                        <div key={index} className="min-w-0 p-2 bg-gray-50 rounded text-sm [overflow-wrap:anywhere]">
+                          {teacher.display_name || teacher.name}
                         </div>
                       ))}
                     </div>
@@ -1592,7 +1360,7 @@ function MainPortal({ app }) {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
-                        onClick={() => previewTeachers(teacherPreviewPage - 1)}
+                        onClick={() => previewTeachers(teacherPreviewPage - 1, teacherPreviewData.search || '')}
                         disabled={!teacherPreviewData.pagination.has_prev || teacherPreviewLoading}
                         variant="outline"
                         size="sm"
@@ -1600,7 +1368,7 @@ function MainPortal({ app }) {
                         Previous
                       </Button>
                       <Button
-                        onClick={() => previewTeachers(teacherPreviewPage + 1)}
+                        onClick={() => previewTeachers(teacherPreviewPage + 1, teacherPreviewData.search || '')}
                         disabled={!teacherPreviewData.pagination.has_next || teacherPreviewLoading}
                         variant="outline"
                         size="sm"
@@ -1823,6 +1591,8 @@ function MainPortal({ app }) {
                 </Button>
               )}
             </div>
+
+            {user.role === 'superadmin' && showAdminPanel && <HouseScoreSettings app={app} />}
 
             <div>
               <h3 className="text-lg font-semibold mb-3">Users</h3>

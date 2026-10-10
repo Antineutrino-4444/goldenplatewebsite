@@ -1,12 +1,21 @@
 from datetime import datetime
 
 from flask import jsonify, request, session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from . import recorder_bp, storage
-from .db import Teacher, db_session
+from .db import School, Teacher, db_session
 from .security import get_current_user, require_admin, require_auth
 from .storage import save_global_teacher_data, sync_teacher_table_from_list
+
+
+def _teacher_roster_metadata(school_id):
+    school = db_session.get(School, school_id)
+    return {
+        'filename': school.teacher_roster_filename if school else None,
+        'uploaded_by': (school.teacher_roster_uploaded_by or 'unknown') if school else 'unknown',
+        'uploaded_at': school.teacher_roster_uploaded_at.isoformat() if school and school.teacher_roster_uploaded_at else None,
+    }
 
 
 @recorder_bp.route('/teachers/upload', methods=['POST'])
@@ -47,28 +56,32 @@ def upload_teachers():
             return jsonify({'error': 'No valid teacher names found in file'}), 400
 
         user_id = session['user_id']
-        storage.global_teacher_data[school_id] = {
-            'teachers': teachers,
-            'uploaded_by': user_id,
-            'uploaded_at': datetime.now().isoformat()
-        }
-
-        save_global_teacher_data()
-
         try:
-            teacher_sync = sync_teacher_table_from_list(teachers, school_id=school_id)
+            filename = file.filename.replace('\\', '/').rsplit('/', 1)[-1]
+            teacher_sync = sync_teacher_table_from_list(
+                teachers, school_id=school_id, filename=filename, uploaded_by=current_user['username'],
+            )
             print(f"Teacher roster sync complete: {teacher_sync}")
         except Exception as exc:
             print(f"Error syncing teachers table: {exc}")
             return jsonify({'error': 'Teacher roster could not be stored in the database'}), 500
 
+        storage.global_teacher_data[school_id] = {
+            'teachers': teachers,
+            'uploaded_by': user_id,
+            'uploaded_at': datetime.now().isoformat(),
+        }
+        save_global_teacher_data()
+
         return jsonify({
             'status': 'success',
-            'count': len(teachers),
+            'count': teacher_sync['processed'],
+            'filename': filename,
             'uploaded_by': user_id,
             'teachers_processed': teacher_sync['processed'],
             'teachers_created': teacher_sync['created'],
-            'teachers_updated': teacher_sync['updated']
+            'teachers_updated': teacher_sync['updated'],
+            'teachers_removed': teacher_sync['removed'],
         }), 200
 
     except Exception as exc:
@@ -96,7 +109,8 @@ def get_teacher_names():
     if not teachers:
         return jsonify({
             'status': 'no_data',
-            'names': []
+            'names': [],
+            'metadata': _teacher_roster_metadata(school_id),
         }), 200
 
     teacher_list = []
@@ -110,7 +124,8 @@ def get_teacher_names():
 
     return jsonify({
         'status': 'success',
-        'names': teacher_list
+        'names': teacher_list,
+        'metadata': _teacher_roster_metadata(school_id),
     }), 200
 
 
@@ -129,9 +144,15 @@ def preview_teachers():
     per_page = int(request.args.get('per_page', 50))
 
     base_query = db_session.query(Teacher).filter(Teacher.school_id == school_id)
+    search = request.args.get('search', '').strip().lower()
+    if search:
+        base_query = base_query.filter(or_(
+            func.lower(Teacher.name).contains(search, autoescape=True),
+            func.lower(Teacher.display_name).contains(search, autoescape=True),
+        ))
     total_records = base_query.count()
 
-    if total_records == 0:
+    if total_records == 0 and not search:
         return jsonify({
             'status': 'no_data',
             'message': 'No teacher records found in database'
@@ -152,8 +173,6 @@ def preview_teachers():
         'display_name': str(teacher.display_name or teacher.name or '').strip()
     } for teacher in teachers]
 
-    teacher_data = storage.global_teacher_data.get(school_id, {})
-
     return jsonify({
         'status': 'success',
         'data': paginated_teachers,
@@ -161,14 +180,11 @@ def preview_teachers():
             'page': page,
             'per_page': per_page,
             'total_records': total_records,
-            'total_pages': (total_records + per_page - 1) // per_page,
+            'total_pages': max(1, (total_records + per_page - 1) // per_page),
             'has_next': (start_idx + per_page) < total_records,
             'has_prev': page > 1
         },
-        'metadata': {
-            'uploaded_by': teacher_data.get('uploaded_by', 'unknown') if teacher_data else 'unknown',
-            'uploaded_at': teacher_data.get('uploaded_at', 'unknown') if teacher_data else 'unknown'
-        }
+        'metadata': _teacher_roster_metadata(school_id),
     }), 200
 
 

@@ -115,8 +115,10 @@ export function usePlateApp() {
 
   // Teacher names for dropdown
   const [teacherNames, setTeacherNames] = useState([])
+  const [teacherRoster, setTeacherRoster] = useState(null)
   const [showTeacherPreview, setShowTeacherPreview] = useState(false)
   const [teacherPreviewData, setTeacherPreviewData] = useState(null)
+  const [teacherPreviewSearch, setTeacherPreviewSearch] = useState('')
   const [teacherPreviewPage, setTeacherPreviewPage] = useState(1)
   const [teacherPreviewLoading, setTeacherPreviewLoading] = useState(false)
 
@@ -136,7 +138,7 @@ export function usePlateApp() {
   // House stats state
   const [houseStats, setHouseStats] = useState(null)
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
-  const [houseSortBy, setHouseSortBy] = useState('percentage') // 'count' or 'percentage'
+  const [houseSortBy, setHouseSortBy] = useState('score') // 'score', 'count', or 'percentage'
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -495,6 +497,8 @@ export function usePlateApp() {
     setSelectedCandidateKey(null)
     setStudentNames([])
     setTeacherNames([])
+    setTeacherRoster(null)
+    setTeacherPreviewSearch('')
     setShowNewSessionDialog(false)
     setShowSessionsDialog(false)
     setShowDashboard(false)
@@ -827,6 +831,10 @@ export function usePlateApp() {
       setDrawSummary(null)
       setStudentNames([])
       setTeacherNames([])
+      setTeacherRoster(null)
+      setTeacherPreviewData(null)
+      setTeacherPreviewSearch('')
+      setShowTeacherPreview(false)
       setLatestSchoolInvites([])
       setSchoolInviteLoading(false)
       setInterschoolSchools([])
@@ -1116,7 +1124,15 @@ export function usePlateApp() {
     }
   }
 
-  const uploadTeachers = async (file) => {
+  const uploadTeachers = async (file, { confirmed = false } = {}) => {
+    if (teacherRoster && !confirmed) {
+      setModal({
+        type: 'confirm', title: 'Confirm database replacement', confirmLabel: 'Replace database',
+        message: `Uploading ${file.name} will reset the current teacher database to this roster. This replacement cannot be undone. Teachers missing from the new roster will be removed from name suggestions. Past plate records and draw logs will be kept.`,
+        onConfirm: () => uploadTeachers(file, { confirmed: true })
+      })
+      return
+    }
     const formData = new FormData()
     formData.append('file', file)
 
@@ -1130,6 +1146,9 @@ export function usePlateApp() {
       const data = await response.json()
       if (response.ok) {
         showMessage(`Teacher list uploaded successfully! ${data.count} teachers loaded.`, 'success')
+        setTeacherRoster(data)
+        setTeacherPreviewData(null)
+        setTeacherPreviewSearch('')
         await loadTeacherNames()
       } else {
         showMessage(data.error || 'Failed to upload teacher list', 'error')
@@ -1165,10 +1184,10 @@ export function usePlateApp() {
     }
   }
 
-  const previewTeachers = async (page = 1) => {
+  const previewTeachers = async (page = 1, search = teacherPreviewSearch) => {
     setTeacherPreviewLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/teachers/preview?page=${page}&per_page=50`)
+      const response = await fetch(`${API_BASE}/teachers/preview?page=${page}&per_page=50&search=${encodeURIComponent(search)}`)
       const data = await response.json()
 
       if (response.ok) {
@@ -1177,7 +1196,7 @@ export function usePlateApp() {
           return
         }
 
-        setTeacherPreviewData(data)
+        setTeacherPreviewData({ ...data, search })
         setTeacherPreviewPage(page)
         setShowTeacherPreview(true)
       } else {
@@ -1378,6 +1397,7 @@ export function usePlateApp() {
       const response = await fetch(`${API_BASE}/teachers/list`)
       if (response.ok) {
         const data = await response.json()
+        setTeacherRoster(data.names?.length ? { ...data.metadata, count: data.names.length } : null)
         if (data.status === 'success') {
           console.log('Loaded teacher names:', data.names?.length || 0)
           setTeacherNames(data.names || [])
@@ -2569,10 +2589,13 @@ export function usePlateApp() {
     setStudentNames,
     teacherNames,
     setTeacherNames,
+    teacherRoster,
     showTeacherPreview,
     setShowTeacherPreview,
     teacherPreviewData,
     setTeacherPreviewData,
+    teacherPreviewSearch,
+    setTeacherPreviewSearch,
     teacherPreviewPage,
     setTeacherPreviewPage,
     teacherPreviewLoading,

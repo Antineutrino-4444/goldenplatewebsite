@@ -73,9 +73,16 @@ class School(Base):
     slug = Column(String, nullable=False, unique=True)
     status = Column(String, nullable=False, default='active')
     contact_email = Column(String(320), nullable=True)
+    house_clean_points = Column(Integer, nullable=False, default=2, server_default='2')
+    house_dirty_penalty = Column(Integer, nullable=False, default=2, server_default='2')
+    house_very_dirty_penalty = Column(Integer, nullable=False, default=10, server_default='10')
+    live_counter_settings = Column(Text)
     roster_filename = Column(String)
     roster_uploaded_at = Column(DateTime(timezone=True))
     roster_uploaded_by = Column(String)
+    teacher_roster_filename = Column(String)
+    teacher_roster_uploaded_at = Column(DateTime(timezone=True))
+    teacher_roster_uploaded_by = Column(String)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
 
@@ -237,6 +244,7 @@ class SessionRecord(Base):
         CheckConstraint("category IN ('clean','dirty','red','faculty')", name='ck_session_records_category'),
         UniqueConstraint('school_id', 'session_id', 'dedupe_key', name='uq_session_records_dedupe'),
         Index('idx_records_school_session_category', 'school_id', 'session_id', 'category'),
+        Index('idx_records_school_recorded_at', 'school_id', 'recorded_at'),
     )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -690,7 +698,16 @@ def _migrate_schema() -> None:
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
-        for column_name, ddl in [('roster_filename', 'TEXT'), ('roster_uploaded_at', 'DATETIME'), ('roster_uploaded_by', 'TEXT')]:
+        _ensure_column(inspector, 'schools', 'live_counter_settings', 'TEXT')
+        for column_name, default in [
+            ('house_clean_points', 2), ('house_dirty_penalty', 2),
+            ('house_very_dirty_penalty', 10),
+        ]:
+            _ensure_column(inspector, 'schools', column_name, f'INTEGER NOT NULL DEFAULT {default}')
+        for column_name, ddl in [
+            ('roster_filename', 'TEXT'), ('roster_uploaded_at', 'DATETIME'), ('roster_uploaded_by', 'TEXT'),
+            ('teacher_roster_filename', 'TEXT'), ('teacher_roster_uploaded_at', 'DATETIME'), ('teacher_roster_uploaded_by', 'TEXT'),
+        ]:
             _ensure_column(inspector, 'schools', column_name, ddl)
 
     if 'sessions' in tables:
@@ -892,6 +909,9 @@ def _migrate_schema() -> None:
         if 'session_records' in tables:
             connection.execute(text(
                 'CREATE INDEX IF NOT EXISTS idx_records_school_session_category ON session_records (school_id, session_id, category)'
+            ))
+            connection.execute(text(
+                'CREATE INDEX IF NOT EXISTS idx_records_school_recorded_at ON session_records (school_id, recorded_at)'
             ))
         if 'session_draw_events' in tables:
             connection.execute(text(

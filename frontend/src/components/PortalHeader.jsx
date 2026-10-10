@@ -1,4 +1,4 @@
-import { Building2, MapPinned } from 'lucide-react'
+import { Building2, MapPinned, Utensils } from 'lucide-react'
 import AccountMenu from '@/components/AccountMenu.jsx'
 import { Button } from '@/components/ui/button.jsx'
 
@@ -17,6 +17,11 @@ export default function PortalHeader({ app, interschool = false }) {
             </p>
           </div>
           <nav aria-label="Portal navigation" className="flex shrink-0 items-center gap-2 sm:gap-3">
+            {!interschool && <Button asChild variant="ghost" className="h-10 whitespace-nowrap px-2 text-slate-600 sm:px-3">
+              <a href="/live-counter"><Utensils className="h-4 w-4" aria-hidden="true" />
+                <span className="sm:hidden">Live</span><span className="hidden sm:inline">Live counter</span>
+              </a>
+            </Button>}
             {!interschool && <Button asChild variant="ghost" className="h-10 whitespace-nowrap px-2 text-slate-600 sm:px-3">
               <a href="https://map.goldenplate.ca/">
                 <MapPinned className="h-4 w-4" aria-hidden="true" />
