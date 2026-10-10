@@ -167,6 +167,6 @@ if not defined PORT set "PORT=59237"
 echo The application will be running at http://127.0.0.1:%PORT%
 echo Press Ctrl+C to stop the server.
 echo.
-python src\main.py
+python scripts\run_website.py
 
 pause

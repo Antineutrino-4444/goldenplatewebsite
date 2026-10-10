@@ -48,7 +48,7 @@ def test_map_submission_rejects_non_sac_email(client, login):
     assert response.get_json()['code'] == 'MAP_EMAIL_DOMAIN_DENIED'
 
 
-def test_map_submission_approval_flow(client, login):
+def test_map_submission_approval_flow(client, login, email_outbox):
     _reset_map_tables()
     login()
 
@@ -74,6 +74,10 @@ def test_map_submission_approval_flow(client, login):
     }, content_type='multipart/form-data')
 
     assert response.status_code == 201
+    matthew_emails = [message for message in email_outbox
+                      if message['to'] == [{'email': 'matthew.jaekel@sac.on.ca'}]]
+    assert len(matthew_emails) == 1
+    assert 'Trip Notes' in matthew_emails[0]['htmlContent']
     submission_id = response.get_json()['submission']['id']
     assert response.get_json()['password_created'] is True
 

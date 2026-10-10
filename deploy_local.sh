@@ -147,4 +147,4 @@ APP_PORT="${PORT:-59237}"
 echo "The application will be running at http://127.0.0.1:${APP_PORT}"
 echo "Press Ctrl+C to stop the server."
 echo
-PORT="$APP_PORT" python src/main.py
+PORT="$APP_PORT" python scripts/run_website.py

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import ReCAPTCHA from 'react-google-recaptcha'
+import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
+import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -32,8 +33,9 @@ import {
   ZoomIn
 } from 'lucide-react'
 
+import PasswordSettings from '@/components/PasswordSettings.jsx'
+
 const API_BASE = '/api'
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || ''
 const MAP_MAX_IMAGE_BYTES = 50 * 1024 * 1024
 const MAP_HEIC_MIMES = new Set(['image/heic', 'image/heif'])
 
@@ -1730,7 +1732,7 @@ function MapPortal({ app }) {
     showMessage
   } = app
 
-  const recaptchaRef = useRef(null)
+  const protectedRequestBusy = useRef(false)
   const [approvedSubmissions, setApprovedSubmissions] = useState([])
   const [pendingSubmissions, setPendingSubmissions] = useState([])
   const [approvedLoading, setApprovedLoading] = useState(false)
@@ -2127,24 +2129,6 @@ function MapPortal({ app }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmissionPage])
 
-  const getRecaptchaToken = () => {
-    if (!RECAPTCHA_SITE_KEY) {
-      return null
-    }
-    const token = recaptchaRef.current?.getValue()
-    if (!token) {
-      showMessage('[MAP_RECAPTCHA_REQUIRED_CLIENT] Please complete the reCAPTCHA verification', 'error')
-      return undefined
-    }
-    return token
-  }
-
-  const resetRecaptcha = () => {
-    if (recaptchaRef.current) {
-      recaptchaRef.current.reset()
-    }
-  }
-
   const updateEmail = (value) => {
     setEmail(value)
     setEmailVerified(false)
@@ -2154,19 +2138,17 @@ function MapPortal({ app }) {
   }
 
   const sendVerificationCode = async () => {
+    if (protectedRequestBusy.current) return
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail.endsWith('@sac.on.ca')) {
       showMessage('[MAP_EMAIL_DOMAIN_DENIED_CLIENT] Use an @sac.on.ca email address', 'error')
       return
     }
 
-    const recaptchaToken = getRecaptchaToken()
-    if (recaptchaToken === undefined) {
-      return
-    }
-
+    protectedRequestBusy.current = true
     setVerificationLoading(true)
     try {
+      const recaptchaToken = await getRecaptchaToken('map_email_code')
       const response = await fetch(`${API_BASE}/map/send-verification-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2183,9 +2165,9 @@ function MapPortal({ app }) {
         showMessage(buildApiErrorMessage(result, 'MAP_VERIFICATION_SEND_FAILED', 'Failed to send verification code'), 'error')
       }
     } catch (error) {
-      showMessage(buildNetworkErrorMessage('MAP_VERIFICATION_SEND_NETWORK', 'Failed to send verification code', error), 'error')
+      showMessage(recaptchaErrorMessage(error, buildNetworkErrorMessage('MAP_VERIFICATION_SEND_NETWORK', 'Failed to send verification code', error)), 'error')
     } finally {
-      resetRecaptcha()
+      protectedRequestBusy.current = false
       setVerificationLoading(false)
     }
   }
@@ -2338,6 +2320,7 @@ function MapPortal({ app }) {
   }
 
   const submitMapEntry = async () => {
+    if (protectedRequestBusy.current) return
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail.endsWith('@sac.on.ca')) {
       showMessage('[MAP_EMAIL_DOMAIN_DENIED_CLIENT] Use an @sac.on.ca email address', 'error')
@@ -2391,11 +2374,7 @@ function MapPortal({ app }) {
       }
     }
 
-    const recaptchaToken = getRecaptchaToken()
-    if (recaptchaToken === undefined) {
-      return
-    }
-
+    protectedRequestBusy.current = true
     setSubmitting(true)
     try {
       // If pin is 'new', create the pin first
@@ -2418,6 +2397,8 @@ function MapPortal({ app }) {
           return
         }
         resolvedPinId = pinResult.data.pin?.id || ''
+        // Preserve the created pin if verification/upload fails and is retried.
+        if (resolvedPinId) setPinChoice(resolvedPinId)
         await loadPins()
       } else if (pinChoice !== 'others') {
         resolvedPinId = pinChoice
@@ -2434,7 +2415,6 @@ function MapPortal({ app }) {
         formData.append('pin_id', resolvedPinId)
       }
       formData.append('auth_method', authMethod)
-      formData.append('recaptcha_token', recaptchaToken || '')
       if (authMethod === 'email') {
         formData.append('verification_code', verificationCode.trim())
         if (shortcutPassword) {
@@ -2450,6 +2430,9 @@ function MapPortal({ app }) {
         }
       }
 
+      // Acquire after pin creation and image processing, immediately before upload.
+      const recaptchaToken = await getRecaptchaToken('map_submit')
+      formData.append('recaptcha_token', recaptchaToken || '')
       const response = await fetch(`${API_BASE}/map/submissions`, {
         method: 'POST',
         body: formData
@@ -2472,10 +2455,10 @@ function MapPortal({ app }) {
         console.error('Map submission failed:', { status: result.status, data: result.data, raw: result.raw })
       }
     } catch (error) {
-      showMessage(buildNetworkErrorMessage('MAP_SUBMIT_NETWORK', 'Failed to submit map entry', error), 'error')
+      showMessage(recaptchaErrorMessage(error, buildNetworkErrorMessage('MAP_SUBMIT_NETWORK', 'Failed to submit map entry', error)), 'error')
       console.error('Map submission network/parse failure:', error)
     } finally {
-      resetRecaptcha()
+      protectedRequestBusy.current = false
       setSubmitting(false)
     }
   }
@@ -2731,6 +2714,7 @@ function MapPortal({ app }) {
                 )}
               </a>
             </Button>
+            <PasswordSettings user={user} />
             {user ? (
               <Button onClick={logout} variant="outline" size="sm" aria-label="Logout">
                 <LogOut className="h-4 w-4 sm:mr-2" />
@@ -3180,11 +3164,7 @@ function MapPortal({ app }) {
                   )}
                 </div>
 
-                {RECAPTCHA_SITE_KEY && (
-                  <div className="flex justify-center">
-                    <ReCAPTCHA ref={recaptchaRef} sitekey={RECAPTCHA_SITE_KEY} theme="light" />
-                  </div>
-                )}
+                <RecaptchaNotice />
 
                 <Button onClick={submitMapEntry} disabled={submitting} className="w-full bg-teal-700 hover:bg-teal-800">
                   <Send className="mr-2 h-4 w-4" />
@@ -3353,7 +3333,8 @@ function MapPortal({ app }) {
             <DialogDescription>
               These email addresses receive a notification (with the submission images and a
               single-use speed-approval link) every time someone submits an Ecological Map entry
-              for approval. One address per line, or separated by commas.
+              for approval. One address per line, or separated by commas. Matthew Jaekel
+              also receives every submission as a website update recipient.
             </DialogDescription>
           </DialogHeader>
 

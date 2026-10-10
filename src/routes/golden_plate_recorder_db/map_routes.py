@@ -11,15 +11,16 @@ from datetime import timedelta, timezone
 from io import BytesIO
 import html as _html_lib
 
-import requests as http_requests
 from flask import jsonify, request, send_file, session
 from sqlalchemy import func
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from . import recorder_bp
+from .recaptcha import recaptcha_failure
 from .db import DEFAULT_SCHOOL_ID
 from .email_service import VERIFICATION_CODE_EXPIRY_MINUTES, send_email_via_brevo
+from src.services.website_notifications import get_website_update_recipients
 from .map_db import (
     MapBackground,
     MapEmailVerification,
@@ -295,10 +296,6 @@ def _normalize_image_to_png(raw_bytes: bytes, *, filename: str | None = None, mi
 _normalize_heic_to_jpeg = _normalize_image_to_png
 
 
-RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
-RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify'
-
-
 def _map_error(code, message, status=400, *, detail=None):
     payload = {
         'status': 'error',
@@ -397,28 +394,6 @@ def _block_interschool_from_map():
     return None
 
 
-def _verify_recaptcha(token):
-    if not RECAPTCHA_SECRET_KEY:
-        return True
-
-    if not token:
-        return False
-
-    try:
-        response = http_requests.post(
-            RECAPTCHA_VERIFY_URL,
-            data={
-                'secret': RECAPTCHA_SECRET_KEY,
-                'response': token,
-            },
-            timeout=10,
-        )
-        result = response.json()
-        return result.get('success', False)
-    except Exception:
-        return False
-
-
 def _normalize_email(value):
     return (value or '').strip().lower()
 
@@ -456,6 +431,10 @@ def _get_map_approval_notify_recipients():
         recipients = _parse_email_list(raw)
     else:
         recipients = list(DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS)
+
+    # Website-wide recipients must still receive updates if the map's custom
+    # list or environment setting replaces the default reviewer list.
+    recipients.extend(get_website_update_recipients())
 
     # Deduplicate while preserving order, ignoring case.
     seen = set()
@@ -1315,10 +1294,11 @@ def get_map_submission_extra_image(submission_id, image_id):
 def send_map_verification_code():
     data = request.get_json(silent=True) or {}
     email = _normalize_email(data.get('email'))
-    recaptcha_token = (data.get('recaptcha_token') or '').strip()
+    recaptcha_token = data.get('recaptcha_token')
 
-    if RECAPTCHA_SECRET_KEY and not _verify_recaptcha(recaptcha_token):
-        return _map_error('MAP_RECAPTCHA_FAILED', 'reCAPTCHA verification failed. Please try again.', 400)
+    failure = recaptcha_failure(recaptcha_token, 'map_email_code')
+    if failure:
+        return _map_error(f'MAP_{failure.code}', failure.message, failure.status)
 
     if not email:
         return _map_error('MAP_EMAIL_REQUIRED', 'Email address is required', 400)
@@ -1420,8 +1400,9 @@ def get_map_submitter_account_status():
 @recorder_bp.route('/map/submissions', methods=['POST'])
 def create_map_submission():
     recaptcha_token = (request.form.get('recaptcha_token') or '').strip()
-    if RECAPTCHA_SECRET_KEY and not _verify_recaptcha(recaptcha_token):
-        return _map_error('MAP_RECAPTCHA_FAILED', 'reCAPTCHA verification failed. Please try again.', 400)
+    failure = recaptcha_failure(recaptcha_token, 'map_submit')
+    if failure:
+        return _map_error(f'MAP_{failure.code}', failure.message, failure.status)
 
     email = _normalize_email(request.form.get('email'))
     text_content = (request.form.get('text') or '').strip()

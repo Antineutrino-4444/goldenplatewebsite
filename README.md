@@ -53,28 +53,84 @@ npm run dev
 pytest
 ```
 
+## Password management
+
+Signed-in users can choose **Change password** in the portal or map header.
+Superadmins and inter-school administrators use **Passwords**, with tabs for
+their own password and for resetting another account. Normal users and school
+admins can change only their own password. Superadmins can manage passwords for
+users and school admins in their own school, but cannot change or reset another
+superadmin's password. Inter-school administrators can reset accounts across schools,
+including other administrator accounts. Search accounts by username, name, or school.
+
+Administrators can either set a custom password or choose **Reset to default: 114514**
+under **Other accounts**. The server chooses the fixed default when this option is
+selected. Each action requires the acting user's current password. Custom passwords
+must contain 6–256 characters, with confirmation in the form. Passwords are stored as hashes
+and are never returned by the account list. Reset passwords must be shared with
+the account holder securely. Changing your own password keeps the current device
+signed in; other sessions become invalid. An administrator reset invalidates all
+of the target account's existing sessions. Sessions created before this feature
+was deployed also need to log in again once to establish the password binding.
+No database migration is required.
+
+The seeded superadmin password now applies only when creating or migrating the
+default account; startup preserves an existing account's changed password even
+in development mode. The server-side credential scripts remain available for
+recovery if an administrator cannot log in.
+
+## Website update emails
+
+`matthew.jaekel@sac.on.ca` receives new pending school registration requests and
+new map submissions. He remains included even when the map's custom recipient
+list is changed. Other map reviewers continue receiving their existing alerts.
+School alerts include the school, applicant email, requested code, and administrator
+name/username; passwords and email verification codes are never included.
+
+Notifications use the existing `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` settings.
+Set `WEBSITE_UPDATE_NOTIFY_EMAILS` to add other website-wide recipients and
+`WEBSITE_PUBLIC_URL` to set the website link in emails. Failed delivery is logged
+and does not discard a saved registration request or stop a running website.
+
+Both `deploy_local.sh` and `deploy.bat` now use `scripts/run_website.py`. It sends
+one deployment email after the server responds successfully, including the
+environment, Git revision, latest commit title, and uncommitted website filenames.
+It does not report a failed startup as a completed deployment. Local readiness
+does not confirm external routing; the email states that limitation.
+
+For code changes prepared locally, send a concise summary after checks pass:
+
+```bash
+venv/bin/python scripts/notify_website_update.py --kind code-change --summary "Describe the changes and checks; these changes have not been deployed."
+```
+
+The repository's `AGENTS.md` requests this step for future website changes.
+For external hosting pipelines, invoke the same tool with `--kind deployment`
+and a deployment summary after that pipeline's readiness checks pass. Starting
+`src/main.py` directly bypasses deployment notifications. Automated tests mock
+email delivery and never send real messages.
+
 ## reCAPTCHA
 
-The frontend uses Google's reCAPTCHA v2 checkbox through `react-google-recaptcha`
-3.1.0. The wrapper loads Google's hosted `api.js` on each page load; the challenge
-is not bundled with the site. Set `VITE_RECAPTCHA_SITE_KEY` in the frontend build
-environment and the matching `RECAPTCHA_SECRET_KEY` in the backend environment.
+The frontend now uses score-based reCAPTCHA v3 for account signup, school
+registration/email-code sending, and map submission/email-code sending. Each
+request obtains a fresh token. The server verifies its action, hostname, score,
+expiry, and Google error codes; ordinary login is unchanged.
 
-Account signup allows interaction outside its dialog because Google mounts the
-image challenge iframe directly under the page body. Keep
-`allowExternalInteraction` enabled on that dialog when reCAPTCHA is configured;
-otherwise Radix's modal pointer blocking and focus trap interfere with phone taps.
-The dialog retains its backdrop, body scroll lock, and explicit close controls.
+The supplied public site key is stored in `frontend/.env.production` and is
+included by the production frontend build. Save its matching v3 **legacy secret
+key** as `RECAPTCHA_SECRET_KEY` in the server's root `.env` or hosting environment.
+Keep that secret out of frontend files. Set `APP_ENV=production`, configure
+`RECAPTCHA_ALLOWED_HOSTNAMES`, and optionally adjust `RECAPTCHA_MIN_SCORE`
+(default 0.5). A missing secret blocks protected requests in production.
 
-Upgrade investigation (October 9, 2026): the wrapper's upstream package is still
-3.1.0. [reCAPTCHA v3](https://developers.google.com/recaptcha/docs/v3) is an
-available migration, but requires v3 keys, frontend token execution for each
-protected action, and backend checks for both the expected action and risk score.
-The current backend only checks v2 verification success, so replacing keys alone
-is insufficient. Google Cloud migration is separate: [existing v2/v3 keys and
-SiteVerify integrations remain compatible](https://docs.cloud.google.com/recaptcha/docs/migration-overview).
-Confirm the key's project ownership and migration status in the Google Cloud
-console before changing its configuration.
+Deploy the new frontend build and server together with the matching v3 key pair.
+Existing v2 keys are incompatible with the new code. See the
+[v3 setup guide](docs/recaptcha-v3-setup.md) for exact configuration, deployment,
+score handling, upload retries, and rollback. The earlier
+[migration investigation](docs/recaptcha-v3-migration.md) is retained as historical
+background. Production key verification still requires the matching secret and
+a deployment on the configured domains.
 
 ## Passwords and Environment Mode
 The app has a built-in development super admin account for local setup:

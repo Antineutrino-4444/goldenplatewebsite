@@ -255,15 +255,12 @@ def ensure_default_superadmin():
             password_is_hash=True,
         )
     _retire_legacy_default_superadmins()
-    password = DEFAULT_SUPERADMIN['password_hash'] if default_admin_credentials_enabled() else None
     return update_user_credentials(
         user,
-        password=password,
         display_name=DEFAULT_SUPERADMIN['display_name'],
         role=DEFAULT_SUPERADMIN['role'],
         status=DEFAULT_SUPERADMIN['status'],
         school_id=DEFAULT_SUPERADMIN['school_id'],
-        password_is_hash=bool(password),
     )
 
 

@@ -67,7 +67,8 @@ def test_login_accepts_stored_hash(client):
 def test_default_development_login_works_in_development(client, monkeypatch):
     monkeypatch.setenv('APP_ENV', 'development')
     client.get('/api/auth/status')
-    ensure_default_superadmin()
+    user = ensure_default_superadmin()
+    update_user_credentials(user, password=DEFAULT_SUPERADMIN['password_hash'], password_is_hash=True)
 
     resp = client.post('/api/auth/login', json={
         'username': DEFAULT_SUPERADMIN['username'],

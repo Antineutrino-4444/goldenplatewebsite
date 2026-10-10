@@ -1,4 +1,5 @@
 import React from 'react'
+import PasswordSettings from '@/components/PasswordSettings.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
@@ -233,6 +234,7 @@ function MainPortal({ app }) {
                 </svg>
                 <span className="hidden sm:inline">GitHub</span>
               </Button>
+              <PasswordSettings user={user} />
               <Button onClick={logout} variant="outline" size="sm" aria-label="Logout">
                 <LogOut className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Logout</span>

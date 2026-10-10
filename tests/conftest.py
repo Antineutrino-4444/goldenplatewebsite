@@ -3,8 +3,10 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import requests
 
 # Ensure the application package can be imported
 sys.path.insert(0, os.path.abspath('.'))
@@ -188,6 +190,34 @@ def client():
     """Flask test client"""
     with app.test_client() as client:
         yield client
+
+
+@pytest.fixture(autouse=True)
+def recaptcha_disabled_for_tests(monkeypatch):
+    """Do not contact Google from ordinary tests, even with a configured host env."""
+    monkeypatch.setenv('RECAPTCHA_SECRET_KEY', '')
+    monkeypatch.setenv('APP_ENV', 'development')
+
+
+@pytest.fixture(autouse=True)
+def email_outbox(monkeypatch):
+    """Capture Brevo delivery without sending real messages from any test."""
+    from src.services import email_delivery
+
+    outbox = []
+
+    def deliver(url, *, json, headers, timeout):
+        outbox.append(json)
+        return SimpleNamespace(status_code=201, json=lambda: {'messageId': 'test-message'})
+
+    monkeypatch.setattr(email_delivery, '_get_brevo_config', lambda: {
+        'api_key': 'test-api-key', 'sender_email': 'no-reply@goldenplate.ca',
+    })
+    # Replace only this service's reference, not requests.post globally.
+    monkeypatch.setattr(email_delivery, 'http_requests', SimpleNamespace(
+        post=deliver, exceptions=requests.exceptions,
+    ))
+    return outbox
 
 
 @pytest.fixture

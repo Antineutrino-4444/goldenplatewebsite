@@ -1,12 +1,14 @@
-import os
+import logging
 import re
 import uuid
 
-import requests as http_requests
 from flask import jsonify, request
 from sqlalchemy import func
 
+from src.services.website_notifications import notify_website_update
+
 from . import recorder_bp
+from .recaptcha import recaptcha_failure
 from .db import (
     DEFAULT_SCHOOL_ID,
     INTERSCHOOL_SCHOOL_ID,
@@ -32,31 +34,7 @@ from .users import (
     get_user_by_username,
 )
 
-RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
-RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify'
-
-
-def verify_recaptcha(token):
-    """Verify reCAPTCHA token with Google's API."""
-    if not RECAPTCHA_SECRET_KEY:
-        return True
-
-    if not token:
-        return False
-
-    try:
-        response = http_requests.post(
-            RECAPTCHA_VERIFY_URL,
-            data={
-                'secret': RECAPTCHA_SECRET_KEY,
-                'response': token,
-            },
-            timeout=10,
-        )
-        result = response.json()
-        return result.get('success', False)
-    except Exception:
-        return False
+logger = logging.getLogger(__name__)
 
 
 def _serialize_school_model(school, *, user_counts=None):
@@ -138,11 +116,12 @@ def send_verification_code():
     """Send a verification code to the provided email address."""
     data = request.get_json(silent=True) or {}
     email = (data.get('email') or '').strip().lower()
-    recaptcha_token = (data.get('recaptcha_token') or '').strip()
+    recaptcha_token = data.get('recaptcha_token')
 
-    # Verify reCAPTCHA if configured
-    if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
-        return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
+    # Verify this endpoint's reCAPTCHA v3 action.
+    failure = recaptcha_failure(recaptcha_token, 'school_email_code')
+    if failure:
+        return jsonify({'error': failure.message, 'code': failure.code}), failure.status
 
     if not email:
         return jsonify({'error': 'Email address is required'}), 400
@@ -267,11 +246,12 @@ def register_school():
     admin_username = (data.get('admin_username') or '').strip()
     admin_password = (data.get('admin_password') or '').strip()
     admin_display_name = (data.get('admin_display_name') or '').strip()
-    recaptcha_token = (data.get('recaptcha_token') or '').strip()
+    recaptcha_token = data.get('recaptcha_token')
 
-    # Verify reCAPTCHA if configured
-    if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
-        return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
+    # Verify this endpoint's reCAPTCHA v3 action.
+    failure = recaptcha_failure(recaptcha_token, 'school_register')
+    if failure:
+        return jsonify({'error': failure.message, 'code': failure.code}), failure.status
 
     if not school_name or not admin_username or not admin_password or not admin_display_name:
         return jsonify({'error': 'School name and admin credentials are required'}), 400
@@ -414,6 +394,23 @@ def register_school():
     except Exception:
         db_session.rollback()
         return jsonify({'error': 'Could not submit registration request'}), 500
+
+    try:
+        notify_website_update(
+            'New school registration request',
+            'A school has requested registration and is awaiting administrator approval. '
+            'Sign in to the inter-school administrator dashboard to review it.',
+            [
+                ('School', registration_request.school_name),
+                ('Applicant email', registration_request.email),
+                ('Requested school code', registration_request.school_slug or 'Automatic from school name'),
+                ('Administrator name', registration_request.admin_display_name),
+                ('Administrator username', registration_request.admin_username),
+                ('Request ID', registration_request.id),
+            ],
+        )
+    except Exception:
+        logger.exception('Unable to notify reviewers of the saved school registration request')
 
     return jsonify({
         'status': 'success',

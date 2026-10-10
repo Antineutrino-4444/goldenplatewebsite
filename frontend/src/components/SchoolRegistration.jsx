@@ -1,12 +1,10 @@
-import React, { useRef } from 'react'
-import ReCAPTCHA from 'react-google-recaptcha'
+import React from 'react'
+import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import VerificationCodeInput from './VerificationCodeInput.jsx'
-
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY
 
 function SchoolRegistration({ app }) {
   const {
@@ -42,7 +40,6 @@ function SchoolRegistration({ app }) {
     resetSchoolRegistrationForm
   } = app
 
-  const recaptchaRef = useRef(null)
   const isInviteMode = schoolSignupMode === 'invite'
 
   const handleBackToLogin = () => {
@@ -51,9 +48,7 @@ function SchoolRegistration({ app }) {
   }
 
   const handleSendVerificationCode = async () => {
-    const recaptchaToken = recaptchaRef.current?.getValue() || null
-    await sendVerificationCode(recaptchaToken)
-    recaptchaRef.current?.reset()
+    await sendVerificationCode()
   }
 
   const handleVerifyCode = async () => {
@@ -61,9 +56,7 @@ function SchoolRegistration({ app }) {
   }
 
   const handleSubmit = async () => {
-    const recaptchaToken = recaptchaRef.current?.getValue() || null
-    await registerSchool(recaptchaToken)
-    recaptchaRef.current?.reset()
+    await registerSchool()
   }
 
   const handleEmailChange = (e) => {
@@ -307,14 +300,7 @@ function SchoolRegistration({ app }) {
             </>
           )}
 
-          {RECAPTCHA_SITE_KEY && (
-            <div className="flex justify-center">
-              <ReCAPTCHA
-                ref={recaptchaRef}
-                sitekey={RECAPTCHA_SITE_KEY}
-              />
-            </div>
-          )}
+          <RecaptchaNotice />
 
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
             <Button variant="ghost" onClick={handleBackToLogin} className="sm:w-auto w-full">

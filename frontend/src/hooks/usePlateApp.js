@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { makeStudentKey, normalizeName, sanitizeSelection } from '@/lib/names.js'
+import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
 
 const API_BASE = '/api'
 
 export function usePlateApp() {
+  const protectedRequestBusy = useRef(false)
   const [appEnvironment, setAppEnvironment] = useState({
     environment: 'unknown',
     is_development: false,
@@ -351,7 +353,8 @@ export function usePlateApp() {
     setSchoolSignupMode('request')
   }
 
-  const sendVerificationCode = async (recaptchaToken = null) => {
+  const sendVerificationCode = async () => {
+    if (protectedRequestBusy.current) return false
     const trimmedEmail = schoolEmail.trim().toLowerCase()
 
     if (!trimmedEmail) {
@@ -364,8 +367,10 @@ export function usePlateApp() {
       return false
     }
 
+    protectedRequestBusy.current = true
     setVerificationLoading(true)
     try {
+      const recaptchaToken = await getRecaptchaToken('school_email_code')
       const response = await fetch(`${API_BASE}/auth/send-verification-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -394,9 +399,10 @@ export function usePlateApp() {
         return false
       }
     } catch (error) {
-      showMessage('Failed to send verification code. Please try again.', 'error')
+      showMessage(recaptchaErrorMessage(error, 'Failed to send verification code. Please try again.'), 'error')
       return false
     } finally {
+      protectedRequestBusy.current = false
       setVerificationLoading(false)
     }
   }
@@ -560,7 +566,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: loginUsername.trim(),
-          password: loginPassword.trim()
+          password: loginPassword
         })
       })
 
@@ -617,7 +623,8 @@ export function usePlateApp() {
     }
   }
 
-  const signup = async (recaptchaToken = null) => {
+  const signup = async () => {
+    if (protectedRequestBusy.current) return
     const trimmedInviteCode = signupInviteCode.trim()
     const usingInvite = signupMode === 'invite'
 
@@ -646,8 +653,10 @@ export function usePlateApp() {
       return
     }
 
+    protectedRequestBusy.current = true
     setIsLoading(true)
     try {
+      const recaptchaToken = await getRecaptchaToken('account_signup')
       const payload = {
         username: signupUsername.trim(),
         password: signupPassword.trim(),
@@ -684,13 +693,15 @@ export function usePlateApp() {
         showMessage(data.error || 'Signup failed', 'error')
       }
     } catch (error) {
-      showMessage('Signup failed. Please try again.', 'error')
+      showMessage(recaptchaErrorMessage(error, 'Signup failed. Please try again.'), 'error')
     } finally {
+      protectedRequestBusy.current = false
       setIsLoading(false)
     }
   }
 
-  const registerSchool = async (recaptchaToken = null) => {
+  const registerSchool = async () => {
+    if (protectedRequestBusy.current) return
     const trimmedEmail = schoolEmail.trim()
     const trimmedSchoolName = schoolName.trim()
     const trimmedCode = schoolCode.trim()
@@ -731,8 +742,10 @@ export function usePlateApp() {
       return
     }
 
+    protectedRequestBusy.current = true
     setIsLoading(true)
     try {
+      const recaptchaToken = await getRecaptchaToken('school_register')
       const payload = {
         school_name: trimmedSchoolName,
         admin_username: trimmedAdminUsername,
@@ -773,8 +786,9 @@ export function usePlateApp() {
         showMessage(data.error || 'Failed to submit registration request', 'error')
       }
     } catch (error) {
-      showMessage('Failed to submit registration request. Please try again.', 'error')
+      showMessage(recaptchaErrorMessage(error, 'Failed to submit registration request. Please try again.'), 'error')
     } finally {
+      protectedRequestBusy.current = false
       setIsLoading(false)
     }
   }

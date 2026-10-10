@@ -1,14 +1,13 @@
-import os
 import uuid
 
-import requests
 from flask import jsonify, request, session
 
 from . import recorder_bp
+from .recaptcha import recaptcha_failure
 from .app_config import default_admin_credentials_enabled
 from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, User, _now_utc, db_session
 from .passwords import hash_password, is_password_hash, verify_password
-from .security import get_current_user, is_guest, require_auth
+from .security import get_current_user, is_guest, password_session_token, require_auth
 from .users import (
     create_user_record,
     get_invite_code_record,
@@ -19,38 +18,6 @@ from .users import (
     serialize_school,
     DEVELOPMENT_SUPERADMIN_CREDENTIALS,
 )
-
-RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '')
-RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify'
-
-
-def verify_recaptcha(token):
-    """Verify reCAPTCHA token with Google's API.
-
-    Returns True if verification succeeds or if reCAPTCHA is not configured.
-    Returns False if verification fails.
-    """
-    if not RECAPTCHA_SECRET_KEY:
-        # reCAPTCHA not configured, skip verification
-        return True
-
-    if not token:
-        return False
-
-    try:
-        response = requests.post(
-            RECAPTCHA_VERIFY_URL,
-            data={
-                'secret': RECAPTCHA_SECRET_KEY,
-                'response': token,
-            },
-            timeout=10,
-        )
-        result = response.json()
-        return result.get('success', False)
-    except Exception:
-        # If verification request fails, deny signup for safety
-        return False
 
 
 def _is_default_superadmin_login_attempt(username, password):
@@ -68,7 +35,7 @@ def login():
     """User login."""
     data = request.get_json() or {}
     username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
+    password = data.get('password', '')
 
     if (
         _is_default_superadmin_login_attempt(username, password)
@@ -89,6 +56,8 @@ def login():
     session['user_id'] = username
     session['username'] = username
     session['school_id'] = user.school_id
+    session['password_token'] = password_session_token(user)
+    session.pop('guest_access', None)
     user.last_login_at = _now_utc()
     user.updated_at = _now_utc()
     try:
@@ -118,6 +87,7 @@ def logout():
     session.pop('school_id', None)
     session.pop('session_id', None)
     session.pop('guest_access', None)
+    session.pop('password_token', None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
 
 
@@ -147,6 +117,7 @@ def guest_login():
     session.pop('user_id', None)
     session.pop('user_uuid', None)
     session.pop('username', None)
+    session.pop('password_token', None)
 
     session['guest_access'] = True
     session['school_id'] = target_school.id
@@ -172,11 +143,12 @@ def signup():
     name = data.get('name', '').strip()
     school_code = data.get('school_code', '').strip()
     invite_code = data.get('invite_code', '').strip()
-    recaptcha_token = data.get('recaptcha_token', '').strip()
+    recaptcha_token = data.get('recaptcha_token', '')
 
-    # Verify reCAPTCHA if configured
-    if RECAPTCHA_SECRET_KEY and not verify_recaptcha(recaptcha_token):
-        return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
+    # Verify this endpoint's reCAPTCHA v3 action.
+    failure = recaptcha_failure(recaptcha_token, 'account_signup')
+    if failure:
+        return jsonify({'error': failure.message, 'code': failure.code}), failure.status
 
     if not username or not password or not name or (not school_code and not invite_code):
         error_message = 'Username, password, name, and school code are required'
