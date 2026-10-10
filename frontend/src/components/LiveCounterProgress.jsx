@@ -1,8 +1,10 @@
 import { ArrowUpRight, Check, Flag, Leaf } from 'lucide-react'
 import { counterBarLayout } from '@/lib/counter-animation.js'
 
-function UpdatedNumber({ value, updateKey }) {
-  return <span key={updateKey} className="counter-value-update inline-block">{value.toLocaleString()}</span>
+function UpdatedNumber({ value, updateKey, percentage = false, suffix = '' }) {
+  return <span key={updateKey} className="counter-value-update inline-block whitespace-nowrap">
+    {value.toLocaleString(undefined, percentage ? { minimumFractionDigits: 1, maximumFractionDigits: 1 } : undefined)}{suffix}
+  </span>
 }
 
 export default function LiveCounterProgress({ range, displayedCount, displayedTotal, displayedPercentage,
@@ -21,7 +23,8 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
   const tick = (number) => percentage ? Math.round(number * 10) / 10 : Math.round(number)
   const ticks = scale >= 4 ? [0, tick(scale / 4), tick(scale / 2), tick(scale * 3 / 4), scale]
     : [0, scale]
-  const numberSize = `${80 / Math.max(3, format(actualValue).length)}vw`
+  const numberLength = percentage ? actualValue.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).length + 1 : format(actualValue).length
+  const numberSize = `${80 / Math.max(3, numberLength)}vw`
 
   return <div className={fullscreen ? 'counter-fullscreen' : 'space-y-5'}>
     <section className={fullscreen ? 'counter-fullscreen-panel text-white' : 'overflow-hidden rounded-3xl bg-emerald-900 text-white shadow-sm'}>
@@ -41,7 +44,7 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
             <p data-testid={percentage ? 'live-clean-percentage' : 'live-clean-count'}
               style={fullscreen ? { '--counter-number-size': numberSize } : undefined}
               className={`font-bold tracking-tight tabular-nums ${reached ? 'counter-goal-number text-amber-300' : 'text-white'} ${fullscreen ? 'counter-fullscreen-number' : 'break-all text-7xl sm:text-8xl lg:text-9xl'}`}>
-              <UpdatedNumber value={value} updateKey={actualValue} />{percentage && '%'}
+              <UpdatedNumber value={value} updateKey={actualValue} percentage={percentage} suffix={percentage ? '%' : ''} />
             </p>
             <p className={`mt-2 text-emerald-100 ${fullscreen ? 'text-xl sm:text-3xl' : 'text-lg'}`}>{percentage ? 'of recorded plates are clean' : 'clean plates and counting'}</p>
           </div>
@@ -93,7 +96,10 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h3 className="text-sm font-medium text-slate-500">{percentage ? 'Clean plate count' : 'Clean plate percentage'}</h3>
-          <p data-testid={percentage ? 'live-clean-count' : 'live-clean-percentage'} className="mt-2 text-4xl font-bold tracking-tight text-emerald-900 tabular-nums sm:text-5xl"><UpdatedNumber value={percentage ? displayedCount : displayedPercentage} updateKey={percentage ? range.clean_count : range.clean_percentage} />{percentage ? ' plates' : '%'}</p>
+          <p data-testid={percentage ? 'live-clean-count' : 'live-clean-percentage'} className="mt-2 text-4xl font-bold tracking-tight text-emerald-900 tabular-nums sm:text-5xl">
+            <UpdatedNumber value={percentage ? displayedCount : displayedPercentage} updateKey={percentage ? range.clean_count : range.clean_percentage}
+              percentage={!percentage} suffix={percentage ? ' plates' : '%'} />
+          </p>
         </div>
         <p className="text-sm text-slate-500"><span data-testid="live-total-count" className="font-semibold text-slate-800 tabular-nums"><UpdatedNumber value={displayedTotal} updateKey={range.total_records} /></span> total plates recorded</p>
       </div>
