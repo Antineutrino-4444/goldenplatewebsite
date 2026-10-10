@@ -110,6 +110,7 @@ def get_draw_summary(session_id):
         'session_name': sess.session_name,
         'created_at': sess.created_at.isoformat() if sess.created_at else None,
         'status': sess.status,
+        'is_discarded': sess.status == 'discarded',
         'total_tickets': total_tickets,
         'eligible_count': len(candidates),
         'top_candidates': candidates[:3],

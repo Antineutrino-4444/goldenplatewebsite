@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { startCounterPolling, rangeLabel, COUNTER_REFRESH_MS } from '../src/lib/live-counter.js'
+import { startCounterPolling, rangeLabel, orderedCounterRanges, COUNTER_REFRESH_MS } from '../src/lib/live-counter.js'
 
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 function timers() {
@@ -77,4 +77,12 @@ test('optional names use the dates when blank', () => {
   assert.equal(rangeLabel({ ...range, name: ' Fall term ' }), 'Fall term')
   assert.match(rangeLabel({ ...range, name: '  ' }), /2026/)
   assert.ok(!rangeLabel(range).includes('Invalid'))
+})
+
+test('the configured default is always the first tab without changing other tabs or saved data', () => {
+  const ranges = [{ id: 'year' }, { id: 'custom-1' }, { id: 'custom-2' }, { id: 'custom-3' }]
+  assert.deepEqual(orderedCounterRanges(ranges, 'custom-2').map((range) => range.id), ['custom-2', 'year', 'custom-1', 'custom-3'])
+  assert.equal(ranges[0].id, 'year')
+  assert.deepEqual(orderedCounterRanges(ranges, 'year'), ranges)
+  assert.deepEqual(orderedCounterRanges([], 'year'), [])
 })

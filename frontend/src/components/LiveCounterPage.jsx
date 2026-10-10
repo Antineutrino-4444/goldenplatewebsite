@@ -10,7 +10,7 @@ import CounterCelebration from '@/components/CounterCelebration.jsx'
 import LiveCounterProgress from '@/components/LiveCounterProgress.jsx'
 import useAnimatedCounter from '@/hooks/useAnimatedCounter.js'
 import useLiveCounter from '@/hooks/useLiveCounter.js'
-import { formatCounterDate, rangeLabel } from '@/lib/live-counter.js'
+import { formatCounterDate, orderedCounterRanges, rangeLabel } from '@/lib/live-counter.js'
 
 export default function LiveCounterPage() {
   const { user, setUser, checkingAccess, snapshot, error, setError, connected, refresh, switchSchool } = useLiveCounter()
@@ -20,7 +20,7 @@ export default function LiveCounterPage() {
   const [editing, setEditing] = useState(false)
   const [saved, setSaved] = useState(false)
   const [celebration, setCelebration] = useState(null)
-  const availableRanges = snapshot?.ranges || []
+  const availableRanges = orderedCounterRanges(snapshot?.ranges || [], snapshot?.settings.default_range)
   const activeRange = availableRanges.some((range) => range.id === selectedRange)
     ? selectedRange : snapshot?.settings.default_range || 'year'
   const currentRange = availableRanges.find((range) => range.id === activeRange)
@@ -29,6 +29,8 @@ export default function LiveCounterPage() {
   const celebrate = useCallback((goal) => setCelebration({ milestone: goal, counterKey, startedAt: Date.now() }), [counterKey])
   const displayedCount = useAnimatedCounter({ target: currentRange?.clean_count || 0,
     milestone, resetKey: counterKey, onMilestone: celebrate })
+  const displayedTotal = useAnimatedCounter({ target: currentRange?.total_records || 0, resetKey: counterKey })
+  const displayedPercentage = useAnimatedCounter({ target: Math.round((currentRange?.clean_percentage || 0) * 10), resetKey: counterKey }) / 10
   useEffect(() => {
     if (!celebration) return
     const timer = setTimeout(() => setCelebration(null), 6500)
@@ -115,7 +117,8 @@ export default function LiveCounterPage() {
                   <h2 className="text-lg font-semibold text-slate-700">{rangeLabel(range)}</h2>
                   <p className="text-sm text-slate-500">{formatCounterDate(range.start_date)} – {formatCounterDate(range.end_date)} · {snapshot.settings.timezone}</p>
                 </div>
-                <LiveCounterProgress range={range} displayedCount={displayedCount} milestone={milestone} />
+                <LiveCounterProgress range={range} displayedCount={displayedCount} displayedTotal={displayedTotal}
+                  displayedPercentage={displayedPercentage} milestone={milestone} />
               </TabsContent>)}
             </Tabs>
             <div className="mt-7 flex flex-wrap justify-between gap-2 text-xs leading-relaxed text-slate-500">
@@ -130,6 +133,6 @@ export default function LiveCounterPage() {
             </Dialog>}
           </>}
     </main>
-    {celebration && celebration.counterKey === counterKey && celebration.milestone === milestone && <CounterCelebration key={celebration.startedAt} milestone={celebration.milestone} onClose={() => setCelebration(null)} />}
+    {celebration && celebration.counterKey === counterKey && celebration.milestone === milestone && <CounterCelebration key={celebration.startedAt} milestone={celebration.milestone} settings={snapshot.settings} onClose={() => setCelebration(null)} />}
   </div>
 }

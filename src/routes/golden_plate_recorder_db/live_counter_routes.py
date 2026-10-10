@@ -38,6 +38,9 @@ def _settings(school):
         'timezone': DEFAULT_TIMEZONE,
         'default_range': 'year',
         'milestone': None,
+        'celebration_title': '',
+        'celebration_message': '',
+        'celebration_footer': '',
         'custom_ranges': [],
     }
     if school.live_counter_settings:
@@ -99,8 +102,18 @@ def _validated_settings(data, existing, can_set_default):
         raise PermissionError('Only superadmins can change the celebration milestone.')
     if milestone is not None and (type(milestone) is not int or not 1 <= milestone <= 1_000_000_000):
         raise ValueError('Set a clean-plate milestone from 1 to 1,000,000,000, or leave it blank to disable celebrations.')
+    celebration = {}
+    for field, label, limit in [('celebration_title', 'Banner title', 80),
+                                ('celebration_message', 'Banner message', 300),
+                                ('celebration_footer', 'Banner closing line', 120)]:
+        value = data.get(field, existing[field])
+        if not can_set_default and value != existing[field]:
+            raise PermissionError('Only superadmins can change the celebration banner text.')
+        if not isinstance(value, str) or len(value.strip()) > limit:
+            raise ValueError(f'{label} must be text with {limit} characters or fewer.')
+        celebration[field] = value.strip()
     return {'year': year, 'timezone': timezone_name, 'default_range': default,
-            'custom_ranges': sorted(validated, key=lambda item: item['id']), 'milestone': milestone}
+            'custom_ranges': sorted(validated, key=lambda item: item['id']), 'milestone': milestone, **celebration}
 
 
 def _utc_bounds(start, end, timezone_name):
@@ -162,6 +175,7 @@ def get_live_counter():
     query = db_session.query(*columns).select_from(SessionRecord).join(
         Session, (Session.id == SessionRecord.session_id) & (Session.school_id == SessionRecord.school_id),
     ).filter(SessionRecord.school_id == school.id,
+             Session.status != 'discarded',
              SessionRecord.recorded_at >= min(lower for lower, _ in bounds),
              SessionRecord.recorded_at < max(upper for _, upper in bounds))
     # Keep private sessions private; never expose student identities here.

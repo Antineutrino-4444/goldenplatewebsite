@@ -430,6 +430,39 @@ def list_sessions():
     }), 200
 
 
+@recorder_bp.route('/session/<session_id>/draw/discard', methods=['POST'])
+def toggle_discard(session_id):
+    """Reuse the legacy discard control with persistent session state."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Authentication required'}), 401
+    if user['role'] != 'superadmin':
+        return jsonify({'error': 'Superadmin access required'}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or type(data.get('discarded')) is not bool:
+        return jsonify({'error': 'Choose whether to discard or restore this session.'}), 400
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=user['school_id']).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+    discarded = data['discarded']
+    if (db_sess.status == 'discarded') != discarded:
+        db_sess.status = 'discarded' if discarded else 'active'
+        db_sess.updated_at = _now_utc()
+        db_sess.discarded_at = _now_utc() if discarded else None
+        db_sess.discarded_by = user['id'] if discarded else None
+        try:
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            return jsonify({'error': 'Unable to update discard status. Please try again.'}), 500
+    cached = session_data.get(session_id)
+    if cached is not None:
+        cached['is_discarded'] = discarded
+    return jsonify({'status': 'success', 'session_id': session_id, 'discarded': discarded,
+                    'message': 'Session excluded from live totals and draws. Records remain saved.' if discarded
+                    else 'Session restored to live totals and draws.'})
+
+
 @recorder_bp.route('/session/switch/<session_id>', methods=['POST'])
 def switch_session(session_id):
     """Switch to a different session. Guests may only access public sessions."""

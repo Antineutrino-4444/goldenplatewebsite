@@ -51,6 +51,10 @@ export function rangeLabel(range) {
   return formatter.formatRange(new Date(`${range.start_date}T12:00:00Z`), new Date(`${range.end_date}T12:00:00Z`))
 }
 
+export function orderedCounterRanges(ranges, defaultRange) {
+  return [...ranges.filter((range) => range.id === defaultRange), ...ranges.filter((range) => range.id !== defaultRange)]
+}
+
 export function formatCounterDate(value) {
   return new Date(`${value}T12:00:00Z`).toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',

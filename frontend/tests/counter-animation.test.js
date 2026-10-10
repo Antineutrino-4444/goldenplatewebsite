@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { counterAnimationValue, crossedMilestone } from '../src/lib/counter-animation.js'
+import { counterAnimationValue, crossedMilestone, counterBarLayout } from '../src/lib/counter-animation.js'
 
 test('count rises quickly then slows and finishes exactly at the total', () => {
   const values = [0, 0.25, 0.5, 0.75, 1].map((progress) => counterAnimationValue(0, 10000, progress))
@@ -28,4 +28,13 @@ test('celebrate only an upward crossing, including reset and skipped animation v
   for (const milestone of [null, 0, -1, 1.5, '100']) {
     assert.equal(crossedMilestone(0, 150, milestone), false)
   }
+})
+
+test('crossing the goal compresses its portion and gives extra plates their own segment', () => {
+  assert.deepEqual(counterBarLayout(50, 100, 300), { scale: 100, goalWidth: 50, extraWidth: 0 })
+  assert.deepEqual(counterBarLayout(100, 100, 300), { scale: 100, goalWidth: 100, extraWidth: 0 })
+  assert.deepEqual(counterBarLayout(125, 100, 300), { scale: 125, goalWidth: 80, extraWidth: 20 })
+  assert.deepEqual(counterBarLayout(200, 100, 300), { scale: 200, goalWidth: 50, extraWidth: 50 })
+  assert.deepEqual(counterBarLayout(0, null, 0), { scale: 0, goalWidth: 0, extraWidth: 0 })
+  assert.deepEqual(counterBarLayout(50, null, 200), { scale: 200, goalWidth: 25, extraWidth: 0 })
 })

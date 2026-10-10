@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button.jsx'
 import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
+import { Textarea } from '@/components/ui/textarea.jsx'
 import { rangeLabel } from '@/lib/live-counter.js'
 
 const zones = [
@@ -19,6 +20,11 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
   const [timezone, setTimezone] = useState(settings.timezone)
   const [defaultRange, setDefaultRange] = useState(settings.default_range)
   const [milestone, setMilestone] = useState(settings.milestone ?? '')
+  const [banner, setBanner] = useState({
+    celebration_title: settings.celebration_title || '',
+    celebration_message: settings.celebration_message || '',
+    celebration_footer: settings.celebration_footer || '',
+  })
   const [ranges, setRanges] = useState(Array.from({ length: 3 }, (_, index) => {
     const id = `custom-${index + 1}`
     return { id, name: '', start_date: '', end_date: '',
@@ -46,7 +52,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
       const response = await fetch('/api/live-counter/settings', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ year: Number(year), timezone, custom_ranges: customRanges,
-          ...(canSetDefault ? { default_range: defaultRange, milestone: milestone === '' ? null : Number(milestone) } : {}) }),
+          ...(canSetDefault ? { default_range: defaultRange, milestone: milestone === '' ? null : Number(milestone), ...banner } : {}) }),
       })
       const result = await response.json()
       if (!response.ok) { setError(result.error || 'Unable to save date ranges.'); return }
@@ -103,12 +109,26 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
             {filledRanges.map((range) => <option key={range.id} value={range.id}>{rangeLabel(range)}</option>)}
             {defaultRange !== 'year' && !filledRanges.some((range) => range.id === defaultRange)
               && <option value={defaultRange} disabled>Choose a saved default range</option>}
-          </select></div> : <p className="text-sm text-slate-500">Only superadmins can change the default time range and celebration milestone.</p>}
+          </select></div> : <p className="text-sm text-slate-500">Only superadmins can change the default time range, celebration milestone, and banner text.</p>}
         {canSetDefault && <div className="space-y-2">
           <Label htmlFor="counter-milestone">Celebration milestone (clean plates)</Label>
           <Input id="counter-milestone" type="number" min={1} max={1000000000} step={1}
             placeholder="e.g. 1000" value={milestone} onChange={(event) => setMilestone(event.target.value)} />
           <p className="text-xs leading-relaxed text-slate-500">Celebrate when the selected range reaches this many clean plates. Leave blank to turn celebrations off. The goal applies only to your school.</p>
+        </div>}
+        {canSetDefault && <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+          <div><h3 className="font-semibold text-slate-800">Celebration banner text</h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">Customize your school's banner. Leave a field blank to use its default text. Use {'{milestone}'} to insert the goal number.</p></div>
+          <div className="space-y-2"><Label htmlFor="counter-banner-title">Banner title</Label>
+            <Input id="counter-banner-title" maxLength={80} placeholder="Milestone reached!" value={banner.celebration_title}
+              onChange={(event) => setBanner((current) => ({ ...current, celebration_title: event.target.value }))} /></div>
+          <div className="space-y-2"><Label htmlFor="counter-banner-message">Banner message</Label>
+            <Textarea id="counter-banner-message" maxLength={300} rows={3}
+              placeholder="{milestone} clean plates. Look what we achieved together!" value={banner.celebration_message}
+              onChange={(event) => setBanner((current) => ({ ...current, celebration_message: event.target.value }))} /></div>
+          <div className="space-y-2"><Label htmlFor="counter-banner-footer">Banner closing line</Label>
+            <Input id="counter-banner-footer" maxLength={120} placeholder="Less waste. More reason to celebrate." value={banner.celebration_footer}
+              onChange={(event) => setBanner((current) => ({ ...current, celebration_footer: event.target.value }))} /></div>
         </div>}
         <p className="text-sm text-slate-500">The counter always includes both student and faculty plates.</p>
       </fieldset>

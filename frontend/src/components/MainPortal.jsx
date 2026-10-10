@@ -246,7 +246,7 @@ function MainPortal({ app }) {
               </div>
               {isSessionDiscarded && (
                 <div className="mt-2 flex justify-center">
-                  <Badge variant="destructive" className="uppercase tracking-wide">Discarded from draw</Badge>
+                  <Badge variant="destructive" className="uppercase tracking-wide">Discarded · excluded from live totals</Badge>
                 </div>
               )}
               <div className="mt-3 text-sm text-gray-600">
@@ -281,6 +281,15 @@ function MainPortal({ app }) {
                 <Users className="h-4 w-4 mr-2" />
                 Switch Session
               </Button>
+              {user?.role === 'superadmin' && <Button
+                onClick={() => toggleDiscardState(!isSessionDiscarded)}
+                variant="outline"
+                disabled={!sessionId || discardLoading}
+                className={isSessionDiscarded ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'border-red-200 text-red-700 hover:bg-red-50'}
+              >
+                <Ban className="h-4 w-4 mr-2" />
+                {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
+              </Button>}
               <Button
                 onClick={() => {
                   if (['admin', 'superadmin'].includes(user?.role)) {
@@ -526,7 +535,7 @@ function MainPortal({ app }) {
                             <Alert variant="destructive">
                               <Ban className="h-4 w-4" />
                               <AlertDescription>
-                                This session is currently discarded from draw calculations. Restore it to include ticket updates.
+                                This session is discarded. Its plates are excluded from live totals and its draws are disabled. Restore it to include it again.
                               </AlertDescription>
                             </Alert>
                           )}
@@ -696,14 +705,6 @@ function MainPortal({ app }) {
                               >
                                 <ShieldCheck className="h-4 w-4 mr-2" />
                                 Override Winner
-                              </Button>
-                              <Button
-                                onClick={() => toggleDiscardState(!isSessionDiscarded)}
-                                variant={isSessionDiscarded ? 'default' : 'outline'}
-                                disabled={discardLoading || user?.role === 'guest'}
-                              >
-                                <Ban className="h-4 w-4 mr-2" />
-                                {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
                               </Button>
                             </div>
                           )}
@@ -1412,7 +1413,7 @@ function MainPortal({ app }) {
                 <Alert variant="destructive">
                   <Ban className="h-4 w-4" />
                   <AlertDescription>
-                    This session is discarded from draw calculations. Reinstate it to include ticket updates.
+                    This session is discarded. Its plates are excluded from live totals and its draws are disabled. Restore it to include it again.
                   </AlertDescription>
                 </Alert>
               )}

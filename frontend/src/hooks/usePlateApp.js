@@ -1874,13 +1874,26 @@ export function usePlateApp() {
     }
   }
 
-  const toggleDiscardState = async (nextDiscarded) => {
+  const toggleDiscardState = async (nextDiscarded, { confirmed = false } = {}) => {
     if (!sessionId) {
       showMessage('Select a session before toggling discard status', 'error')
       return
     }
     if (!canOverrideWinner) {
       showMessage('Only super admins can change discard status', 'error')
+      return
+    }
+    if (discardLoading) return
+    if (!confirmed) {
+      setModal({
+        type: 'confirm',
+        title: nextDiscarded ? 'Discard this session?' : 'Restore this session?',
+        confirmLabel: nextDiscarded ? 'Discard Session' : 'Restore Session',
+        message: nextDiscarded
+          ? `Discarding "${sessionName}" excludes all of this session's plates from the live clean count, total count, percentage, and milestone progress. It also disables draws for this session. Records, exports, and draw history remain saved. You can restore the session later.`
+          : `Restoring "${sessionName}" includes its plates in the live clean count, total count, percentage, and milestone progress again, and enables its draws.`,
+        onConfirm: () => toggleDiscardState(nextDiscarded, { confirmed: true }),
+      })
       return
     }
     setDiscardLoading(true)
@@ -1894,9 +1907,10 @@ export function usePlateApp() {
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         if (typeof data.discarded === 'boolean') {
-          showMessage(data.message || (data.discarded ? 'Session removed from draw calculations' : 'Session reinstated for draw calculations'), 'success')
+          showMessage(data.message || (data.discarded ? 'Session excluded from live totals and draws' : 'Session restored to live totals and draws'), 'success')
         }
         await refreshSessionStatus()
+        await loadSessions()
       } else {
         showMessage(data.error || 'Failed to update discard status', 'error')
       }

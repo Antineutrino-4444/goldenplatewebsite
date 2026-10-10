@@ -101,13 +101,13 @@ def test_calendar_day_boundaries_handle_daylight_saving(day, hours):
     assert lower.tzinfo == upper.tzinfo == timezone.utc
 
 
-def test_all_retained_sessions_count_once_including_merged_archived_and_discarded(client, counter_school):
+def test_merged_and_archived_sessions_count_once_but_discarded_sessions_are_excluded(client, counter_school):
     main_id = add_session(counter_school)
     extra_id = add_session(counter_school, main_id=main_id)
     for sid in [main_id, extra_id, add_session(counter_school, status='archived'),
                 add_session(counter_school, status='discarded')]:
         add_record(counter_school, sid, 'clean', '2026-10-10T12:00:00+00:00')
-    assert ranges(client)['custom-1']['clean_count'] == 4
+    assert ranges(client)['custom-1']['clean_count'] == 3
 
 
 def test_guest_requires_school_code_sees_only_public_school_totals_and_cannot_edit(client, counter_school):
@@ -257,6 +257,116 @@ def test_superadmin_can_disable_milestone(client, counter_school):
     assert client.put('/api/live-counter/settings', json={**SETTINGS, 'milestone': 1_000_000_000}).status_code == 200
     assert client.put('/api/live-counter/settings', json={**SETTINGS, 'milestone': None}).status_code == 200
     assert client.get('/api/live-counter').get_json()['settings']['milestone'] is None
+
+
+@pytest.mark.parametrize('field', ['celebration_title', 'celebration_message', 'celebration_footer'])
+def test_banner_text_is_persistent_superadmin_only_and_preserved_by_admin_edits(client, counter_school, field):
+    assert client.get('/api/live-counter').get_json()['settings'][field] == ''
+    assert client.put('/api/live-counter/settings', json={**SETTINGS, field: '  Our {milestone} plate celebration!  '}).status_code == 200
+    db_session.remove()
+    assert client.get('/api/live-counter').get_json()['settings'][field] == 'Our {milestone} plate celebration!'
+    account = create_user_record(f'banner-admin-{uuid.uuid4().hex}', 'counter-test-password', 'Banner Admin',
+                                 role='admin', school_id=counter_school['id'])
+    client.post('/api/auth/login', json={'username': account.username, 'password': 'counter-test-password'})
+    assert client.put('/api/live-counter/settings', json=SETTINGS).status_code == 200
+    for value in ('New banner text', ''):
+        assert client.put('/api/live-counter/settings', json={**SETTINGS, field: value}).status_code == 403
+    assert client.get('/api/live-counter').get_json()['settings'][field] == 'Our {milestone} plate celebration!'
+    client.post('/api/auth/logout')
+    client.post('/api/auth/guest', json={'school_slug': counter_school['code']})
+    assert client.get('/api/live-counter').get_json()['settings'][field] == 'Our {milestone} plate celebration!'
+    assert client.put('/api/live-counter/settings', json={**SETTINGS, field: 'Guest edit'}).status_code == 403
+
+
+@pytest.mark.parametrize('field,value', [
+    ('celebration_title', 'x' * 81), ('celebration_message', 'x' * 301), ('celebration_footer', 'x' * 121),
+    ('celebration_title', None), ('celebration_message', False), ('celebration_footer', ['text']),
+])
+def test_invalid_banner_text_rejected_atomically(client, counter_school, field, value):
+    assert client.put('/api/live-counter/settings', json={**SETTINGS, field: value}).status_code == 400
+    assert json.loads(db_session.get(School, counter_school['id']).live_counter_settings) == SETTINGS
+
+
+def test_banner_text_can_restore_defaults_without_affecting_other_schools(client, counter_school):
+    fields = {'celebration_title': 'Go team!', 'celebration_message': '<b>{milestone} plates!</b>',
+              'celebration_footer': 'Thank you!'}
+    assert client.put('/api/live-counter/settings', json={**SETTINGS, **fields}).status_code == 200
+    assert client.get('/api/live-counter').get_json()['settings']['celebration_message'] == fields['celebration_message']
+    other = School(id=uuid.uuid4().hex, slug=uuid.uuid4().hex, name='Other Banner School')
+    db_session.add(other)
+    db_session.commit()
+    assert other.live_counter_settings is None
+    assert client.put('/api/live-counter/settings', json={**SETTINGS, **dict.fromkeys(fields, '   ')}).status_code == 200
+    settings = client.get('/api/live-counter').get_json()['settings']
+    assert all(settings[field] == '' for field in fields)
+
+
+def test_legacy_discard_control_persistently_excludes_and_restores_live_totals(client, counter_school):
+    kept = add_session(counter_school)
+    omitted = add_session(counter_school)
+    add_record(counter_school, kept, 'dirty', '2026-10-10T12:00:00+00:00')
+    for category in ('clean', 'faculty', 'dirty', 'red'):
+        add_record(counter_school, omitted, category, '2026-10-10T12:00:00+00:00')
+    original = ranges(client)['custom-1']
+    assert (original['clean_count'], original['total_records'], original['clean_percentage']) == (2, 5, 40)
+    endpoint = f'/api/session/{omitted}/draw/discard'
+    assert client.post(endpoint, json={'discarded': True}).status_code == 200
+    db_session.remove()
+    row = db_session.get(Session, omitted)
+    assert row.status == 'discarded' and row.discarded_by == counter_school['owner'] and row.discarded_at
+    timestamp = row.discarded_at
+    assert client.post(endpoint, json={'discarded': True}).status_code == 200
+    assert db_session.get(Session, omitted).discarded_at == timestamp
+    result = ranges(client)['custom-1']
+    assert (result['clean_count'], result['total_records'], result['clean_percentage']) == (0, 1, 0)
+    assert db_session.query(SessionRecord).filter_by(session_id=omitted).count() == 4
+    assert client.get(f'/api/session/{omitted}/draw/summary').get_json()['is_discarded'] is True
+    listed = client.get('/api/session/list').get_json()['sessions']
+    assert next(item for item in listed if item['session_id'] == omitted)['is_discarded'] is True
+    assert client.post(f'/api/session/{omitted}/draw/start', json={}).status_code == 400
+    assert client.post(endpoint, json={'discarded': False}).status_code == 200
+    db_session.remove()
+    row = db_session.get(Session, omitted)
+    assert row.status == 'active' and row.discarded_at is None and row.discarded_by is None
+    assert ranges(client)['custom-1'] == original
+    assert client.get(f'/api/session/{omitted}/draw/summary').get_json()['is_discarded'] is False
+
+
+@pytest.mark.parametrize('role', ['admin', 'user', 'inter_school', 'guest'])
+def test_only_superadmins_can_discard_for_live_totals(client, counter_school, role):
+    sid = add_session(counter_school)
+    if role == 'guest':
+        client.post('/api/auth/logout')
+        client.post('/api/auth/guest', json={'school_slug': counter_school['code']})
+    else:
+        account = create_user_record(f'discard-{role}-{uuid.uuid4().hex}', 'counter-test-password', 'Discard User',
+                                     role=role, school_id=counter_school['id'])
+        client.post('/api/auth/login', json={'username': account.username, 'password': 'counter-test-password'})
+    assert client.post(f'/api/session/{sid}/draw/discard', json={'discarded': True}).status_code == (401 if role == 'guest' else 403)
+    assert db_session.get(Session, sid).status == 'active'
+
+
+@pytest.mark.parametrize('value', [None, {}, {'discarded': 1}, {'discarded': 'false'}, {'discarded': None}, []])
+def test_discard_requires_explicit_boolean_and_preserves_state(client, counter_school, value):
+    sid = add_session(counter_school)
+    assert client.post(f'/api/session/{sid}/draw/discard', json=value).status_code == 400
+    assert db_session.get(Session, sid).status == 'active'
+
+
+def test_discard_is_school_scoped_and_updates_guest_totals(client, counter_school):
+    sid = add_session(counter_school)
+    add_record(counter_school, sid, 'faculty', '2026-10-10T12:00:00+00:00')
+    other = School(id=uuid.uuid4().hex, slug=uuid.uuid4().hex, name='Other Discard School')
+    db_session.add(other)
+    db_session.commit()
+    other_sid = add_session({**counter_school, 'id': other.id})
+    assert client.post(f'/api/session/{other_sid}/draw/discard', json={'discarded': True}).status_code == 404
+    assert db_session.get(Session, other_sid).status == 'active'
+    assert client.post(f'/api/session/{sid}/draw/discard', json={'discarded': True}).status_code == 200
+    client.post('/api/auth/logout')
+    assert client.post(f'/api/session/{sid}/draw/discard', json={'discarded': False}).status_code == 401
+    client.post('/api/auth/guest', json={'school_slug': counter_school['code']})
+    assert ranges(client)['custom-1']['clean_count'] == 0
 
 
 def test_existing_schema_upgrade_adds_settings_and_index_idempotently(monkeypatch):

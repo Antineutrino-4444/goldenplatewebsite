@@ -13,7 +13,7 @@ export default function SessionSwitcher({ app }) {
       <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl" dismissOnOverlayClick={false}>
         <DialogHeader className="shrink-0">
           <DialogTitle>Switch Session</DialogTitle>
-          <DialogDescription>Select a session to switch to or manage its records.</DialogDescription>
+          <DialogDescription>Select a session to switch to or manage its records. Discarded sessions are excluded from live totals.</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 space-y-2 overflow-x-hidden overflow-y-auto p-1">
           {sessions.map((session) => {
