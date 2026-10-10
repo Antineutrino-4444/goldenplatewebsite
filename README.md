@@ -55,8 +55,8 @@ pytest
 
 ## Password management
 
-Signed-in users can choose **Change password** in the portal or map header.
-Superadmins and inter-school administrators use **Passwords**, with tabs for
+Signed-in users open the account menu in the portal or map header and choose **Change password**.
+Superadmins and inter-school administrators open the account menu and choose **Manage passwords**, with tabs for
 their own password and for resetting another account. Normal users and school
 admins can change only their own password. Superadmins can manage passwords for
 users and school admins in their own school, but cannot change or reset another
@@ -91,8 +91,9 @@ MAP_APPROVAL_NOTIFY_EMAILS=
 Add, change, or remove comma-separated addresses without editing code, then
 restart/reload the server. Hosting environment variables take precedence over
 `.env`, so update those instead if configured by your host. These recipients
-receive pending school registration requests, map submissions, code-change
-summaries, and deployment alerts. An empty or missing `WEBSITE_UPDATE_NOTIFY_EMAILS`
+receive pending school registration requests, map submissions, account signup
+alerts (including invite signups), and server startup/reload announcements.
+An empty or missing `WEBSITE_UPDATE_NOTIFY_EMAILS`
 disables website-wide alerts; no address is included automatically.
 
 `MAP_APPROVAL_NOTIFY_EMAILS` configures additional map reviewers. A non-empty
@@ -109,23 +110,42 @@ Notifications use the existing `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` settings
 Set `WEBSITE_PUBLIC_URL` to set the website link in emails. Failed delivery is logged
 and does not discard a saved registration request or stop a running website.
 
-Both `deploy_local.sh` and `deploy.bat` now use `scripts/run_website.py`. It sends
-one deployment email after the server responds successfully, including the
-environment, Git revision, latest commit title, and uncommitted website filenames.
-It does not report a failed startup as a completed deployment. Local readiness
-does not confirm external routing; the email states that limitation.
-
-For code changes prepared locally, send a concise summary after checks pass:
-
-```bash
-venv/bin/python scripts/notify_website_update.py --kind code-change --summary "Describe the changes and checks; these changes have not been deployed."
-```
-
-The repository's `AGENTS.md` requests this step for future website changes.
-For external hosting pipelines, invoke the same tool with `--kind deployment`
-and a deployment summary after that pipeline's readiness checks pass. Starting
-`src/main.py` directly bypasses deployment notifications. Automated tests mock
+Startup announcements now run automatically after the application initializes,
+including direct starts of `src/main.py` and WSGI imports after a hosting reload.
+No notification command or deployment wrapper is needed. Delivery runs in a
+background thread when the host permits threads, otherwise during initialization.
+It announces application startup, not a verified build or public availability.
+The development reloader parent is skipped; its serving child announces startup.
+Each initialized process sends once; multi-worker hosts can send an announcement
+per worker. Set `WEBSITE_STARTUP_NOTIFY_ENABLED=false` to disable these announcements.
+Code-update emails and the manual notification scripts have been removed.
+Automated tests mock
 email delivery and never send real messages.
+
+## School contact email and account signup alerts
+
+Each school has a contact email. Approval of a new school registration copies the
+verified signup email into that field. Existing approved registrations are matched
+to schools during the schema upgrade; only unambiguous matches with valid emails
+are copied, and existing contact emails are preserved.
+
+Superadmins whose school has no contact email see an **Add a school contact email**
+dialog after signing in (including the map portal). It stays open until they save
+an address or explicitly close it. Closing dismisses the current reminder; it can
+appear again on the next login/page load until an address is saved. Superadmins
+can reopen **School contact email** from the account menu to update it. Users, admins, guests, and inter-school
+controllers do not see this dialog and cannot edit school contacts. Each superadmin
+can update only their own school, and contact addresses are not exposed in public
+school details or ordinary user sessions.
+
+Successful account signup requests notify the school's contact email and the
+configured website-wide recipients, deduplicated. The message asks school
+superadmins to sign in and open **Account requests** to approve or reject the
+request. Invite signups also notify them but correctly state that the account is
+already active and needs no approval. Passwords, hashes, and invite codes are never
+included. Invalid or duplicate requests send no alert, and delivery failure does
+not undo a saved request or account. An empty website-wide recipient list does not
+disable signup notifications to an existing school contact.
 
 ## reCAPTCHA
 

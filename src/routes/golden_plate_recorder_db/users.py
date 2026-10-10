@@ -105,6 +105,9 @@ def serialize_user_model(user):
         'school': serialize_school(school) if school else None,
         'last_login_at': user.last_login_at.isoformat() if user.last_login_at else None,
     }
+    if user.role == 'superadmin':
+        data['school_contact_email'] = (school.contact_email or '') if school else ''
+        data['school_contact_email_required'] = not data['school_contact_email']
     return data
 
 

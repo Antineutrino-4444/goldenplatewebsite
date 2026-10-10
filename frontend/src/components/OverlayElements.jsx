@@ -25,7 +25,7 @@ function OverlayElements({ app }) {
       {notification && notification.size === 'small' &&
         createPortal(
           <div
-            className={`fixed top-4 left-1/2 z-[2100] -translate-x-1/2 transform rounded px-4 py-2 text-white ${
+            className={`fixed top-4 left-1/2 z-[2100] w-max max-w-[calc(100vw-2rem)] [overflow-wrap:anywhere] -translate-x-1/2 transform rounded px-4 py-2 text-white ${
               notification.type === 'success'
                 ? 'bg-green-600'
                 : notification.type === 'error'

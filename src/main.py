@@ -20,6 +20,7 @@ from flask_cors import CORS
 from src.routes.golden_plate_recorder_db import recorder_bp
 from src.routes.golden_plate_recorder_db.db import db_session
 from src.routes.golden_plate_recorder_db.map_db import map_db_session
+from src.services.startup_notifications import start_startup_notification
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -52,6 +53,15 @@ def _shutdown_scoped_session(exception=None):
     db_session.remove()
     map_db_session.remove()
 
+
+reloader_parent = (
+    (__name__ == '__main__' or (
+        os.environ.get('FLASK_RUN_FROM_CLI') == 'true'
+        and os.environ.get('FLASK_DEBUG', '').lower() in {'1', 'true'}
+    ))
+    and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
+)
+start_startup_notification(app, reloader_parent=reloader_parent)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', '59237')), debug=True)

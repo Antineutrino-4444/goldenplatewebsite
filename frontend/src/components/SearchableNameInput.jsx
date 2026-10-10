@@ -144,7 +144,7 @@ export function SearchableNameInput({
         
         {filteredNames.length > 0 && inputValue && (
           <PopoverContent 
-            className="w-[--radix-popover-trigger-width] p-0" 
+            className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] p-0"
             align="start"
             side="bottom"
             onOpenAutoFocus={(e) => e.preventDefault()}
@@ -164,9 +164,9 @@ export function SearchableNameInput({
                           value={optionValue}
                           onSelect={() => handleSelectName(name)}
                           onMouseDown={(e) => e.preventDefault()}
-                          className="flex items-center justify-between cursor-pointer"
+                          className="flex min-w-0 items-center justify-between gap-2 cursor-pointer"
                         >
-                          <div className="flex flex-col">
+                          <div className="flex min-w-0 flex-col [overflow-wrap:anywhere]">
                             <span className="font-medium">{name.display_name}</span>
                             {name.student_id && (
                               <span className="text-xs text-muted-foreground">ID: {name.student_id}</span>

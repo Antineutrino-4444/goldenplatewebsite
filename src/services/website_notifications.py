@@ -23,12 +23,22 @@ def get_website_update_recipients():
 
 
 def notify_website_update(title, summary, details=(), *, url=None):
+    return send_notification(title, summary, details, url=url,
+                             recipients=get_website_update_recipients())
+
+
+def send_notification(title, summary, details=(), *, url=None, recipients=()):
     """Send escaped metadata only, never passwords, verification codes or secrets.
 
     Return delivery status instead of raising, so a mail failure cannot discard
     an already saved signup request or stop a running deployment.
     """
-    recipients = get_website_update_recipients()
+    unique = {}
+    for recipient in recipients:
+        recipient = recipient.strip()
+        if recipient:
+            unique.setdefault(recipient.lower(), recipient)
+    recipients = list(unique.values())
     if not recipients:
         return {'success': True, 'skipped': True, 'deliveries': {}}
     website_url = url or os.environ.get('WEBSITE_PUBLIC_URL', 'https://goldenplate.ca')

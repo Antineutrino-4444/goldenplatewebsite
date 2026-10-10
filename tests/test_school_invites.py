@@ -136,6 +136,8 @@ def test_school_registration_request_and_approval_store_hashes(client, login):
     login(username='inter-school-admin')
     approved = client.post(f'/api/interschool/registration-requests/{registration_request.id}/approve')
     assert approved.status_code == 200
+    school = db_session.get(School, approved.get_json()['school']['id'])
+    assert school.contact_email == email
 
     created_admin = db_session.query(User).filter_by(username=registration_request.admin_username).first()
     assert created_admin is not None

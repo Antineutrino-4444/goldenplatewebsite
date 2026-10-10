@@ -162,8 +162,10 @@ function PasswordForm({ reset, accounts, loading, loadError, reload, busy, setBu
   )
 }
 
-export default function PasswordSettings({ user }) {
-  const [open, setOpen] = useState(false)
+export default function PasswordSettings({ user, open: controlledOpen, onOpenChange, hideTrigger = false, onCloseAutoFocus }) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = onOpenChange || setInternalOpen
   const [mode, setMode] = useState('own')
   const [busy, setBusy] = useState(false)
   const [accounts, setAccounts] = useState([])
@@ -198,13 +200,13 @@ export default function PasswordSettings({ user }) {
   const formProps = { accounts, loading, loadError, reload: () => setAttempt((value) => value + 1), busy, setBusy }
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value) }}>
-      <DialogTrigger asChild>
+      {!hideTrigger && <DialogTrigger asChild>
         <Button variant="outline" size="sm" onClick={() => setMode('own')}>
           <KeyRound className="mr-2 h-4 w-4" />
           {canReset ? 'Passwords' : 'Change password'}
         </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" dismissOnOverlayClick={false}>
+      </DialogTrigger>}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" dismissOnOverlayClick={false} onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>{canReset ? 'Manage passwords' : 'Change your password'}</DialogTitle>
           <DialogDescription>

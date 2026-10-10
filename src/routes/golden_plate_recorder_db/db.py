@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Iterable, List, Optional
@@ -68,6 +69,7 @@ class School(Base):
     name = Column(String, nullable=False)
     slug = Column(String, nullable=False, unique=True)
     status = Column(String, nullable=False, default='active')
+    contact_email = Column(String(320), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
 
@@ -663,6 +665,9 @@ def _migrate_schema() -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
 
+    if 'schools' in tables:
+        _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
+
     if 'sessions' in tables:
         session_columns = {col['name'] for col in inspector.get_columns('sessions')}
         for column_name, ddl in [
@@ -921,9 +926,52 @@ def _ensure_user_school_assignments() -> None:
         ), {'default_school': DEFAULT_SCHOOL_ID})
 
 
+def _backfill_school_contact_emails() -> None:
+    """Recover approved signup emails only where the school match is unambiguous."""
+    with engine.begin() as connection:
+        schools = connection.execute(School.__table__.select()).mappings().all()
+        requests = connection.execute(
+            SchoolRegistrationRequest.__table__.select().where(
+                SchoolRegistrationRequest.status == 'approved'
+            )
+        ).mappings().all()
+        users = connection.execute(User.__table__.select()).mappings().all()
+        admin_schools = {user['username']: user['school_id'] for user in users
+                        if user['role'] == 'superadmin'}
+        candidates = {}
+        for registration in requests:
+            email = (registration['email'] or '').strip().lower()
+            if not re.fullmatch(r'[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+', email):
+                continue
+            admin_school = admin_schools.get(registration['admin_username'])
+            slug = re.sub(r'[^a-z0-9]+', '-', (
+                registration['school_slug'] or registration['school_name']
+            ).strip().lower()).strip('-')
+            matches = [school for school in schools if school['id'] == admin_school and (
+                school['slug'].lower() == slug
+                or school['name'].lower() == registration['school_name'].lower()
+            )]
+            if not matches:
+                matches = [school for school in schools if school['slug'].lower() == slug]
+            if not matches:
+                matches = [school for school in schools if
+                           school['name'].lower() == registration['school_name'].lower()]
+            if len(matches) == 1 and not matches[0]['contact_email']:
+                candidates.setdefault(matches[0]['id'], set()).add(email)
+        for school_id, emails in candidates.items():
+            if len(emails) == 1:
+                connection.execute(School.__table__.update().where(
+                    School.id == school_id,
+                    (School.contact_email.is_(None)) | (School.contact_email == ''),
+                ).values(contact_email=emails.pop()))
+
+
 def _bootstrap_database() -> None:
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
+    needs_contact_backfill = 'schools' in existing_tables and 'contact_email' not in {
+        col['name'] for col in inspector.get_columns('schools')
+    }
 
     # A brand-new local SQLite file can be completely empty. Create the base
     # schema first so migration/index logic does not run against missing tables.
@@ -934,6 +982,8 @@ def _bootstrap_database() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_seed_schools()
     _ensure_user_school_assignments()
+    if needs_contact_backfill:
+        _backfill_school_contact_emails()
 
 
 _bootstrap_database()

@@ -1,4 +1,7 @@
 import uuid
+import logging
+
+from src.services.signup_notifications import notify_school_signup
 
 from flask import jsonify, request, session
 
@@ -16,8 +19,18 @@ from .users import (
     get_user_by_username,
     mark_invite_code_used,
     serialize_school,
+    serialize_user_model,
     DEVELOPMENT_SUPERADMIN_CREDENTIALS,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _notify_saved_signup(school, account, *, invited=False):
+    try:
+        notify_school_signup(school, account, invited=invited)
+    except Exception:
+        logger.exception('Unable to notify reviewers of a saved account signup')
 
 
 def _is_default_superadmin_login_attempt(username, password):
@@ -68,13 +81,7 @@ def login():
 
     return jsonify({
         'status': 'success',
-        'user': {
-            'username': username,
-            'name': user.display_name,
-            'role': user.role,
-            'school_id': user.school_id,
-            'school': serialize_school(user.school) if getattr(user, 'school', None) else None,
-        }
+        'user': serialize_user_model(user),
     }), 200
 
 
@@ -214,6 +221,7 @@ def signup():
             db_session.rollback()
             return jsonify({'error': 'Could not create account with invite code'}), 500
 
+        _notify_saved_signup(school, user, invited=True)
         return jsonify({
             'status': 'success',
             'message': 'Account created successfully.'
@@ -260,6 +268,7 @@ def signup():
         db_session.rollback()
         return jsonify({'error': 'Could not submit account request'}), 500
 
+    _notify_saved_signup(school, account_request)
     return jsonify({
         'status': 'success',
         'message': 'Account request submitted successfully. Please wait for your school administrator to approve your request.'
@@ -273,13 +282,7 @@ def auth_status():
         user = get_current_user()
         return jsonify({
             'authenticated': True,
-            'user': {
-                'username': session.get('username'),
-                'name': user['name'],
-                'role': user['role'],
-                'school_id': user['school_id'],
-                'school': user.get('school'),
-            }
+            'user': user,
         }), 200
     if is_guest():
         school_id = session.get('school_id', DEFAULT_SCHOOL_ID)

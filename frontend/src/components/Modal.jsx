@@ -47,7 +47,7 @@ export default function Modal({ open, onClose, children, dismissOnOverlayClick =
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
-            className="relative z-[2001] w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-lg bg-white p-4 shadow-lg sm:p-6"
+            className="relative z-[2001] w-full min-w-0 max-w-sm max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto [overflow-wrap:anywhere] [&>*]:min-w-0 rounded-lg bg-white p-4 shadow-lg sm:p-6"
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}

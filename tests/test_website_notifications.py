@@ -9,7 +9,6 @@ from src.routes.golden_plate_recorder_db import interschool_routes, map_routes
 from src.routes.golden_plate_recorder_db.email_service import send_verification_email
 from src.routes.golden_plate_recorder_db.db import SchoolRegistrationRequest, db_session
 from src.services import email_delivery, website_notifications
-from scripts import notify_website_update, run_website
 
 RECIPIENT = 'updates@example.com'
 
@@ -149,76 +148,3 @@ def test_unexpected_notification_error_does_not_discard_school_request(client, m
     response, payload = _school_request(client, monkeypatch)
     assert response.status_code == 201
     assert db_session.query(SchoolRegistrationRequest).filter_by(email=payload['email']).one().status == 'pending'
-
-
-def test_code_change_email_is_marked_prepared_and_contains_summary(monkeypatch, email_outbox):
-    monkeypatch.setenv('WEBSITE_UPDATE_NOTIFY_EMAILS', RECIPIENT)
-    monkeypatch.setattr(notify_website_update, 'code_details', lambda: [('Revision', 'abc123')])
-    assert notify_website_update.main([
-        '--kind', 'code-change', '--summary', 'Changes checked locally; not deployed.',
-    ]) == 0
-    message = email_outbox[0]
-    assert 'prepared' in message['subject']
-    assert 'not deployed' in message['htmlContent']
-    assert 'abc123' in message['htmlContent']
-
-
-def test_notification_cli_reports_failed_delivery(monkeypatch):
-    monkeypatch.setattr(notify_website_update, 'send_update', lambda *args, **kwargs: {'success': False})
-    assert notify_website_update.main(['--kind', 'code-change', '--summary', 'Prepared locally.']) == 1
-
-
-def test_notification_cli_reports_disabled_notifications(monkeypatch, capsys, email_outbox):
-    monkeypatch.setenv('WEBSITE_UPDATE_NOTIFY_EMAILS', '')
-    monkeypatch.setattr(notify_website_update, 'code_details', lambda: [])
-    assert notify_website_update.main(['--kind', 'code-change', '--summary', 'Prepared locally.']) == 0
-    output = capsys.readouterr().out
-    assert 'email skipped' in output
-    assert 'sent successfully' not in output
-    assert email_outbox == []
-
-
-def test_readiness_rejects_failed_server_and_accepts_http_success(monkeypatch):
-    process = Mock()
-    process.poll.return_value = 1
-    get = Mock(return_value=SimpleNamespace(status_code=200))
-    monkeypatch.setattr(run_website.requests, 'get', get)
-    assert not run_website.wait_until_ready(process, 'http://127.0.0.1:1234/')
-    get.assert_not_called()
-    process.poll.return_value = None
-    assert run_website.wait_until_ready(process, 'http://127.0.0.1:1234/')
-
-
-def test_deployment_notifies_only_after_readiness(monkeypatch):
-    process = Mock()
-    process.poll.return_value = None
-    process.wait.return_value = 0
-    socket = Mock()
-    socket.__enter__ = Mock(return_value=socket)
-    socket.__exit__ = Mock(return_value=False)
-    socket.connect_ex.return_value = 1
-    monkeypatch.setattr(run_website.socket, 'socket', lambda: socket)
-    monkeypatch.setattr(run_website.subprocess, 'Popen', lambda *args, **kwargs: process)
-    stop = Mock()
-    monkeypatch.setattr(run_website, 'stop_server', stop)
-    send = Mock(return_value={'success': True})
-    monkeypatch.setattr(run_website, 'send_update', send)
-    monkeypatch.setattr(run_website, 'wait_until_ready', lambda *args: False)
-    assert run_website.main() == 1
-    send.assert_not_called()
-    stop.assert_called_once_with(process)
-    monkeypatch.setattr(run_website, 'wait_until_ready', lambda *args: True)
-    assert run_website.main() == 0
-    assert send.call_args.args[0] == 'deployment'
-
-
-def test_occupied_port_never_sends_deployment_email(monkeypatch):
-    socket = Mock()
-    socket.__enter__ = Mock(return_value=socket)
-    socket.__exit__ = Mock(return_value=False)
-    socket.connect_ex.return_value = 0
-    monkeypatch.setattr(run_website.socket, 'socket', lambda: socket)
-    send = Mock()
-    monkeypatch.setattr(run_website, 'send_update', send)
-    assert run_website.main() == 1
-    send.assert_not_called()

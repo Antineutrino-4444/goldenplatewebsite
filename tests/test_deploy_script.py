@@ -11,7 +11,7 @@ def test_deploy_script_matches_vite_output_path():
     assert 'call npm install --legacy-peer-deps' in deploy_script
 
 
-def test_both_deployment_scripts_use_readiness_notification_runner():
+def test_both_deployment_scripts_start_application_directly():
     root = Path(__file__).resolve().parent.parent
-    assert 'python scripts\\run_website.py' in (root / 'deploy.bat').read_text()
-    assert 'python scripts/run_website.py' in (root / 'deploy_local.sh').read_text()
+    assert 'python src\\main.py' in (root / 'deploy.bat').read_text()
+    assert 'python src/main.py' in (root / 'deploy_local.sh').read_text()

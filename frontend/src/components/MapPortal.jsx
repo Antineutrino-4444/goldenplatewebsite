@@ -16,7 +16,6 @@ import {
   ChevronRight,
   ClipboardCheck,
   Image as ImageIcon,
-  LogOut,
   Mail,
   MapPin as MapPinIcon,
   MapPinned,
@@ -33,7 +32,7 @@ import {
   ZoomIn
 } from 'lucide-react'
 
-import PasswordSettings from '@/components/PasswordSettings.jsx'
+import AccountMenu from '@/components/AccountMenu.jsx'
 
 const API_BASE = '/api'
 const MAP_MAX_IMAGE_BYTES = 50 * 1024 * 1024
@@ -784,7 +783,7 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, canFe
               placeholder="Explain what should be changed for resubmission…"
               rows={5}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" onClick={() => { setShowRejectDialog(false); setRejectReason('') }} disabled={actionLoading}>Cancel</Button>
               <Button variant="destructive" onClick={submitReject} disabled={actionLoading || !rejectReason.trim()}>
                 <XCircle className="mr-2 h-4 w-4" />
@@ -812,7 +811,7 @@ function SubmissionDetails({ submission, admin = false, canDelete = false, canFe
               placeholder="Explain why this submission is being deleted…"
               rows={5}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" onClick={() => { setShowDeleteDialog(false); setDeleteReason('') }} disabled={actionLoading}>Cancel</Button>
               <Button variant="destructive" onClick={submitDelete} disabled={actionLoading || !deleteReason.trim()} className="bg-red-700 hover:bg-red-800">
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -830,8 +829,8 @@ function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
   return (
     <Card className="rounded-md">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Trophy className="h-5 w-5 text-amber-600" />
             <CardTitle className="text-lg">Leaderboard</CardTitle>
           </div>
@@ -852,7 +851,7 @@ function LeaderboardCard({ leaders = [], loading = false, onRefresh }) {
             {leaders.map((leader, index) => (
               <li
                 key={leader.email}
-                className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
+                className={`flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${
                   index === 0 ? 'border-amber-300 bg-amber-50' : 'bg-white'
                 }`}
               >
@@ -892,14 +891,14 @@ function FeaturedPostCard({ submissions = [], loading = false, onRefresh }) {
   return (
     <Card className="rounded-md">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
             <CardTitle className="text-lg">
               Featured {count > 1 ? `Posts (${index + 1} / ${count})` : 'Post'}
             </CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {count > 1 && (
               <>
                 <Button onClick={goPrev} variant="outline" size="sm" aria-label="Previous featured post">
@@ -1244,7 +1243,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
-      <DialogContent className="w-full sm:max-w-5xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Map Background Editor</DialogTitle>
           <DialogDescription>
@@ -1270,7 +1269,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
 
           {heicProgress && (
             <div className="rounded-md border bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              <div className="mb-1 flex items-center justify-between font-medium">
+              <div className="mb-1 flex min-w-0 flex-wrap items-center justify-between gap-2 font-medium">
                 <span>{heicProgress.phase === 'uploading' ? 'Uploading HEIC…'
                   : heicProgress.phase === 'decoding' ? 'Decoding HEIC on server…'
                   : 'Finishing…'}</span>
@@ -1728,7 +1727,6 @@ function ZoomableMapView({ naturalSize, imageAspect, children, minZoom = 0.1, ma
 function MapPortal({ app }) {
   const {
     user,
-    logout,
     showMessage
   } = app
 
@@ -2272,10 +2270,6 @@ function MapPortal({ app }) {
       : it))
   }
 
-  const handleImageChange = async (file) => {
-    await enqueueFile(file)
-  }
-
   const handleRemoveImageById = (id) => {
     setImageItems((prev) => {
       const target = prev.find((it) => it.id === id)
@@ -2659,7 +2653,7 @@ function MapPortal({ app }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen min-w-0 bg-slate-50 text-slate-900 [overflow-wrap:anywhere]">
       {isSubmissionPage && isDraggingImage && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-teal-900/40 backdrop-blur-sm">
           <div className="rounded-xl border-2 border-dashed border-white bg-white/90 px-8 py-6 text-center shadow-2xl">
@@ -2693,10 +2687,6 @@ function MapPortal({ app }) {
             </div>
           </a>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="bg-teal-50 text-teal-800 max-w-full truncate">
-              {roleLabel}: @{user?.username || 'guest'}
-            </Badge>
-            <Badge variant="secondary" className="max-w-full truncate">{user?.name || 'Guest User'}</Badge>
             <Button asChild variant="outline" size="sm">
               <a href={isSubmissionPage ? mapHref('root') : mapHref('submit')}>
                 {isSubmissionPage ? (
@@ -2712,12 +2702,8 @@ function MapPortal({ app }) {
                 )}
               </a>
             </Button>
-            <PasswordSettings user={user} />
             {user ? (
-              <Button onClick={logout} variant="outline" size="sm" aria-label="Logout">
-                <LogOut className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Logout</span>
-              </Button>
+              <AccountMenu key={user.id || user.username} app={app} />
             ) : (
               <Button asChild variant="outline" size="sm">
                 <a href="/login">Login</a>
@@ -3051,7 +3037,7 @@ function MapPortal({ app }) {
                         onChange={(event) => setNewPinName(event.target.value)}
                         maxLength={80}
                       />
-                      <div className="flex items-center justify-between">
+                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                         <p className="text-xs text-slate-500">
                           Click anywhere on the map to place your pin.
                         </p>
@@ -3142,7 +3128,7 @@ function MapPortal({ app }) {
                           <div className="mt-2 truncate text-xs font-medium text-slate-700" title={it.name}>{it.name}</div>
                           {it.heicProgress && (
                             <div className="mt-1">
-                              <div className="mb-1 flex items-center justify-between text-[11px] text-amber-900">
+                              <div className="mb-1 flex min-w-0 flex-wrap items-center justify-between gap-2 text-[11px] text-amber-900">
                                 <span>{it.heicProgress.phase === 'uploading' ? 'Uploading HEIC…'
                                   : it.heicProgress.phase === 'decoding' ? 'Decoding HEIC…'
                                   : 'Finishing…'}</span>
@@ -3282,7 +3268,7 @@ function MapPortal({ app }) {
       </main>
 
       <Dialog open={showApprovals} onOpenChange={setShowApprovals}>
-        <DialogContent className="w-full sm:max-w-4xl max-h-[85vh] overflow-y-auto" dismissOnOverlayClick={false}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto" dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Map Approval Queue</DialogTitle>
             <DialogDescription>Review pending map submissions with full submission details.</DialogDescription>
@@ -3324,7 +3310,7 @@ function MapPortal({ app }) {
       <Dialog open={showRecipientsEditor} onOpenChange={setShowRecipientsEditor}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex min-w-0 flex-wrap items-center gap-2">
               <Mail className="h-5 w-5 text-teal-700" />
               Approval notification recipients
             </DialogTitle>
@@ -3411,7 +3397,7 @@ function MapPortal({ app }) {
       </Dialog>
 
       <Dialog open={showEnlarge} onOpenChange={setShowEnlarge}>
-        <DialogContent className="flex w-full sm:max-w-[95vw] h-[95vh] max-h-[95vh] flex-col overflow-hidden">
+        <DialogContent className="flex sm:max-w-[95vw] h-[95vh] max-h-[95vh] flex-col overflow-hidden">
           <DialogHeader className="shrink-0">
             <DialogTitle>Ecological Map (enlarged)</DialogTitle>
             <DialogDescription>
@@ -3435,7 +3421,7 @@ function MapPortal({ app }) {
       </Dialog>
 
       <Dialog open={showPinPickerEnlarged} onOpenChange={setShowPinPickerEnlarged}>
-        <DialogContent className="flex w-full sm:max-w-[95vw] h-[95vh] max-h-[95vh] flex-col overflow-hidden">
+        <DialogContent className="flex sm:max-w-[95vw] h-[95vh] max-h-[95vh] flex-col overflow-hidden">
           <DialogHeader className="shrink-0">
             <DialogTitle>Place your pin (enlarged)</DialogTitle>
             <DialogDescription>
@@ -3466,7 +3452,7 @@ function MapPortal({ app }) {
                 'No location set yet'
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => setNewPinPoint(null)} disabled={!newPinPoint}>
                 Clear
               </Button>

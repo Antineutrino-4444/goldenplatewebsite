@@ -1,5 +1,6 @@
 import React from 'react'
-import PasswordSettings from '@/components/PasswordSettings.jsx'
+import PortalHeader from '@/components/PortalHeader.jsx'
+import SessionSwitcher from '@/components/SessionSwitcher.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
@@ -14,7 +15,6 @@ import {
   ArrowUpNarrowWide,
   Ban,
   BarChart3,
-  Building2,
   CheckCircle,
   ChevronDown,
   ChevronUp,
@@ -25,7 +25,6 @@ import {
   History,
   Home,
   ListOrdered,
-  LogOut,
   Plus,
   RefreshCcw,
   Shield,
@@ -43,7 +42,6 @@ import {
 function MainPortal({ app }) {
   const {
     user,
-    logout,
     sessionId,
     sessionName,
     sessionStats,
@@ -51,7 +49,6 @@ function MainPortal({ app }) {
     dashboardWinner,
     isSessionDiscarded,
     currentDrawInfo,
-    studentRecordCount,
     hasStudentRecords,
     showExportCard,
     canManageDraw,
@@ -72,7 +69,6 @@ function MainPortal({ app }) {
     pickRandomFaculty,
     overrideInput,
     setOverrideInput,
-    overrideCandidate,
     setOverrideCandidate,
     overrideOptions,
     loadDrawSummary,
@@ -93,10 +89,7 @@ function MainPortal({ app }) {
     showAdminPanel,
     loadSessions,
     setShowSessionsDialog,
-    showSessionsDialog,
     sessions,
-    switchSession,
-    setSessionToDelete,
     setShowDeleteConfirm,
     showDeleteConfirm,
     deleteSession,
@@ -116,7 +109,6 @@ function MainPortal({ app }) {
     handleKeyPress,
     popupInputValue,
     setPopupInputValue,
-    popupSelectedEntry,
     setPopupSelectedEntry,
     studentNames,
     teacherNames,
@@ -173,14 +165,12 @@ function MainPortal({ app }) {
     isExtraSession,
     currentMainSessionId,
     showMergeDialog,
-    setShowMergeDialog,
     mergeTargetSession,
     mergeMainSessionId,
     setMergeMainSessionId,
     mergeActionLoading,
     mergeSession,
     unmergeSession,
-    openMergeDialog,
     closeMergeDialog
   } = app
 
@@ -192,57 +182,12 @@ function MainPortal({ app }) {
     return code ? `${school.name} (Code: ${code})` : school.name
   }
 
-  const userSchoolLabel = formatSchoolNameWithCode(user?.school)
   const deleteRequestsCount = deleteRequests.length
   const pendingAccountRequestsCount = accountRequests.filter(r => r.status === 'pending').length
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:h-16 sm:py-0 sm:flex-nowrap">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-                PLATE
-              </h1>
-              <p className="text-xs sm:text-sm text-gray-600 leading-tight">
-                Prevention, Logging &amp; Assessment of Tossed Edibles. Check out{' '}
-                <a href="https://map.goldenplate.ca/" className="underline text-amber-700 hover:text-amber-800">
-                  Ecological Map
-                </a>
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 max-w-full truncate">
-                {user.name} ({user.username})
-              </Badge>
-              {userSchoolLabel && (
-                <Badge variant="secondary" className="flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200 max-w-full truncate">
-                  <Building2 className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{userSchoolLabel}</span>
-                </Badge>
-              )}
-              <Button
-                onClick={() => window.open('https://github.com/Antineutrino-4444/goldenplatewebsite', '_blank')}
-                variant="outline"
-                size="sm"
-                className="text-gray-600 hover:text-gray-900"
-                aria-label="GitHub repository"
-              >
-                <svg className="h-4 w-4 sm:mr-2" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                </svg>
-                <span className="hidden sm:inline">GitHub</span>
-              </Button>
-              <PasswordSettings user={user} />
-              <Button onClick={logout} variant="outline" size="sm" aria-label="Logout">
-                <LogOut className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Logout</span>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen min-w-0 bg-gray-50 [overflow-wrap:anywhere]">
+      <PortalHeader app={app} />
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         {!sessionId ? (
@@ -367,7 +312,7 @@ function MainPortal({ app }) {
             <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex flex-wrap items-center gap-2">
                     <Upload className="h-5 w-5" />
                     Student Database
                   </CardTitle>
@@ -392,7 +337,7 @@ function MainPortal({ app }) {
                     />
                   )}
                   {['admin', 'superadmin'].includes(user?.role) && (
-                    <div className="flex gap-2 mb-4">
+                    <div className="flex flex-wrap gap-2 mb-4">
                       <Button
                         onClick={() => previewCSV(1)}
                         variant="outline"
@@ -414,7 +359,7 @@ function MainPortal({ app }) {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex flex-wrap items-center gap-2">
                     <Users className="h-5 w-5" />
                     Teacher Database
                   </CardTitle>
@@ -439,7 +384,7 @@ function MainPortal({ app }) {
                     />
                   )}
                   {['admin', 'superadmin'].includes(user?.role) && (
-                    <div className="flex gap-2 mb-4">
+                    <div className="flex flex-wrap gap-2 mb-4">
                       <Button
                         onClick={() => previewTeachers(1)}
                         variant="outline"
@@ -463,7 +408,7 @@ function MainPortal({ app }) {
                 <div className="flex flex-col gap-4 lg:row-span-2 min-h-0">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
+                      <CardTitle className="flex flex-wrap items-center gap-2">
                         <Download className="h-5 w-5" />
                         Export Food Waste Data
                       </CardTitle>
@@ -488,11 +433,11 @@ function MainPortal({ app }) {
                   <Card className="flex-1 flex flex-col min-h-0">
                     <CardHeader>
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <CardTitle className="flex items-center gap-2">
+                        <CardTitle className="flex flex-wrap items-center gap-2">
                           <Home className="h-5 w-5" />
                           House Data
                         </CardTitle>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm text-gray-500">Sort by:</span>
                           <div className="flex border rounded-lg overflow-hidden">
                             <button
@@ -531,7 +476,7 @@ function MainPortal({ app }) {
                         House ranking statistics for the current session
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="flex-1 overflow-y-auto">
+                    <CardContent className="flex-1 overflow-x-hidden overflow-y-auto">
                       {!sessionId ? (
                         <div className="py-8 text-center text-gray-500">
                           No active session selected. Switch to a session to view house data.
@@ -565,7 +510,7 @@ function MainPortal({ app }) {
                               .map((house, index) => (
                                 <div
                                   key={house.house}
-                                  className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm"
+                                  className="flex min-w-0 flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0"
                                 >
                                   <div className="flex items-center gap-4">
                                     <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
@@ -610,7 +555,7 @@ function MainPortal({ app }) {
                   className={`${showExportCard ? '' : 'lg:col-span-2'}`}
                 >
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex flex-wrap items-center gap-2">
                       <Trophy className="h-5 w-5" />
                       Draw Center
                     </CardTitle>
@@ -650,11 +595,11 @@ function MainPortal({ app }) {
               >
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex flex-wrap items-center gap-2">
                       <Trophy className="h-5 w-5" />
                       Draw Center
                     </CardTitle>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <Button
                           onClick={() => loadDrawSummary({ silent: false })}
                           variant="outline"
@@ -877,7 +822,7 @@ function MainPortal({ app }) {
                           )}
                           <div className="grid gap-4 lg:grid-cols-2">
                             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
                                 <Trophy className="h-4 w-4" />
                                 Current Winner
                               </div>
@@ -913,7 +858,7 @@ function MainPortal({ app }) {
                               </div>
                             </div>
                             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
                                 <ListOrdered className="h-4 w-4" />
                                 Top Candidates
                               </div>
@@ -950,7 +895,7 @@ function MainPortal({ app }) {
                           </div>
                           <div className="grid gap-4 lg:grid-cols-2">
                             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
                                 <Users className="h-4 w-4" />
                                 Selected Candidate Details
                               </div>
@@ -979,13 +924,13 @@ function MainPortal({ app }) {
                               </div>
                             </div>
                             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
                                 <History className="h-4 w-4" />
                                 Draw History
                               </div>
                               <div className="mt-3 text-sm">
                                 {drawSummary?.history && drawSummary.history.length > 0 ? (
-                                  <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-gray-600">
+                                  <div className="max-h-48 space-y-2 overflow-x-hidden overflow-y-auto pr-1 text-xs text-gray-600">
                                     {drawSummary.history
                                       .slice()
                                       .reverse()
@@ -1015,13 +960,13 @@ function MainPortal({ app }) {
                             </div>
                           </div>
                           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
                               <ListOrdered className="h-4 w-4" />
                               Eligible Students
                             </div>
                             <div className="mt-3">
                               {drawSummary.candidates && drawSummary.candidates.length > 0 ? (
-                                <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                                <div className="max-h-56 space-y-1 overflow-x-hidden overflow-y-auto pr-1">
                                   {drawSummary.candidates.map((candidate) => {
                                     const isActive = selectedCandidateKey === candidate.key
                                     return (
@@ -1068,11 +1013,11 @@ function MainPortal({ app }) {
                 <Card className="lg:col-span-2">
                   <CardHeader>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <CardTitle className="flex items-center gap-2">
+                      <CardTitle className="flex flex-wrap items-center gap-2">
                         <Home className="h-5 w-5" />
                         House Data
                       </CardTitle>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm text-gray-500">Sort by:</span>
                         <div className="flex border rounded-lg overflow-hidden">
                           <button
@@ -1145,7 +1090,7 @@ function MainPortal({ app }) {
                             .map((house, index) => (
                               <div
                                 key={house.house}
-                                className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm"
+                                className="flex min-w-0 flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0"
                               >
                                 <div className="flex items-center gap-4">
                                   <div className="flex items-center justify-center w-8 h-8 rounded-full bg-teal-100 text-teal-700 font-semibold text-sm">
@@ -1238,7 +1183,7 @@ function MainPortal({ app }) {
             <div className="mt-8">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex flex-wrap items-center gap-2">
                     <FileText className="h-5 w-5" />
                     Plate Tracking History
                   </CardTitle>
@@ -1248,10 +1193,10 @@ function MainPortal({ app }) {
                 </CardHeader>
                 <CardContent>
                   {scanHistory.length > 0 ? (
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                    <div className="space-y-2 max-h-60 overflow-x-hidden overflow-y-auto">
                       {scanHistory.map((record, index) => (
                         <div key={index} className="flex flex-wrap items-center justify-between gap-2 p-2 border rounded-lg text-sm">
-                          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-4 min-w-0">
                             <div className="text-gray-500 shrink-0 text-xs sm:text-sm">
                               {new Date(record.timestamp).toLocaleTimeString()}
                             </div>
@@ -1311,7 +1256,7 @@ function MainPortal({ app }) {
               names={studentNames}
               autoFocus
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => { setShowCleanDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                 Cancel
               </Button>
@@ -1339,7 +1284,7 @@ function MainPortal({ app }) {
             <p className="text-sm text-gray-600">
               This action adds one to the dirty plate count. No student information is stored.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => { setShowDirtyDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                 Cancel
               </Button>
@@ -1381,7 +1326,7 @@ function MainPortal({ app }) {
               names={teacherNames}
               autoFocus
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => { setShowFacultyDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                 Cancel
               </Button>
@@ -1423,7 +1368,7 @@ function MainPortal({ app }) {
               names={studentNames}
               autoFocus
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => { setShowRedDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                 Cancel
               </Button>
@@ -1458,7 +1403,7 @@ function MainPortal({ app }) {
                 onChange={(e) => setCustomSessionName(e.target.value)}
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => setShowNewSessionDialog(false)} variant="outline" className="flex-1">
                 Cancel
               </Button>
@@ -1490,7 +1435,7 @@ function MainPortal({ app }) {
               </div>
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => setShowDeleteConfirm(false)}
               variant="outline"
@@ -1511,7 +1456,7 @@ function MainPortal({ app }) {
 
       <Dialog open={showCsvPreview} onOpenChange={setShowCsvPreview}>
         <DialogContent
-          className="w-full sm:max-w-2xl lg:max-w-3xl max-h-[75vh] overflow-y-auto"
+          className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl lg:max-w-3xl"
           dismissOnOverlayClick={false}
         >
           <DialogHeader>
@@ -1520,57 +1465,34 @@ function MainPortal({ app }) {
               Current student database with pagination
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="flex min-h-0 flex-col gap-4">
             {csvPreviewData && (
               <>
-                <div className="text-sm text-gray-600">
+                <div className="shrink-0 text-sm text-gray-600">
                   <p><strong>Total Records:</strong> {csvPreviewData.pagination.total_records}</p>
                   <p><strong>Uploaded by:</strong> {csvPreviewData.metadata.uploaded_by}</p>
                   <p><strong>Uploaded at:</strong> {new Date(csvPreviewData.metadata.uploaded_at).toLocaleString()}</p>
                 </div>
 
-                <div className="border rounded-lg overflow-hidden">
-                  <div className="max-h-96 overflow-auto">
-                    <table className="min-w-full table-auto text-xs leading-tight">
-                      <thead className="bg-gray-50 sticky top-0 z-10">
-                        <tr>
-                          {csvPreviewData.columns.map((column, index) => (
-                            <th
-                              key={index}
-                              className="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-200 whitespace-nowrap"
-                            >
-                              {column}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {csvPreviewData.data.map((row, index) => (
-                          <tr
-                            key={index}
-                            className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100 last:border-b-0`}
-                          >
-                            {csvPreviewData.columns.map((column, colIndex) => (
-                              <td
-                                key={colIndex}
-                                className="px-3 py-1.5 text-gray-700 align-top break-words"
-                              >
-                                {row[column] || '-'}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                <div className="min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto rounded-lg border bg-slate-50 p-3">
+                  {csvPreviewData.data.map((row, index) => (
+                    <dl key={index} className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 rounded-md border bg-white p-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                      {csvPreviewData.columns.map((column, colIndex) => (
+                        <div key={colIndex} className="min-w-0">
+                          <dt className="font-medium text-slate-500">{column}</dt>
+                          <dd className="mt-1 text-slate-900 [overflow-wrap:anywhere]">{row[column] ?? '-'}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ))}
                 </div>
 
-                <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-600">
+                <div className="flex shrink-0 flex-wrap justify-between items-center gap-3">
+                  <div className="shrink-0 text-sm text-gray-600">
                     Page {csvPreviewData.pagination.page} of {csvPreviewData.pagination.total_pages}
                     ({csvPreviewData.data.length} of {csvPreviewData.pagination.total_records} records)
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       onClick={() => previewCSV(csvPreviewPage - 1)}
                       disabled={!csvPreviewData.pagination.has_prev || csvPreviewLoading}
@@ -1592,7 +1514,7 @@ function MainPortal({ app }) {
               </>
             )}
           </div>
-          <Button onClick={() => setShowCsvPreview(false)} className="w-full">
+          <Button onClick={() => setShowCsvPreview(false)} className="w-full shrink-0">
             Close
           </Button>
         </DialogContent>
@@ -1600,27 +1522,27 @@ function MainPortal({ app }) {
 
       {showTeacherPreview && (
         <Dialog open={showTeacherPreview} onOpenChange={setShowTeacherPreview}>
-          <DialogContent className="w-full sm:max-w-2xl lg:max-w-4xl max-h-[80vh] overflow-hidden" dismissOnOverlayClick={false}>
+          <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl lg:max-w-4xl" dismissOnOverlayClick={false}>
             <DialogHeader>
               <DialogTitle>Teacher List Preview</DialogTitle>
               <DialogDescription>
                 Preview of the uploaded teacher names
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="flex min-h-0 flex-col gap-4">
               {teacherPreviewLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="text-muted-foreground">Loading teacher list...</div>
                 </div>
               ) : teacherPreviewData ? (
                 <>
-                  <div className="text-sm text-muted-foreground">
+                  <div className="shrink-0 text-sm text-muted-foreground">
                     <p><strong>Total Teachers:</strong> {teacherPreviewData.pagination.total_records}</p>
                     <p><strong>Uploaded by:</strong> {teacherPreviewData.metadata.uploaded_by}</p>
                     <p><strong>Uploaded at:</strong> {new Date(teacherPreviewData.metadata.uploaded_at).toLocaleString()}</p>
                   </div>
 
-                  <div className="max-h-96 overflow-y-auto border rounded-lg">
+                  <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto border rounded-lg">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4">
                       {teacherPreviewData.data.map((teacher, index) => (
                         <div key={index} className="p-2 bg-gray-50 rounded text-sm">
@@ -1630,11 +1552,11 @@ function MainPortal({ app }) {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-4">
-                    <div className="text-sm text-muted-foreground">
+                  <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 pt-4">
+                    <div className="shrink-0 text-sm text-muted-foreground">
                       Page {teacherPreviewData.pagination.page} of {teacherPreviewData.pagination.total_pages}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         onClick={() => previewTeachers(teacherPreviewPage - 1)}
                         disabled={!teacherPreviewData.pagination.has_prev || teacherPreviewLoading}
@@ -1660,7 +1582,7 @@ function MainPortal({ app }) {
                 </div>
               )}
             </div>
-            <Button onClick={() => setShowTeacherPreview(false)} className="w-full">
+            <Button onClick={() => setShowTeacherPreview(false)} className="w-full shrink-0">
               Close
             </Button>
           </DialogContent>
@@ -1669,7 +1591,7 @@ function MainPortal({ app }) {
 
       <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
         <DialogContent
-          className="w-full sm:max-w-2xl lg:max-w-4xl max-h-[82vh] overflow-y-auto"
+          className="sm:max-w-2xl lg:max-w-4xl max-h-[82vh] overflow-x-hidden overflow-y-auto"
           dismissOnOverlayClick={false}
         >
           <DialogHeader>
@@ -1748,7 +1670,7 @@ function MainPortal({ app }) {
               </div>
 
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
                   <Trophy className="h-4 w-4" />
                   Current winner
                 </div>
@@ -1790,7 +1712,7 @@ function MainPortal({ app }) {
             </div>
           )}
 
-          <Button onClick={() => setShowDashboard(false)} className="w-full">
+          <Button onClick={() => setShowDashboard(false)} className="w-full shrink-0">
             Close
           </Button>
         </DialogContent>
@@ -1798,7 +1720,7 @@ function MainPortal({ app }) {
 
       <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
         <DialogContent
-          className="w-full sm:max-w-2xl lg:max-w-3xl max-h-[82vh] overflow-y-auto"
+          className="sm:max-w-2xl lg:max-w-3xl max-h-[82vh] overflow-x-hidden overflow-y-auto"
           dismissOnOverlayClick={false}
         >
           <DialogHeader>
@@ -1808,7 +1730,7 @@ function MainPortal({ app }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
-            <div className="flex flex-wrap gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {['admin', 'superadmin'].includes(user.role) && (
                 <>
                   <Button
@@ -1872,7 +1794,7 @@ function MainPortal({ app }) {
               <h3 className="text-lg font-semibold mb-3">Users</h3>
               <div className="space-y-2">
                 {adminUsers.map((adminUser) => (
-                  <div key={adminUser.username} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div key={adminUser.username} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0">
                     <div>
                       <div className="font-medium">{adminUser.name}</div>
                       <div className="text-sm text-gray-500">
@@ -1882,7 +1804,7 @@ function MainPortal({ app }) {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge
                         variant={adminUser.role === 'superadmin' ? 'destructive' : adminUser.role === 'admin' ? 'default' : 'secondary'}
                       >
@@ -1919,11 +1841,11 @@ function MainPortal({ app }) {
 
             <div>
               <h3 className="text-lg font-semibold mb-3">All Sessions</h3>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div className="space-y-2">
                 {adminSessions.map((adminSession) => (
-                  <div key={adminSession.session_id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div key={adminSession.session_id} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0">
                     <div>
-                      <div className="font-medium flex items-center gap-2">
+                      <div className="font-medium flex flex-wrap items-center gap-2">
                         {adminSession.session_name}
                         {adminSession.is_discarded && (
                           <Badge variant="destructive" className="text-xs uppercase">Discarded</Badge>
@@ -1938,23 +1860,23 @@ function MainPortal({ app }) {
               </div>
             </div>
           </div>
-          <Button onClick={() => setShowAdminPanel(false)} className="w-full">
+          <Button onClick={() => setShowAdminPanel(false)} className="w-full shrink-0">
             Close
           </Button>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showAccountManagement} onOpenChange={setShowAccountManagement}>
-        <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl" dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Account Management</DialogTitle>
             <DialogDescription>
               Manage user account status (enable/disable accounts)
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 max-h-96 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-1">
             {allUsers.map((userAccount) => (
-              <div key={userAccount.username} className="flex items-center justify-between p-3 border rounded-lg">
+              <div key={userAccount.username} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0">
                 <div>
                   <div className="font-medium">{userAccount.name}</div>
                   <div className="text-sm text-gray-500">
@@ -1967,7 +1889,7 @@ function MainPortal({ app }) {
                     <div className="text-xs text-gray-400 font-mono">ID: {userAccount.id}</div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge
                     variant={userAccount.status === 'active' ? 'default' : 'destructive'}
                   >
@@ -1987,7 +1909,7 @@ function MainPortal({ app }) {
               </div>
             ))}
           </div>
-          <Button onClick={() => setShowAccountManagement(false)} className="w-full">
+          <Button onClick={() => setShowAccountManagement(false)} className="w-full shrink-0">
             Close
           </Button>
         </DialogContent>
@@ -2001,7 +1923,7 @@ function MainPortal({ app }) {
               Are you sure you want to delete account "{userToDelete?.username}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex gap-2 mt-4">
+          <div className="flex flex-wrap gap-2 mt-4">
             <Button
               variant="destructive"
               onClick={() => {
@@ -2022,21 +1944,21 @@ function MainPortal({ app }) {
       </Dialog>
 
       <Dialog open={showDeleteRequests} onOpenChange={setShowDeleteRequests}>
-        <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl" dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Delete Requests</DialogTitle>
             <DialogDescription>
               Pending session deletion requests from users
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 max-h-96 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-1">
             {deleteRequests.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 No pending delete requests
               </div>
             ) : (
               deleteRequests.map((request) => (
-                <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div key={request.id} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0">
                   <div>
                     <div className="font-medium">{request.session_name}</div>
                     <div className="text-sm text-gray-500">
@@ -2071,21 +1993,21 @@ function MainPortal({ app }) {
               ))
             )}
           </div>
-          <Button onClick={() => setShowDeleteRequests(false)} className="w-full">
+          <Button onClick={() => setShowDeleteRequests(false)} className="w-full shrink-0">
             Close
           </Button>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showAccountRequests} onOpenChange={setShowAccountRequests}>
-        <DialogContent className="max-w-2xl" dismissOnOverlayClick={false}>
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl" dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Account Creation Requests</DialogTitle>
             <DialogDescription>
               Review and approve pending account creation requests for your school
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 max-h-96 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-1">
             {accountRequestsLoading ? (
               <div className="text-center py-8 text-gray-500">
                 Loading account requests...
@@ -2096,7 +2018,7 @@ function MainPortal({ app }) {
               </div>
             ) : (
               accountRequests.map((request) => (
-                <div key={request.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div key={request.id} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0">
                   <div>
                     <div className="font-medium">{request.display_name}</div>
                     <div className="text-sm text-gray-500">
@@ -2146,111 +2068,13 @@ function MainPortal({ app }) {
               ))
             )}
           </div>
-          <Button onClick={() => setShowAccountRequests(false)} className="w-full">
+          <Button onClick={() => setShowAccountRequests(false)} className="w-full shrink-0">
             Close
           </Button>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSessionsDialog} onOpenChange={setShowSessionsDialog}>
-        <DialogContent dismissOnOverlayClick={false}>
-          <DialogHeader>
-            <DialogTitle>Switch Session</DialogTitle>
-            <DialogDescription>
-              Select a session to switch to or delete sessions
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {sessions.map((session) => {
-              const mainSess = session.main_session_id
-                ? sessions.find(s => s.session_id === session.main_session_id)
-                : null
-              const hasExtras = !session.main_session_id && sessions.some(s => s.main_session_id === session.session_id)
-              return (
-              <div key={session.session_id} className="flex items-center justify-between p-2 border rounded">
-                <Button
-                  variant="ghost"
-                  onClick={() => switchSession(session.session_id)}
-                  className="flex-1 justify-start"
-                  disabled={session.session_id === sessionId}
-                >
-                  <div className="text-left">
-                    <div className="font-medium">{session.session_name}</div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {session.is_discarded && (
-                        <Badge variant="destructive" className="text-xs uppercase">Discarded</Badge>
-                      )}
-                      {session.main_session_id && (
-                        <Badge variant="secondary" className="text-xs uppercase">
-                          Extra{mainSess ? ` of ${mainSess.session_name}` : ''}
-                        </Badge>
-                      )}
-                      {hasExtras && (
-                        <Badge variant="outline" className="text-xs uppercase">Main</Badge>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {session.total_records > 0 ? (
-                        <>
-                          🥇 {session.clean_count} ({session.clean_percentage}% incl. faculty) •
-                          🍽️ {session.dirty_count} ({session.dirty_percentage}%) •
-                          🧑‍🏫 {session.faculty_clean_count ?? 0}
-                        </>
-                      ) : (
-                        'No records yet'
-                      )}
-                    </div>
-                  </div>
-                </Button>
-                {canManageDraw && (
-                  session.main_session_id ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => unmergeSession(session.session_id)}
-                      disabled={mergeActionLoading}
-                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                      title="Unmerge from main session"
-                    >
-                      Unmerge
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openMergeDialog(session)}
-                      disabled={mergeActionLoading || hasExtras}
-                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                      title={hasExtras ? 'Remove extras before merging' : 'Merge into another session'}
-                    >
-                      Merge
-                    </Button>
-                  )
-                )}
-                {sessionId && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSessionToDelete(session)
-                      setShowDeleteConfirm(true)
-                    }}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    disabled={session.delete_requested}
-                    title={session.delete_requested ? 'Delete request pending' : 'Delete session'}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              )
-            })}
-          </div>
-          <Button onClick={() => setShowSessionsDialog(false)} className="w-full">
-            Close
-          </Button>
-        </DialogContent>
-      </Dialog>
+      <SessionSwitcher app={app} />
 
       <Dialog open={showMergeDialog} onOpenChange={(open) => { if (!open) closeMergeDialog() }}>
         <DialogContent dismissOnOverlayClick={false}>
@@ -2285,7 +2109,7 @@ function MainPortal({ app }) {
                 ))}
             </select>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={closeMergeDialog}

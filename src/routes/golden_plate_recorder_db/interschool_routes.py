@@ -555,6 +555,7 @@ def approve_registration_request(request_id):
         id=school_id,
         name=reg_request.school_name,
         slug=normalized_slug,
+        contact_email=reg_request.email.strip().lower(),
         status='active',
         created_at=_now_utc(),
         updated_at=_now_utc(),

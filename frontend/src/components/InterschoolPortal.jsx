@@ -1,15 +1,13 @@
 import React from 'react'
-import PasswordSettings from '@/components/PasswordSettings.jsx'
+import PortalHeader from '@/components/PortalHeader.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Building2, CheckCircle, Copy, KeyRound, ListOrdered, LogOut, RefreshCcw, School, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react'
+import { CheckCircle, Copy, KeyRound, ListOrdered, RefreshCcw, School, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react'
 
 function InterschoolPortal({ app }) {
   const {
-    user,
-    logout,
     issueSchoolInvite,
     schoolInviteLoading,
     latestSchoolInvites,
@@ -23,14 +21,6 @@ function InterschoolPortal({ app }) {
     rejectSchoolRegistration,
     deleteSchool
   } = app
-
-  const formatSchoolNameWithCode = (school) => {
-    if (!school?.name) {
-      return null
-    }
-    const code = (school.code ?? school.slug ?? '').trim()
-    return code ? `${school.name} (Code: ${code})` : school.name
-  }
 
   const formatDateTime = (value) => {
     if (!value) return null
@@ -84,58 +74,15 @@ function InterschoolPortal({ app }) {
       .join(' ')
   }
 
-  const userSchoolLabel = formatSchoolNameWithCode(user?.school)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:py-0 sm:h-16">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-                PLATE
-              </h1>
-              <p className="text-xs sm:text-sm text-gray-600">Inter-School Control Center</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 max-w-full truncate">
-                {user.name} ({user.username})
-              </Badge>
-              {userSchoolLabel && (
-                <Badge variant="secondary" className="hidden sm:flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200">
-                  <Building2 className="h-3.5 w-3.5" />
-                  {userSchoolLabel}
-                </Badge>
-              )}
-              <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200 uppercase tracking-wide">
-                Inter-School
-              </Badge>
-              <Button
-                onClick={() => window.open('https://github.com/Antineutrino-4444/goldenplatewebsite', '_blank')}
-                variant="outline"
-                size="sm"
-                className="text-gray-600 hover:text-gray-900"
-                aria-label="GitHub repository"
-              >
-                <svg className="h-4 w-4 sm:mr-2" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                </svg>
-                <span className="hidden sm:inline">GitHub</span>
-              </Button>
-              <PasswordSettings user={user} />
-              <Button onClick={logout} variant="outline" size="sm" aria-label="Logout">
-                <LogOut className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Logout</span>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen min-w-0 bg-gray-50 [overflow-wrap:anywhere]">
+      <PortalHeader app={app} interschool />
 
       <main className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-amber-600" />
               Inter-School Overview
             </CardTitle>
@@ -160,7 +107,7 @@ function InterschoolPortal({ app }) {
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex flex-wrap items-center gap-2">
                 <UserPlus className="h-5 w-5 text-amber-600" />
                 Pending School Registration Requests
                 {pendingRegistrationRequests.length > 0 && (
@@ -178,7 +125,7 @@ function InterschoolPortal({ app }) {
               variant="outline"
               size="sm"
               disabled={interschoolOverviewLoading}
-              className="flex items-center gap-2"
+              className="flex flex-wrap items-center gap-2"
             >
               <RefreshCcw className={`h-4 w-4 ${interschoolOverviewLoading ? 'animate-spin' : ''}`} />
               {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
@@ -198,7 +145,7 @@ function InterschoolPortal({ app }) {
                   return (
                     <div
                       key={request.id}
-                      className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                      className="flex min-w-0 flex-wrap items-start justify-between gap-3 [&>div]:min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
                     >
                       <div className="space-y-1">
                         <div className="font-semibold text-gray-900">{request.school_name}</div>
@@ -257,7 +204,7 @@ function InterschoolPortal({ app }) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2">
               <UserPlus className="h-5 w-5 text-amber-600" />
               Generate School Invite
             </CardTitle>
@@ -286,8 +233,8 @@ function InterschoolPortal({ app }) {
               </span>
             </div>
             <div className="mt-6">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                <h4 className="text-sm font-semibold text-gray-700 flex flex-wrap items-center gap-2">
                   <ListOrdered className="h-4 w-4" />
                   Recent invites
                 </h4>
@@ -341,7 +288,7 @@ function InterschoolPortal({ app }) {
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex flex-wrap items-center gap-2">
                 <School className="h-5 w-5 text-amber-600" />
                 School Directory
               </CardTitle>
@@ -349,7 +296,7 @@ function InterschoolPortal({ app }) {
                 Monitor partner schools as they complete onboarding.
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {interschoolSchools.length > 0 && (
                 <Badge variant="outline" className="text-xs uppercase tracking-wide">
                   {interschoolSchools.length} total
@@ -360,7 +307,7 @@ function InterschoolPortal({ app }) {
                 variant="outline"
                 size="sm"
                 disabled={interschoolOverviewLoading}
-                className="flex items-center gap-2"
+                className="flex flex-wrap items-center gap-2"
               >
                 <RefreshCcw className={`h-4 w-4 ${interschoolOverviewLoading ? 'animate-spin' : ''}`} />
                 {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
@@ -385,7 +332,7 @@ function InterschoolPortal({ app }) {
                   return (
                     <div
                       key={school.id}
-                      className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                      className="flex min-w-0 flex-wrap items-start justify-between gap-3 [&>div]:min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
                     >
                       <div className="space-y-1">
                         <div className="font-semibold text-gray-900">{school.name}</div>
@@ -427,7 +374,7 @@ function InterschoolPortal({ app }) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2">
               <KeyRound className="h-5 w-5 text-amber-600" />
               Invite Codes Ledger
             </CardTitle>
@@ -450,7 +397,7 @@ function InterschoolPortal({ app }) {
                   return (
                     <div
                       key={inviteKey}
-                      className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-100 bg-white p-4 shadow-sm"
+                      className="flex min-w-0 flex-wrap items-start justify-between gap-3 [&>div]:min-w-0 rounded-lg border border-amber-100 bg-white p-4 shadow-sm"
                     >
                       <div className="space-y-1">
                         <div className="font-mono text-sm text-gray-900">{invite.code}</div>
@@ -505,7 +452,7 @@ function InterschoolPortal({ app }) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2">
               <ListOrdered className="h-5 w-5 text-amber-600" />
               Onboarding Checklist
             </CardTitle>
