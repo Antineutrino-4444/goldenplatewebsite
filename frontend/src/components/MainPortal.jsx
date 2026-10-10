@@ -326,7 +326,7 @@ function MainPortal({ app }) {
                     Student Database
                   </CardTitle>
                   <CardDescription>
-                    Upload a CSV with columns in any order. Student ID, Last, and Preferred (or First if there is no Preferred column) are required. Preferred is always used when present. Grade, Advisor, House, and Clan can be blank or omitted. Students missing from the new roster are excluded from ticket draws.
+                    Upload a CSV with columns in any order and any capitalization. Student ID, Last, and Preferred (or First if there is no Preferred column) are required. Preferred is always used when present. Grade, Advisor, House, and Clan can be blank or omitted. Students missing from the new roster are excluded from ticket draws.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -368,7 +368,7 @@ function MainPortal({ app }) {
                     Teacher Database
                   </CardTitle>
                   <CardDescription>
-                    Upload teacher list for faculty clean plate tracking (one teacher name per line, e.g., "Smith, J")
+                    Upload a CSV with Last and Preferred (or First if there is no Preferred column), in any order and any capitalization. Preferred is always used when present; other columns are ignored. TXT files can contain one full teacher name per line.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

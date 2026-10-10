@@ -38,3 +38,14 @@ test('crossing the goal compresses its portion and gives extra plates their own 
   assert.deepEqual(counterBarLayout(0, null, 0), { scale: 0, goalWidth: 0, extraWidth: 0 })
   assert.deepEqual(counterBarLayout(50, null, 200), { scale: 200, goalWidth: 25, extraWidth: 0 })
 })
+
+test('fractional percentage goals compress the bar and celebrate in tenths', () => {
+  const layout = counterBarLayout(73.6, 70.1, 100)
+  assert.equal(layout.scale, 73.6)
+  assert.ok(Math.abs(layout.goalWidth + layout.extraWidth - 100) < 0.000001)
+  assert.ok(Math.abs(layout.extraWidth - (3.5 / 73.6 * 100)) < 0.000001)
+  assert.equal(crossedMilestone(700, 701, Math.round(70.1 * 10)), true)
+  assert.equal(crossedMilestone(701, 736, Math.round(70.1 * 10)), false)
+  assert.equal(crossedMilestone(736, 700, Math.round(70.1 * 10)), false)
+  assert.deepEqual(counterBarLayout(73.6, null, 100), { scale: 100, goalWidth: 73.6, extraWidth: 0 })
+})

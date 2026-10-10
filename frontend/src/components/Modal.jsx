@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { AnimatePresence, motion as Motion } from 'framer-motion'
+import { motion as Motion, useReducedMotion } from 'framer-motion'
 
 /**
  * Modal component rendered via a React portal.
@@ -15,7 +15,25 @@ import { AnimatePresence, motion as Motion } from 'framer-motion'
  * @param {boolean} [dismissOnOverlayClick=true] - Close when clicking the overlay
  */
 export default function Modal({ open, onClose, children, dismissOnOverlayClick = true }) {
-  // Close on ESC and prevent background scrolling
+  const reduceMotion = useReducedMotion()
+
+  // Lock before paint, and do not toggle the lock when onClose changes on a render.
+  useLayoutEffect(() => {
+    if (!open) return
+    const originalOverflow = document.body.style.overflow
+    const originalPaddingRight = document.body.style.paddingRight
+    const paddingRight = parseFloat(getComputedStyle(document.body).paddingRight) || 0
+    const originalWidth = document.body.clientWidth
+    document.body.style.overflow = 'hidden'
+    // Compensate only for width actually gained when the scrollbar disappears.
+    const scrollbarWidth = document.body.clientWidth - originalWidth
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${paddingRight + scrollbarWidth}px`
+    return () => {
+      document.body.style.overflow = originalOverflow
+      document.body.style.paddingRight = originalPaddingRight
+    }
+  }, [open])
+
   useEffect(() => {
     if (!open) return
 
@@ -24,39 +42,30 @@ export default function Modal({ open, onClose, children, dismissOnOverlayClick =
     }
     document.addEventListener('keydown', handleKeyDown)
 
-    const originalOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
-      document.body.style.overflow = originalOverflow
     }
   }, [open, onClose])
 
+  if (!open) return null
+
   return createPortal(
-    <AnimatePresence>
-      {open && (
-        <Motion.div
-          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4 pointer-events-auto"
-          onClick={dismissOnOverlayClick ? onClose : undefined}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-        >
-          <Motion.div
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-            className="relative z-[2001] w-full min-w-0 max-w-sm max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto [overflow-wrap:anywhere] [&>*]:min-w-0 rounded-lg bg-white p-4 shadow-lg sm:p-6"
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-          >
-            {children}
-          </Motion.div>
-        </Motion.div>
-      )}
-    </AnimatePresence>,
+    <div
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4 pointer-events-auto"
+      onClick={dismissOnOverlayClick ? onClose : undefined}
+    >
+      <Motion.div
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-[2001] w-full min-w-0 max-w-sm max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto [overflow-wrap:anywhere] [&>*]:min-w-0 rounded-lg bg-white p-4 shadow-lg sm:p-6"
+        initial={reduceMotion ? false : { scale: 0.98, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: 'tween', duration: reduceMotion ? 0 : 0.15, ease: 'easeOut' }}
+      >
+        {children}
+      </Motion.div>
+    </div>,
     document.body
   )
 }

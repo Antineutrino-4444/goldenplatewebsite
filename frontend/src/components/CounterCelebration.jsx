@@ -2,8 +2,9 @@ import { PartyPopper, Trophy, X } from 'lucide-react'
 
 const colors = ['#fbbf24', '#34d399', '#fb7185', '#60a5fa', '#a78bfa', '#fef3c7']
 
-export default function CounterCelebration({ milestone, settings, onClose }) {
-  const text = (field, fallback) => (settings?.[field]?.trim() || fallback).replaceAll('{milestone}', milestone.toLocaleString())
+export default function CounterCelebration({ milestone, metric = 'count', settings, onClose }) {
+  const goal = `${milestone.toLocaleString()}${metric === 'percentage' ? '%' : ''}`
+  const text = (field, fallback) => (settings?.[field]?.trim() || fallback).replaceAll('{milestone}', goal)
   return <div className="counter-celebration pointer-events-none fixed inset-0 z-50 overflow-hidden">
     <div className="counter-confetti" aria-hidden="true">
       {Array.from({ length: 64 }, (_, index) => <span key={index} className="counter-confetti-piece" style={{
@@ -21,7 +22,8 @@ export default function CounterCelebration({ milestone, settings, onClose }) {
         <Trophy className="h-7 w-7" aria-hidden="true" />
       </div>
       <p className="whitespace-pre-line break-words text-xl font-bold text-amber-950">{text('celebration_title', 'Milestone reached!')}</p>
-      <p className="mt-2 whitespace-pre-line break-words font-semibold text-amber-900">{text('celebration_message', '{milestone} clean plates. Look what we achieved together!')}</p>
+      <p className="mt-2 whitespace-pre-line break-words font-semibold text-amber-900">{text('celebration_message', metric === 'percentage'
+        ? '{milestone} clean plates! Look what we achieved together!' : '{milestone} clean plates. Look what we achieved together!')}</p>
       <p className="mt-2 flex items-center justify-center gap-2 text-sm text-amber-800"><PartyPopper className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="min-w-0 whitespace-pre-line break-words">{text('celebration_footer', 'Less waste. More reason to celebrate.')}</span></p>
     </div>
   </div>

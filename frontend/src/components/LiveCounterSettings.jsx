@@ -20,6 +20,8 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
   const [timezone, setTimezone] = useState(settings.timezone)
   const [defaultRange, setDefaultRange] = useState(settings.default_range)
   const [milestone, setMilestone] = useState(settings.milestone ?? '')
+  const [defaultMetric, setDefaultMetric] = useState(settings.default_metric || 'count')
+  const [percentageMilestone, setPercentageMilestone] = useState(settings.percentage_milestone ?? '')
   const [banner, setBanner] = useState({
     celebration_title: settings.celebration_title || '',
     celebration_message: settings.celebration_message || '',
@@ -52,7 +54,9 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
       const response = await fetch('/api/live-counter/settings', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ year: Number(year), timezone, custom_ranges: customRanges,
-          ...(canSetDefault ? { default_range: defaultRange, milestone: milestone === '' ? null : Number(milestone), ...banner } : {}) }),
+          ...(canSetDefault ? { default_range: defaultRange, default_metric: defaultMetric,
+            milestone: milestone === '' ? null : Number(milestone),
+            percentage_milestone: percentageMilestone === '' ? null : Number(percentageMilestone), ...banner } : {}) }),
       })
       const result = await response.json()
       if (!response.ok) { setError(result.error || 'Unable to save date ranges.'); return }
@@ -109,16 +113,29 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
             {filledRanges.map((range) => <option key={range.id} value={range.id}>{rangeLabel(range)}</option>)}
             {defaultRange !== 'year' && !filledRanges.some((range) => range.id === defaultRange)
               && <option value={defaultRange} disabled>Choose a saved default range</option>}
-          </select></div> : <p className="text-sm text-slate-500">Only superadmins can change the default time range, celebration milestone, and banner text.</p>}
+          </select></div> : <p className="text-sm text-slate-500">Only superadmins can change the default time range, default view, celebration milestones, and banner text.</p>}
+        {canSetDefault && <div className="space-y-2">
+          <Label htmlFor="counter-default-metric">Default main view</Label>
+          <select id="counter-default-metric" className={selectClass} value={defaultMetric} onChange={(event) => setDefaultMetric(event.target.value)}>
+            <option value="count">Count</option><option value="percentage">Percentage</option>
+          </select>
+          <p className="text-xs leading-relaxed text-slate-500">Opens first, on the left. Viewers can switch views before entering full screen. Each view uses its own milestone.</p>
+        </div>}
         {canSetDefault && <div className="space-y-2">
           <Label htmlFor="counter-milestone">Celebration milestone (clean plates)</Label>
           <Input id="counter-milestone" type="number" min={1} max={1000000000} step={1}
             placeholder="e.g. 1000" value={milestone} onChange={(event) => setMilestone(event.target.value)} />
-          <p className="text-xs leading-relaxed text-slate-500">Celebrate when the selected range reaches this many clean plates. Leave blank to turn celebrations off. The goal applies only to your school.</p>
+          <p className="text-xs leading-relaxed text-slate-500">The count view celebrates at this many clean plates. Leave blank to disable its celebration.</p>
+        </div>}
+        {canSetDefault && <div className="space-y-2">
+          <Label htmlFor="counter-percentage-milestone">Celebration milestone (clean percentage)</Label>
+          <Input id="counter-percentage-milestone" type="number" min={0.1} max={100} step={0.1}
+            placeholder="e.g. 80" value={percentageMilestone} onChange={(event) => setPercentageMilestone(event.target.value)} />
+          <p className="text-xs leading-relaxed text-slate-500">The percentage view celebrates when the clean-plate rate reaches this percentage (0.1–100%). Leave blank to disable its celebration. Both goals apply only to your school.</p>
         </div>}
         {canSetDefault && <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
           <div><h3 className="font-semibold text-slate-800">Celebration banner text</h3>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">Customize your school's banner. Leave a field blank to use its default text. Use {'{milestone}'} to insert the goal number.</p></div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">Customize your school's banner. Leave a field blank to use its default text. Use {'{milestone}'} to insert the active goal (including % in the percentage view).</p></div>
           <div className="space-y-2"><Label htmlFor="counter-banner-title">Banner title</Label>
             <Input id="counter-banner-title" maxLength={80} placeholder="Milestone reached!" value={banner.celebration_title}
               onChange={(event) => setBanner((current) => ({ ...current, celebration_title: event.target.value }))} /></div>

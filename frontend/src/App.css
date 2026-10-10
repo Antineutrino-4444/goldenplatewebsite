@@ -261,8 +261,62 @@
 }
 
 @keyframes counter-value-arrive {
-  from { opacity: 0.35; transform: translateY(0.12em); }
-  to { opacity: 1; transform: translateY(0); }
+  from { transform: translateY(0.12em); }
+  to { transform: translateY(0); }
+}
+
+.counter-goal-number {
+  text-shadow: 0 0 0.35em rgb(251 191 36 / 28%);
+  animation: counter-goal-arrive 650ms ease-out;
+}
+
+@keyframes counter-goal-arrive {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
+
+.counter-fullscreen-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: radial-gradient(ellipse at 25% 40%, #145c43, #062e23 80%);
+}
+
+.counter-fullscreen-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: clamp(1.5rem, 4vh, 4rem);
+  padding: 5rem clamp(1.25rem, 4vw, 5rem) clamp(1.5rem, 4vh, 4rem);
+}
+
+.counter-fullscreen-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.5rem 3rem;
+  margin-block: auto;
+}
+
+.counter-fullscreen-number {
+  font-size: clamp(2rem, var(--counter-number-size), 34vh);
+  line-height: 0.95;
+  white-space: nowrap;
+}
+
+.counter-fullscreen-track {
+  height: clamp(2.5rem, 6vh, 5rem);
+}
+
+.counter-fullscreen-bar {
+  font-size: clamp(1rem, 1.5vw, 1.5rem);
+}
+
+.counter-fullscreen-bar > div:not([role='progressbar']) {
+  font-size: inherit;
 }
 
 @keyframes counter-celebration-arrive {
@@ -274,4 +328,5 @@
   .counter-confetti { display: none; }
   .counter-celebration-banner { animation: none; }
   .counter-value-update { animation: none; }
+  .counter-goal-number { animation: none; }
 }

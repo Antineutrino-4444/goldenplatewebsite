@@ -1,6 +1,7 @@
 import io
 import uuid
 
+import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from src.routes.golden_plate_recorder_db import db as database, storage
@@ -14,7 +15,7 @@ def upload_teachers(client, names, filename='teachers.txt'):
 
 def test_teacher_filename_and_metadata_survive_cache_reset_and_legacy_rosters(client, login):
     login()
-    response = upload_teachers(client, ['Smith, J', 'Morgan, A'], filename='faculty.csv')
+    response = upload_teachers(client, ['Last,Preferred', 'Smith,J', 'Morgan,A'], filename='faculty.csv')
     assert response.status_code == 200
     assert response.get_json()['filename'] == 'faculty.csv'
     storage.global_teacher_data.clear()
@@ -81,6 +82,58 @@ def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client,
     assert client.get('/api/session/status').get_json()['faculty_clean_count'] == 1
     assert client.get('/api/session/status').get_json()['faculty_pick']['finalized'] is True
     assert client.get(f'/api/session/{session_id}/draw/history').get_json() == log_before
+
+
+@pytest.mark.parametrize('content, expected_names', [
+    ('Last,Preferred\nSmith,Alex\n', {'Alex Smith'}),
+    ('First,Last\nAlex,Smith\n', {'Alex Smith'}),
+    ('FIRST,LaSt,pReFeRrEd\nAlexander,Smith,Alex\n', {'Alex Smith'}),
+    ('\ufeff last , FIRST ,Title,Email\nSmith,Alex,Dr,ignored@example.com\n', {'Alex Smith'}),
+    ('LAST,preferred,Student ID,student id\nSmith,Alex,1,2\n', {'Alex Smith'}),
+    ('Preferred,Last\nAlex,Smith\naLEX,sMITH\nJamie,Morgan\n', {'Alex Smith', 'Jamie Morgan'}),
+    ('First,Last,Preferred\nAlexander,Smith,\nJamie,Morgan,Jay\n', {'Jay Morgan'}),
+    ('preferred,last\nAlex,\n,Smith\nJamie,Morgan\n', {'Jamie Morgan'}),
+    ('LAST,FIRST\n"Smith, Jr.",Alex\n', {'Alex Smith, Jr.'}),
+])
+def test_teacher_csv_matches_name_columns(client, login, content, expected_names):
+    login()
+    response = upload_teachers(client, content.splitlines(), filename='teachers.CSV')
+    assert response.status_code == 200
+    assert response.get_json()['count'] == len(expected_names)
+    result = client.get('/api/teachers/list').get_json()
+    assert {teacher['display_name'] for teacher in result['names']} == expected_names
+    assert {teacher['name'] for teacher in result['names']} == expected_names
+    assert {teacher['name'] for teacher in client.get('/api/teachers/preview').get_json()['data']} == expected_names
+
+
+def test_teacher_csv_case_changes_keep_existing_identity(client, login):
+    login()
+    assert upload_teachers(client, ['Last,Preferred', 'Smith,Alex'], filename='teachers.csv').status_code == 200
+    teacher_id = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID, name='Alex Smith').one().id
+    response = upload_teachers(client, ['FIRST,LAST', 'aLEX,sMITH'], filename='teachers.csv')
+    assert response.status_code == 200
+    assert response.get_json()['teachers_created'] == 0
+    assert response.get_json()['teachers_removed'] == 0
+    assert client.get('/api/teachers/list').get_json()['names'][0]['display_name'] == 'aLEX sMITH'
+    assert db_session.get(Teacher, teacher_id).name == 'Alex Smith'
+
+
+@pytest.mark.parametrize('content', [
+    'First\nAlex\n',
+    'Last\nSmith\n',
+    'Last,First,Preferred\nSmith,Alexander,\n',
+    'LAST,FIRST\nSmith,\n',
+    'LAST,FIRST\n,Alex\n',
+    'Last,Preferred,preferred\nSmith,Alex,Alexander\n',
+    'Last,First\n',
+])
+def test_invalid_teacher_csv_preserves_roster(client, login, content):
+    login()
+    assert upload_teachers(client, ['Original Teacher']).status_code == 200
+    original = client.get('/api/teachers/list').get_json()
+    response = upload_teachers(client, content.splitlines(), filename='invalid.csv')
+    assert response.status_code == 400
+    assert client.get('/api/teachers/list').get_json() == original
 
 
 def test_empty_or_failed_teacher_upload_preserves_current_database(client, login, monkeypatch):

@@ -6,7 +6,9 @@ from sqlalchemy import func, or_
 from . import recorder_bp, storage
 from .db import School, Teacher, db_session
 from .security import get_current_user, require_admin, require_auth
+from .roster_csv import roster_csv_reader
 from .storage import save_global_teacher_data, sync_teacher_table_from_list
+from .utils import normalize_name
 
 
 def _teacher_roster_metadata(school_id):
@@ -41,19 +43,27 @@ def upload_teachers():
 
     try:
         content = file.read().decode('utf-8-sig')
-        lines = content.strip().split('\n')
-
         teachers = []
-        for line in lines:
-            teacher_name = line.strip().strip('"').strip("'")
-            if teacher_name:
-                teachers.append({
-                    'name': teacher_name,
-                    'display_name': teacher_name
-                })
+        if file.filename.lower().endswith('.csv'):
+            reader = roster_csv_reader(content, columns=('Last', 'Preferred', 'First'))
+            fields = reader.fieldnames or []
+            if 'Last' not in fields or not any(name in fields for name in ('Preferred', 'First')):
+                return jsonify({'error': 'Teacher CSV must contain Last and either Preferred or First. Columns may be in any order and header capitalization does not matter.'}), 400
+            first_column = 'Preferred' if 'Preferred' in fields else 'First'
+            for row in reader:
+                first = normalize_name(row.get(first_column))
+                last = normalize_name(row.get('Last'))
+                if first and last:
+                    teacher_name = f'{first} {last}'
+                    teachers.append({'name': teacher_name, 'display_name': teacher_name})
+        else:
+            for line in content.splitlines():
+                teacher_name = line.strip().strip('"').strip("'")
+                if teacher_name:
+                    teachers.append({'name': teacher_name, 'display_name': teacher_name})
 
         if not teachers:
-            return jsonify({'error': 'No valid teacher names found in file'}), 400
+            return jsonify({'error': 'No valid teacher names found. CSV rows need Last and Preferred (or First when the Preferred column is absent).'}), 400
 
         user_id = session['user_id']
         try:

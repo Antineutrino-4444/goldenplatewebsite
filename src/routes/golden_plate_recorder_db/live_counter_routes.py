@@ -1,6 +1,7 @@
 """School-scoped live plate totals and administrator-managed date ranges."""
 
 import json
+import math
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -38,6 +39,8 @@ def _settings(school):
         'timezone': DEFAULT_TIMEZONE,
         'default_range': 'year',
         'milestone': None,
+        'default_metric': 'count',
+        'percentage_milestone': None,
         'celebration_title': '',
         'celebration_message': '',
         'celebration_footer': '',
@@ -102,6 +105,18 @@ def _validated_settings(data, existing, can_set_default):
         raise PermissionError('Only superadmins can change the celebration milestone.')
     if milestone is not None and (type(milestone) is not int or not 1 <= milestone <= 1_000_000_000):
         raise ValueError('Set a clean-plate milestone from 1 to 1,000,000,000, or leave it blank to disable celebrations.')
+    metric = data.get('default_metric', existing['default_metric'])
+    percentage_milestone = data.get('percentage_milestone', existing['percentage_milestone'])
+    if not can_set_default and (metric != existing['default_metric']
+                               or percentage_milestone != existing['percentage_milestone']):
+        raise PermissionError('Only superadmins can change the default view or percentage milestone.')
+    if not isinstance(metric, str) or metric not in {'count', 'percentage'}:
+        raise ValueError('Choose count or percentage as the default view.')
+    if percentage_milestone is not None:
+        if (type(percentage_milestone) not in (int, float) or not math.isfinite(percentage_milestone)
+                or not 0.1 <= percentage_milestone <= 100
+                or round(percentage_milestone, 1) != percentage_milestone):
+            raise ValueError('Set a percentage milestone from 0.1 to 100 with at most one decimal place, or leave it blank.')
     celebration = {}
     for field, label, limit in [('celebration_title', 'Banner title', 80),
                                 ('celebration_message', 'Banner message', 300),
@@ -113,7 +128,8 @@ def _validated_settings(data, existing, can_set_default):
             raise ValueError(f'{label} must be text with {limit} characters or fewer.')
         celebration[field] = value.strip()
     return {'year': year, 'timezone': timezone_name, 'default_range': default,
-            'custom_ranges': sorted(validated, key=lambda item: item['id']), 'milestone': milestone, **celebration}
+            'custom_ranges': sorted(validated, key=lambda item: item['id']), 'milestone': milestone,
+            'default_metric': metric, 'percentage_milestone': percentage_milestone, **celebration}
 
 
 def _utc_bounds(start, end, timezone_name):

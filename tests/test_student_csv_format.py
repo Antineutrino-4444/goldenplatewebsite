@@ -20,6 +20,8 @@ def upload_csv(client, content):
     ('Clan,House,Advisor,Grade,Last,Student ID,Preferred\n,,,,Smith,987654321,Alex\n', 'Alex', None, None),
     ('House,First,Last,Grade,Student ID,Advisor,Clan\nBarn,Alex,Smith,9,987654321,Johnson,Alpha\n', 'Alex', '9', 'Barn'),
     ('\ufeff Last , Student ID , First \nSmith,987654321,Alex\n', 'Alex', None, None),
+    ('last,STUDENT id,pReFeRrEd,FIRST\nSmith,987654321,Alex,Alexander\n', 'Alex', None, None),
+    ('cLaN,HOUSE,advisor,GRADE,LAST,Student id,first\nAlpha,Barn,Johnson,9,Smith,987654321,Alex\n', 'Alex', '9', 'Barn'),
 ])
 def test_student_roster_accepts_flexible_columns(client, login, content, expected_name, expected_grade, expected_house):
     login()
@@ -51,6 +53,8 @@ def test_student_roster_accepts_flexible_columns(client, login, content, expecte
     'Student ID,First\ncsv-format-2,Alex\n',
     'Student ID,Last\ncsv-format-2,Smith\n',
     'Student ID,Last,Preferred,First\ncsv-format-2,Smith,,Alexander\n',
+    'STUDENT ID,last,pReFeRrEd,FIRST\ncsv-format-2,Smith,,Alexander\n',
+    'STUDENT ID,last,Preferred,preferred\ncsv-format-2,Smith,Alex,Alexander\n',
 ])
 def test_student_roster_requires_id_last_and_selected_name(client, login, content):
     login()

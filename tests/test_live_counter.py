@@ -384,3 +384,47 @@ def test_existing_schema_upgrade_adds_settings_and_index_idempotently(monkeypatc
         assert 'idx_records_school_recorded_at' in {index['name'] for index in inspector.get_indexes('session_records')}
     finally:
         engine.dispose()
+
+
+def test_metric_defaults_and_both_goals_survive_restart_and_admin_range_edits(client, counter_school):
+    legacy = client.get('/api/live-counter').get_json()['settings']
+    assert legacy['default_metric'] == 'count' and legacy['percentage_milestone'] is None
+    update = {**SETTINGS, 'default_metric': 'percentage', 'milestone': 1000, 'percentage_milestone': 75.5}
+    assert client.put('/api/live-counter/settings', json=update).status_code == 200
+    db_session.remove()
+    settings = client.get('/api/live-counter').get_json()['settings']
+    assert (settings['default_metric'], settings['milestone'], settings['percentage_milestone']) == ('percentage', 1000, 75.5)
+    account = create_user_record(f'metric-admin-{uuid.uuid4().hex}', 'counter-test-password', 'Range Admin',
+                                 role='admin', school_id=counter_school['id'])
+    client.post('/api/auth/login', json={'username': account.username, 'password': 'counter-test-password'})
+    assert client.put('/api/live-counter/settings', json={**SETTINGS, 'year': 2025}).status_code == 200
+    for field, value in [('default_metric', 'count'), ('percentage_milestone', 80), ('percentage_milestone', None)]:
+        assert client.put('/api/live-counter/settings', json={**SETTINGS, field: value}).status_code == 403
+    settings = client.get('/api/live-counter').get_json()['settings']
+    assert (settings['default_metric'], settings['milestone'], settings['percentage_milestone']) == ('percentage', 1000, 75.5)
+    client.post('/api/auth/logout')
+    client.post('/api/auth/guest', json={'school_slug': counter_school['code']})
+    settings = client.get('/api/live-counter').get_json()['settings']
+    assert settings['default_metric'] == 'percentage' and settings['percentage_milestone'] == 75.5
+    assert client.put('/api/live-counter/settings', json=update).status_code == 403
+
+
+@pytest.mark.parametrize('field,value', [
+    ('default_metric', 'other'), ('default_metric', None), ('default_metric', ['count']),
+    ('percentage_milestone', 0), ('percentage_milestone', -1), ('percentage_milestone', 100.1),
+    ('percentage_milestone', 70.55), ('percentage_milestone', '80'), ('percentage_milestone', True),
+    ('percentage_milestone', float('nan')), ('percentage_milestone', float('inf')),
+])
+def test_invalid_percentage_settings_are_rejected_atomically(client, counter_school, field, value):
+    assert client.put('/api/live-counter/settings', json={**SETTINGS, field: value}).status_code == 400
+    assert json.loads(db_session.get(School, counter_school['id']).live_counter_settings) == SETTINGS
+
+
+def test_percentage_goal_boundaries_disable_and_school_isolation(client, counter_school):
+    for goal in (0.1, 70.1, 100, None):
+        assert client.put('/api/live-counter/settings', json={**SETTINGS, 'percentage_milestone': goal}).status_code == 200
+        assert client.get('/api/live-counter').get_json()['settings']['percentage_milestone'] == goal
+    other = School(id=uuid.uuid4().hex, slug=uuid.uuid4().hex, name='Other Percentage School')
+    db_session.add(other)
+    db_session.commit()
+    assert other.live_counter_settings is None

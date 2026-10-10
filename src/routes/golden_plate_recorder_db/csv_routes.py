@@ -1,5 +1,3 @@
-import csv
-import io
 from datetime import datetime
 
 from flask import jsonify, request, session
@@ -8,6 +6,7 @@ from sqlalchemy import func
 from . import recorder_bp, storage
 from .db import School, Student, db_session
 from .security import get_current_user, require_admin, require_auth
+from .roster_csv import roster_csv_reader
 from .storage import save_global_csv_data, sync_students_table_from_csv_rows
 from .utils import make_student_key, normalize_house
 
@@ -52,9 +51,7 @@ def upload_csv():
 
     try:
         content = file.read().decode('utf-8-sig')
-        csv_reader = csv.DictReader(io.StringIO(content))
-        if csv_reader.fieldnames:
-            csv_reader.fieldnames = [name.strip() for name in csv_reader.fieldnames]
+        csv_reader = roster_csv_reader(content)
 
         rows = list(csv_reader)
         if not rows:
@@ -63,7 +60,7 @@ def upload_csv():
         required_columns = ['Student ID', 'Last']
         if (not all(col in csv_reader.fieldnames for col in required_columns)
                 or not any(col in csv_reader.fieldnames for col in ('Preferred', 'First'))):
-            return jsonify({'error': 'CSV must contain Student ID, Last, and either Preferred or First. Columns may be in any order.'}), 400
+            return jsonify({'error': 'CSV must contain Student ID, Last, and either Preferred or First. Columns may be in any order and header capitalization does not matter.'}), 400
 
         # Use Preferred whenever its column exists, even if First is also supplied.
         # Canonicalize First-only rosters for storage and downstream name lookups.
