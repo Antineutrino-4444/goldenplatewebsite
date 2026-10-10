@@ -1,6 +1,7 @@
 import React from 'react'
 import PortalHeader from '@/components/PortalHeader.jsx'
 import SessionSwitcher from '@/components/SessionSwitcher.jsx'
+import StudentRosterUpload from '@/components/StudentRosterUpload.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
@@ -67,6 +68,7 @@ function MainPortal({ app }) {
     facultyPick,
     facultyPickLoading,
     pickRandomFaculty,
+    finalizeFacultyWinner,
     overrideInput,
     setOverrideInput,
     setOverrideCandidate,
@@ -114,13 +116,14 @@ function MainPortal({ app }) {
     teacherNames,
     sanitizeSelection,
     csvData,
-    uploadCSV,
     csvPreviewLoading,
     previewCSV,
     showCsvPreview,
     setShowCsvPreview,
     csvPreviewData,
     csvPreviewPage,
+    csvPreviewSearch,
+    setCsvPreviewSearch,
     teacherPreviewLoading,
     previewTeachers,
     showTeacherPreview,
@@ -317,7 +320,7 @@ function MainPortal({ app }) {
                     Student Database
                   </CardTitle>
                   <CardDescription>
-                    Upload CSV with student data for food waste tracking (Student ID, Last, Preferred, Grade, Advisor, House, Clan)
+                    Upload the current student roster (Student ID, Last, Preferred, Grade, Advisor, House, Clan). Students missing from the new roster are excluded from ticket draws.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -329,12 +332,7 @@ function MainPortal({ app }) {
                       </AlertDescription>
                     </Alert>
                   ) : (
-                    <Input
-                      type="file"
-                      accept=".csv"
-                      onChange={(e) => e.target.files[0] && uploadCSV(e.target.files[0])}
-                      className="mb-4"
-                    />
+                    <StudentRosterUpload app={app} />
                   )}
                   {['admin', 'superadmin'].includes(user?.role) && (
                     <div className="flex flex-wrap gap-2 mb-4">
@@ -473,7 +471,7 @@ function MainPortal({ app }) {
                         </div>
                       </div>
                       <CardDescription>
-                        House ranking statistics for the current session
+                        Clean rate = clean plates ÷ all recorded plates in that house.
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="flex-1 overflow-x-hidden overflow-y-auto">
@@ -503,7 +501,7 @@ function MainPortal({ app }) {
                               .slice()
                               .sort((a, b) => {
                                 if (houseSortBy === 'percentage') {
-                                  return b.clean_rate - a.clean_rate
+                                  return b.clean_rate - a.clean_rate || b.total_count - a.total_count || a.house.localeCompare(b.house)
                                 }
                                 return b.total_count - a.total_count
                               })
@@ -528,7 +526,7 @@ function MainPortal({ app }) {
                                       {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
                                     </div>
                                     <div className="text-xs text-gray-500">
-                                      {houseSortBy === 'percentage' ? `${house.total_count} total` : `${house.clean_rate}% clean rate`}
+                                      {houseSortBy === 'percentage' ? `${house.clean_count} of ${house.total_count} plates clean` : `${house.clean_rate}% clean rate`}
                                     </div>
                                     <div className="text-xs text-gray-500">
                                       {house.percentage}% of all records
@@ -745,26 +743,38 @@ function MainPortal({ app }) {
                               <div className="text-lg font-semibold">
                                 {facultyPick?.display_name || 'No faculty selected yet'}
                               </div>
+                              {facultyPick && <div className="text-xs text-gray-600">{facultyPick.finalized ? 'Finalized winner' : 'Pending finalization'}</div>}
                               {facultyPick?.recorded_at && (
                                 <div className="text-xs text-gray-500">
                                   Recorded at {new Date(facultyPick.recorded_at).toLocaleString()}
                                 </div>
                               )}
                             </div>
-                            <Button
-                              onClick={pickRandomFaculty}
-                              variant="outline"
-                              disabled={
-                                facultyPickLoading ||
-                                user?.role === 'guest' ||
-                                isSessionDiscarded ||
-                                (sessionStats.faculty_clean_count ?? 0) <= 0 ||
-                                !sessionId
-                              }
-                            >
-                              <Sparkles className="h-4 w-4 mr-2" />
-                              Pick Faculty Name
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                onClick={pickRandomFaculty}
+                                variant="outline"
+                                disabled={
+                                  facultyPickLoading ||
+                                  !canManageDraw ||
+                                  user?.role === 'guest' ||
+                                  isSessionDiscarded ||
+                                  (sessionStats.faculty_clean_count ?? 0) <= 0 ||
+                                  !sessionId
+                                }
+                              >
+                                <Sparkles className="h-4 w-4 mr-2" />
+                                Pick Faculty Name
+                              </Button>
+                              <Button
+                                onClick={finalizeFacultyWinner}
+                                variant="outline"
+                                disabled={facultyPickLoading || !canManageDraw || !facultyPick || facultyPick.finalized || isSessionDiscarded}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Finalize Faculty Winner
+                              </Button>
+                            </div>
                           </div>
                           {canOverrideWinner && (
                             <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -844,6 +854,9 @@ function MainPortal({ app }) {
                                     </div>
                                     <div className="text-xs text-gray-500">
                                       Tickets at selection: {Number(currentDrawInfo.tickets_at_selection ?? 0).toFixed(2)} • Chance: {Number(currentDrawInfo.probability_at_selection ?? 0).toFixed(2)}%
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      Draw type: {currentDrawInfo.override_applied || currentDrawInfo.method === 'override' ? 'Override' : 'Random'}
                                     </div>
                                     <div className="text-xs">
                                       Status:{' '}
@@ -939,6 +952,7 @@ function MainPortal({ app }) {
                                           <div className="font-semibold uppercase">{entry.event_type.replace(/_/g, ' ')}</div>
                                           <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
                                           {entry.student_name && <div>Student: {entry.student_name}</div>}
+                                          {entry.faculty_name && <div>Faculty: {entry.faculty_name}</div>}
                                           {entry.tickets !== null && entry.tickets !== undefined && (
                                             <div>Student tickets: {Number(entry.tickets ?? 0).toFixed(2)}</div>
                                           )}
@@ -1053,7 +1067,7 @@ function MainPortal({ app }) {
                       </div>
                     </div>
                     <CardDescription>
-                      House ranking statistics for the current session
+                      Clean rate = clean plates ÷ all recorded plates in that house.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -1083,7 +1097,7 @@ function MainPortal({ app }) {
                             .slice()
                             .sort((a, b) => {
                               if (houseSortBy === 'percentage') {
-                                return b.clean_rate - a.clean_rate
+                                return b.clean_rate - a.clean_rate || b.total_count - a.total_count || a.house.localeCompare(b.house)
                               }
                               return b.total_count - a.total_count
                             })
@@ -1108,7 +1122,7 @@ function MainPortal({ app }) {
                                     {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
                                   </div>
                                   <div className="text-xs text-gray-500">
-                                    {houseSortBy === 'percentage' ? `${house.total_count} total` : `${house.clean_rate}% clean rate`}
+                                    {houseSortBy === 'percentage' ? `${house.clean_count} of ${house.total_count} plates clean` : `${house.clean_rate}% clean rate`}
                                   </div>
                                   <div className="text-xs text-gray-500">
                                     {house.percentage}% of all records
@@ -1480,15 +1494,21 @@ function MainPortal({ app }) {
             </DialogDescription>
           </DialogHeader>
           <div className="flex min-h-0 flex-col gap-4">
+            <form className="flex shrink-0 flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); previewCSV(1) }}>
+              <Input className="min-w-0 flex-1" aria-label="Search student names" placeholder="Search student names" value={csvPreviewSearch} onChange={(event) => setCsvPreviewSearch(event.target.value)} />
+              <Button type="submit" variant="outline" disabled={csvPreviewLoading}>Search</Button>
+              {csvPreviewSearch && <Button type="button" variant="ghost" onClick={() => { setCsvPreviewSearch(''); previewCSV(1, '') }}>Clear</Button>}
+            </form>
             {csvPreviewData && (
               <>
                 <div className="shrink-0 text-sm text-gray-600">
                   <p><strong>Total Records:</strong> {csvPreviewData.pagination.total_records}</p>
                   <p><strong>Uploaded by:</strong> {csvPreviewData.metadata.uploaded_by}</p>
-                  <p><strong>Uploaded at:</strong> {new Date(csvPreviewData.metadata.uploaded_at).toLocaleString()}</p>
+                  <p><strong>Uploaded at:</strong> {csvPreviewData.metadata.uploaded_at ? new Date(csvPreviewData.metadata.uploaded_at).toLocaleString() : 'Unknown'}</p>
                 </div>
 
                 <div className="min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto rounded-lg border bg-slate-50 p-3">
+                  {csvPreviewData.data.length === 0 && <p className="py-4 text-center text-sm text-gray-500">No students match this name.</p>}
                   {csvPreviewData.data.map((row, index) => (
                     <dl key={index} className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 rounded-md border bg-white p-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
                       {csvPreviewData.columns.map((column, colIndex) => (
@@ -1508,7 +1528,7 @@ function MainPortal({ app }) {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      onClick={() => previewCSV(csvPreviewPage - 1)}
+                      onClick={() => previewCSV(csvPreviewPage - 1, csvPreviewData.search || '')}
                       disabled={!csvPreviewData.pagination.has_prev || csvPreviewLoading}
                       variant="outline"
                       size="sm"
@@ -1516,7 +1536,7 @@ function MainPortal({ app }) {
                       Previous
                     </Button>
                     <Button
-                      onClick={() => previewCSV(csvPreviewPage + 1)}
+                      onClick={() => previewCSV(csvPreviewPage + 1, csvPreviewData.search || '')}
                       disabled={!csvPreviewData.pagination.has_next || csvPreviewLoading}
                       variant="outline"
                       size="sm"

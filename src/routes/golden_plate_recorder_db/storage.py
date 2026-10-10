@@ -5,6 +5,7 @@ from datetime import datetime
 
 from .db import (
     DEFAULT_SCHOOL_ID,
+    School,
     Session as SessionModel,
     SessionDeleteRequest,
     SessionRecord,
@@ -21,7 +22,7 @@ from .users import (
     migrate_legacy_users,
     reset_user_store,
 )
-from .utils import extract_student_id_from_key, make_student_key, normalize_name, plate_count_label, split_student_key
+from .utils import extract_student_id_from_key, make_student_key, normalize_house, normalize_name, plate_count_label, split_student_key
 
 # Student lookup cache keyed by school for fast eligibility checks
 student_lookup = {}
@@ -33,9 +34,9 @@ global_csv_data = {}
 global_teacher_data = {}
 
 
-def sync_students_table_from_csv_rows(rows, *, school_id=None):
+def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, uploaded_by=None):
     """Persist uploaded student roster into the students table."""
-    result = {'processed': 0, 'created': 0, 'updated': 0}
+    result = {'processed': 0, 'created': 0, 'updated': 0, 'deactivated': 0}
     if not isinstance(rows, list) or not rows:
         return result
 
@@ -44,6 +45,8 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None):
     unique_rows = {}
     for row in rows:
         if not isinstance(row, dict):
+            continue
+        if not normalize_name(row.get('Preferred')) or not normalize_name(row.get('Last')):
             continue
         identifier = normalize_name(row.get('Student ID'))
         if not identifier:
@@ -62,6 +65,13 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None):
         .all()
     )
     existing_map = {student.student_identifier.lower(): student for student in existing_students}
+    # A roster upload replaces membership for this school. Keep departed rows
+    # for historical plates/ticket events, but exclude them from future draws.
+    result['deactivated'] = db_session.query(Student).filter(
+        Student.school_id == school_id,
+        Student.is_active == 1,
+        ~Student.student_identifier.in_(identifiers),
+    ).update({Student.is_active: 0}, synchronize_session='fetch')
 
     for key, (identifier, row) in unique_rows.items():
         preferred = normalize_name(row.get('Preferred'))
@@ -71,12 +81,16 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None):
 
         grade = normalize_name(row.get('Grade'))
         advisor = normalize_name(row.get('Advisor'))
-        house = normalize_name(row.get('House'))
+        house = normalize_house(row.get('House'))
+        row['House'] = house
         clan = normalize_name(row.get('Clan'))
 
         student = existing_map.get(key)
         if student:
             changes = False
+            if not student.is_active:
+                student.is_active = 1
+                changes = True
             if student.preferred_name != preferred:
                 student.preferred_name = preferred
                 changes = True
@@ -121,6 +135,11 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None):
 
     if result['processed']:
         try:
+            if filename is not None:
+                school = db_session.get(School, school_id)
+                school.roster_filename = filename
+                school.roster_uploaded_at = datetime.now()
+                school.roster_uploaded_by = uploaded_by
             db_session.commit()
             update_student_lookup()
         except Exception:
@@ -200,7 +219,7 @@ def update_student_lookup():
     student_lookup = {}
 
     try:
-        students = db_session.query(Student).all()
+        students = db_session.query(Student).filter(Student.is_active == 1).all()
     except Exception as exc:
         db_session.rollback()
         print(f"Error building student lookup: {exc}")
@@ -219,7 +238,7 @@ def update_student_lookup():
             'last_name': last,
             'grade': normalize_name(student.grade),
             'advisor': normalize_name(student.advisor),
-            'house': normalize_name(student.house),
+            'house': normalize_house(student.house),
             'clan': normalize_name(student.clan),
             'student_id': student_id,
             'key': key
@@ -379,6 +398,7 @@ def ensure_session_structure(session_info):
         for record in records:
             if not isinstance(record, dict):
                 continue
+            record['house'] = normalize_house(record.get('house'))
             preferred = record.get('preferred_name') or record.get('first_name')
             last = record.get('last_name')
             student_id = record.get('student_id')
@@ -392,6 +412,10 @@ def ensure_session_structure(session_info):
                     extracted = extract_student_id_from_key(key_lower)
                     if extracted:
                         record['student_id'] = extracted
+
+    for record in session_info['scan_history']:
+        if isinstance(record, dict) and 'house' in record:
+            record['house'] = normalize_house(record['house'])
 
     # Ensure draw information structure exists
     draw_info = session_info.get('draw_info')
@@ -487,6 +511,9 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
             'display_name': db_sess.faculty_pick_display_name,
             'recorded_at': _isoformat_timestamp(db_sess.faculty_pick_recorded_at),
             'recorded_by': db_sess.faculty_pick_recorded_by,
+            'finalized': bool(db_sess.faculty_finalized),
+            'finalized_at': _isoformat_timestamp(db_sess.faculty_finalized_at),
+            'finalized_by': db_sess.faculty_finalized_by,
         }
     else:
         session_info.setdefault('faculty_pick', None)
@@ -523,6 +550,7 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
     for record in records:
         timestamp = _isoformat_timestamp(record.recorded_at)
         base_entry = {
+            'record_id': record.id,
             'timestamp': timestamp,
             'recorded_by': record.recorded_by,
             'category': record.category,
@@ -568,7 +596,7 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
         student_identifier = normalize_name(student_obj.student_identifier) if student_obj else ''
         advisor = normalize_name(student_obj.advisor) if student_obj else ''
         grade = normalize_name(record.grade or (student_obj.grade if student_obj else ''))
-        house = normalize_name(record.house or (student_obj.house if student_obj else ''))
+        house = normalize_house(record.house or (student_obj.house if student_obj else ''))
         clan = normalize_name(student_obj.clan) if student_obj else ''
 
         if (not preferred_name or not last_name) and record.dedupe_key:

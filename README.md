@@ -197,3 +197,15 @@ For questions or feedback, please open an issue in this repository.
 ## Optional plate names
 
 Clean, Dirty, Very Dirty, and Faculty Clean all accept an optional name (or student ID for student plates). Leave the field blank to add one unnamed plate to the category count. Repeated blank entries each add one; they appear as “count only” in history and exports and do not earn or reset anyone’s draw tickets. Only named faculty entries can be picked for the faculty draw. Named Dirty entries preserve the student information and contribute to their house statistics, without changing draw tickets.
+
+### House rankings and current roster
+
+Named clean, dirty, and very dirty plates count toward the student's house. House rankings default to clean plates divided by all recorded student plates in that house; anonymous counts have no house assignment. Exact two-part house names such as `Macdonald - Flavelle` use `Macdonald`. Startup automatically updates existing student and plate house fields; uploads and new records follow the same rule. Other separators and labels with three or more sections remain unchanged.
+
+Student CSV uploads replace the current roster for that school. Omitted students are marked inactive, hidden from roster suggestions and excluded from weighted draws and winner overrides. Historical plate records, ticket balances and draw history remain stored. Re-uploading a student restores their membership with the same ID and history. The draw and house panels refresh after an upload.
+
+### Draw finalization and email preferences
+
+Faculty winners can be finalized separately from student winners. Finalization persists across restarts. Repeating a finalized student or faculty draw requires confirmation, and all selections and finalizations remain in the public draw log. Superadmin overrides use the explicit `override` method and log type.
+
+Every outgoing email includes a private **Unsubscribe or manage notification preferences** link. No login is required. Recipients can choose server restart announcements, school registration requests, account requests, invite signups, map review alerts, and map decisions, or unsubscribe from all notifications. Preferences persist in the database and are enforced by the shared email delivery service. Requested verification codes remain deliverable and include the same management link. Links use `WEBSITE_PUBLIC_URL` from the environment; recipient lists remain controlled by the existing environment settings and school contact/map settings.

@@ -142,6 +142,7 @@ def _clear_ticket_tables():
     # Import lazily to avoid circular imports during module load.
     from src.routes.golden_plate_recorder_db.db import (
         DraftPool,
+        EmailNotificationPreference,
         Session,
         SessionDrawEvent,
         SessionRecord,
@@ -150,7 +151,7 @@ def _clear_ticket_tables():
     )
 
     # Delete in dependency order to avoid FK constraint issues.
-    for model in (SessionTicketEvent, SessionDrawEvent, SessionRecord, DraftPool):
+    for model in (SessionTicketEvent, SessionDrawEvent, SessionRecord, DraftPool, EmailNotificationPreference):
         db_session.query(model).delete()
 
     db_session.query(Session).update({

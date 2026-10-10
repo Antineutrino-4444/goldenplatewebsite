@@ -21,6 +21,7 @@ from .db import (
     db_session,
 )
 from .domain import serialize_draw_info
+from .draw_db import record_draw_event
 from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
 from .storage import (
     delete_requests,
@@ -38,6 +39,7 @@ from .utils import (
     extract_student_id_from_key,
     format_display_name,
     make_student_key,
+    normalize_house,
     normalize_name,
     plate_count_label,
     split_student_key,
@@ -94,6 +96,9 @@ def _serialize_faculty_pick(db_sess, fallback=None):
             'display_name': db_sess.faculty_pick_display_name,
             'recorded_at': _isoformat_timestamp(db_sess.faculty_pick_recorded_at),
             'recorded_by': db_sess.faculty_pick_recorded_by,
+            'finalized': bool(db_sess.faculty_finalized),
+            'finalized_at': _isoformat_timestamp(db_sess.faculty_finalized_at),
+            'finalized_by': db_sess.faculty_finalized_by,
         }
     if isinstance(fallback, dict) and fallback:
         return {
@@ -102,6 +107,9 @@ def _serialize_faculty_pick(db_sess, fallback=None):
             'display_name': fallback.get('display_name'),
             'recorded_at': fallback.get('recorded_at'),
             'recorded_by': fallback.get('recorded_by'),
+            'finalized': bool(fallback.get('finalized')),
+            'finalized_at': fallback.get('finalized_at'),
+            'finalized_by': fallback.get('finalized_by'),
         }
     return None
 
@@ -672,11 +680,11 @@ def get_session_history():
     }), 200
 
 
-@recorder_bp.route('/session/<session_id>/faculty/pick', methods=['GET'])
+@recorder_bp.route('/session/<session_id>/faculty/pick', methods=['GET', 'POST'])
 def pick_random_faculty(session_id):
     """Return a random faculty clean record for the given session."""
-    if not require_auth_or_guest():
-        return jsonify({'error': 'Authentication or guest access required'}), 401
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
 
     actor_id, _, school_id = _get_request_actor()
     db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
@@ -704,6 +712,10 @@ def pick_random_faculty(session_id):
     if not faculty_records:
         return jsonify({'error': 'No named faculty records available for this session'}), 400
 
+    payload = request.get_json(silent=True) or {}
+    if db_sess.faculty_finalized and payload.get('confirm_redraw') is not True:
+        return jsonify({'error': 'Confirm repeating the finalized faculty draw. This action is recorded in the public draw log.'}), 409
+
     chosen = random.choice(faculty_records)
     preferred = normalize_name(chosen.get('preferred_name') or chosen.get('first_name'))
     last = normalize_name(chosen.get('last_name'))
@@ -716,6 +728,9 @@ def pick_random_faculty(session_id):
         'display_name': display_name,
         'recorded_at': recorded_at,
         'recorded_by': chosen.get('recorded_by') or actor_id,
+        'finalized': False,
+        'finalized_at': None,
+        'finalized_by': None,
     }
 
     db_sess.faculty_pick_preferred_name = preferred
@@ -723,7 +738,15 @@ def pick_random_faculty(session_id):
     db_sess.faculty_pick_display_name = display_name
     db_sess.faculty_pick_recorded_at = _parse_iso_timestamp(recorded_at)
     db_sess.faculty_pick_recorded_by = faculty_payload['recorded_by']
+    db_sess.faculty_pick_record_id = chosen.get('record_id')
+    db_sess.faculty_finalized = 0
+    db_sess.faculty_finalized_at = None
+    db_sess.faculty_finalized_by = None
     db_sess.updated_at = _now_utc()
+    event = record_draw_event(db_sess, 'draw', actor_id, comment='Faculty draw')
+    event.selected_record_id = db_sess.faculty_pick_record_id
+    event.draw_target = 'faculty'
+    event.faculty_name = display_name
 
     data['faculty_pick'] = faculty_payload
     session_data[session_id] = data
@@ -735,6 +758,43 @@ def pick_random_faculty(session_id):
         'faculty': faculty_payload,
         'session_id': session_id
     }), 200
+
+
+@recorder_bp.route('/session/<session_id>/faculty/finalize', methods=['POST'])
+def finalize_faculty_winner(session_id):
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    actor_id, _, school_id = _get_request_actor()
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return jsonify({'error': 'Session not found'}), 404
+    if db_sess.main_session_id or db_sess.status == 'discarded':
+        return jsonify({'error': 'Faculty draws are unavailable for merged or discarded sessions'}), 400
+    if not _serialize_faculty_pick(db_sess):
+        return jsonify({'error': 'Choose a faculty winner first'}), 400
+    if not db_sess.faculty_finalized:
+        db_sess.faculty_finalized = 1
+        db_sess.faculty_finalized_at = _now_utc()
+        db_sess.faculty_finalized_by = actor_id
+        db_sess.updated_at = _now_utc()
+        # Recover the recorded faculty entry for winners selected before this update.
+        if not db_sess.faculty_pick_record_id:
+            record = db_session.query(SessionRecord).filter_by(
+                session_id=session_id, category='faculty',
+                preferred_name=db_sess.faculty_pick_preferred_name,
+                last_name=db_sess.faculty_pick_last_name,
+            ).first()
+            db_sess.faculty_pick_record_id = record.id if record else None
+        event = record_draw_event(db_sess, 'finalize', actor_id, comment='Faculty winner finalized')
+        event.selected_record_id = db_sess.faculty_pick_record_id
+        event.draw_target = 'faculty'
+        event.faculty_name = _serialize_faculty_pick(db_sess)['display_name']
+        db_session.commit()
+    faculty = _serialize_faculty_pick(db_sess)
+    data = get_session_entry(session_id)
+    if data is not None:
+        data['faculty_pick'] = faculty
+    return jsonify({'status': 'success', 'faculty': faculty})
 
 
 @recorder_bp.route('/session/<session_id>/house-stats', methods=['GET'])
@@ -782,13 +842,13 @@ def get_house_stats(session_id):
     total_with_house = 0
 
     for record in records:
-        house = (record.house or '').strip()
+        house = normalize_house(record.house)
         if not house:
             # Try to get house from linked student
             if record.student_id:
                 student = db_session.query(Student).filter_by(id=record.student_id).first()
                 if student:
-                    house = (student.house or '').strip()
+                    house = normalize_house(student.house)
 
         if house:
             if house not in house_counts:
@@ -812,8 +872,8 @@ def get_house_stats(session_id):
             'clean_rate': round(clean_rate, 1)
         })
 
-    # Sort by total count descending by default
-    house_stats.sort(key=lambda x: x['total_count'], reverse=True)
+    # Rank by clean plates as a percentage of each house's own records.
+    house_stats.sort(key=lambda x: (-x['clean_rate'], -x['total_count'], x['house']))
 
     return jsonify({
         'has_house_data': True,
@@ -1074,7 +1134,7 @@ def record_student(category):
             'Last': last_val,
             'Grade': str(student_obj.grade or '').strip(),
             'Advisor': str(student_obj.advisor or '').strip(),
-            'House': str(student_obj.house or '').strip(),
+            'House': normalize_house(student_obj.house),
             'Clan': str(student_obj.clan or '').strip(),
             'Student ID': str(student_obj.student_identifier or '').strip()
         }
@@ -1167,7 +1227,7 @@ def record_student(category):
         last_name = str(student_record.get('Last', '') or '').strip()
         grade = str(student_record.get('Grade', '') or '').strip()
         advisor = str(student_record.get('Advisor', '') or '').strip()
-        house = str(student_record.get('House', '') or '').strip()
+        house = normalize_house(student_record.get('House'))
         clan = str(student_record.get('Clan', '') or '').strip()
         student_id = str(student_record.get('Student ID', '') or '').strip()
     elif lookup_profile:
@@ -1175,7 +1235,7 @@ def record_student(category):
         last_name = normalize_name(lookup_profile.get('last_name'))
         grade = normalize_name(lookup_profile.get('grade'))
         advisor = normalize_name(lookup_profile.get('advisor'))
-        house = normalize_name(lookup_profile.get('house'))
+        house = normalize_house(lookup_profile.get('house'))
         clan = normalize_name(lookup_profile.get('clan'))
         student_id = normalize_name(lookup_profile.get('student_id'))
     else:

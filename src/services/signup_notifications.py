@@ -21,4 +21,4 @@ def notify_school_signup(school, account, *, invited=False):
         ('School', school.name), ('Name', account.display_name),
         ('Username', account.username),
         ('Status', 'Active (invite signup)' if invited else 'Awaiting approval'),
-    ], recipients=recipients)
+    ], recipients=recipients, notification_type='invite_signup' if invited else 'account_signup')

@@ -61,7 +61,8 @@ def calculate_ticket_balances() -> Dict[str, float]:
     """Return current ticket balances for all students with positive tickets."""
     pool_entries = (
         db_session.query(DraftPool.student_id, DraftPool.ticket_number)
-        .filter(DraftPool.ticket_number > 0)
+        .join(Student, DraftPool.student_id == Student.id)
+        .filter(DraftPool.ticket_number > 0, Student.is_active == 1)
         .all()
     )
 
@@ -134,7 +135,8 @@ def get_eligible_students_with_tickets(
     # Get student records
     students = (
         db_session.query(Student)
-        .filter(Student.id.in_(eligible_student_ids))
+        .filter(Student.id.in_(eligible_student_ids), Student.is_active == 1,
+                Student.school_id == _resolve_school_id(session_id=session_id))
         .all()
     )
     
@@ -335,6 +337,11 @@ def get_draw_history(session_id: str) -> List[Dict]:
         student = None
         if event.selected_student_id:
             student = db_session.query(Student).filter_by(id=event.selected_student_id).first()
+        record = db_session.get(SessionRecord, event.selected_record_id) if event.selected_record_id else None
+        is_faculty = event.draw_target == 'faculty' or bool(record and record.category == 'faculty')
+        faculty_name = event.faculty_name
+        if not faculty_name and is_faculty and record:
+            faculty_name = f"{record.preferred_name or ''} {record.last_name or ''}".strip()
 
         # Convert probability from basis points (stored as * 100) back to percentage
         probability = (
@@ -344,10 +351,11 @@ def get_draw_history(session_id: str) -> List[Dict]:
         )
 
         result.append({
-            'event_type': event.event_type,
+            'event_type': f'faculty_{event.event_type}' if is_faculty else event.event_type,
             'timestamp': event.created_at.isoformat() if event.created_at else None,
             'created_by': event.created_by,
             'student_name': f"{student.preferred_name} {student.last_name}" if student else None,
+            'faculty_name': faculty_name if is_faculty else None,
             'student_id': event.selected_student_id,
             'tickets': event.tickets_at_event,
             'probability': probability,

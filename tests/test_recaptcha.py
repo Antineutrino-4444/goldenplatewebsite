@@ -43,10 +43,11 @@ def test_valid_v3_token_uses_server_secret_and_expected_action(google):
     {'score': None}, {'score': '0.9'}, {'score': True}, {'score': float('nan')},
     {'score': -0.1}, {'score': 1.1}, {'challenge_ts': 'invalid'}, {'challenge_ts': None},
     {'challenge_ts': datetime.now().isoformat()},
-    {'challenge_ts': (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()},
+    {'challenge_ts': lambda: (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()},
     {'error-codes': ['quota-exceeded']},
 ])
 def test_invalid_v3_results_are_rejected_even_when_success_is_true(google, overrides):
+    overrides = {key: value() if callable(value) else value for key, value in overrides.items()}
     google.result = google_result(**overrides)
     assert recaptcha.recaptcha_failure('token', 'account_signup').code == 'RECAPTCHA_INVALID'
 

@@ -217,7 +217,7 @@ class TestDrawOperations:
         assert draw_response.status_code == 400
 
     def test_override_allows_superadmin_to_pick_winner(self, client, login):
-        """Super admin can override while recording a standard draw."""
+        """Super admin overrides are explicitly identified in the public draw log."""
         # Login as superadmin
         login(username='greenguys')
         upload_csv(client)
@@ -239,27 +239,27 @@ class TestDrawOperations:
 
         data = override_response.get_json()
         assert data['status'] == 'success'
-        assert not data.get('override')
+        assert data.get('override') is True
         assert data['winner']['student_identifier'] == '101'
         assert data['pool_size'] == 2
 
         summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
         draw_info = summary['draw_info']
 
-        # Override draw should be recorded like a normal draw
-        assert draw_info['method'] == 'random'
-        assert draw_info['override_applied'] is False
+        # Override draw uses its own method and history type
+        assert draw_info['method'] == 'override'
+        assert draw_info['override_applied'] is True
         assert draw_info['winner']['student_identifier'] == '101'
         assert draw_info['finalized'] is False
-        assert [event['event_type'] for event in summary['history']] == ['draw']
+        assert [event['event_type'] for event in summary['history']] == ['override']
 
-        # Finalizing keeps the history indistinguishable from a random draw
+        # Finalizing preserves the override event in history
         finalize_response = client.post(f'/api/session/{session_id}/draw/finalize')
         assert finalize_response.status_code == 200
 
         final_summary = client.get(f'/api/session/{session_id}/draw/summary').get_json()
         assert final_summary['draw_info']['finalized'] is True
-        assert [event['event_type'] for event in final_summary['history']] == ['draw', 'finalize']
+        assert [event['event_type'] for event in final_summary['history']] == ['override', 'finalize']
 
     def test_finalize_resets_winner_tickets(self, client, login):
         """Finalizing a draw resets winner's tickets to 0."""

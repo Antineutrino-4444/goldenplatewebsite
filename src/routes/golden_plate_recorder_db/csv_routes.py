@@ -6,10 +6,28 @@ from flask import jsonify, request, session
 from sqlalchemy import func
 
 from . import recorder_bp, storage
-from .db import Student, db_session
+from .db import School, Student, db_session
 from .security import get_current_user, require_admin, require_auth
 from .storage import save_global_csv_data, sync_students_table_from_csv_rows
-from .utils import make_student_key
+from .utils import make_student_key, normalize_house
+
+
+def _roster_metadata(school_id):
+    school = db_session.get(School, school_id)
+    return {
+        'filename': school.roster_filename if school else None,
+        'uploaded_by': school.roster_uploaded_by or 'unknown' if school else 'unknown',
+        'uploaded_at': school.roster_uploaded_at.isoformat() if school and school.roster_uploaded_at else None,
+    }
+
+
+@recorder_bp.route('/csv/status', methods=['GET'])
+def roster_status():
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    school_id = get_current_user()['school_id']
+    count = db_session.query(Student).filter_by(school_id=school_id, is_active=1).count()
+    return jsonify({'loaded': count > 0, 'rows_count': count, **_roster_metadata(school_id)})
 
 
 @recorder_bp.route('/csv/upload', methods=['POST'])
@@ -47,6 +65,16 @@ def upload_csv():
 
         user_id = session['user_id']
         school_id = current_user['school_id']
+        try:
+            filename = file.filename.replace('\\', '/').rsplit('/', 1)[-1]
+            sync_result = sync_students_table_from_csv_rows(rows, school_id=school_id, filename=filename, uploaded_by=current_user['username'])
+            print(f"Student roster sync complete: {sync_result}")
+        except Exception as exc:
+            print(f"Error syncing students table: {exc}")
+            return jsonify({'error': 'Student roster could not be stored in the database'}), 500
+
+        if not sync_result['processed']:
+            return jsonify({'error': 'CSV must contain students with an ID, preferred name, and last name'}), 400
         storage.global_csv_data[school_id] = {
             'data': rows,
             'columns': csv_reader.fieldnames,
@@ -55,20 +83,15 @@ def upload_csv():
         }
         save_global_csv_data()
 
-        try:
-            sync_result = sync_students_table_from_csv_rows(rows, school_id=school_id)
-            print(f"Student roster sync complete: {sync_result}")
-        except Exception as exc:
-            print(f"Error syncing students table: {exc}")
-            return jsonify({'error': 'Student roster could not be stored in the database'}), 500
-
         return jsonify({
             'status': 'success',
-            'rows_count': len(rows),
+            'rows_count': sync_result['processed'],
             'uploaded_by': user_id,
             'students_processed': sync_result['processed'],
             'students_created': sync_result['created'],
-            'students_updated': sync_result['updated']
+            'students_updated': sync_result['updated'],
+            'students_deactivated': sync_result['deactivated'],
+            'filename': filename
         }), 200
 
     except Exception as exc:
@@ -89,10 +112,15 @@ def preview_csv():
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
 
-    base_query = db_session.query(Student).filter(Student.school_id == school_id)
+    base_query = db_session.query(Student).filter(Student.school_id == school_id, Student.is_active == 1)
+    search = request.args.get('search', '').strip().lower()
+    if search:
+        base_query = base_query.filter(
+            func.lower(Student.preferred_name + ' ' + Student.last_name).contains(search, autoescape=True)
+        )
     total_records = base_query.count()
 
-    if total_records == 0:
+    if total_records == 0 and not search:
         return jsonify({
             'status': 'no_data',
             'message': 'No student records found in database'
@@ -113,11 +141,9 @@ def preview_csv():
         'Last': str(student.last_name or '').strip(),
         'Grade': str(student.grade or '').strip(),
         'Advisor': str(student.advisor or '').strip(),
-        'House': str(student.house or '').strip(),
+        'House': normalize_house(student.house),
         'Clan': str(student.clan or '').strip()
     } for student in students]
-
-    csv_data = storage.global_csv_data.get(school_id, {})
 
     return jsonify({
         'status': 'success',
@@ -127,14 +153,11 @@ def preview_csv():
             'page': page,
             'per_page': per_page,
             'total_records': total_records,
-            'total_pages': (total_records + per_page - 1) // per_page,
+            'total_pages': max(1, (total_records + per_page - 1) // per_page),
             'has_next': (start_idx + per_page) < total_records,
             'has_prev': page > 1
         },
-        'metadata': {
-            'uploaded_by': csv_data.get('uploaded_by', 'unknown') if csv_data else 'unknown',
-            'uploaded_at': csv_data.get('uploaded_at', 'unknown') if csv_data else 'unknown'
-        }
+        'metadata': _roster_metadata(school_id)
     }), 200
 
 
@@ -151,7 +174,7 @@ def get_student_names():
 
     students = (
         db_session.query(Student)
-        .filter(Student.school_id == school_id)
+        .filter(Student.school_id == school_id, Student.is_active == 1)
         .order_by(func.lower(Student.preferred_name), func.lower(Student.last_name))
         .all()
     )

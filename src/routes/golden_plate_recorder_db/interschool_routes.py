@@ -407,7 +407,7 @@ def register_school():
                 ('Administrator name', registration_request.admin_display_name),
                 ('Administrator username', registration_request.admin_username),
                 ('Request ID', registration_request.id),
-            ],
+            ], notification_type='school_registration',
         )
     except Exception:
         logger.exception('Unable to notify reviewers of the saved school registration request')

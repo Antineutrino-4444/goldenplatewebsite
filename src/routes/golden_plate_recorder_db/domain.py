@@ -6,6 +6,7 @@ from .utils import (
     extract_student_id_from_key,
     format_display_name,
     make_student_key,
+    normalize_house,
     normalize_name,
     safe_parse_datetime,
 )
@@ -24,7 +25,7 @@ def build_profile_from_record(record, lookup_map=None):
         'last_name': last,
         'grade': normalize_name(record.get('grade')),
         'advisor': normalize_name(record.get('advisor')),
-        'house': normalize_name(record.get('house')),
+        'house': normalize_house(record.get('house')),
         'clan': normalize_name(record.get('clan')),
         'student_id': student_id
     }
@@ -43,7 +44,7 @@ def is_student_profile_eligible(profile, lookup_map=None):
     if not key:
         return False
     lookup_map = lookup_map or {}
-    if lookup_map:
+    if lookup_map is not None:
         return key in lookup_map
     return True
 
@@ -190,7 +191,7 @@ def serialize_draw_info(draw_info):
             'last_name': winner.get('last_name'),
             'grade': winner.get('grade'),
             'advisor': winner.get('advisor'),
-            'house': winner.get('house'),
+            'house': normalize_house(winner.get('house')),
             'clan': winner.get('clan'),
             'student_id': winner.get('student_id'),
             'tickets': winner.get('tickets'),

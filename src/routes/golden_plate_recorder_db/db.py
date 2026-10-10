@@ -1,5 +1,6 @@
 import os
 import re
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Iterable, List, Optional
@@ -19,6 +20,8 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import declarative_base, relationship, scoped_session, sessionmaker
+
+from .utils import normalize_house
 
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///data/golden_plate_recorder.db')
 if DATABASE_URL.startswith('sqlite:///'):
@@ -70,6 +73,9 @@ class School(Base):
     slug = Column(String, nullable=False, unique=True)
     status = Column(String, nullable=False, default='active')
     contact_email = Column(String(320), nullable=True)
+    roster_filename = Column(String)
+    roster_uploaded_at = Column(DateTime(timezone=True))
+    roster_uploaded_by = Column(String)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
 
@@ -156,6 +162,7 @@ class Student(Base):
     advisor = Column(String)
     house = Column(String)
     clan = Column(String)
+    is_active = Column(Integer, nullable=False, default=1, server_default='1')
 
 
 class Teacher(Base):
@@ -218,6 +225,10 @@ class Session(Base):
     faculty_pick_display_name = Column(String)
     faculty_pick_recorded_at = Column(DateTime(timezone=True))
     faculty_pick_recorded_by = Column(String, ForeignKey('users.id'))
+    faculty_pick_record_id = Column(String)
+    faculty_finalized = Column(Integer, nullable=False, default=0, server_default='0')
+    faculty_finalized_at = Column(DateTime(timezone=True))
+    faculty_finalized_by = Column(String, ForeignKey('users.id'))
 
 
 class SessionRecord(Base):
@@ -255,6 +266,8 @@ class SessionDrawEvent(Base):
     session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
     draw_number = Column(Integer)
     event_type = Column(String, nullable=False)
+    draw_target = Column(String, nullable=False, default='student', server_default='student')
+    faculty_name = Column(String)
     selected_record_id = Column(String, ForeignKey('session_records.id'))
     selected_student_id = Column(String, ForeignKey('students.id'))
     tickets_at_event = Column(Integer)
@@ -359,6 +372,16 @@ class SchoolRegistrationRequest(Base):
     reviewed_by = Column(String, ForeignKey('users.id'))
     reviewed_at = Column(DateTime(timezone=True))
     rejection_reason = Column(Text)
+
+
+class EmailNotificationPreference(Base):
+    __tablename__ = 'email_notification_preferences'
+
+    email = Column(String(320), primary_key=True)
+    token = Column(String(64), nullable=False, unique=True, default=lambda: secrets.token_urlsafe(32))
+    disabled_types = Column(Text, nullable=False, default='[]')
+    known_types = Column(Text, nullable=False, default='[]')
+    updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
 
 
 class EmailVerification(Base):
@@ -667,6 +690,8 @@ def _migrate_schema() -> None:
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
+        for column_name, ddl in [('roster_filename', 'TEXT'), ('roster_uploaded_at', 'DATETIME'), ('roster_uploaded_by', 'TEXT')]:
+            _ensure_column(inspector, 'schools', column_name, ddl)
 
     if 'sessions' in tables:
         session_columns = {col['name'] for col in inspector.get_columns('sessions')}
@@ -686,6 +711,10 @@ def _migrate_schema() -> None:
             ('faculty_pick_display_name', 'TEXT'),
             ('faculty_pick_recorded_at', 'DATETIME'),
             ('faculty_pick_recorded_by', 'TEXT'),
+            ('faculty_pick_record_id', 'TEXT'),
+            ('faculty_finalized', 'INTEGER NOT NULL DEFAULT 0'),
+            ('faculty_finalized_at', 'DATETIME'),
+            ('faculty_finalized_by', 'TEXT'),
             ('main_session_id', 'TEXT'),
         ]:
             if column_name not in session_columns:
@@ -802,6 +831,11 @@ def _migrate_schema() -> None:
     if 'students' in tables:
         inspector = _ensure_student_identifier_scope(inspector)
         tables = set(inspector.get_table_names())
+        _ensure_column(inspector, 'students', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
+
+    if 'session_draw_events' in tables:
+        _ensure_column(inspector, 'session_draw_events', 'draw_target', "TEXT NOT NULL DEFAULT 'student'")
+        _ensure_column(inspector, 'session_draw_events', 'faculty_name', 'TEXT')
 
     if 'draft_pool' in tables:
         draft_columns = {col['name'] for col in inspector.get_columns('draft_pool')}
@@ -966,6 +1000,25 @@ def _backfill_school_contact_emails() -> None:
                 ).values(contact_email=emails.pop()))
 
 
+def _normalize_stored_house_names() -> None:
+    """Update historical roster and plate houses without altering their counts."""
+    with engine.begin() as connection:
+        for model in (Student, SessionRecord):
+            table = model.__table__
+            rows = connection.execute(
+                table.select().with_only_columns(table.c.id, table.c.house)
+                .where(table.c.house.like('% - %'))
+            ).all()
+            updates = [
+                {'row_id': row.id, 'house': normalize_house(row.house)}
+                for row in rows if normalize_house(row.house) != row.house
+            ]
+            if updates:
+                connection.execute(text(
+                    f'UPDATE {table.name} SET house = :house WHERE id = :row_id'
+                ), updates)
+
+
 def _bootstrap_database() -> None:
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
@@ -982,6 +1035,7 @@ def _bootstrap_database() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_seed_schools()
     _ensure_user_school_assignments()
+    _normalize_stored_house_names()
     if needs_contact_backfill:
         _backfill_school_contact_emails()
 
@@ -998,6 +1052,7 @@ __all__ = [
     'DEFAULT_SCHOOL_SLUG',
     'DraftPool',
     'EmailVerification',
+    'EmailNotificationPreference',
     'INTERSCHOOL_SCHOOL_ID',
     'INTERSCHOOL_SCHOOL_NAME',
     'INTERSCHOOL_SCHOOL_SLUG',

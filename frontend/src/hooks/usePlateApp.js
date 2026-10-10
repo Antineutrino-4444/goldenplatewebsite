@@ -106,6 +106,7 @@ export function usePlateApp() {
   // CSV preview state
   const [showCsvPreview, setShowCsvPreview] = useState(false)
   const [csvPreviewData, setCsvPreviewData] = useState(null)
+  const [csvPreviewSearch, setCsvPreviewSearch] = useState('')
   const [csvPreviewPage, setCsvPreviewPage] = useState(1)
   const [csvPreviewLoading, setCsvPreviewLoading] = useState(false)
 
@@ -135,7 +136,7 @@ export function usePlateApp() {
   // House stats state
   const [houseStats, setHouseStats] = useState(null)
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
-  const [houseSortBy, setHouseSortBy] = useState('count') // 'count' or 'percentage'
+  const [houseSortBy, setHouseSortBy] = useState('percentage') // 'count' or 'percentage'
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -242,7 +243,7 @@ export function usePlateApp() {
     return {
       winner: drawInfo.winner ?? null,
       finalized: Boolean(drawInfo.finalized),
-      override: Boolean(drawInfo.override),
+      override: Boolean(drawInfo.override_applied || drawInfo.method === 'override'),
       timestamp: drawInfo.winner_timestamp ? new Date(drawInfo.winner_timestamp) : null,
       tickets: drawInfo.tickets_at_selection ?? null,
       probability: drawInfo.probability_at_selection ?? null
@@ -534,6 +535,7 @@ export function usePlateApp() {
       await initializeInterschoolPortal()
     } else {
       await initializeSession()
+      await loadRosterStatus()
     }
   }
 
@@ -1066,7 +1068,27 @@ export function usePlateApp() {
     }
   }
 
-  const uploadCSV = async (file) => {
+  const loadRosterStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/csv/status`)
+      if (response.ok) {
+        const data = await response.json()
+        setCsvData(data.loaded ? data : null)
+      }
+    } catch {
+      // The existing roster stays available if its status cannot be refreshed.
+    }
+  }
+
+  const uploadCSV = async (file, { confirmed = false } = {}) => {
+    if (csvData && !confirmed) {
+      setModal({
+        type: 'confirm', title: 'Confirm database replacement', confirmLabel: 'Replace database',
+        message: `Uploading ${file.name} will reset the current student database to this roster. This replacement cannot be undone. Students missing from the new roster will be excluded from ticket draws. Past plate records and draw logs will be kept.`,
+        onConfirm: () => uploadCSV(file, { confirmed: true })
+      })
+      return
+    }
     const formData = new FormData()
     formData.append('file', file)
 
@@ -1082,6 +1104,8 @@ export function usePlateApp() {
         setCsvData(data)
         showMessage(`CSV uploaded successfully! ${data.rows_count} students loaded.`, 'success')
         await loadStudentNames()
+        await loadDrawSummary({ silent: true })
+        await loadHouseStats({ silent: true })
       } else {
         showMessage(data.error || 'Failed to upload CSV', 'error')
       }
@@ -1117,10 +1141,10 @@ export function usePlateApp() {
     }
   }
 
-  const previewCSV = async (page = 1) => {
+  const previewCSV = async (page = 1, search = csvPreviewSearch) => {
     setCsvPreviewLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/csv/preview?page=${page}&per_page=50`)
+      const response = await fetch(`${API_BASE}/csv/preview?page=${page}&per_page=50&search=${encodeURIComponent(search)}`)
       const data = await response.json()
 
       if (response.ok) {
@@ -1128,7 +1152,7 @@ export function usePlateApp() {
           showMessage('No student database uploaded yet', 'info')
           return
         }
-        setCsvPreviewData(data)
+        setCsvPreviewData({ ...data, search })
         setCsvPreviewPage(page)
         setShowCsvPreview(true)
       } else {
@@ -1538,7 +1562,7 @@ export function usePlateApp() {
     }
   }
 
-  const pickRandomFaculty = async () => {
+  const pickRandomFaculty = async ({ confirmed = false } = {}) => {
     if (!sessionId) {
       showMessage('Select a session before picking a faculty name', 'error')
       return
@@ -1554,9 +1578,21 @@ export function usePlateApp() {
       return
     }
 
+    if (!canManageDraw) return
+    if (facultyPick?.finalized && !confirmed) {
+      setModal({
+        type: 'confirm', title: 'Redo the finalized faculty draw?', confirmLabel: 'Redo faculty draw',
+        message: 'Are you sure you want to redo this draw? The finalized faculty winner will be replaced. This action will be recorded in the drawing log and is public.',
+        onConfirm: () => pickRandomFaculty({ confirmed: true })
+      })
+      return
+    }
     setFacultyPickLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/pick`)
+      const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/pick`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm_redraw: confirmed })
+      })
       const data = await response.json()
 
       if (response.ok) {
@@ -1570,8 +1606,11 @@ export function usePlateApp() {
           last_name: last,
           display_name: displayName,
           recorded_at: faculty.recorded_at || null,
-          recorded_by: faculty.recorded_by || null
+          recorded_by: faculty.recorded_by || null,
+          finalized: Boolean(faculty.finalized),
+          finalized_at: faculty.finalized_at || null
         })
+        await loadDrawSummary({ silent: true })
       } else {
         showMessage(data.error || 'Failed to pick a faculty name', 'error')
       }
@@ -1582,7 +1621,27 @@ export function usePlateApp() {
     }
   }
 
-  const startDrawProcess = async () => {
+  const finalizeFacultyWinner = async () => {
+    if (!sessionId || !canManageDraw || !facultyPick || facultyPick.finalized) return
+    setFacultyPickLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/finalize`, { method: 'POST' })
+      const data = await response.json()
+      if (response.ok) {
+        setFacultyPick(data.faculty)
+        await loadDrawSummary({ silent: true })
+        showMessage('Faculty winner finalized', 'success')
+      } else {
+        showMessage(data.error || 'Failed to finalize faculty winner', 'error')
+      }
+    } catch {
+      showMessage('Failed to finalize faculty winner', 'error')
+    } finally {
+      setFacultyPickLoading(false)
+    }
+  }
+
+  const startDrawProcess = async ({ confirmed = false } = {}) => {
     if (!sessionId) {
       showMessage('Select a session before starting a draw', 'error')
       return
@@ -1595,12 +1654,20 @@ export function usePlateApp() {
       showMessage('Add at least one student record before starting a draw', 'error')
       return
     }
+    if (currentDrawInfo?.finalized && !confirmed) {
+      setModal({
+        type: 'confirm', title: 'Redo the finalized draw?', confirmLabel: 'Redo draw',
+        message: 'Are you sure you want to redo this draw? The finalized winner will be replaced. This action will be recorded in the drawing log and is public.',
+        onConfirm: () => startDrawProcess({ confirmed: true })
+      })
+      return
+    }
     setDrawActionLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/draw/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildDrawActionPayload())
+        body: JSON.stringify({ ...buildDrawActionPayload(), confirm_redraw: confirmed })
       })
       const data = await response.json()
       if (response.ok) {
@@ -2492,6 +2559,8 @@ export function usePlateApp() {
     setShowCsvPreview,
     csvPreviewData,
     setCsvPreviewData,
+    csvPreviewSearch,
+    setCsvPreviewSearch,
     csvPreviewPage,
     setCsvPreviewPage,
     csvPreviewLoading,
@@ -2599,6 +2668,7 @@ export function usePlateApp() {
     applyDrawResponse,
     setDrawActionComment,
     pickRandomFaculty,
+    finalizeFacultyWinner,
     startDrawProcess,
     finalizeDrawWinner,
     resetDrawWinner,

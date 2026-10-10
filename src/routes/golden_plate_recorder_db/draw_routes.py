@@ -15,7 +15,7 @@ from .draw_db import (
     record_draw_event,
     reset_draw as reset_draw_db,
 )
-from .utils import extract_student_id_from_key, format_display_name, make_student_key, normalize_name
+from .utils import extract_student_id_from_key, format_display_name, make_student_key, normalize_house, normalize_name
 from .security import require_admin, require_auth_or_guest, require_superadmin
 
 
@@ -49,7 +49,7 @@ def get_draw_summary(session_id):
             'display_name': f"{student.preferred_name} {student.last_name}",
             'grade': student.grade,
             'advisor': student.advisor,
-            'house': student.house,
+            'house': normalize_house(student.house),
             'clan': student.clan,
             'tickets': tickets,
             'probability': probability,
@@ -80,7 +80,7 @@ def get_draw_summary(session_id):
     
     if draw_record.winner_student_id:
         winner = db_session.query(Student).filter_by(id=draw_record.winner_student_id).first()
-        if winner:
+        if winner and winner.is_active:
             draw_info['winner'] = {
                 'student_id': winner.id,
                 'student_identifier': winner.student_identifier,
@@ -89,11 +89,13 @@ def get_draw_summary(session_id):
                 'display_name': f"{winner.preferred_name} {winner.last_name}",
                 'grade': winner.grade,
                 'advisor': winner.advisor,
-                'house': winner.house,
+                'house': normalize_house(winner.house),
                 'clan': winner.clan,
                 'tickets': draw_record.tickets_at_selection,
                 'probability': probability_at_selection,
             }
+        elif not draw_record.finalized:
+            draw_info['has_winner'] = False
     
     # Get history
     history = get_draw_history(session_id)
@@ -140,6 +142,9 @@ def start_draw(session_id):
 
     if sess.status == 'discarded':
         return jsonify({'error': 'Session is discarded from draw calculations'}), 400
+
+    if sess.finalized and data.get('confirm_redraw') is not True:
+        return jsonify({'error': 'Confirm repeating the finalized draw. This action is recorded in the public draw log.'}), 409
 
     # Check if there are any student records across the main session + extras
     draw_session_ids = get_session_ids_for_draw(session_id)
@@ -201,7 +206,7 @@ def start_draw(session_id):
         'display_name': f"{winner.preferred_name} {winner.last_name}",
         'grade': winner.grade,
         'advisor': winner.advisor,
-        'house': winner.house,
+        'house': normalize_house(winner.house),
         'clan': winner.clan,
         'tickets': winner_tickets,
         'probability': probability,
@@ -237,6 +242,10 @@ def finalize_draw_route(session_id):
 
     if draw.finalized:
         return jsonify({'error': 'Draw already finalized'}), 400
+
+    winner = db_session.query(Student).filter_by(id=draw.winner_student_id, is_active=1).first()
+    if not winner:
+        return jsonify({'error': 'Winner is no longer in the current student roster. Draw again.'}), 400
 
     # Finalize the draw
     finalize_draw_db(draw, session.get('user_id'), comment)
@@ -354,6 +363,8 @@ def override_draw(session_id):
         profiles[key] = merged
 
     for session_record, student in record_rows:
+        if student and not student.is_active:
+            continue
         preferred = normalize_name(session_record.preferred_name or (student.preferred_name if student else ''))
         last = normalize_name(session_record.last_name or (student.last_name if student else ''))
         student_identifier = normalize_name(student.student_identifier if student else '')
@@ -366,7 +377,7 @@ def override_draw(session_id):
             'last_name': last,
             'grade': normalize_name(student.grade if student else ''),
             'advisor': normalize_name(student.advisor if student else ''),
-            'house': normalize_name(student.house if student else ''),
+            'house': normalize_house(student.house if student else ''),
             'clan': normalize_name(student.clan if student else ''),
             'student_id': student.id if student else None,
             'student_identifier': student_identifier,
@@ -454,6 +465,8 @@ def override_draw(session_id):
             )
             db_session.add(student)
             db_session.flush()
+        elif not student.is_active:
+            return jsonify({'error': 'Student is no longer in the current roster'}), 400
         profile['student_id'] = student.id
 
     winner_tickets = ticket_balances.get(profile['student_id'], 0.0)
@@ -462,12 +475,12 @@ def override_draw(session_id):
     draw = get_or_create_session_draw(session_id)
 
     draw.winner_student_id = profile['student_id']
-    draw.method = 'random'
+    draw.method = 'override'
     draw.tickets_at_selection = int(winner_tickets)
     # Store probability as basis points (multiply by 100) to preserve 2 decimal places
     draw.probability_at_selection = int(round(probability * 100))
     draw.eligible_pool_size = len(eligible)
-    draw.override_applied = 0
+    draw.override_applied = 1
     draw.finalized = 0
     draw.finalized_by = None
     draw.finalized_at = None
@@ -475,7 +488,7 @@ def override_draw(session_id):
 
     record_draw_event(
         draw=draw,
-        event_type='draw',
+        event_type='override',
         user_id=session.get('user_id'),
         selected_student_id=profile['student_id'],
         tickets_at_event=winner_tickets,
@@ -504,4 +517,5 @@ def override_draw(session_id):
         'status': 'success',
         'winner': winner_data,
         'pool_size': len(eligible),
+        'override': True,
     }), 200

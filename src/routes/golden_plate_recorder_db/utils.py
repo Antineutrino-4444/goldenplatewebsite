@@ -5,6 +5,15 @@ def normalize_name(value):
     return str(value or '').strip()
 
 
+def normalize_house(value):
+    """Keep the first house only for an exact two-part 'House - House' label."""
+    name = normalize_name(value)
+    parts = name.split(' - ')
+    if len(parts) == 2 and all(part and part == part.strip() for part in parts):
+        return parts[0]
+    return name
+
+
 def plate_count_label(category):
     label = {'clean': 'Clean Plate', 'dirty': 'Dirty Plate', 'red': 'Very Dirty Plate',
              'faculty': 'Faculty Clean Plate'}[category]
@@ -66,6 +75,7 @@ __all__ = [
     'format_display_name',
     'make_student_key',
     'normalize_name',
+    'normalize_house',
     'plate_count_label',
     'safe_parse_datetime',
     'split_student_key',

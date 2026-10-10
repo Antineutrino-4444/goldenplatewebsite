@@ -22,6 +22,20 @@ function OverlayElements({ app }) {
 
   return (
     <>
+      {modal?.type === 'confirm' && (
+        <Modal open onClose={() => setModal(null)} dismissOnOverlayClick={false}>
+          <h2 className="mb-3 text-lg font-semibold">{modal.title}</h2>
+          <p className="mb-5 text-sm text-gray-600">{modal.message}</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setModal(null)}>Cancel</Button>
+            <Button onClick={() => {
+              const confirm = modal.onConfirm
+              setModal(null)
+              confirm?.()
+            }}>{modal.confirmLabel || 'Confirm'}</Button>
+          </div>
+        </Modal>
+      )}
       {notification && notification.size === 'small' &&
         createPortal(
           <div

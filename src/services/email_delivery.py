@@ -1,4 +1,4 @@
-"""Email delivery shared by the website and deployment tools; no database imports."""
+"""Shared email delivery with recipient notification preferences."""
 
 import logging
 import os
@@ -18,7 +18,7 @@ def _get_brevo_config():
     }
 
 
-def send_email_via_brevo(to_email: str, subject: str, html_content: str, attachments: list | None = None) -> dict:
+def send_email_via_brevo(to_email: str, subject: str, html_content: str, attachments: list | None = None, *, notification_type: str | None = None) -> dict:
     """Send an email using Brevo's API.
 
     `attachments` is an optional list of dicts shaped like
@@ -32,6 +32,16 @@ def send_email_via_brevo(to_email: str, subject: str, html_content: str, attachm
     if not api_key:
         logger.error('Email send failed: BREVO_API_KEY environment variable is not set')
         return {'success': False, 'error': 'Brevo API key not configured. Please set BREVO_API_KEY in your .env file.'}
+
+    try:
+        from .notification_preferences import add_preferences_footer, prepare_email_preferences
+        allowed, preferences_url = prepare_email_preferences(to_email, notification_type)
+        if not allowed:
+            return {'success': True, 'skipped': True, 'reason': 'Recipient disabled this notification type'}
+        html_content = add_preferences_footer(html_content, preferences_url)
+    except Exception:
+        logger.exception('Unable to apply notification preferences')
+        return {'success': False, 'error': 'Unable to apply notification preferences'}
 
     headers = {
         'accept': 'application/json',

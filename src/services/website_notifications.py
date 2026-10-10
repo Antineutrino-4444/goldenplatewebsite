@@ -22,12 +22,12 @@ def get_website_update_recipients():
     return list(unique.values())
 
 
-def notify_website_update(title, summary, details=(), *, url=None):
+def notify_website_update(title, summary, details=(), *, url=None, notification_type='server_startup'):
     return send_notification(title, summary, details, url=url,
-                             recipients=get_website_update_recipients())
+                             recipients=get_website_update_recipients(), notification_type=notification_type)
 
 
-def send_notification(title, summary, details=(), *, url=None, recipients=()):
+def send_notification(title, summary, details=(), *, url=None, recipients=(), notification_type='server_startup'):
     """Send escaped metadata only, never passwords, verification codes or secrets.
 
     Return delivery status instead of raising, so a mail failure cannot discard
@@ -55,7 +55,7 @@ def send_notification(title, summary, details=(), *, url=None, recipients=()):
     results = {}
     for recipient in recipients:
         try:
-            result = send_email_via_brevo(recipient, f'Golden Plate — {title}', html)
+            result = send_email_via_brevo(recipient, f'Golden Plate — {title}', html, notification_type=notification_type)
         except Exception:
             logger.exception('Website update notification failed for %s', recipient)
             result = {'success': False, 'error': 'Email delivery failed'}

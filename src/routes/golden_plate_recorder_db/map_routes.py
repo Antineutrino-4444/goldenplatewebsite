@@ -868,7 +868,7 @@ def _notify_pending_map_submission(submission, base_url=None):
                     recipient,
                     subject,
                     html,
-                    attachments=attachments or None,
+                    attachments=attachments or None, notification_type='map_submission',
                 )
                 if not result.get('success'):
                     logger.warning(
@@ -2048,7 +2048,7 @@ def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_dis
   </body>
 </html>
 """
-    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None)
+    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None, notification_type='map_status')
 
 
 def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_display_name: str) -> dict:
@@ -2130,7 +2130,7 @@ def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_di
   </body>
 </html>
 """
-    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None)
+    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None, notification_type='map_status')
 
 
 def _serialize_pin(pin):

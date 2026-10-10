@@ -11,6 +11,7 @@ from . import app_routes  # noqa: F401
 from . import auth_routes  # noqa: F401
 from . import password_routes  # noqa: F401
 from . import school_contact_routes  # noqa: F401
+from . import notification_routes  # noqa: F401
 from . import admin_routes  # noqa: F401
 from . import session_routes  # noqa: F401
 from . import csv_routes  # noqa: F401
