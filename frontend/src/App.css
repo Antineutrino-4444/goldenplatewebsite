@@ -276,11 +276,24 @@
   100% { transform: scale(1); }
 }
 
+.counter-goal-panel {
+  background-color: var(--counter-panel-color, #064e3b);
+}
+
+.counter-fullscreen-exit {
+  transition: opacity 180ms ease-out;
+}
+
+.counter-fullscreen-exit:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .counter-fullscreen-panel {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  background: radial-gradient(ellipse at 25% 40%, #145c43, #062e23 80%);
+  background: radial-gradient(ellipse at 25% 40%, var(--counter-panel-highlight, #145c43), var(--counter-panel-shadow, #062e23) 80%);
 }
 
 .counter-fullscreen-content {
@@ -329,4 +342,5 @@
   .counter-celebration-banner { animation: none; }
   .counter-value-update { animation: none; }
   .counter-goal-number { animation: none; }
+  .counter-fullscreen-exit { transition: none; }
 }

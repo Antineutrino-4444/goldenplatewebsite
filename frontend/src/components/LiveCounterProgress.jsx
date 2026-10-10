@@ -25,16 +25,26 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
     : [0, scale]
   const numberLength = percentage ? actualValue.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).length + 1 : format(actualValue).length
   const numberSize = `${80 / Math.max(3, numberLength)}vw`
+  // Follow the animated progress, clamping the colour once the goal is reached.
+  const goalHue = 215 - progress * 0.6
+  const goalColours = milestone ? {
+    '--counter-panel-color': `hsl(${goalHue} 60% 16%)`,
+    '--counter-panel-highlight': `hsl(${goalHue} 60% 23%)`,
+    '--counter-panel-shadow': `hsl(${goalHue} 60% 10%)`,
+    '--counter-goal-accent': `hsl(${goalHue} 75% 80%)`,
+    '--counter-goal-soft': `hsl(${goalHue} 65% 90%)`,
+  } : undefined
 
   return <div className={fullscreen ? 'counter-fullscreen' : 'space-y-5'}>
-    <section className={fullscreen ? 'counter-fullscreen-panel text-white' : 'overflow-hidden rounded-3xl bg-emerald-900 text-white shadow-sm'}>
+    <section style={goalColours} data-testid="live-goal-panel"
+      className={fullscreen ? 'counter-fullscreen-panel text-white' : 'counter-goal-panel overflow-hidden rounded-3xl bg-emerald-900 text-white shadow-sm'}>
       <div className={fullscreen ? 'counter-fullscreen-content' : 'p-6 sm:p-9 lg:p-11'}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className={`flex items-center gap-2 font-medium text-emerald-100 ${fullscreen ? 'text-lg sm:text-2xl' : 'text-sm'}`}>
             <Leaf className="h-5 w-5" aria-hidden="true" />{context || 'Our clean-plate progress'}
           </h3>
-          {milestone && <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${reached
-            ? 'bg-amber-200 text-emerald-950' : 'bg-white/10 text-emerald-100'}`}>
+          {milestone && <span style={!reached ? { backgroundColor: 'var(--counter-goal-soft)' } : undefined}
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-emerald-950 ${reached ? 'bg-amber-200' : ''}`}>
             {reached ? <Check className="h-4 w-4" aria-hidden="true" /> : <Flag className="h-4 w-4" aria-hidden="true" />}
             {reached ? 'Milestone reached' : 'Next milestone'}
           </span>}
@@ -48,7 +58,8 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
             </p>
             <p className={`mt-2 text-emerald-100 ${fullscreen ? 'text-xl sm:text-3xl' : 'text-lg'}`}>{percentage ? 'of recorded plates are clean' : 'clean plates and counting'}</p>
           </div>
-          <div className="pb-1 sm:text-right">
+          <div style={milestone ? { borderColor: 'var(--counter-goal-accent)', color: 'var(--counter-goal-accent)' } : undefined}
+            className={milestone ? 'rounded-2xl border bg-white/5 px-5 py-4 sm:text-right' : 'pb-1 sm:text-right'}>
             <p className="text-xs font-semibold uppercase tracking-widest text-emerald-200">{milestone ? (percentage ? 'Clean-percentage goal' : 'Clean-plate goal') : (percentage ? 'Clean-plate scale' : 'Total plates recorded')}</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">{format(target)}</p>
           </div>
@@ -68,7 +79,7 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
             className={`overflow-hidden rounded-full bg-black/20 p-1 ${fullscreen ? 'counter-fullscreen-track' : 'h-8 sm:h-10'}`}>
             <div className="relative h-full overflow-hidden rounded-full">
               <div className="flex h-full">
-                <div data-testid="live-goal-fill" style={{ width: `${goalWidth}%` }}
+                <div data-testid="live-goal-fill" style={{ width: `${goalWidth}%`, ...(milestone ? { background: 'var(--counter-goal-accent)' } : {}) }}
                   className={`h-full shrink-0 bg-gradient-to-r from-emerald-300 to-emerald-200 ${beyond ? 'rounded-l-full' : 'rounded-full'}`} />
                 {beyond > 0 && <div data-testid="live-extra-fill" style={{ width: `${extraWidth}%` }}
                   className="h-full shrink-0 rounded-r-full bg-amber-300" />}

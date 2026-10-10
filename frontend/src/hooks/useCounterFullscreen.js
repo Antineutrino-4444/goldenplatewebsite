@@ -6,6 +6,7 @@ export default function useCounterFullscreen() {
   const exitButton = useRef(null)
   const wasFullscreen = useRef(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [exitVisible, setExitVisible] = useState(false)
 
   useEffect(() => {
     const changed = () => setFullscreen(document.fullscreenElement === root.current)
@@ -24,11 +25,25 @@ export default function useCounterFullscreen() {
 
   useEffect(() => {
     if (fullscreen) {
-      exitButton.current?.focus()
+      root.current?.focus()
       const previousOverflow = document.body.style.overflow
       document.body.style.overflow = 'hidden'
       wasFullscreen.current = true
-      return () => { document.body.style.overflow = previousOverflow }
+      const revealAtEdge = (event) => {
+        const edge = 64
+        setExitVisible(event.clientX <= edge || event.clientY <= edge
+          || event.clientX >= window.innerWidth - edge || event.clientY >= window.innerHeight - edge)
+      }
+      const hide = () => setExitVisible(false)
+      window.addEventListener('pointermove', revealAtEdge, { passive: true })
+      window.addEventListener('pointerdown', revealAtEdge, { passive: true })
+      document.addEventListener('pointerleave', hide)
+      return () => {
+        document.body.style.overflow = previousOverflow
+        window.removeEventListener('pointermove', revealAtEdge)
+        window.removeEventListener('pointerdown', revealAtEdge)
+        document.removeEventListener('pointerleave', hide)
+      }
     }
     if (wasFullscreen.current) {
       enterButton.current?.focus()
@@ -37,6 +52,7 @@ export default function useCounterFullscreen() {
   }, [fullscreen])
 
   const enter = async () => {
+    setExitVisible(false)
     setFullscreen(true)
     try { await root.current?.requestFullscreen?.() }
     catch { /* Keep the full-window display when browser fullscreen is unavailable. */ }
@@ -49,5 +65,5 @@ export default function useCounterFullscreen() {
     setFullscreen(false)
   }
 
-  return { root, enterButton, exitButton, fullscreen, enter, exit }
+  return { root, enterButton, exitButton, fullscreen, exitVisible, enter, exit }
 }

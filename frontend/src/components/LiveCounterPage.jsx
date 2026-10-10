@@ -19,7 +19,7 @@ export default function LiveCounterPage() {
   const [busy, setBusy] = useState(false)
   const [selectedRange, setSelectedRange] = useState(null)
   const [selectedMetric, setSelectedMetric] = useState(null)
-  const { root, enterButton, exitButton, fullscreen, enter, exit } = useCounterFullscreen()
+  const { root, enterButton, exitButton, fullscreen, exitVisible, enter, exit } = useCounterFullscreen()
   const [editing, setEditing] = useState(false)
   const [saved, setSaved] = useState(false)
   const [celebration, setCelebration] = useState(null)
@@ -65,9 +65,11 @@ export default function LiveCounterPage() {
     finally { setBusy(false) }
   }
 
-  return <div ref={root} className={fullscreen ? 'fixed inset-0 z-40 h-dvh overflow-y-auto bg-emerald-950 text-white' : 'min-h-screen bg-[#f8faf7] text-slate-900'}>
+  return <div ref={root} tabIndex={-1} className={fullscreen ? 'fixed inset-0 z-40 h-dvh overflow-y-auto bg-emerald-950 text-white outline-none' : 'min-h-screen bg-[#f8faf7] text-slate-900'}>
     {fullscreen && currentRange ? <main>
-      <Button ref={exitButton} variant="ghost" className="absolute right-4 top-4 z-10 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={exit}>
+      <Button ref={exitButton} variant="ghost" data-edge-visible={exitVisible}
+        className={`counter-fullscreen-exit fixed right-4 top-4 z-10 bg-white/10 text-white hover:bg-white/20 hover:text-white ${exitVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        onClick={exit}>
         <Minimize className="h-4 w-4" />Exit full screen
       </Button>
       <div className="w-full">
