@@ -42,15 +42,8 @@ MAX_VERIFICATION_ATTEMPTS = 5
 MAP_EMAIL_VERIFICATION_MAX_AGE_MINUTES = 30
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
 # Recipients notified whenever a new map submission is awaiting approval.
-# Override at runtime via the MAP_APPROVAL_NOTIFY_EMAILS env var (comma-separated)
-# or — preferred — from the Map admin UI (stored in the ``map_settings`` table
-# under the key below).
-DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS = (
-    'antineutrino-044@outlook.com',
-    'leo.li2026@sac.on.ca',
-    'nick.wang@sac.on.ca',
-    'matthew.jaekel@sac.on.ca',
-)
+# Configure additional map reviewers via MAP_APPROVAL_NOTIFY_EMAILS or the Map
+# admin UI (stored in ``map_settings`` under the key below).
 MAP_SETTING_APPROVAL_RECIPIENTS = 'approval_notify_emails'
 # Image MIMEs that browsers can render natively in <img> tags.
 BROWSER_NATIVE_IMAGE_MIMES = {
@@ -409,7 +402,9 @@ def _get_map_approval_notify_recipients():
       1. ``map_settings.approval_notify_emails`` row in the DB (managed
          from the Map admin UI by superadmins).
       2. ``MAP_APPROVAL_NOTIFY_EMAILS`` env var (comma-separated).
-      3. ``DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS`` constant.
+
+    Website-wide recipients are added from ``WEBSITE_UPDATE_NOTIFY_EMAILS``.
+    There are no built-in recipients; empty settings send no notifications.
     """
     raw = ''
     try:
@@ -427,13 +422,9 @@ def _get_map_approval_notify_recipients():
     if not raw.strip():
         raw = os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS', '')
 
-    if raw.strip():
-        recipients = _parse_email_list(raw)
-    else:
-        recipients = list(DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS)
+    recipients = _parse_email_list(raw)
 
-    # Website-wide recipients must still receive updates if the map's custom
-    # list or environment setting replaces the default reviewer list.
+    # Include configured website-wide recipients alongside additional reviewers.
     recipients.extend(get_website_update_recipients())
 
     # Deduplicate while preserving order, ignoring case.
@@ -2506,10 +2497,10 @@ def get_map_approval_recipients_setting():
 
     if db_emails:
         source = 'database'
-    elif env_emails:
+    elif env_emails or get_website_update_recipients():
         source = 'env'
     else:
-        source = 'default'
+        source = 'none'
 
     return jsonify({
         'status': 'success',
@@ -2517,7 +2508,7 @@ def get_map_approval_recipients_setting():
         'source': source,
         'database_recipients': db_emails,
         'env_recipients': env_emails,
-        'default_recipients': list(DEFAULT_MAP_APPROVAL_NOTIFY_EMAILS),
+        'website_recipients': get_website_update_recipients(),
         'updated_at': setting.updated_at.isoformat() if setting and setting.updated_at else None,
         'updated_by': (
             setting.updated_by_username
@@ -2609,7 +2600,8 @@ def update_map_approval_recipients_setting():
         'status': 'success',
         'recipients': _get_map_approval_notify_recipients(),
         'source': 'database' if cleaned else (
-            'env' if (os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS') or '').strip() else 'default'
+            'env' if _parse_email_list(os.environ.get('MAP_APPROVAL_NOTIFY_EMAILS', ''))
+            or get_website_update_recipients() else 'none'
         ),
         'database_recipients': cleaned,
         'updated_at': setting.updated_at.isoformat() if setting.updated_at else None,

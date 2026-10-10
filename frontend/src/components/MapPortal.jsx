@@ -2592,11 +2592,9 @@ function MapPortal({ app }) {
       const result = await readApiResponse(response)
       if (result.ok) {
         setRecipientsInfo(result.data)
-        // Prefer DB value in the editor; fall back to whatever is currently
-        // active (env or default) so the textarea is never blank on first load.
-        const initialList = (result.data.database_recipients && result.data.database_recipients.length)
-          ? result.data.database_recipients
-          : (result.data.recipients || [])
+        // Keep configured recipients out of the saved override so later
+        // configuration changes do not leave behind copied addresses.
+        const initialList = result.data.database_recipients || []
         setRecipientsDraft(initialList.join('\n'))
       } else {
         showMessage(
@@ -3333,8 +3331,8 @@ function MapPortal({ app }) {
             <DialogDescription>
               These email addresses receive a notification (with the submission images and a
               single-use speed-approval link) every time someone submits an Ecological Map entry
-              for approval. One address per line, or separated by commas. Matthew Jaekel
-              also receives every submission as a website update recipient.
+              for approval. One address per line, or separated by commas. Configured
+              website update recipients also receive these notifications.
             </DialogDescription>
           </DialogHeader>
 
@@ -3357,8 +3355,8 @@ function MapPortal({ app }) {
                     disabled={recipientsSaving}
                   />
                   <p className="mt-2 text-xs text-slate-500">
-                    Leave the box empty to fall back to the <code>MAP_APPROVAL_NOTIFY_EMAILS</code>{' '}
-                    environment variable, or to the built-in default list if that is also unset.
+                    Leave the box empty to use the site’s configured map reviewers.
+                    Website update recipients are managed separately in the site configuration.
                   </p>
                 </div>
 
@@ -3368,10 +3366,10 @@ function MapPortal({ app }) {
                       <span className="font-semibold text-slate-700">Currently active source:</span>{' '}
                       <Badge variant="outline" className="ml-1">
                         {recipientsInfo.source === 'database'
-                          ? 'Database (this dialog)'
+                          ? 'Saved in this dialog'
                           : recipientsInfo.source === 'env'
-                            ? 'Environment variable'
-                            : 'Built-in default'}
+                            ? 'Site configuration'
+                            : 'No recipients configured'}
                       </Badge>
                     </div>
                     <div>

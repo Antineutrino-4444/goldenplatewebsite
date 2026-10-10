@@ -54,6 +54,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     load_dotenv(PROJECT_ROOT / '.env')
     result = send_update(args.kind, args.summary, url=args.url)
+    if result.get('skipped'):
+        print('No website update recipients configured; email skipped.')
+        return 0
     if result['success']:
         print('Website update email sent successfully.')
         return 0

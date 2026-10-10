@@ -1,8 +1,11 @@
 # Website update notifications
 
-The user requests email notifications to `matthew.jaekel@sac.on.ca` for website
-code updates and deployments, as well as new school registration requests and
-map submissions.
+The user requests email notifications for website code updates and deployments,
+as well as new school registration requests and map submissions. Recipients are
+configured exclusively by `WEBSITE_UPDATE_NOTIFY_EMAILS` in the root `.env` (or
+the hosting environment). Respect additions, removals, and an empty list; never
+force a recipient or reinsert a removed address. Additional map reviewers are
+configured by `MAP_APPROVAL_NOTIFY_EMAILS` or the Map admin UI.
 
 After completing and checking a set of website code changes, send one concise
 summary using the existing Brevo configuration:

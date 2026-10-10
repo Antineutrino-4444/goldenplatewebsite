@@ -81,15 +81,32 @@ recovery if an administrator cannot log in.
 
 ## Website update emails
 
-`matthew.jaekel@sac.on.ca` receives new pending school registration requests and
-new map submissions. He remains included even when the map's custom recipient
-list is changed. Other map reviewers continue receiving their existing alerts.
+Set all website-wide recipients in the root `.env` file:
+
+```dotenv
+WEBSITE_UPDATE_NOTIFY_EMAILS=matthew.jaekel@sac.on.ca,another@example.com
+MAP_APPROVAL_NOTIFY_EMAILS=
+```
+
+Add, change, or remove comma-separated addresses without editing code, then
+restart/reload the server. Hosting environment variables take precedence over
+`.env`, so update those instead if configured by your host. These recipients
+receive pending school registration requests, map submissions, code-change
+summaries, and deployment alerts. An empty or missing `WEBSITE_UPDATE_NOTIFY_EMAILS`
+disables website-wide alerts; no address is included automatically.
+
+`MAP_APPROVAL_NOTIFY_EMAILS` configures additional map reviewers. A non-empty
+list saved in the Map admin recipient editor overrides those additional reviewers,
+while website-wide recipients still receive map alerts. To remove a recipient
+completely, remove it from every configured list, including any saved Map admin
+list. The editor shows the active recipients. With both environment lists empty
+and no saved map reviewers, no map notifications are sent. Duplicate addresses
+receive only one email per notification.
 School alerts include the school, applicant email, requested code, and administrator
 name/username; passwords and email verification codes are never included.
 
 Notifications use the existing `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` settings.
-Set `WEBSITE_UPDATE_NOTIFY_EMAILS` to add other website-wide recipients and
-`WEBSITE_PUBLIC_URL` to set the website link in emails. Failed delivery is logged
+Set `WEBSITE_PUBLIC_URL` to set the website link in emails. Failed delivery is logged
 and does not discard a saved registration request or stop a running website.
 
 Both `deploy_local.sh` and `deploy.bat` now use `scripts/run_website.py`. It sends
