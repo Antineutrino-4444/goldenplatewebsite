@@ -39,6 +39,7 @@ from .utils import (
     format_display_name,
     make_student_key,
     normalize_name,
+    plate_count_label,
     split_student_key,
 )
 
@@ -698,9 +699,10 @@ def pick_random_faculty(session_id):
     if db_sess.main_session_id:
         return jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400
 
-    faculty_records = data.get('faculty_clean_records') or []
+    faculty_records = [record for record in data.get('faculty_clean_records', [])
+                       if format_display_name(record)]
     if not faculty_records:
-        return jsonify({'error': 'No faculty records available for this session'}), 400
+        return jsonify({'error': 'No named faculty records available for this session'}), 400
 
     chosen = random.choice(faculty_records)
     preferred = normalize_name(chosen.get('preferred_name') or chosen.get('first_name'))
@@ -770,7 +772,7 @@ def get_house_stats(session_id):
         .filter(
             SessionRecord.session_id == session_id,
             SessionRecord.school_id == school_id,
-            SessionRecord.category.in_(['clean', 'red'])  # Only student categories
+            SessionRecord.category.in_(['clean', 'dirty', 'red'])  # Only student categories
         )
         .all()
     )
@@ -790,7 +792,7 @@ def get_house_stats(session_id):
 
         if house:
             if house not in house_counts:
-                house_counts[house] = {'clean': 0, 'red': 0, 'total': 0}
+                house_counts[house] = {'clean': 0, 'dirty': 0, 'red': 0, 'total': 0}
             house_counts[house][record.category] += 1
             house_counts[house]['total'] += 1
             total_with_house += 1
@@ -804,6 +806,7 @@ def get_house_stats(session_id):
             'house': house_name,
             'clean_count': counts['clean'],
             'red_count': counts['red'],
+            'dirty_count': counts['dirty'],
             'total_count': counts['total'],
             'percentage': round(percentage, 1),
             'clean_rate': round(clean_rate, 1)
@@ -855,8 +858,6 @@ def get_scan_history():
     )
 
     formatted_history = []
-    dirty_count = 0
-    
     for session_record, student in records:
         category = session_record.category.lower()
         
@@ -874,19 +875,15 @@ def get_scan_history():
             name = f"{preferred} {last}".strip()
         
         # Handle special categories
-        if category == 'dirty':
-            dirty_count += 1
-            name = f'Dirty Plate #{dirty_count}'
-        elif not name and category == 'faculty':
-            name = 'Faculty Clean Plate'
-        elif not name:
-            name = 'Unknown'
+        if not name:
+            name = plate_count_label(category)
 
         formatted_history.append({
             'timestamp': session_record.recorded_at.isoformat() if session_record.recorded_at else '',
             'name': name,
             'category': category.upper(),
-            'is_manual_entry': bool(session_record.is_manual_entry)
+            'is_manual_entry': bool(session_record.is_manual_entry),
+            'is_count_only': not bool(session_record.student_id or session_record.preferred_name or session_record.last_name),
         })
 
     return jsonify({
@@ -928,47 +925,46 @@ def record_student(category):
     ensure_session_structure(session_info)
     school_lookup = get_student_lookup_for_school(school_id)
 
-    if category == 'dirty':
-        new_count = session_info.get('dirty_count', 0) + 1
-        session_info['dirty_count'] = new_count
+    has_reference = bool(input_value or provided_student_id or provided_key or
+                         provided_preferred or provided_last)
+    if not has_reference:
+        # Each unnamed plate is a separate count, never a student or draw entry.
         record = {
-            'category': 'dirty',
+            'category': category,
             'timestamp': datetime.now().isoformat(),
-                'recorded_by': actor_username,
-            'display_name': f"Dirty Plate #{new_count}"
+            'recorded_by': actor_username,
+            'is_count_only': True,
+            'display_name': plate_count_label(category),
         }
+        records_key = 'faculty_clean_records' if category == 'faculty' else f'{category}_records'
+        session_info[records_key].append(record)
+        if category == 'dirty':
+            session_info['dirty_count'] += 1
         session_info['scan_history'].append(record)
         save_session_data()
-        
-        # Save to database
-        dedupe_key = f"dirty_{new_count}_{datetime.now().isoformat()}"
-        db_record = SessionRecord(
-            school_id=school_id,
-            session_id=session_id,
-            category='dirty',
-                recorded_by=actor_id,
-            is_manual_entry=0,
-            dedupe_key=dedupe_key
-        )
-        db_session.add(db_record)
-        
-        # Update session counts
+
+        db_session.add(SessionRecord(
+            school_id=school_id, session_id=session_id, category=category,
+            recorded_by=actor_id, is_manual_entry=0,
+            dedupe_key=f'count:{category}:{uuid.uuid4().hex}',
+        ))
         db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
         if db_sess:
-            db_sess.dirty_number = (db_sess.dirty_number or 0) + 1
-            db_sess.total_dirty = (db_sess.total_dirty or 0) + 1
+            count_field = {'clean': 'clean_number', 'dirty': 'dirty_number',
+                           'red': 'red_number', 'faculty': 'faculty_number'}[category]
+            setattr(db_sess, count_field, (getattr(db_sess, count_field) or 0) + 1)
+            total_field = 'total_clean' if category in ['clean', 'faculty'] else 'total_dirty'
+            setattr(db_sess, total_field, (getattr(db_sess, total_field) or 0) + 1)
             db_sess.total_records = (db_sess.total_records or 0) + 1
             db_sess.updated_at = datetime.now()
-        
         db_session.commit()
-        
         return jsonify({
-            'status': 'success',
-            'category': 'dirty',
-            'dirty_count': new_count
+            'status': 'success', 'category': category, 'is_count_only': True,
+            'dirty_count': session_info['dirty_count'], 'display_name': record['display_name'],
         }), 200
 
     if category == 'faculty':
+        input_value = input_value or ' '.join(filter(None, [provided_preferred, provided_last]))
         if not input_value:
             return jsonify({'error': 'Faculty name is required'}), 400
 
@@ -1063,15 +1059,6 @@ def record_student(category):
             'is_manual_entry': True,
             'recorded_by': actor_username
         }), 200
-
-    has_reference = bool(
-        input_value or
-        provided_student_id or
-        provided_key or
-        (provided_preferred and provided_last)
-    )
-    if not has_reference:
-        return jsonify({'error': 'Student ID or Name is required'}), 400
 
     student_record = None
     lookup_profile = None
@@ -1226,7 +1213,7 @@ def record_student(category):
 
     is_manual_entry = not dataset_match
 
-    student_records = session_info['clean_records'] + session_info['red_records']
+    student_records = session_info['clean_records'] + session_info['red_records'] + session_info['dirty_records']
 
     def normalize_field(value):
         return str(value or '').strip().lower()
@@ -1296,7 +1283,7 @@ def record_student(category):
 
     if duplicate_check:
         existing_category = None
-        for cat in ['clean', 'red']:
+        for cat in ['clean', 'red', 'dirty']:
             if any(
                 is_duplicate(record)
                 for record in session_info[f'{cat}_records']
@@ -1341,6 +1328,8 @@ def record_student(category):
     }
 
     session_info[f'{category}_records'].append(record)
+    if category == 'dirty':
+        session_info['dirty_count'] += 1
     session_info['scan_history'].append(record)
     save_session_data()
 
@@ -1394,6 +1383,10 @@ def record_student(category):
         if category == 'clean':
             db_sess.clean_number = (db_sess.clean_number or 0) + 1
             db_sess.total_clean = (db_sess.total_clean or 0) + 1
+            db_sess.total_records = (db_sess.total_records or 0) + 1
+        elif category == 'dirty':
+            db_sess.dirty_number = (db_sess.dirty_number or 0) + 1
+            db_sess.total_dirty = (db_sess.total_dirty or 0) + 1
             db_sess.total_records = (db_sess.total_records or 0) + 1
         elif category == 'red':
             db_sess.red_number = (db_sess.red_number or 0) + 1
@@ -1458,15 +1451,15 @@ def export_csv():
     output = io.StringIO()
     output.write("CLEAN,DIRTY,RED,FACULTY CLEAN\n")
 
-    def format_name(record):
+    def format_name(record, category):
         preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
         last = (record.get('last_name') or '').strip()
         full_name = f"{preferred} {last}".strip()
-        return full_name
+        return full_name or record.get('display_name') or plate_count_label(category)
 
-    clean_names = [format_name(record) for record in data['clean_records']]
-    red_names = [format_name(record) for record in data['red_records']]
-    faculty_names = [format_name(record) for record in data.get('faculty_clean_records', [])]
+    clean_names = [format_name(record, 'clean') for record in data['clean_records']]
+    red_names = [format_name(record, 'red') for record in data['red_records']]
+    faculty_names = [format_name(record, 'faculty') for record in data.get('faculty_clean_records', [])]
     dirty_count = get_dirty_count(data)
 
     max_records = max(
@@ -1517,14 +1510,15 @@ def export_detailed_csv():
     ensure_session_structure(data)
 
     detailed_records = []
-    for category in ['clean', 'red']:
-        for record in data.get(f'{category}_records', []):
+    for category in ['clean', 'dirty', 'red', 'faculty']:
+        records_key = 'faculty_clean_records' if category == 'faculty' else f'{category}_records'
+        for record in data.get(records_key, []):
             preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
             last = (record.get('last_name') or '').strip()
             detailed_records.append({
                 'Category': category.upper(),
                 'Last': last,
-                'Preferred': preferred,
+                'Preferred': preferred if preferred or last else plate_count_label(category),
                 'Grade': record.get('grade', ''),
                 'Advisor': record.get('advisor', ''),
                 'House': record.get('house', ''),
@@ -1534,7 +1528,7 @@ def export_detailed_csv():
                 'Manual Entry': 'Yes' if record.get('is_manual_entry') else 'No'
             })
 
-    dirty_count = get_dirty_count(data)
+    dirty_count = max(0, get_dirty_count(data) - len(data.get('dirty_records', [])))
     if dirty_count > 0:
         detailed_records.append({
             'Category': 'DIRTY',

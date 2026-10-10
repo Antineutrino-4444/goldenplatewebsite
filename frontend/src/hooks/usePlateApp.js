@@ -1180,25 +1180,11 @@ export function usePlateApp() {
       ? normalizeName(normalizedSelection.last_name ?? normalizedSelection.last)
       : ''
 
-    if (category !== 'dirty') {
-      const hasReference = Boolean(
-        trimmedValue || selectedStudentId || (selectedPreferred && selectedLast)
-      )
-      if (!hasReference) {
-        if (category === 'faculty') {
-          showMessage('Please enter a faculty name', 'error')
-        } else {
-          showMessage('Please enter a Student ID or Name', 'error')
-        }
-        return
-      }
-    }
-
     setIsLoading(true)
     try {
-      const payload = category === 'dirty' ? {} : { input_value: trimmedValue }
+      const payload = { input_value: trimmedValue }
 
-      if (category !== 'dirty' && normalizedSelection) {
+      if (normalizedSelection) {
         if (selectedStudentId) {
           payload.student_id = selectedStudentId
         }
@@ -1222,10 +1208,13 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
-        if (category === 'dirty') {
+        if (data.is_count_only) {
+          showMessage(`${data.display_name} recorded`, 'success')
+        } else if (category === 'dirty') {
           const totalDirty = data.dirty_count ?? 0
           const totalSuffix = totalDirty ? ` (total ${totalDirty})` : ''
-          showMessage(`Dirty plate recorded${totalSuffix}`, 'success')
+          const name = [data.preferred_name, data.last_name].filter(Boolean).join(' ')
+          showMessage(`${name || 'Dirty plate'} recorded as DIRTY${totalSuffix}`, 'success')
         } else {
           const preferredName = (data.preferred_name ?? data.first_name ?? '').trim()
           const lastName = (data.last_name ?? '').trim()
@@ -1986,8 +1975,7 @@ export function usePlateApp() {
   }
 
   const handlePopupSubmit = (category) => {
-  if (category === 'dirty') recordEntry(category)
-  else recordEntry(category, popupInputValue, popupSelectedEntry)
+    recordEntry(category, popupInputValue, popupSelectedEntry)
   }
 
   const handleKeyPress = (e, category) => {

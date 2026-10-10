@@ -519,7 +519,7 @@ function MainPortal({ app }) {
                                     <div>
                                       <div className="font-semibold text-gray-900">{house.house}</div>
                                       <div className="text-sm text-gray-500">
-                                        Clean: {house.clean_count} • Very Dirty: {house.red_count}
+                                        Clean: {house.clean_count} • Dirty: {house.dirty_count ?? 0} • Very Dirty: {house.red_count}
                                       </div>
                                     </div>
                                   </div>
@@ -1099,7 +1099,7 @@ function MainPortal({ app }) {
                                   <div>
                                     <div className="font-semibold text-gray-900">{house.house}</div>
                                     <div className="text-sm text-gray-500">
-                                      Clean: {house.clean_count} • Very Dirty: {house.red_count}
+                                      Clean: {house.clean_count} • Dirty: {house.dirty_count ?? 0} • Very Dirty: {house.red_count}
                                     </div>
                                   </div>
                                 </div>
@@ -1164,7 +1164,7 @@ function MainPortal({ app }) {
                 className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading || user?.role === 'guest'}
               >
-                🍽️ DIRTY PLATE COUNT
+                🍽️ DIRTY PLATE
                 <br />
                 <span className="text-xs sm:text-sm opacity-90">({sessionStats.dirty_count} total)</span>
               </Button>
@@ -1235,12 +1235,12 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle className="text-yellow-600">🥇 Record as CLEAN PLATE</DialogTitle>
             <DialogDescription>
-              Enter Student ID or Name for clean plate tracking
+              Enter a Student ID or name, or leave blank to add one clean plate to the count.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <SearchableNameInput
-              placeholder="Student ID or Name (e.g., 12345 or John Smith)"
+              placeholder="Student ID or name (optional)"
               value={popupInputValue}
               onChange={(value, meta) => {
                 setPopupInputValue(value)
@@ -1277,13 +1277,27 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle className="text-orange-600">🍽️ Add DIRTY PLATE</DialogTitle>
             <DialogDescription>
-              Increase the dirty plate counter without recording a name
+              Enter a Student ID or name, or leave blank to add one dirty plate to the count.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              This action adds one to the dirty plate count. No student information is stored.
-            </p>
+            <SearchableNameInput
+              placeholder="Student ID or name (optional)"
+              value={popupInputValue}
+              onChange={(value, meta) => {
+                setPopupInputValue(value)
+                if (!meta || meta.source !== 'selection') {
+                  setPopupSelectedEntry(null)
+                }
+              }}
+              onSelectName={(entry) => {
+                const sanitized = sanitizeSelection(entry)
+                setPopupSelectedEntry(sanitized)
+              }}
+              onKeyPress={(e) => handleKeyPress(e, 'dirty')}
+              names={studentNames}
+              autoFocus
+            />
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => { setShowDirtyDialog(false); setPopupSelectedEntry(null) }} variant="outline" className="flex-1">
                 Cancel
@@ -1305,12 +1319,12 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle className="text-green-600">🧑‍🏫 Record FACULTY CLEAN PLATE</DialogTitle>
             <DialogDescription>
-              Enter the faculty member's name for clean plate tracking
+              Enter a faculty name, or leave blank to add one faculty clean plate to the count.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <SearchableNameInput
-              placeholder="Faculty Name (e.g., Alex Morgan)"
+              placeholder="Faculty name (optional)"
               value={popupInputValue}
               onChange={(value, meta) => {
                 setPopupInputValue(value)
@@ -1347,12 +1361,12 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle className="text-red-600">🍝 Record as VERY DIRTY PLATE</DialogTitle>
             <DialogDescription>
-              Enter Student ID or Name for very dirty plate tracking
+              Enter a Student ID or name, or leave blank to add one very dirty plate to the count.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <SearchableNameInput
-              placeholder="Student ID or Name (e.g., 12345 or John Smith)"
+              placeholder="Student ID or name (optional)"
               value={popupInputValue}
               onChange={(value, meta) => {
                 setPopupInputValue(value)

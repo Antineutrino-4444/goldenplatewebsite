@@ -21,7 +21,7 @@ from .users import (
     migrate_legacy_users,
     reset_user_store,
 )
-from .utils import extract_student_id_from_key, make_student_key, normalize_name, split_student_key
+from .utils import extract_student_id_from_key, make_student_key, normalize_name, plate_count_label, split_student_key
 
 # Student lookup cache keyed by school for fast eligibility checks
 student_lookup = {}
@@ -359,8 +359,7 @@ def ensure_session_structure(session_info):
         else:
             session_info['dirty_count'] = 0
 
-    # Remove legacy dirty record tracking that stored names
-    if 'dirty_records' in session_info:
+    if not isinstance(session_info.get('dirty_records'), list):
         session_info['dirty_records'] = []
 
     if 'faculty_clean_records' not in session_info or not isinstance(session_info['faculty_clean_records'], list):
@@ -372,16 +371,7 @@ def ensure_session_structure(session_info):
     if 'faculty_pick' not in session_info:
         session_info['faculty_pick'] = None
 
-    # Strip any stored names from historic dirty scan history entries
-    for record in session_info['scan_history']:
-        if record.get('category') == 'dirty':
-            record.pop('preferred_name', None)
-            record.pop('first_name', None)
-            record.pop('last_name', None)
-            if not record.get('display_name'):
-                record['display_name'] = 'Dirty Plate'
-
-    for category in ['clean_records', 'red_records']:
+    for category in ['clean_records', 'red_records', 'dirty_records']:
         records = session_info.get(category)
         if not isinstance(records, list):
             session_info[category] = []
@@ -525,6 +515,7 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
 
     clean_records = []
     red_records = []
+    dirty_records = []
     faculty_records = []
     scan_history = []
     dirty_count = 0
@@ -538,15 +529,23 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
             'is_manual_entry': bool(record.is_manual_entry),
         }
 
-        if record.category == 'dirty':
-            dirty_count += 1
-            entry = base_entry.copy()
-            entry['display_name'] = f"Dirty Plate #{dirty_count}"
-            scan_history.append(entry)
+        is_count_only = not (record.student_id or record.preferred_name or record.last_name) and (
+            (record.dedupe_key or '').startswith('count:') or record.category == 'dirty'
+        )
+        if is_count_only:
+            entry = {**base_entry, 'is_count_only': True,
+                     'display_name': plate_count_label(record.category)}
+            {'clean': clean_records, 'dirty': dirty_records, 'red': red_records,
+             'faculty': faculty_records}[record.category].append(entry)
+            if record.category == 'dirty':
+                dirty_count += 1
+            scan_history.append(entry.copy())
             continue
 
         if record.category == 'faculty':
             preferred_name, last_name = _extract_faculty_names(record.dedupe_key)
+            preferred_name = record.preferred_name or preferred_name
+            last_name = record.last_name or last_name
             faculty_entry = {
                 **base_entry,
                 'preferred_name': preferred_name,
@@ -564,8 +563,8 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
             continue
 
         student_obj = students_map.get(record.student_id)
-        preferred_name = normalize_name(student_obj.preferred_name) if student_obj else ''
-        last_name = normalize_name(student_obj.last_name) if student_obj else ''
+        preferred_name = normalize_name(record.preferred_name or (student_obj.preferred_name if student_obj else ''))
+        last_name = normalize_name(record.last_name or (student_obj.last_name if student_obj else ''))
         student_identifier = normalize_name(student_obj.student_identifier) if student_obj else ''
         advisor = normalize_name(student_obj.advisor) if student_obj else ''
         grade = normalize_name(record.grade or (student_obj.grade if student_obj else ''))
@@ -595,6 +594,9 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
 
         if record.category == 'clean':
             clean_records.append(entry)
+        elif record.category == 'dirty':
+            dirty_records.append(entry)
+            dirty_count += 1
         else:
             red_records.append(entry)
         scan_history.append(entry.copy())
@@ -603,6 +605,7 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
 
     session_info['clean_records'] = clean_records
     session_info['red_records'] = red_records
+    session_info['dirty_records'] = dirty_records
     session_info['faculty_clean_records'] = faculty_records
     session_info['scan_history'] = scan_history
     session_info['dirty_count'] = dirty_count

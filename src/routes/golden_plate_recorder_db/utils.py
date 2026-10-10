@@ -5,6 +5,12 @@ def normalize_name(value):
     return str(value or '').strip()
 
 
+def plate_count_label(category):
+    label = {'clean': 'Clean Plate', 'dirty': 'Dirty Plate', 'red': 'Very Dirty Plate',
+             'faculty': 'Faculty Clean Plate'}[category]
+    return f'{label} (count only)'
+
+
 def make_student_key(preferred_name, last_name, student_id=None):
     student_id_norm = normalize_name(student_id).lower()
     if student_id_norm:
@@ -60,6 +66,7 @@ __all__ = [
     'format_display_name',
     'make_student_key',
     'normalize_name',
+    'plate_count_label',
     'safe_parse_datetime',
     'split_student_key',
 ]

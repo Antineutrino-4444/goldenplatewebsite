@@ -193,3 +193,7 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 ## Support
 For questions or feedback, please open an issue in this repository.
+
+## Optional plate names
+
+Clean, Dirty, Very Dirty, and Faculty Clean all accept an optional name (or student ID for student plates). Leave the field blank to add one unnamed plate to the category count. Repeated blank entries each add one; they appear as “count only” in history and exports and do not earn or reset anyone’s draw tickets. Only named faculty entries can be picked for the faculty draw. Named Dirty entries preserve the student information and contribute to their house statistics, without changing draw tickets.
