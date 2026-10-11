@@ -25,7 +25,10 @@ def calculation_records(session_id):
     meal, error = _authorized_session(session_id)
     if error:
         return error
-    return jsonify({'records': review_records(meal)})
+    roster_scope = request.args.get('roster', 'auto')
+    if roster_scope not in ('auto', 'current'):
+        return jsonify({'error': 'Choose the session roster or current roster for review.'}), 400
+    return jsonify(review_records(meal, roster_scope))
 
 
 @recorder_bp.route('/session/<session_id>/records/<record_id>/exclusion', methods=['POST'])
@@ -33,6 +36,9 @@ def update_record_exclusion(session_id, record_id):
     meal, error = _authorized_session(session_id)
     if error:
         return error
+    roster_scope = request.args.get('roster', 'auto')
+    if roster_scope not in ('auto', 'current'):
+        return jsonify({'error': 'Choose the session roster or current roster for review.'}), 400
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict) or type(payload.get('excluded')) is not bool:
         return jsonify({'error': 'Specify excluded as true or false.'}), 400
@@ -60,7 +66,7 @@ def update_record_exclusion(session_id, record_id):
                              method=None, tickets_at_selection=None, probability_at_selection=None,
                              eligible_pool_size=None, override=False)
     save_session_data()
-    return jsonify({'status': 'success', 'records': review_records(meal),
+    return jsonify({'status': 'success', **review_records(meal, roster_scope),
                     'reset_draw_session_ids': reset_sessions,
                     'message': 'Record excluded from calculations.' if payload['excluded']
                     else 'Record restored to calculations.'})

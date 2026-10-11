@@ -4,7 +4,7 @@ import uuid
 import pytest
 
 from src.routes.golden_plate_recorder_db.db import (
-    DraftPool, RecordExclusionEvent, School, Session, SessionDrawEvent, SessionRecord,
+    DraftPool, RecordExclusionEvent, RosterSnapshot, School, Session, SessionDrawEvent, SessionRecord,
     Student, db_session,
 )
 from src.routes.golden_plate_recorder_db.draw_db import get_student_ticket_balance
@@ -52,6 +52,100 @@ def stats(client, session_id):
     result = client.get(f'/api/session/{session_id}/house-stats')
     assert result.status_code == 200
     return result.get_json()
+
+
+def test_legacy_review_finds_current_roster_conflict_before_manual_matching(client, school):
+    upload(client, ['9100', '9101', '9102'])
+    session_id = create(client)
+    record(client, session_id)
+    outsider_id = record(client, session_id, identifier='9102')
+    upload(client)
+    meal = db_session.get(Session, session_id)
+    meal.roster_snapshot_id = None  # A historical session with no saved roster.
+    meal.roster_mixed = 0
+    db_session.commit()
+    snapshot_count = db_session.query(RosterSnapshot).count()
+    assert 'no historical roster' in stats(client, session_id)['estimation']['reason']
+    attempt = client.post(f'/api/session/{session_id}/roster/current')
+    assert attempt.status_code == 400
+    assert 'not in the current roster' in attempt.get_json()['error']
+    review = client.get(f'/api/session/{session_id}/calculation-records').get_json()
+    assert review['roster_review'] == {'source': 'current', 'filename': 'students.csv',
+                                      'available': True, 'has_saved_roster': False}
+    outsider = next(row for row in review['records'] if row['record_id'] == outsider_id)
+    assert outsider['issue'] == 'Student is not in the current roster.'
+    assert db_session.get(Session, session_id).roster_snapshot_id is None
+    assert db_session.query(RosterSnapshot).count() == snapshot_count
+    assert exclude(client, session_id, outsider_id).status_code == 200
+    # Reviewing and excluding cannot attest the historical roster for the user.
+    assert not stats(client, session_id)['estimation']['available']
+    assert client.post(f'/api/session/{session_id}/roster/current').status_code == 200
+    assert stats(client, session_id)['estimation']['available']
+    review = client.get(f'/api/session/{session_id}/calculation-records').get_json()
+    assert review['roster_review']['source'] == 'saved'
+    assert review['roster_review']['has_saved_roster']
+
+
+def test_review_can_compare_current_roster_without_changing_saved_history(client, school):
+    upload(client, ['9100', '9101', '9102'])
+    session_id = create(client)
+    outsider_id = record(client, session_id, identifier='9102')
+    snapshot_id = db_session.get(Session, session_id).roster_snapshot_id
+    upload(client)
+    before = stats(client, session_id)['estimation']
+    assert before['available'] and before['population'] == 3
+    saved = client.get(f'/api/session/{session_id}/calculation-records').get_json()
+    assert saved['roster_review']['source'] == 'saved'
+    assert saved['records'][0]['issue'] is None
+    current_url = f'/api/session/{session_id}/calculation-records?roster=current'
+    current = client.get(current_url).get_json()
+    assert current['roster_review']['has_saved_roster']
+    assert current['roster_review']['source'] == 'current'
+    assert current['records'][0]['issue'] == 'Student is not in the current roster.'
+    result = client.post(f'/api/session/{session_id}/records/{outsider_id}/exclusion?roster=current',
+                         json={'excluded': True})
+    assert result.status_code == 200
+    assert result.get_json()['roster_review']['source'] == 'current'
+    assert result.get_json()['records'][0]['is_excluded']
+    assert db_session.get(Session, session_id).roster_snapshot_id == snapshot_id
+    assert stats(client, session_id)['estimation']['population'] == 2
+
+
+def test_current_roster_review_finds_house_conflicts_but_not_anonymous_counts(client, school):
+    session_id = create(client)
+    record(client, session_id)
+    record(client, session_id, category='dirty', identifier='')
+    student = db_session.query(Student).filter_by(school_id=school.id, student_identifier='9100').one()
+    student.house = 'B'
+    db_session.commit()
+    result = client.get(f'/api/session/{session_id}/calculation-records?roster=current').get_json()
+    assert result['records'][0]['issue'] == 'Recorded house conflicts with the current roster.'
+    assert result['records'][1]['is_count_only'] and result['records'][1]['issue'] is None
+    assert client.post(f'/api/session/{session_id}/roster/current').status_code == 400
+    assert client.get(f'/api/session/{session_id}/calculation-records').get_json()['records'][0]['issue'] is None
+
+
+def test_review_without_any_roster_reports_membership_check_unavailable(client, school):
+    session_id = create(client)
+    target = record(client, session_id)
+    db_session.get(Session, session_id).roster_snapshot_id = None
+    db_session.query(Student).filter_by(school_id=school.id).update({'is_active': 0})
+    db_session.commit()
+    result = client.get(f'/api/session/{session_id}/calculation-records').get_json()
+    assert result['roster_review']['source'] == 'current'
+    assert not result['roster_review']['available']
+    assert result['records'][0]['record_id'] == target
+    assert result['records'][0]['issue'] is None
+
+
+def test_invalid_roster_review_scope_does_not_exclude_records(client, school):
+    session_id = create(client)
+    target = record(client, session_id)
+    assert client.get(f'/api/session/{session_id}/calculation-records?roster=other').status_code == 400
+    assert client.post(f'/api/session/{session_id}/records/{target}/exclusion?roster=other',
+                       json={'excluded': True}).status_code == 400
+    assert not db_session.get(SessionRecord, target).is_excluded
+    assert db_session.query(RecordExclusionEvent).count() == 0
 
 
 def test_missing_member_exclusion_fixes_estimates_scores_counts_draws_and_history(client, school, email_outbox):

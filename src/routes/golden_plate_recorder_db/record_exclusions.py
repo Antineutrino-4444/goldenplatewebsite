@@ -5,18 +5,29 @@ from datetime import timezone
 
 from sqlalchemy import func
 
-from .db import (RecordExclusionEvent, RosterSnapshot, Session, SessionRecord,
-                 SessionTicketEvent, _now_utc, db_session)
+from .db import (RecordExclusionEvent, RosterSnapshot, School, Session, SessionRecord,
+                 SessionTicketEvent, Student, _now_utc, db_session)
 from .draw_db import (get_clean_student_ids_for_session, get_student_ticket_balance,
                       record_draw_event, update_draft_pool)
 from .utils import normalize_house, plate_count_label
 
 
-def review_records(meal):
+def review_records(meal, roster_scope='auto'):
     snapshot = db_session.query(RosterSnapshot).filter_by(
         id=meal.roster_snapshot_id, school_id=meal.school_id,
     ).first() if meal.roster_snapshot_id else None
-    members = json.loads(snapshot.data)['members'] if snapshot else None
+    if snapshot and roster_scope != 'current':
+        members = json.loads(snapshot.data)['members']
+        source = 'saved'
+        filename = snapshot.filename
+    else:
+        # Preview current membership without assigning a roster to the session
+        # or creating a snapshot during a read-only review.
+        students = db_session.query(Student).filter_by(school_id=meal.school_id, is_active=1).all()
+        members = {student.id: student.house for student in students}
+        source = 'current'
+        filename = db_session.get(School, meal.school_id).roster_filename
+    roster_label = 'this session’s saved roster' if source == 'saved' else 'the current roster'
     rows = db_session.query(SessionRecord).filter_by(
         school_id=meal.school_id, session_id=meal.id,
     ).order_by(SessionRecord.recorded_at, SessionRecord.id).all()
@@ -24,19 +35,20 @@ def review_records(meal):
     for row in rows:
         named = bool(row.student_id or (row.preferred_name or '').strip() or (row.last_name or '').strip())
         issue = None
-        if members is not None and row.category != 'faculty' and named:
+        if members and row.category != 'faculty' and named:
             if row.student_id and row.student_id not in members:
-                issue = 'Student is not in this session’s saved roster.'
+                issue = f'Student is not in {roster_label}.'
             elif row.student_id and normalize_house(row.house) and normalize_house(members[row.student_id]):
                 if normalize_house(row.house) != normalize_house(members[row.student_id]):
-                    issue = 'Recorded house conflicts with this session’s saved roster.'
+                    issue = f'Recorded house conflicts with {roster_label}.'
         name = f'{row.preferred_name or ""} {row.last_name or ""}'.strip()
         result.append({'record_id': row.id, 'name': name or plate_count_label(row.category),
                        'category': row.category, 'house': normalize_house(row.house),
                        'is_count_only': not named, 'is_excluded': bool(row.is_excluded),
                        'issue': issue, 'exclusion_reason': row.exclusion_reason,
                        'excluded_at': row.excluded_at.isoformat() if row.excluded_at else None})
-    return result
+    return {'records': result, 'roster_review': {'source': source, 'filename': filename,
+                                               'available': bool(members), 'has_saved_roster': bool(snapshot)}}
 
 
 def _time(value):

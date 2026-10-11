@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Home, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -9,6 +10,11 @@ import SessionRecordExclusions from '@/components/SessionRecordExclusions.jsx'
 export default function HouseRanking({ app, fillHeight = false }) {
   const { sessionId, houseStats, houseStatsLoading, houseSortBy, setHouseSortBy, loadHouseStats } = app
   const settings = houseStats?.score_settings || DEFAULT_HOUSE_SCORE_SETTINGS
+  const [reviewRequest, setReviewRequest] = useState(null)
+  const [calculationRevision, setCalculationRevision] = useState(0)
+  const reviewScope = reviewRequest?.sessionId === sessionId ? reviewRequest.scope : 'auto'
+  const reviewVersion = reviewRequest?.sessionId === sessionId ? reviewRequest.version : 0
+  const refreshReview = (scope) => setReviewRequest({ sessionId, scope, version: reviewVersion + 1 })
 
   return (
     <Card className={fillHeight ? 'flex-1 flex flex-col min-h-0' : undefined}>
@@ -46,10 +52,15 @@ export default function HouseRanking({ app, fillHeight = false }) {
       </CardHeader>
       <CardContent className={fillHeight ? 'flex-1 overflow-x-hidden overflow-y-auto' : undefined}>
         {sessionId && app.user?.role === 'superadmin' && <SessionRecordExclusions key={sessionId} sessionId={sessionId}
-          onChanged={async () => { await app.refreshSessionStatus(); await app.loadSessions() }} />}
+          rosterScope={reviewScope} reviewVersion={reviewVersion} onRosterScopeChange={refreshReview}
+          onChanged={async () => {
+            setCalculationRevision((value) => value + 1)
+            await app.refreshSessionStatus(); await app.loadSessions()
+          }} />}
         {sessionId && houseSortBy === 'estimates' && ['admin', 'superadmin'].includes(app.user?.role) && (
           <MatchSessionRoster key={sessionId} sessionId={sessionId} loading={houseStatsLoading}
-            onMatched={() => loadHouseStats({ silent: false })} />
+            calculationRevision={calculationRevision} onMatchFailed={() => refreshReview('current')}
+            onMatched={async () => { refreshReview('auto'); await loadHouseStats({ silent: false }) }} />
         )}
         {!sessionId ? (
           <div className="py-8 text-center text-gray-500">

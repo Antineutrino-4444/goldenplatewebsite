@@ -87,7 +87,9 @@ def match_session_to_current_roster(meal, actor_id, settings):
     ).all()
     estimation = estimate_house_stats(candidate, records, settings)
     if not estimation['available']:
-        raise ValueError(estimation['reason'])
+        reason = estimation['reason'].replace('this session’s saved roster', 'the current roster')
+        reason = reason.replace('saved roster population', 'current roster population')
+        raise ValueError(reason)
     meal.roster_snapshot_id = snapshot.id
     meal.roster_mixed = 0
     meal.roster_matched_at = matched_at

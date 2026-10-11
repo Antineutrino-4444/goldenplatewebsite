@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 
-export default function MatchSessionRoster({ sessionId, loading, onMatched }) {
+export default function MatchSessionRoster({ sessionId, loading, onMatched, onMatchFailed, calculationRevision }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -12,6 +12,10 @@ export default function MatchSessionRoster({ sessionId, loading, onMatched }) {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
+  useEffect(() => {
+    setError('')
+    setMessage('')
+  }, [calculationRevision])
 
   const match = async () => {
     if (pending.current || !sessionId) return
@@ -25,6 +29,7 @@ export default function MatchSessionRoster({ sessionId, loading, onMatched }) {
       if (!mounted.current) return
       if (!response.ok) {
         setError(data.error || 'Unable to match this session to the current roster.')
+        onMatchFailed?.()
         return
       }
       setMessage(`Matched to ${data.estimation.roster_filename || 'the current roster'} (${data.estimation.population} students).`)
