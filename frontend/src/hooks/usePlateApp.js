@@ -1514,33 +1514,41 @@ export function usePlateApp() {
     }
   }
 
-  const loadHouseStats = async ({ silent = false, sessionIdOverride = null } = {}) => {
+  const loadHouseStats = async ({ silent = false, sessionIdOverride = null, background = false, signal = null } = {}) => {
     const targetSessionId = sessionIdOverride || sessionId
     if (!targetSessionId) {
       setHouseStats(null)
       return
     }
 
-    setHouseStatsLoading(true)
+    if (!background) setHouseStatsLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/session/${targetSessionId}/house-stats`)
+      const response = await fetch(`${API_BASE}/session/${targetSessionId}/house-stats`, { signal })
       const data = await response.json()
+      if (signal?.aborted) return
       if (response.ok) {
         setHouseStats(data)
       } else {
         if (!silent) {
           showMessage(data.error || 'Failed to load house statistics', 'error')
         }
-        setHouseStats(null)
+        if (!background || [401, 403, 404].includes(response.status)) setHouseStats(null)
+        else setHouseStats((previous) => previous ? {
+          ...previous, estimation: { ...previous.estimation, refresh_failed: true }
+        } : previous)
       }
     } catch (error) {
+      if (signal?.aborted) return
       console.error('Failed to load house stats:', error)
       if (!silent) {
         showMessage('Failed to load house statistics', 'error')
       }
-      setHouseStats(null)
+      if (!background) setHouseStats(null)
+      else setHouseStats((previous) => previous ? {
+        ...previous, estimation: { ...previous.estimation, refresh_failed: true }
+      } : previous)
     } finally {
-      setHouseStatsLoading(false)
+      if (!background) setHouseStatsLoading(false)
     }
   }
 

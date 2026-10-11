@@ -20,6 +20,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import declarative_base, relationship, scoped_session, sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 from .utils import normalize_house
 
@@ -182,6 +183,14 @@ class RosterSnapshot(Base):
     created_at = Column(DateTime(timezone=True), default=_now_utc, nullable=False)
     filename = Column(String)
     data = Column(Text, nullable=False)
+
+
+class EstimateSystemActivation(Base):
+    """Persistent release boundary for the Upper School Estimate tab only."""
+    __tablename__ = 'estimate_system_activations'
+
+    version = Column(String, primary_key=True)
+    activated_at = Column(DateTime(timezone=True), nullable=False, default=_now_utc)
 
 
 class Teacher(Base):
@@ -1101,6 +1110,16 @@ def _bootstrap_database() -> None:
 
     _migrate_schema()
     Base.metadata.create_all(bind=engine)
+    # Persist the first activation, rather than moving the boundary on reloads.
+    with engine.begin() as connection:
+        table = EstimateSystemActivation.__table__
+        version = 'upper-school-clean-percentage-v1'
+        if connection.execute(table.select().where(table.c.version == version)).first() is None:
+            try:
+                with connection.begin_nested():
+                    connection.execute(table.insert().values(version=version, activated_at=_now_utc()))
+            except IntegrityError:
+                pass  # Another worker initialized the same release first.
     _ensure_seed_schools()
     _ensure_user_school_assignments()
     _normalize_stored_house_names()
@@ -1119,6 +1138,7 @@ __all__ = [
     'DEFAULT_SCHOOL_NAME',
     'DEFAULT_SCHOOL_SLUG',
     'DraftPool',
+    'EstimateSystemActivation',
     'EmailVerification',
     'EmailNotificationPreference',
     'INTERSCHOOL_SCHOOL_ID',

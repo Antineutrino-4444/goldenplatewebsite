@@ -3,7 +3,7 @@
 import json
 from types import SimpleNamespace
 
-from .db import RosterSnapshot, School, Session, SessionRecord, Student, _now_utc, db_session
+from .db import DEFAULT_SCHOOL_ID, RosterSnapshot, School, Session, SessionRecord, Student, _now_utc, db_session
 from .utils import normalize_house
 
 
@@ -23,8 +23,12 @@ def current_roster_snapshot(school_id, *, refresh=False):
     for house in members.values():
         if house:
             populations[house] = populations.get(house, 0) + 1
-    data = json.dumps({'members': members, 'populations': populations,
-                       'missing_house_count': sum(not house for house in members.values())}, sort_keys=True)
+    roster_data = {'members': members, 'populations': populations,
+                   'missing_house_count': sum(not house for house in members.values())}
+    if school_id == DEFAULT_SCHOOL_ID:
+        # Estimate-only eligibility must survive later grade/roster changes.
+        roster_data['grades'] = {student.id: student.grade for student in students}
+    data = json.dumps(roster_data, sort_keys=True)
     # Re-uploading identical membership does not change a session's population.
     if previous and previous.data == data:
         return previous

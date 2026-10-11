@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, Home, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -28,6 +28,21 @@ export default function HouseRanking({ app, fillHeight = false }) {
   const reviewScope = reviewRequest?.sessionId === sessionId ? reviewRequest.scope : 'auto'
   const reviewVersion = reviewRequest?.sessionId === sessionId ? reviewRequest.version : 0
   const refreshReview = (scope) => setReviewRequest({ sessionId, scope, version: reviewVersion + 1 })
+  const refreshEstimates = useRef(loadHouseStats)
+  refreshEstimates.current = loadHouseStats
+  const estimationModel = houseStats?.estimation?.model
+  useEffect(() => {
+    if (!sessionId || houseSortBy !== 'estimates' || estimationModel !== 'conditional_clean_percentage_hypergeometric') return
+    const controller = new AbortController()
+    let pending = false
+    const timer = setInterval(async () => {
+      if (pending || document.hidden) return
+      pending = true
+      try { await refreshEstimates.current({ silent: true, background: true, signal: controller.signal }) }
+      finally { pending = false }
+    }, 5000)
+    return () => { clearInterval(timer); controller.abort() }
+  }, [sessionId, houseSortBy, estimationModel])
 
   return (
     <Card className={fillHeight ? 'flex-1 flex flex-col min-h-0' : undefined}>
@@ -62,7 +77,7 @@ export default function HouseRanking({ app, fillHeight = false }) {
         ) : houseStatsLoading ? (
           <div className="py-8 text-center text-gray-500">Loading house statistics...</div>
         ) : houseSortBy === 'estimates' ? (
-          <HouseEstimates estimation={houseStats?.estimation} />
+          <HouseEstimates estimation={houseStats?.estimation} sessionId={sessionId} />
         ) : !houseStats?.has_house_data ? (
           <div className="py-8 text-center text-gray-500">
             <Home className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -116,7 +131,9 @@ export default function HouseRanking({ app, fillHeight = false }) {
           <HouseDataNotes key={`notes-${sessionId}-${houseSortBy}`}>
             <CardDescription>
               {houseSortBy === 'estimates'
-                ? `Estimated score ranges at 95% overall model coverage. Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}.`
+                ? houseStats?.estimation?.model === 'conditional_clean_percentage_hypergeometric'
+                  ? 'Expected CLEAN percentage among participants, with individual 90% model-based prediction intervals. Absences do not enter the percentage.'
+                  : `Estimated score ranges at 95% overall model coverage. Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}.`
                 : houseSortBy === 'score'
                   ? `Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}. Count-only entries and records without a house earn no points.`
                 : houseSortBy === 'percentage'

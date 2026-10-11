@@ -26,7 +26,7 @@ from .domain import serialize_draw_info
 from .users import readable_user_label, user_labels_for_school
 from .draw_db import record_draw_event
 from .house_scoring import house_score_settings
-from .house_estimation import estimate_house_stats
+from .clean_percentage_estimation import estimate_session_percentages
 from .roster_history import current_roster_snapshot, match_session_to_current_roster, prepare_recording_roster
 from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
 from .storage import (
@@ -281,7 +281,7 @@ def create_session():
             counter += 1
 
     def _make_session(name: str) -> SessionModel:
-        snapshot = current_roster_snapshot(school_id)
+        snapshot = current_roster_snapshot(school_id, refresh=school_id == DEFAULT_SCHOOL_ID)
         return SessionModel(
             id=session_id,
             school_id=school_id,
@@ -958,7 +958,10 @@ def get_house_stats(session_id):
         'session_name': db_sess.session_name,
         'total_records_with_house': total_with_house,
         'house_stats': house_stats,
-        'estimation': estimate_house_stats(db_sess, records, score_settings),
+        'estimation': estimate_session_percentages(
+            db_sess, records, score_settings,
+            include_separation=request.args.get('estimate_separation') == '1',
+        ),
     }), 200
 
 
