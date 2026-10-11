@@ -16,6 +16,7 @@ from .db import (
     SessionDeleteRequest,
     SessionDrawEvent,
     SessionRecord,
+    RecordExclusionEvent,
     Student,
     _now_utc,
     db_session,
@@ -124,6 +125,7 @@ def _delete_session_with_dependencies(db_sess):
 
     # Explicitly delete dependents because SQLite foreign key cascades
     # are easy to disable accidentally and we do not want orphan rows.
+    db_session.query(RecordExclusionEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
     db_session.query(SessionRecord).filter_by(session_id=session_id).delete(synchronize_session=False)
     db_session.query(SessionDrawEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
 
@@ -899,6 +901,8 @@ def get_house_stats(session_id):
     total_with_house = 0
 
     for record in records:
+        if record.is_excluded:
+            continue
         # Anonymous counts never earn or deduct points, even if legacy data
         # accidentally includes a house. Only identifiable student plates rank.
         if not (record.student_id or (record.preferred_name or '').strip() or (record.last_name or '').strip()):
@@ -1008,6 +1012,9 @@ def get_scan_history():
             name = plate_count_label(category)
 
         formatted_history.append({
+            'record_id': session_record.id,
+            'is_excluded': bool(session_record.is_excluded),
+            'exclusion_reason': session_record.exclusion_reason,
             'timestamp': session_record.recorded_at.isoformat() if session_record.recorded_at else '',
             'name': name,
             'category': category.upper(),

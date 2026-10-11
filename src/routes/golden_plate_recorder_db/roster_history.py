@@ -40,6 +40,7 @@ def bind_empty_sessions(school_id, snapshot):
         return
     populated = db_session.query(SessionRecord.session_id).filter(
         SessionRecord.school_id == school_id, SessionRecord.category != 'faculty',
+        SessionRecord.is_excluded == 0,
     )
     for meal in db_session.query(Session).filter(
         Session.school_id == school_id, Session.status == 'active', ~Session.id.in_(populated),
@@ -57,6 +58,7 @@ def prepare_recording_roster(meal):
     has_students = db_session.query(SessionRecord.id).filter(
         SessionRecord.session_id == meal.id, SessionRecord.school_id == meal.school_id,
         SessionRecord.category != 'faculty',
+        SessionRecord.is_excluded == 0,
     ).first() is not None
     if not has_students:
         if meal.roster_snapshot_id != (snapshot.id if snapshot else None):

@@ -190,7 +190,7 @@ def get_live_counter():
             )), 0).label(f'{category}_{index}'))
     query = db_session.query(*columns).select_from(SessionRecord).join(
         Session, (Session.id == SessionRecord.session_id) & (Session.school_id == SessionRecord.school_id),
-    ).filter(SessionRecord.school_id == school.id,
+    ).filter(SessionRecord.school_id == school.id, SessionRecord.is_excluded == 0,
              Session.status != 'discarded',
              SessionRecord.recorded_at >= min(lower for lower, _ in bounds),
              SessionRecord.recorded_at < max(upper for _, upper in bounds))

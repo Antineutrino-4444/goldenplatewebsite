@@ -270,11 +270,28 @@ class SessionRecord(Base):
     grade = Column(String)
     house = Column(String)
     is_manual_entry = Column(Integer, nullable=False, default=0)
+    is_excluded = Column(Integer, nullable=False, default=0, server_default='0')
+    excluded_at = Column(DateTime(timezone=True))
+    excluded_by = Column(String, ForeignKey('users.id'))
+    exclusion_reason = Column(Text)
     recorded_by = Column(String, ForeignKey('users.id'), nullable=False)
     recorded_at = Column(DateTime(timezone=True), default=_now_utc)
     dedupe_key = Column(String, nullable=False)
     preferred_name = Column(String)
     last_name = Column(String)
+
+
+class RecordExclusionEvent(Base):
+    __tablename__ = 'record_exclusion_events'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False)
+    session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
+    record_id = Column(String, ForeignKey('session_records.id', ondelete='CASCADE'), nullable=False)
+    is_excluded = Column(Integer, nullable=False)
+    reason = Column(Text)
+    changed_at = Column(DateTime(timezone=True), default=_now_utc, nullable=False)
+    changed_by = Column(String, ForeignKey('users.id'), nullable=False)
 
 
 class SessionDrawEvent(Base):
@@ -870,6 +887,13 @@ def _migrate_schema() -> None:
         tables = set(inspector.get_table_names())
         _ensure_column(inspector, 'students', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
 
+    if 'session_records' in tables:
+        for column_name, ddl in [
+            ('is_excluded', 'INTEGER NOT NULL DEFAULT 0'),
+            ('excluded_at', 'DATETIME'), ('excluded_by', 'TEXT'), ('exclusion_reason', 'TEXT'),
+        ]:
+            _ensure_column(inspector, 'session_records', column_name, ddl)
+
     if 'session_draw_events' in tables:
         _ensure_column(inspector, 'session_draw_events', 'draw_target', "TEXT NOT NULL DEFAULT 'student'")
         _ensure_column(inspector, 'session_draw_events', 'faculty_name', 'TEXT')
@@ -1103,6 +1127,7 @@ __all__ = [
     'SessionDeleteRequest',
     'SessionDrawEvent',
     'SessionRecord',
+    'RecordExclusionEvent',
     'SessionTicketEvent',
     'Student',
     'Teacher',

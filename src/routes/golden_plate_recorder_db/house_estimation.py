@@ -134,6 +134,10 @@ def rank_score_intervals(rows):
 
 
 def estimate_house_stats(meal, records, settings):
+    excluded_ids = {record.student_id for record in records
+                    if getattr(record, 'is_excluded', False) and record.student_id
+                    and record.category in ('clean', 'dirty', 'red')}
+    records = [record for record in records if not getattr(record, 'is_excluded', False)]
     if meal.roster_mixed:
         return unavailable('Estimated scores are unavailable because this session contains student records from multiple roster versions.')
     snapshot = db_session.query(RosterSnapshot).filter_by(
@@ -147,8 +151,19 @@ def estimate_house_stats(meal, records, settings):
                 'roster_saved_at': snapshot.created_at.isoformat(),
                 'roster_assignment': 'manual' if matched_at else 'automatic',
                 'roster_matched_at': matched_at.isoformat() if matched_at else None}
-    members = {identifier: normalize_house(house) for identifier, house in roster['members'].items()}
+    members = {identifier: normalize_house(house) for identifier, house in roster['members'].items()
+               if identifier not in excluded_ids}
+    metadata['excluded_roster_student_count'] = len(excluded_ids & roster['members'].keys())
     if not members:
+        if excluded_ids:
+            if any(record.category in ('clean', 'dirty', 'red') for record in records):
+                return unavailable('Estimated scores are unavailable because student plate counts exceed the roster population after exclusions.', **metadata)
+            return {'available': True, 'reason': None, **metadata, 'house_stats': [],
+                    'house_estimates_available': False,
+                    'house_estimates_reason': 'All saved roster students are excluded from this session’s calculations.',
+                    'population': 0, 'student_plate_count': 0, 'student_clean_percentage': None,
+                    'school_absent_count': 0, 'observed_dirty_count': 0,
+                    'unattributed_counts': {'clean': 0, 'dirty': 0, 'red': 0}}
         return unavailable('Estimated scores are unavailable because the saved roster has no students.', **metadata)
     missing_house_count = sum(not house for house in members.values())
     # A linked plate can supply an otherwise missing house without changing the

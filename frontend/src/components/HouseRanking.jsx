@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { compareHouses, DEFAULT_HOUSE_SCORE_SETTINGS } from '@/lib/house-ranking.js'
 import HouseEstimates from '@/components/HouseEstimates.jsx'
 import MatchSessionRoster from '@/components/MatchSessionRoster.jsx'
+import SessionRecordExclusions from '@/components/SessionRecordExclusions.jsx'
 
 export default function HouseRanking({ app, fillHeight = false }) {
   const { sessionId, houseStats, houseStatsLoading, houseSortBy, setHouseSortBy, loadHouseStats } = app
@@ -44,6 +45,8 @@ export default function HouseRanking({ app, fillHeight = false }) {
         </CardDescription>
       </CardHeader>
       <CardContent className={fillHeight ? 'flex-1 overflow-x-hidden overflow-y-auto' : undefined}>
+        {sessionId && app.user?.role === 'superadmin' && <SessionRecordExclusions key={sessionId} sessionId={sessionId}
+          onChanged={async () => { await app.refreshSessionStatus(); await app.loadSessions() }} />}
         {sessionId && houseSortBy === 'estimates' && ['admin', 'superadmin'].includes(app.user?.role) && (
           <MatchSessionRoster key={sessionId} sessionId={sessionId} loading={houseStatsLoading}
             onMatched={() => loadHouseStats({ silent: false })} />

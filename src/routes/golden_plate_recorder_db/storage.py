@@ -531,12 +531,12 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
             'finalized_by': db_sess.faculty_finalized_by,
         }
     else:
-        session_info.setdefault('faculty_pick', None)
+        session_info['faculty_pick'] = None
 
     try:
         records = (
             db_session.query(SessionRecord)
-            .filter(SessionRecord.session_id == session_id)
+            .filter(SessionRecord.session_id == session_id, SessionRecord.is_excluded == 0)
             .order_by(SessionRecord.recorded_at.asc(), SessionRecord.id.asc())
             .all()
         )

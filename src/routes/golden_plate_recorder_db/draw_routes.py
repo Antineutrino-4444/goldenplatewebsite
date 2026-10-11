@@ -153,6 +153,7 @@ def start_draw(session_id):
         db_session.query(SessionRecord)
         .filter(
             SessionRecord.session_id.in_(draw_session_ids),
+            SessionRecord.is_excluded == 0,
             SessionRecord.category.in_(['clean', 'red'])
         )
         .count()
@@ -335,6 +336,7 @@ def override_draw(session_id):
         .outerjoin(Student, SessionRecord.student_id == Student.id)
         .filter(
             SessionRecord.session_id.in_(draw_session_ids),
+            SessionRecord.is_excluded == 0,
             SessionRecord.category.in_(['clean', 'red'])
         )
         .all()

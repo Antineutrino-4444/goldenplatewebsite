@@ -979,6 +979,7 @@ function MainPortal({ app }) {
                             </div>
                             <div className="font-medium truncate">
                               {record.name}
+                              {record.is_excluded && <span className="ml-2 rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-700">Excluded from calculations</span>}
                             </div>
                           </div>
                           <div className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${

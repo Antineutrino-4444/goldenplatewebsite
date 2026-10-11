@@ -102,6 +102,7 @@ def get_clean_student_ids_for_session(session_id: str) -> Set[str]:
         .filter(
             SessionRecord.session_id.in_(session_ids),
             SessionRecord.category == 'clean',
+            SessionRecord.is_excluded == 0,
             SessionRecord.student_id.isnot(None),
         )
         .distinct()
