@@ -22,6 +22,7 @@ from .db import (
     db_session,
 )
 from .domain import serialize_draw_info
+from .users import readable_user_label, user_labels_for_school
 from .draw_db import record_draw_event
 from .house_scoring import house_score_settings
 from .house_estimation import estimate_house_stats
@@ -385,6 +386,7 @@ def list_sessions():
         query = query.filter(SessionModel.is_public == 1)
     
     db_sessions = query.order_by(SessionModel.created_at.desc()).all()
+    user_labels = user_labels_for_school(school_id)
 
     user_sessions = []
     for db_sess in db_sessions:
@@ -415,7 +417,7 @@ def list_sessions():
         user_sessions.append({
             'session_id': db_sess.id,
             'session_name': db_sess.session_name,
-            'owner': db_sess.created_by,
+            'owner': readable_user_label(db_sess.created_by, labels=user_labels),
             'total_records': total_records,
             'clean_count': clean_count,
             'dirty_count': dirty_count + red_count,
@@ -496,7 +498,8 @@ def switch_session(session_id):
 
     return jsonify({
         'session_id': session_id,
-        'session_name': db_sess.session_name
+        'session_name': db_sess.session_name,
+        'owner': readable_user_label(db_sess.created_by, school_id=school_id),
     }), 200
 
 
@@ -680,6 +683,7 @@ def get_session_status():
     return jsonify({
         'session_id': session_id,
         'session_name': db_sess.session_name,
+        'owner': readable_user_label(db_sess.created_by, school_id=school_id),
         'clean_count': clean_count,
         'dirty_count': dirty_count,
         'red_count': red_count,
@@ -1648,6 +1652,7 @@ def export_detailed_csv():
 
     ensure_session_structure(data)
 
+    user_labels = user_labels_for_school(school_id)
     detailed_records = []
     for category in ['clean', 'dirty', 'red', 'faculty']:
         records_key = 'faculty_clean_records' if category == 'faculty' else f'{category}_records'
@@ -1663,7 +1668,7 @@ def export_detailed_csv():
                 'House': record.get('house', ''),
                 'Clan': record.get('clan', ''),
                 'Recorded At': record.get('timestamp', ''),
-                'Recorded By': record.get('recorded_by', ''),
+                'Recorded By': readable_user_label(record.get('recorded_by'), labels=user_labels),
                 'Manual Entry': 'Yes' if record.get('is_manual_entry') else 'No'
             })
 

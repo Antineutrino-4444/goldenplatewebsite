@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
 from sqlalchemy import func
+from .users import readable_user_label, user_labels_for_school
 
 from .db import (
     DEFAULT_SCHOOL_ID,
@@ -333,6 +334,7 @@ def get_draw_history(session_id: str) -> List[Dict]:
         .all()
     )
 
+    user_labels = user_labels_for_school(_resolve_school_id(session_id=session_id))
     result = []
     for event in events:
         student = None
@@ -354,7 +356,7 @@ def get_draw_history(session_id: str) -> List[Dict]:
         result.append({
             'event_type': f'faculty_{event.event_type}' if is_faculty else event.event_type,
             'timestamp': event.created_at.isoformat() if event.created_at else None,
-            'created_by': event.created_by,
+            'created_by': readable_user_label(event.created_by, labels=user_labels),
             'student_name': f"{student.preferred_name} {student.last_name}" if student else None,
             'faculty_name': faculty_name if is_faculty else None,
             'student_id': event.selected_student_id,

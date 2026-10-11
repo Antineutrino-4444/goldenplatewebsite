@@ -9,13 +9,14 @@ from .security import get_current_user, require_admin, require_auth
 from .roster_csv import roster_csv_reader
 from .storage import save_global_teacher_data, sync_teacher_table_from_list
 from .utils import normalize_name
+from .users import readable_user_label
 
 
 def _teacher_roster_metadata(school_id):
     school = db_session.get(School, school_id)
     return {
         'filename': school.teacher_roster_filename if school else None,
-        'uploaded_by': (school.teacher_roster_uploaded_by or 'unknown') if school else 'unknown',
+        'uploaded_by': readable_user_label(school.teacher_roster_uploaded_by if school else None, school_id=school_id),
         'uploaded_at': school.teacher_roster_uploaded_at.isoformat() if school and school.teacher_roster_uploaded_at else None,
     }
 

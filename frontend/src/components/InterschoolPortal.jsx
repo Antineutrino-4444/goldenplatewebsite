@@ -257,7 +257,7 @@ function InterschoolPortal({ app }) {
                     >
                       <div>
                         <div className="font-mono text-sm text-gray-900">{invite.code}</div>
-                        <div className="text-xs text-gray-600">School ID: {invite.schoolId}</div>
+                        <div className="text-xs text-gray-600">New school (awaiting registration)</div>
                         {invite.issuedAt && (
                           <div className="text-xs text-gray-400">
                             {new Date(invite.issuedAt).toLocaleString()}
@@ -336,7 +336,6 @@ function InterschoolPortal({ app }) {
                     >
                       <div className="space-y-1">
                         <div className="font-semibold text-gray-900">{school.name}</div>
-                        <div className="text-xs text-gray-500">School ID: {school.id}</div>
                         {school.slug && (
                           <div className="text-xs text-gray-500">Code: {school.slug}</div>
                         )}
@@ -390,6 +389,7 @@ function InterschoolPortal({ app }) {
             ) : (
               <div className="space-y-3">
                 {interschoolInvites.map((invite) => {
+                  const inviteSchool = interschoolSchools.find((school) => school.id === invite.school_id)
                   const inviteKey = invite.id || invite.code
                   const issuedLabel = formatDateTime(invite.issued_at)
                   const usedLabel = formatDateTime(invite.used_at)
@@ -401,7 +401,7 @@ function InterschoolPortal({ app }) {
                     >
                       <div className="space-y-1">
                         <div className="font-mono text-sm text-gray-900">{invite.code}</div>
-                        <div className="text-xs text-gray-600">School ID: {invite.school_id}</div>
+                        <div className="text-xs text-gray-600">School: {inviteSchool?.name || 'New school (awaiting registration)'}</div>
                         {issuedLabel && (
                           <div className="text-xs text-gray-400">Issued {issuedLabel}</div>
                         )}
@@ -427,6 +427,8 @@ function InterschoolPortal({ app }) {
                           <Button size="sm" variant="outline" onClick={() => copySchoolInvite({
                             code: invite.code,
                             schoolId: invite.school_id,
+                            schoolName: inviteSchool?.name,
+                            schoolCode: inviteSchool?.slug,
                             issuedAt: invite.issued_at
                           }, 'code')}>
                             <Copy className="h-3 w-3 mr-1" />
@@ -435,6 +437,8 @@ function InterschoolPortal({ app }) {
                           <Button size="sm" variant="ghost" onClick={() => copySchoolInvite({
                             code: invite.code,
                             schoolId: invite.school_id,
+                            schoolName: inviteSchool?.name,
+                            schoolCode: inviteSchool?.slug,
                             issuedAt: invite.issued_at
                           }, 'details')}>
                             <Copy className="h-3 w-3 mr-1" />

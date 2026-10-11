@@ -45,13 +45,14 @@ function MainPortal({ app }) {
     user,
     sessionId,
     sessionName,
+    sessionOwner,
     sessionStats,
     sessionDashboardStats,
     dashboardWinner,
     isSessionDiscarded,
     currentDrawInfo,
     hasStudentRecords,
-    showExportCard,
+    canExportSessionData,
     canManageDraw,
     canOverrideWinner,
     selectedCandidate,
@@ -281,15 +282,6 @@ function MainPortal({ app }) {
                 <Users className="h-4 w-4 mr-2" />
                 Switch Session
               </Button>
-              {user?.role === 'superadmin' && <Button
-                onClick={() => toggleDiscardState(!isSessionDiscarded)}
-                variant="outline"
-                disabled={!sessionId || discardLoading}
-                className={isSessionDiscarded ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'border-red-200 text-red-700 hover:bg-red-50'}
-              >
-                <Ban className="h-4 w-4 mr-2" />
-                {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
-              </Button>}
               <Button
                 onClick={() => {
                   if (['admin', 'superadmin'].includes(user?.role)) {
@@ -403,32 +395,8 @@ function MainPortal({ app }) {
                 </CardContent>
               </Card>
 
-              {showExportCard && (
+              {canExportSessionData && (
                 <div className="flex flex-col gap-4 lg:row-span-2 min-h-0">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex flex-wrap items-center gap-2">
-                        <Download className="h-5 w-5" />
-                        Export Food Waste Data
-                      </CardTitle>
-                      <CardDescription>
-                        Download plate cleanliness records by category (Clean, Dirty Count, Very Dirty, Faculty Clean)
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex flex-col gap-2">
-                        <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
-                          <Download className="h-4 w-4 mr-2" />
-                          Export Food Waste Data
-                        </Button>
-                        <Button onClick={exportDetailedCSV} variant="outline" className="w-full">
-                          <FileText className="h-4 w-4 mr-2" />
-                          Export Detailed Record List
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-
                   <HouseRanking app={app} fillHeight />
                 </div>
               )}
@@ -436,7 +404,7 @@ function MainPortal({ app }) {
               {isExtraSession ? (
                 <Card
                   id="draw-center-section"
-                  className={`${showExportCard ? '' : 'lg:col-span-2'}`}
+                  className={`${canExportSessionData ? '' : 'lg:col-span-2'}`}
                 >
                   <CardHeader>
                     <CardTitle className="flex flex-wrap items-center gap-2">
@@ -475,7 +443,7 @@ function MainPortal({ app }) {
               ) : (
               <Card
                 id="draw-center-section"
-                className={`${showExportCard ? '' : 'lg:col-span-2'}`}
+                className={`${canExportSessionData ? '' : 'lg:col-span-2'}`}
               >
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -901,7 +869,7 @@ function MainPortal({ app }) {
                   </Card>
               )}
 
-              {!showExportCard && (
+              {!canExportSessionData && (
                 <HouseRanking app={app} />
               )}
                 </div>
@@ -1419,10 +1387,25 @@ function MainPortal({ app }) {
                 </Alert>
               )}
 
+              {user?.role === 'superadmin' && (
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    onClick={() => toggleDiscardState(!isSessionDiscarded)}
+                    variant="outline"
+                    disabled={discardLoading}
+                    className={isSessionDiscarded ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'border-red-200 text-red-700 hover:bg-red-50'}
+                  >
+                    <Ban className="h-4 w-4 mr-2" />
+                    {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
+                  </Button>
+                </div>
+              )}
+
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:col-span-2 lg:col-span-3">
                   <div className="text-sm text-gray-500">Session</div>
                   <div className="text-2xl font-semibold text-gray-900">{sessionName || 'Untitled session'}</div>
+                  <div className="mt-1 text-sm text-gray-600">Owner: {sessionOwner || 'Unknown account'}</div>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                     <Badge variant={isSessionDiscarded ? 'destructive' : 'outline'}>
                       {isSessionDiscarded ? 'Discarded' : 'Active'}
@@ -1472,6 +1455,32 @@ function MainPortal({ app }) {
                   </div>
                 </div>
               </div>
+
+              {canExportSessionData && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex flex-wrap items-center gap-2">
+                      <Download className="h-5 w-5" />
+                      Export Food Waste Data
+                    </CardTitle>
+                    <CardDescription>
+                      Download plate cleanliness records by category (Clean, Dirty Count, Very Dirty, Faculty Clean)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col gap-2">
+                      <Button onClick={exportCSV} className="w-full bg-amber-600 hover:bg-amber-700">
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Food Waste Data
+                      </Button>
+                      <Button onClick={exportDetailedCSV} variant="outline" className="w-full">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Export Detailed Record List
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
@@ -1691,9 +1700,6 @@ function MainPortal({ app }) {
                       <> • {formatSchoolNameWithCode(userAccount.school)}</>
                     )}
                   </div>
-                  {user.role === 'superadmin' && userAccount.id && (
-                    <div className="text-xs text-gray-400 font-mono">ID: {userAccount.id}</div>
-                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge

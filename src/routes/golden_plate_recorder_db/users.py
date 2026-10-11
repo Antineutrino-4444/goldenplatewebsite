@@ -130,6 +130,30 @@ def list_all_users(*, school_id=None):
     return [serialize_user_model(user) for user in users]
 
 
+def user_labels_for_school(school_id):
+    """Resolve account references in display data without changing stored IDs."""
+    labels = {}
+    for user_id, username in db_session.query(User.id, User.username).filter(User.school_id == school_id).all():
+        labels[user_id] = username
+        labels[username] = username
+    return labels
+
+
+def readable_user_label(reference, *, school_id=None, labels=None):
+    if not reference:
+        return 'Unknown account'
+    if labels is None:
+        labels = user_labels_for_school(school_id)
+    if reference in labels:
+        return labels[reference]
+    try:
+        uuid.UUID(str(reference))
+    except ValueError:
+        # Legacy metadata already stores usernames rather than foreign keys.
+        return str(reference)
+    return 'Unavailable account'
+
+
 def _password_for_storage(password, *, already_hashed=False):
     if password is None:
         return None

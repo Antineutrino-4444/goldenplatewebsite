@@ -21,6 +21,7 @@ from .users import (
     migrate_legacy_invite_codes,
     migrate_legacy_users,
     reset_user_store,
+    readable_user_label,
 )
 from .utils import extract_student_id_from_key, make_student_key, normalize_house, normalize_name, plate_count_label, split_student_key
 from .roster_history import bind_empty_sessions, current_roster_snapshot
@@ -504,7 +505,7 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
         return None
 
     session_info.setdefault('session_name', db_sess.session_name)
-    session_info.setdefault('owner', db_sess.created_by)
+    session_info['owner'] = readable_user_label(db_sess.created_by, school_id=db_sess.school_id)
     session_info.setdefault('created_at', _isoformat_timestamp(db_sess.created_at) or datetime.now().isoformat())
     session_info.setdefault('is_public', bool(db_sess.is_public))
     session_info.setdefault('draw_info', session_info.get('draw_info') or {})

@@ -26,6 +26,7 @@ export default function SessionSwitcher({ app }) {
                   className="h-auto min-w-0 items-start justify-start whitespace-normal px-2 py-2 text-left disabled:opacity-100">
                   <div className="min-w-0 w-full space-y-2">
                     <div className="font-medium leading-snug [overflow-wrap:anywhere]">{session.session_name}</div>
+                    <div className="text-xs text-slate-500">Owner: {session.owner || 'Unknown account'}</div>
                     {(current || session.is_discarded || session.main_session_id || hasExtras) && <div className="flex flex-wrap gap-1">
                       {current && <Badge variant="outline" className="text-amber-700">Current</Badge>}
                       {session.is_discarded && <Badge variant="destructive">Discarded</Badge>}

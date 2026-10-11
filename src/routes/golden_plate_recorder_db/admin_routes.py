@@ -17,6 +17,8 @@ from .users import (
     create_invite_code_record,
     get_user_by_username,
     list_all_users,
+    readable_user_label,
+    user_labels_for_school,
     update_user_credentials,
 )
 
@@ -132,6 +134,7 @@ def admin_get_all_sessions():
         .all()
     )
 
+    user_labels = user_labels_for_school(current_school_id)
     all_sessions = []
     for db_sess in db_sessions:
         json_data = session_data.get(db_sess.id, {})
@@ -140,7 +143,7 @@ def admin_get_all_sessions():
         all_sessions.append({
             'session_id': db_sess.id,
             'session_name': db_sess.session_name,
-            'owner': json_data.get('owner', db_sess.created_by),
+            'owner': readable_user_label(db_sess.created_by, labels=user_labels),
             'created_at': db_sess.created_at.isoformat() if db_sess.created_at else json_data.get('created_at', 'unknown'),
             'total_records': total_records,
             'clean_count': db_sess.clean_number or 0,
@@ -303,6 +306,7 @@ def admin_overview():
         .all()
     )
     
+    user_labels = user_labels_for_school(current_school_id)
     sessions_overview = []
     for db_sess in db_sessions:
         # Get draw_info from JSON storage for backward compatibility
@@ -314,7 +318,7 @@ def admin_overview():
         sessions_overview.append({
             'session_id': db_sess.id,
             'session_name': db_sess.session_name,
-            'owner': db_sess.created_by,
+            'owner': readable_user_label(db_sess.created_by, labels=user_labels),
             'total_records': db_sess.total_records or 0,
             'created_at': db_sess.created_at.isoformat() if db_sess.created_at else None,
             'faculty_clean_count': db_sess.faculty_number or 0,

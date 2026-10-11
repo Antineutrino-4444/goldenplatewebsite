@@ -47,6 +47,7 @@ export function usePlateApp() {
   // Session state
   const [sessionId, setSessionId] = useState(null)
   const [sessionName, setSessionName] = useState('')
+  const [sessionOwner, setSessionOwner] = useState('')
   const [customSessionName, setCustomSessionName] = useState('')
   const [sessions, setSessions] = useState([])
   const [csvData, setCsvData] = useState(null)
@@ -162,7 +163,7 @@ export function usePlateApp() {
   const canOverrideWinner = user?.role === 'superadmin'
   const studentRecordCount = (sessionStats.clean_count ?? 0) + (sessionStats.red_count ?? 0)
   const hasStudentRecords = studentRecordCount > 0
-  const showExportCard = user?.role !== 'guest'
+  const canExportSessionData = user?.role !== 'guest'
 
   const selectedCandidate = useMemo(() => {
     if (!drawSummary?.candidates?.length) {
@@ -475,6 +476,7 @@ export function usePlateApp() {
   const initializeInterschoolPortal = async () => {
     setSessionId(null)
     setSessionName('')
+    setSessionOwner('')
     setSessions([])
     setCsvData(null)
     setInputValue('')
@@ -806,6 +808,7 @@ export function usePlateApp() {
       setIsAuthenticated(false)
       setSessionId(null)
       setSessionName('')
+      setSessionOwner('')
       setSessions([])
       setCsvData(null)
       setInputValue('')
@@ -858,6 +861,7 @@ export function usePlateApp() {
         const data = await response.json()
         setSessionId(data.session_id)
         setSessionName(data.session_name)
+        setSessionOwner(data.owner || '')
         setSessionStats({
           clean_count: data.clean_count,
           dirty_count: data.dirty_count,
@@ -885,6 +889,7 @@ export function usePlateApp() {
         } else {
           setSessionId(null)
           setSessionName('')
+          setSessionOwner('')
           setSessionStats({
             clean_count: 0,
             dirty_count: 0,
@@ -911,6 +916,7 @@ export function usePlateApp() {
       console.error('Session initialization failed:', error)
       setSessionId(null)
       setSessionName('')
+      setSessionOwner('')
       setSessionStats({
         clean_count: 0,
         dirty_count: 0,
@@ -943,6 +949,7 @@ export function usePlateApp() {
       if (response.ok) {
         setSessionId(data.session_id)
         setSessionName(data.session_name)
+        setSessionOwner(data.owner || '')
         setSessionStats({
           clean_count: 0,
           dirty_count: 0,
@@ -1002,6 +1009,7 @@ export function usePlateApp() {
       if (response.ok) {
         setSessionId(targetSessionId)
         setSessionName(data.session_name)
+        setSessionOwner(data.owner || '')
         await refreshSessionStatus({
           sessionIdOverride: data.session_id ?? targetSessionId,
           sessionNameOverride: data.session_name,
@@ -1058,6 +1066,7 @@ export function usePlateApp() {
             } else {
               setSessionId(null)
               setSessionName('')
+              setSessionOwner('')
             }
           }
         } else {
@@ -1321,6 +1330,7 @@ export function usePlateApp() {
           is_extra: Boolean(data.is_extra ?? data.main_session_id)
         }))
         setFacultyPick(data.faculty_pick ?? null)
+        setSessionOwner(data.owner || '')
         nextSessionId = data.session_id ?? nextSessionId
         nextSessionName = data.session_name ?? nextSessionName
         if (data.is_discarded !== undefined) {
@@ -2151,6 +2161,7 @@ export function usePlateApp() {
           } else {
             setSessionId(null)
             setSessionName('')
+            setSessionOwner('')
           }
         }
       } else {
@@ -2321,7 +2332,7 @@ export function usePlateApp() {
       return
     }
     const content = mode === 'details'
-      ? `Invite Code: ${invite.code}\nSchool ID: ${invite.schoolId}`
+      ? `Invite Code: ${invite.code}\nSchool: ${invite.schoolName || 'New school (awaiting registration)'}${invite.schoolCode ? `\nSchool Code: ${invite.schoolCode}` : ''}`
       : invite.code
     const message = mode === 'details' ? 'Invite details copied' : 'Invite code copied'
     copyToClipboard(content, message)
@@ -2520,6 +2531,7 @@ export function usePlateApp() {
     sessionId,
     setSessionId,
     sessionName,
+    sessionOwner,
     setSessionName,
     customSessionName,
     setCustomSessionName,
@@ -2662,7 +2674,7 @@ export function usePlateApp() {
     canOverrideWinner,
     studentRecordCount,
     hasStudentRecords,
-    showExportCard,
+    canExportSessionData,
     drawActionComment,
     selectedCandidate,
     overrideOptions,

@@ -90,16 +90,12 @@ function OverlayElements({ app }) {
         >
           <h2 className="text-lg font-semibold mb-2">School Invite Generated</h2>
           <p className="text-sm text-gray-600 mb-4">
-            Share this code and school ID with the partner school's primary administrator. Each code can be used once.
+            Share this code with the partner school's primary administrator. Each code can be used once.
           </p>
           <div className="space-y-3 mb-4">
             <div>
               <Label className="text-xs font-semibold uppercase text-gray-500">Invite Code</Label>
               <Input value={schoolInvitePayload.code || ''} readOnly className="mt-1 font-mono tracking-wide" />
-            </div>
-            <div>
-              <Label className="text-xs font-semibold uppercase text-gray-500">School ID</Label>
-              <Input value={schoolInvitePayload.schoolId || ''} readOnly className="mt-1 font-mono tracking-wide" />
             </div>
             {schoolInvitePayload.issuedAt && (
               <div className="text-xs text-gray-500">
