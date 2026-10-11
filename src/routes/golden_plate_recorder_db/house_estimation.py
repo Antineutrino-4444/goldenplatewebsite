@@ -121,16 +121,19 @@ def unavailable(reason, **details):
 
 
 def rank_score_intervals(rows):
-    """Partial ranks: only strictly disjoint score intervals establish order."""
+    """Display point-estimate order alongside ranks supported by score ranges."""
     for row in rows:
         row['clearly_ahead_of'] = sorted(other['house'] for other in rows
                                         if row['score_interval'][0] > other['score_interval'][1])
         row['clearly_behind'] = sorted(other['house'] for other in rows
                                      if other['score_interval'][0] > row['score_interval'][1])
         row['rank_range'] = [1 + len(row['clearly_behind']), len(rows) - len(row['clearly_ahead_of'])]
-    # Alphabetical display resolves presentation within equal minimum ranks;
-    # neither point estimates nor a non-transitive overlap comparator rank ties.
-    return sorted(rows, key=lambda row: (row['rank_range'][0], row['house']))
+    ordered = sorted(rows, key=lambda row: (-row['score'], row['house']))
+    for index, row in enumerate(ordered):
+        # Equal point estimates share a rank; names only stabilize presentation.
+        row['point_rank'] = (ordered[index - 1]['point_rank']
+                             if index and row['score'] == ordered[index - 1]['score'] else index + 1)
+    return ordered
 
 
 def estimate_house_stats(meal, records, settings):

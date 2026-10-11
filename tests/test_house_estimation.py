@@ -53,6 +53,8 @@ def test_document_example_and_exact_student_totals():
     assert rows['B']['dirty_count'] == 8 and rows['B']['dirty_interval'] == [4, 12]
     assert rows['C']['absent_count'] == 18 and rows['C']['absent_interval'] == [14, 22]
     assert [rows[h]['score'] for h in 'ABC'] == [-4, 8, -24]
+    assert [row['house'] for row in result['house_stats']] == ['B', 'A', 'C']
+    assert [row['point_rank'] for row in result['house_stats']] == [1, 2, 3]
     assert sum(row['dirty_count'] for row in rows.values()) == 32
     assert sum(row['absent_count'] for row in rows.values()) == 48
     assert result['score_coverage'] == .95
@@ -68,7 +70,8 @@ def test_document_example_and_exact_student_totals():
 def test_known_dirty_plates_condition_the_remaining_allocation():
     meal, records = model({'A': 10, 'B': 10}, {'A': {'dirty': 4}}, {'dirty': 4})
     result = estimate_house_stats(meal, records, SETTINGS)
-    a, b = result['house_stats']
+    rows = {row['house']: row for row in result['house_stats']}
+    a, b = rows['A'], rows['B']
     assert a['dirty_count'] == 5.5 and b['dirty_count'] == 2.5
     assert a['observed_dirty_count'] == 4 and a['estimated_additional_dirty'] == 1.5
     assert a['dirty_bounds'] == [4, 8]
@@ -120,14 +123,39 @@ def test_score_ranking_only_rewards_strictly_separated_ranges(intervals, advanta
 
 
 def test_partial_ranking_handles_nontransitive_overlaps():
-    rows = rank_score_intervals([{'house': house, 'score_interval': interval} for house, interval in
-                                [('A', [10, 20]), ('B', [15, 25]), ('C', [22, 30])]])
+    rows = rank_score_intervals([{'house': house, 'score_interval': interval, 'score': score}
+                                for house, interval, score in
+                                [('A', [10, 20], 15), ('B', [15, 25], 20), ('C', [22, 30], 26)]])
+    assert [row['house'] for row in rows] == ['C', 'B', 'A']
     by_house = {row['house']: row for row in rows}
     assert by_house['C']['clearly_ahead_of'] == ['A']
     assert by_house['B']['clearly_ahead_of'] == []
     assert by_house['A']['rank_range'] == [2, 3]
     assert by_house['B']['rank_range'] == [1, 3]
     assert by_house['C']['rank_range'] == [1, 2]
+
+
+def test_point_estimate_order_preserves_uncertainty_for_overlapping_ranges():
+    rows = rank_score_intervals([
+        {'house': 'A', 'score': -4, 'score_interval': [-12, 4]},
+        {'house': 'B', 'score': 8, 'score_interval': [0, 16]},
+        {'house': 'C', 'score': -24, 'score_interval': [-32, -16]},
+    ])
+    assert [row['house'] for row in rows] == ['B', 'A', 'C']
+    assert [row['point_rank'] for row in rows] == [1, 2, 3]
+    assert [row['rank_range'] for row in rows] == [[1, 2], [1, 2], [3, 3]]
+    assert rows[0]['clearly_ahead_of'] == ['C']  # Higher mean gives no clear advantage over A.
+
+
+def test_equal_point_estimates_share_rank_with_alphabetical_display():
+    rows = rank_score_intervals([
+        {'house': 'C', 'score': -1, 'score_interval': [-5, 5]},
+        {'house': 'B', 'score': 0, 'score_interval': [-5, 5]},
+        {'house': 'A', 'score': 0, 'score_interval': [-5, 5]},
+    ])
+    assert [row['house'] for row in rows] == ['A', 'B', 'C']
+    assert [row['point_rank'] for row in rows] == [1, 1, 3]
+    assert all(row['rank_range'] == [1, 3] and not row['clearly_ahead_of'] for row in rows)
 
 
 def test_simultaneous_score_coverage_against_all_joint_assignments():

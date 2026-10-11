@@ -35,8 +35,9 @@ export default function HouseEstimates({ estimation }) {
         per present student; faculty are excluded. Fractional counts are expected values.
       </p>}
       {estimation.house_estimates_available !== false && <p className="text-xs text-gray-500">
+        Houses are ordered by their point estimate (expected score). This order is uncertain where score ranges touch or overlap.
         Score ranges have at least 95% coverage across all houses together under the model.
-        A clear ranking advantage requires strictly separated ranges; touching or overlapping ranges give no advantage.
+        A clear ranking advantage requires strictly separated ranges.
         Dirty-plate and absence ranges each have 95% model coverage. Possible bounds use the totals alone.
       </p>}
       {estimation.house_stats.map((house) => (
@@ -45,12 +46,16 @@ export default function HouseEstimates({ estimation }) {
             <div>
               <p className="font-semibold text-gray-900">{house.house}</p>
               <p className="text-sm font-medium text-teal-800">
+                Point estimate rank #{house.point_rank}
+              </p>
+              <p className={`text-xs ${house.rank_range[0] === house.rank_range[1] ? 'text-teal-800' : 'text-amber-800'}`}>
                 {house.rank_range[0] === house.rank_range[1]
-                  ? `Rank ${house.rank_range[0]}` : `Rank ${range(house.rank_range)}`}
+                  ? `Clear rank: ${house.rank_range[0]}` : `Order uncertain • Range-based rank: ${range(house.rank_range)}`}
               </p>
               <p className="text-xs text-gray-500">{house.population} students • {house.unknown_students} unresolved</p>
             </div>
             <div className="text-right">
+              <p className="text-sm font-medium text-gray-900">Point estimate: {number(house.score)} points</p>
               <p className={`text-xl font-bold ${house.score_interval[1] < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{scoreRange(house.score_interval)}</p>
               <p className="text-xs text-gray-500">95% simultaneous model score range</p>
               <p className="text-xs text-gray-500">Possible bounds: {scoreRange(house.score_bounds)}</p>
