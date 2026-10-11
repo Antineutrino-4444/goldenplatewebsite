@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
+import AdminSessionExport from '@/components/AdminSessionExport.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
 import HouseScoreSettings from '@/components/HouseScoreSettings.jsx'
 import PortalHeader from '@/components/PortalHeader.jsx'
@@ -41,6 +42,7 @@ import {
 } from 'lucide-react'
 
 function MainPortal({ app }) {
+  const [showSessionExport, setShowSessionExport] = useState(false)
   const {
     user,
     sessionId,
@@ -1546,6 +1548,10 @@ function MainPortal({ app }) {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {['admin', 'superadmin'].includes(user.role) && (
                 <>
+                  <Button onClick={() => setShowSessionExport(true)} variant="outline">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export All Sessions
+                  </Button>
                   <Button
                     onClick={generateInviteCode}
                     variant="outline"
@@ -1680,6 +1686,8 @@ function MainPortal({ app }) {
           </Button>
         </DialogContent>
       </Dialog>
+
+      <AdminSessionExport open={showSessionExport} onOpenChange={setShowSessionExport} accountKey={user?.id} />
 
       <Dialog open={showAccountManagement} onOpenChange={setShowAccountManagement}>
         <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl" dismissOnOverlayClick={false}>
