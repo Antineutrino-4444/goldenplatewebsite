@@ -25,6 +25,7 @@ from .users import (
 )
 from .utils import extract_student_id_from_key, make_student_key, normalize_house, normalize_name, plate_count_label, split_student_key
 from .roster_history import bind_empty_sessions, current_roster_snapshot
+from .student_history import preserve_legacy_profiles, recorded_profile
 
 # Student lookup cache keyed by school for fast eligibility checks
 student_lookup = {}
@@ -45,6 +46,7 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
     school_id = school_id or DEFAULT_SCHOOL_ID
 
     unique_rows = {}
+    duplicate_conflicts = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -53,30 +55,36 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
         identifier = normalize_name(row.get('Student ID'))
         if not identifier:
             continue
-        key = identifier.lower()
+        key = identifier.casefold()
         if key not in unique_rows:
             unique_rows[key] = (identifier, row)
+        else:
+            kept = unique_rows[key][1]
+            for field in ('Preferred', 'Last', 'Grade', 'Advisor', 'House', 'Clan'):
+                normalize = normalize_house if field == 'House' else normalize_name
+                before, after = normalize(kept.get(field)), normalize(row.get(field))
+                if before != after:
+                    duplicate_conflicts.setdefault(key, []).append({'field': field, 'kept': before, 'other': after})
 
     if not unique_rows:
         return result
 
     # Preserve the previous membership before replacing any student rows.
     current_roster_snapshot(school_id)
+    preserve_legacy_profiles(school_id)
 
-    identifiers = [item[0] for item in unique_rows.values()]
     existing_students = (
         db_session.query(Student)
-        .filter(Student.school_id == school_id, Student.student_identifier.in_(identifiers))
+        .filter(Student.school_id == school_id)
         .all()
     )
-    existing_map = {student.student_identifier.lower(): student for student in existing_students}
+    existing_map = {student.student_identifier.casefold(): student for student in existing_students}
     # A roster upload replaces membership for this school. Keep departed rows
     # for historical plates/ticket events, but exclude them from future draws.
-    result['deactivated'] = db_session.query(Student).filter(
-        Student.school_id == school_id,
-        Student.is_active == 1,
-        ~Student.student_identifier.in_(identifiers),
-    ).update({Student.is_active: 0}, synchronize_session='fetch')
+    for student in existing_students:
+        if student.is_active and student.student_identifier.casefold() not in unique_rows:
+            student.is_active = 0
+            result['deactivated'] += 1
 
     for key, (identifier, row) in unique_rows.items():
         preferred = normalize_name(row.get('Preferred'))
@@ -135,6 +143,8 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
             db_session.add(student)
             existing_map[key] = student
             result['created'] += 1
+
+        student.roster_conflicts = json.dumps(duplicate_conflicts.get(key, []), ensure_ascii=False)
 
         result['processed'] += 1
 
@@ -607,13 +617,10 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
             continue
 
         student_obj = students_map.get(record.student_id)
-        preferred_name = normalize_name(record.preferred_name or (student_obj.preferred_name if student_obj else ''))
-        last_name = normalize_name(record.last_name or (student_obj.last_name if student_obj else ''))
-        student_identifier = normalize_name(student_obj.student_identifier) if student_obj else ''
-        advisor = normalize_name(student_obj.advisor) if student_obj else ''
-        grade = normalize_name(record.grade or (student_obj.grade if student_obj else ''))
-        house = normalize_house(record.house or (student_obj.house if student_obj else ''))
-        clan = normalize_name(student_obj.clan) if student_obj else ''
+        profile = recorded_profile(record, student_obj)
+        preferred_name, last_name = profile['Preferred'], profile['Last']
+        student_identifier = profile['Student ID']
+        advisor, grade, house, clan = (profile[field] for field in ('Advisor', 'Grade', 'House', 'Clan'))
 
         if (not preferred_name or not last_name) and record.dedupe_key:
             key_preferred, key_last = split_student_key(record.dedupe_key)

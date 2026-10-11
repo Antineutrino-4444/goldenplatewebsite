@@ -232,7 +232,7 @@ def test_export_school_isolation_and_no_partial_download(client, export_data):
 
 @pytest.mark.parametrize('payload', [
     None, [], {}, {'session_ids': []}, {'session_ids': 'all'}, {'session_ids': [123]},
-    {'session_ids': ['missing'], 'anonymize_columns': ['Student ID']},
+    {'session_ids': ['missing'], 'anonymize_columns': ['Unknown column']},
     {'session_ids': ['missing'], 'anonymize_columns': 'all'},
     {'session_ids': ['missing'], 'exclude_discarded': 'true'},
     {'session_ids': ['missing'], 'format': 'pdf'},

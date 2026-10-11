@@ -12,20 +12,25 @@ from sqlalchemy import and_, func
 
 from .db import SessionRecord, Student, db_session
 from .storage import _extract_faculty_names
+from .student_history import RosterComparison, render_roster_notes
 from .users import readable_user_label, user_labels_for_school
-from .utils import normalize_house, normalize_name, plate_count_label, split_student_key
+from .utils import normalize_name, plate_count_label, split_student_key
 
 
 EXPORT_COLUMNS = [
     ('Session', 'Session name'),
     ('Session Status', 'Session status'),
     ('Category', 'Plate category'),
+    ('Student ID', 'Student ID'),
     ('Last', 'Last name'),
     ('Preferred', 'First / preferred name'),
     ('Grade', 'Grade'),
     ('Advisor', 'Advisor'),
     ('House', 'House'),
     ('Clan', 'Clan'),
+    ('Roster Status', 'Current / old / unresolved student'),
+    ('House Changed', 'House changed since recording'),
+    ('Roster Notes', 'Roster changes and matching conflicts'),
     ('Recorded At', 'Recording date and time'),
     ('Recorded By', 'Recorded by'),
     ('Manual Entry', 'Manual entry'),
@@ -75,7 +80,7 @@ def _spreadsheet_safe(value):
     return text
 
 
-def detailed_sessions_export(sessions, school_id, anonymize_columns, export_format='csv'):
+def detailed_sessions_export(sessions, school_id, anonymize_columns, export_format='csv', sectioned=True):
     session_map = {item.id: item for item in sessions}
     user_labels = user_labels_for_school(school_id)
     counts = record_counts_for_sessions(sessions, school_id)
@@ -88,15 +93,21 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
         .all()
     )
     labels = ExportLabels()
+    roster = RosterComparison(school_id)
     session_rows = {item.id: [] for item in sessions}
 
-    def add_row(session_id, row, person_key=None):
+    def masked(column, value, person_key):
+        if column not in anonymize_columns or value == '':
+            return value
+        identity = person_key if column in ('Preferred', 'Last') and person_key else value
+        return labels.label(column, identity)
+
+    def add_row(session_id, row, person_key=None, notes=()):
         row['Person'] = labels.label('person', person_key) if person_key else ''
+        row['Roster Notes'] = render_roster_notes(notes, lambda field, value: masked(field, value, person_key))
         for column in anonymize_columns:
             if row[column] != '':
-                # Names are person-specific, so two students named Alex stay distinct.
-                value = person_key if column in ('Preferred', 'Last') and person_key else row[column]
-                row[column] = labels.label(column, value)
+                row[column] = masked(column, row[column], person_key)
         session_rows[session_id].append([_spreadsheet_safe(row.get(column, '')) for column in CSV_HEADER])
 
     for record, student in records:
@@ -105,8 +116,13 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
         count_only = not (record.student_id or record.preferred_name or record.last_name) and (
             (record.dedupe_key or '').startswith('count:') or record.category == 'dirty'
         )
+        profile, roster_status, house_changed, notes = ({}, '', '', [])
+        if not faculty and not count_only:
+            profile, roster_status, house_changed, notes = roster.compare(record, student)
         preferred = normalize_name(record.preferred_name or (student.preferred_name if student else ''))
         last = normalize_name(record.last_name or (student.last_name if student else ''))
+        if profile:
+            preferred, last = profile['Preferred'], profile['Last']
         if not count_only and (not preferred or not last):
             legacy_preferred, legacy_last = (
                 _extract_faculty_names(record.dedupe_key) if faculty else split_student_key(record.dedupe_key)
@@ -115,7 +131,9 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
             last = last or normalize_name(legacy_last)
         person_key = None
         if not count_only and (preferred or last or record.student_id):
-            if record.student_id:
+            if profile.get('Student ID'):
+                person_key = ['student-id', profile['Student ID'].casefold()]
+            elif record.student_id:
                 person_key = ['student', record.student_id]
             else:
                 person_key = ['faculty' if faculty else 'student-name', preferred.casefold(), last.casefold()]
@@ -123,17 +141,20 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
             'Session': item.session_name,
             'Session Status': 'Discarded' if item.status == 'discarded' else 'Active',
             'Category': record.category.upper(),
+            'Student ID': profile.get('Student ID', ''),
             'Last': last,
             'Preferred': preferred if preferred or last else plate_count_label(record.category),
-            'Grade': '' if faculty else normalize_name(record.grade or (student.grade if student else '')),
-            'Advisor': '' if faculty or not student else normalize_name(student.advisor),
-            'House': '' if faculty else normalize_house(record.house or (student.house if student else '')),
-            'Clan': '' if faculty or not student else normalize_name(student.clan),
+            'Grade': profile.get('Grade', ''),
+            'Advisor': profile.get('Advisor', ''),
+            'House': profile.get('House', ''),
+            'Clan': profile.get('Clan', ''),
+            'Roster Status': roster_status,
+            'House Changed': house_changed,
             'Recorded At': record.recorded_at.isoformat() if record.recorded_at else '',
             'Recorded By': readable_user_label(record.recorded_by, labels=user_labels),
             'Manual Entry': 'Yes' if record.is_manual_entry else 'No',
         }
-        add_row(item.id, row, person_key)
+        add_row(item.id, row, person_key, notes)
 
     for item in sessions:
         remaining = counts[item.id]['legacy_dirty']
@@ -168,7 +189,8 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
             writer.writerow([])
         name = session_label('Session', item.session_name)
         status = session_label('Session Status', 'Discarded' if item.status == 'discarded' else 'Active')
-        writer.writerow([f'Session: {name}', f'Status: {status}'])
+        if sectioned:
+            writer.writerow([f'Session: {name}', f'Status: {status}'])
         writer.writerow(CSV_HEADER)
         writer.writerows(session_rows[item.id])
     return output.getvalue(), row_count

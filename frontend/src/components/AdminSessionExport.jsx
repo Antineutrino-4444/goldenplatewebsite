@@ -151,9 +151,10 @@ export default function AdminSessionExport({ open, onOpenChange, accountKey }) {
 
             <section className="space-y-3" aria-labelledby="export-anonymize-heading">
               <h3 id="export-anonymize-heading" className="font-semibold">Anonymize columns</h3>
+              <p className="text-sm text-gray-600">Student details stay as recorded. Roster Status marks students missing from the current roster as Old. House Changed and Roster Notes flag changes and matching conflicts, with Student ID taking priority. Older records with incomplete saved history are noted.</p>
               <p className="text-sm text-gray-600">Checked columns use anonymous labels instead of their original values. Labels repeat across all sessions in this download and change with each new export. An anonymous Person column lets you follow the same student across sessions, including students with identical names.</p>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" disabled={exporting} onClick={() => setAnonymized(new Set(['Preferred', 'Last']))}>Anonymize names</Button>
+                <Button size="sm" variant="outline" disabled={exporting} onClick={() => setAnonymized(new Set(['Preferred', 'Last', 'Student ID']))}>Anonymize identities</Button>
                 <Button size="sm" variant="outline" disabled={exporting} onClick={() => setAnonymized(new Set(columns.map((column) => column.key)))}>Anonymize all columns</Button>
                 <Button size="sm" variant="outline" disabled={exporting} onClick={() => setAnonymized(new Set())}>Keep all readable</Button>
               </div>

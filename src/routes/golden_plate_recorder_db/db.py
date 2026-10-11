@@ -171,6 +171,7 @@ class Student(Base):
     house = Column(String)
     clan = Column(String)
     is_active = Column(Integer, nullable=False, default=1, server_default='1')
+    roster_conflicts = Column(Text)
 
 
 class RosterSnapshot(Base):
@@ -279,6 +280,7 @@ class SessionRecord(Base):
     dedupe_key = Column(String, nullable=False)
     preferred_name = Column(String)
     last_name = Column(String)
+    student_profile = Column(Text)
 
 
 class RecordExclusionEvent(Base):
@@ -886,11 +888,13 @@ def _migrate_schema() -> None:
         inspector = _ensure_student_identifier_scope(inspector)
         tables = set(inspector.get_table_names())
         _ensure_column(inspector, 'students', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
+        _ensure_column(inspector, 'students', 'roster_conflicts', 'TEXT')
 
     if 'session_records' in tables:
         for column_name, ddl in [
             ('is_excluded', 'INTEGER NOT NULL DEFAULT 0'),
             ('excluded_at', 'DATETIME'), ('excluded_by', 'TEXT'), ('exclusion_reason', 'TEXT'),
+            ('student_profile', 'TEXT'),
         ]:
             _ensure_column(inspector, 'session_records', column_name, ddl)
 

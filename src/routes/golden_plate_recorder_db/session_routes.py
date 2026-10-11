@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import re
 import uuid
 from datetime import datetime
@@ -1227,6 +1228,13 @@ def record_student(category):
     key_id = extract_student_id_from_key(provided_key) if provided_key else ''
     if key_id:
         candidate_ids.append(key_id)
+    if input_value:
+        exact_identifier = (db_session.query(Student.student_identifier)
+                            .filter(Student.school_id == school_id,
+                                    func.lower(Student.student_identifier) == input_value.lower())
+                            .first())
+        if exact_identifier:
+            candidate_ids.append(exact_identifier[0])
     if input_value.isdigit():
         candidate_ids.append(input_value)
     else:
@@ -1246,7 +1254,7 @@ def record_student(category):
             db_session.query(Student)
             .filter(
                 Student.school_id == school_id,
-                Student.student_identifier.in_(normalized_ids)
+                func.lower(Student.student_identifier) == normalized_ids[0].lower()
             )
             .first()
         )
@@ -1276,20 +1284,22 @@ def record_student(category):
             candidate_preferred = candidate_preferred or name_parts[0]
             candidate_last = candidate_last or ''
 
-    if not student_obj and candidate_preferred and candidate_last:
-        student_obj = (
+    name_matches = []
+    if not student_obj and not normalized_ids and candidate_preferred and candidate_last:
+        name_matches = (
             db_session.query(Student)
             .filter(Student.school_id == school_id)
             .filter(func.lower(Student.preferred_name) == candidate_preferred.lower())
             .filter(func.lower(Student.last_name) == candidate_last.lower())
-            .first()
+            .all()
         )
-        if student_obj:
+        if len(name_matches) == 1:
+            student_obj = name_matches[0]
             dataset_match = True
 
     student_record = build_student_record(student_obj)
 
-    if not student_record and provided_key:
+    if not student_record and provided_key and not normalized_ids:
         lookup_profile = school_lookup.get(provided_key)
         if lookup_profile:
             dataset_match = True
@@ -1483,7 +1493,8 @@ def record_student(category):
     if student_id:
         db_student = (
             db_session.query(Student)
-            .filter_by(student_identifier=student_id, school_id=school_id)
+            .filter(Student.school_id == school_id,
+                    func.lower(Student.student_identifier) == student_id.lower())
             .first()
         )
         if not db_student:
@@ -1495,7 +1506,8 @@ def record_student(category):
                 grade=grade,
                 advisor=advisor,
                 house=house,
-                clan=clan
+                clan=clan,
+                is_active=1 if dataset_match else 0,
             )
             db_session.add(db_student)
             db_session.flush()  # Get the ID
@@ -1515,7 +1527,23 @@ def record_student(category):
         is_manual_entry=1 if is_manual_entry else 0,
         dedupe_key=dedupe_key,
         preferred_name=preferred_name,
-        last_name=last_name
+        last_name=last_name,
+        student_profile=json.dumps({
+            'Student ID': student_id, 'Preferred': preferred_name, 'Last': last_name,
+            'Grade': grade, 'Advisor': advisor, 'House': house, 'Clan': clan,
+            '_roster_conflicts': json.loads(db_student.roster_conflicts or '[]') if db_student else [],
+            '_recording_candidates': [match.student_identifier for match in name_matches] if len(name_matches) > 1 else [],
+            '_matched_by_name': len(name_matches) == 1,
+            '_recording_conflicts': [
+                {'field': 'Student ID', 'kept': student_id, 'other': candidate_id}
+                for candidate_id in normalized_ids if candidate_id.casefold() != student_id.casefold()
+            ] + [
+                {'field': field, 'kept': actual, 'other': supplied}
+                for field, actual, supplied in [('Preferred', preferred_name, provided_preferred),
+                                               ('Last', last_name, provided_last)]
+                if supplied and supplied.casefold() != actual.casefold()
+            ],
+        }, ensure_ascii=False),
     )
     db_session.add(db_record)
     db_session.flush()  # Flush to get db_record.id
@@ -1632,7 +1660,7 @@ def export_csv():
 
 @recorder_bp.route('/export/csv/detailed', methods=['GET'])
 def export_detailed_csv():
-    """Export detailed session records without student IDs."""
+    """Export recorded student profiles with current-roster comparisons."""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
 
@@ -1646,63 +1674,15 @@ def export_detailed_csv():
     if not db_sess:
         return jsonify({'error': 'Session not found'}), 404
 
-    data = get_session_entry(session_id)
-    if data is None or (data.get('school_id') and data.get('school_id') != school_id):
-        return jsonify({'error': 'Session not found'}), 404
-
-    ensure_session_structure(data)
-
-    user_labels = user_labels_for_school(school_id)
-    detailed_records = []
-    for category in ['clean', 'dirty', 'red', 'faculty']:
-        records_key = 'faculty_clean_records' if category == 'faculty' else f'{category}_records'
-        for record in data.get(records_key, []):
-            preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()
-            last = (record.get('last_name') or '').strip()
-            detailed_records.append({
-                'Category': category.upper(),
-                'Last': last,
-                'Preferred': preferred if preferred or last else plate_count_label(category),
-                'Grade': record.get('grade', ''),
-                'Advisor': record.get('advisor', ''),
-                'House': record.get('house', ''),
-                'Clan': record.get('clan', ''),
-                'Recorded At': record.get('timestamp', ''),
-                'Recorded By': readable_user_label(record.get('recorded_by'), labels=user_labels),
-                'Manual Entry': 'Yes' if record.get('is_manual_entry') else 'No'
-            })
-
-    dirty_count = max(0, get_dirty_count(data) - len(data.get('dirty_records', [])))
-    if dirty_count > 0:
-        detailed_records.append({
-            'Category': 'DIRTY',
-            'Last': '',
-            'Preferred': f'Count: {dirty_count}',
-            'Grade': '',
-            'Advisor': '',
-            'House': '',
-            'Clan': '',
-            'Recorded At': '',
-            'Recorded By': '',
-            'Manual Entry': ''
-        })
-
-    detailed_records.sort(key=lambda x: x['Recorded At'] or '', reverse=True)
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    header = ['Category', 'Last', 'Preferred', 'Grade', 'Advisor', 'House', 'Clan', 'Recorded At', 'Recorded By', 'Manual Entry']
-    writer.writerow(header)
-    for record in detailed_records:
-        writer.writerow([record[column] for column in header])
-
-    csv_content = output.getvalue()
-    output.close()
-
+    # Read the database on every export so roster markers cannot be stale in the cache.
+    from .session_exports import detailed_sessions_export
+    csv_content, _ = detailed_sessions_export([db_sess], school_id, set(), sectioned=False)
+    safe_name = re.sub(r'[^\w. -]', '_', db_sess.session_name).strip(' .-_')[:100] or 'session'
     return Response(
         csv_content,
         mimetype='text/csv',
-        headers={'Content-Disposition': f'attachment; filename="{data["session_name"]}_detailed_records.csv"'}
+        headers={'Content-Disposition': f'attachment; filename="{safe_name}_detailed_records.csv"',
+                 'Cache-Control': 'no-store'}
     )
 
 
