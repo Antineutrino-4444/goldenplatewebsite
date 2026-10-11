@@ -210,6 +210,8 @@ class Session(Base):
     session_name = Column(String, nullable=False)
     roster_snapshot_id = Column(String)
     roster_mixed = Column(Integer, nullable=False, default=0, server_default='0')
+    roster_matched_at = Column(DateTime(timezone=True))
+    roster_matched_by = Column(String)
     status = Column(String, nullable=False, default='active')
     is_public = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
@@ -749,6 +751,8 @@ def _migrate_schema() -> None:
             ('main_session_id', 'TEXT'),
             ('roster_snapshot_id', 'TEXT'),
             ('roster_mixed', 'INTEGER NOT NULL DEFAULT 0'),
+            ('roster_matched_at', 'DATETIME'),
+            ('roster_matched_by', 'TEXT'),
         ]:
             if column_name not in session_columns:
                 with engine.begin() as connection:

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.routes.golden_plate_recorder_db.db import DEFAULT_SCHOOL_ID, RosterSnapshot, School, Session, db_session
+from src.routes.golden_plate_recorder_db.db import DEFAULT_SCHOOL_ID, RosterSnapshot, School, Session, SessionRecord, db_session
 from src.routes.golden_plate_recorder_db.house_estimation import (
     estimate_house_stats, hypergeometric_interval, rank_score_intervals, score_model_interval,
 )
@@ -286,6 +286,127 @@ def test_missing_roster_house_is_reported(client, estimation_school):
     assert 'without a house' in estimate(client, identifier)['reason']
 
 
+def match_roster(client, identifier):
+    return client.post(f'/api/session/{identifier}/roster/current')
+
+
+@pytest.mark.parametrize('role', ['admin', 'superadmin'])
+def test_manual_roster_match_restores_legacy_estimates_and_persists(client, estimation_school, role, email_outbox):
+    upload(client, 3)
+    identifier = create(client)
+    assert client.post('/api/record/clean', json={'input_value': '9000'}).status_code == 200
+    assert client.post('/api/record/dirty', json={}).status_code == 200
+    meal = db_session.get(Session, identifier)
+    meal.roster_snapshot_id = None
+    meal.status = 'archived'
+    db_session.commit()
+    before = [(row.id, row.category, row.house, row.student_id) for row in
+              db_session.query(SessionRecord).filter_by(session_id=identifier).all()]
+    upload(client, 5)
+    admin = create_user_record(f'match-{uuid.uuid4().hex}', 'test-password', 'Match Admin',
+                               role=role, school_id=estimation_school.id)
+    actor_id = admin.id
+    assert client.post('/api/auth/login', json={'username': admin.username, 'password': 'test-password'}).status_code == 200
+    response = match_roster(client, identifier)
+    assert response.status_code == 200
+    matched = response.get_json()['estimation']
+    assert matched['available'] and matched['population'] == 5 and matched['school_absent_count'] == 3
+    assert matched['roster_assignment'] == 'manual' and matched['roster_matched_at']
+    db_session.remove()
+    saved = estimate(client, identifier)
+    assert saved['roster_snapshot_id'] == matched['roster_snapshot_id']
+    assert saved['roster_assignment'] == 'manual'
+    meal = db_session.get(Session, identifier)
+    assert meal.roster_matched_by == actor_id and meal.status == 'archived'
+    after = [(row.id, row.category, row.house, row.student_id) for row in
+             db_session.query(SessionRecord).filter_by(session_id=identifier).all()]
+    assert after == before
+    assert not email_outbox
+
+
+def test_manual_match_resolves_mixed_roster_and_retains_the_chosen_population(client, estimation_school):
+    upload(client, 3)
+    identifier = create(client)
+    assert client.post('/api/record/dirty', json={}).status_code == 200
+    upload(client, 4)
+    assert client.post('/api/record/dirty', json={}).status_code == 200
+    assert not estimate(client, identifier)['available']
+    assert match_roster(client, identifier).status_code == 200
+    assert not db_session.get(Session, identifier).roster_mixed
+    assert estimate(client, identifier)['population'] == 4
+    upload(client, 6)
+    assert estimate(client, identifier)['population'] == 4
+
+
+@pytest.mark.parametrize('problem', ['missing_member', 'changed_house', 'too_many_plates', 'missing_house'])
+def test_manual_match_rejects_inconsistent_roster_without_replacing_saved_match(client, estimation_school, problem):
+    upload(client, 3)
+    identifier = create(client)
+    if problem == 'missing_member':
+        assert client.post('/api/record/clean', json={'input_value': '9002'}).status_code == 200
+        upload(client, 2)
+    elif problem == 'changed_house':
+        assert client.post('/api/record/clean', json={'input_value': '9000'}).status_code == 200
+        upload(client, 3, house='B')
+    elif problem == 'too_many_plates':
+        for _ in range(4):
+            assert client.post('/api/record/dirty', json={}).status_code == 200
+    else:
+        assert client.post('/api/record/dirty', json={}).status_code == 200
+        upload(client, 3, house='')
+    before = db_session.get(Session, identifier).roster_snapshot_id
+    response = match_roster(client, identifier)
+    assert response.status_code == 400 and response.get_json()['error']
+    db_session.remove()
+    assert db_session.get(Session, identifier).roster_snapshot_id == before
+    assert db_session.get(Session, identifier).roster_matched_at is None
+
+
+def test_manual_match_reports_no_current_roster(client, estimation_school):
+    identifier = create(client)
+    response = match_roster(client, identifier)
+    assert response.status_code == 400
+    assert 'Upload a student roster first' in response.get_json()['error']
+
+
+@pytest.mark.parametrize('role', ['user', 'inter_school', 'guest', 'anonymous'])
+def test_manual_roster_match_access_is_limited_to_school_admins(client, estimation_school, role):
+    upload(client, 3)
+    identifier = create(client)
+    client.post('/api/auth/logout')
+    if role == 'guest':
+        assert client.post('/api/auth/guest', json={'school_slug': estimation_school.slug}).status_code == 200
+    elif role != 'anonymous':
+        account = create_user_record(f'match-access-{uuid.uuid4().hex}', 'test-password', 'Other Account',
+                                     role=role, school_id=estimation_school.id)
+        assert client.post('/api/auth/login', json={'username': account.username, 'password': 'test-password'}).status_code == 200
+    assert match_roster(client, identifier).status_code == (401 if role in ['guest', 'anonymous'] else 403)
+    assert db_session.get(Session, identifier).roster_matched_at is None
+
+
+def test_manual_match_cannot_change_another_schools_session(client, estimation_school):
+    other = School(id=uuid.uuid4().hex, name='Other School', slug=uuid.uuid4().hex)
+    db_session.add(other)
+    db_session.flush()
+    meal = Session(school_id=other.id, session_name=uuid.uuid4().hex, created_by='test')
+    db_session.add(meal)
+    db_session.commit()
+    assert match_roster(client, meal.id).status_code == 404
+    assert match_roster(client, uuid.uuid4().hex).status_code == 404
+    assert db_session.get(Session, meal.id).roster_matched_at is None
+
+
+def test_empty_manual_matches_follow_future_rosters_as_automatic(client, estimation_school):
+    upload(client, 3)
+    identifier = create(client)
+    assert match_roster(client, identifier).status_code == 200
+    assert estimate(client, identifier)['roster_assignment'] == 'manual'
+    upload(client, 4)
+    updated = estimate(client, identifier)
+    assert updated['population'] == 4 and updated['roster_assignment'] == 'automatic'
+    assert db_session.get(Session, identifier).roster_matched_by is None
+
+
 def test_existing_database_upgrade_adds_roster_tracking(monkeypatch):
     from sqlalchemy import create_engine, inspect, text
     from src.routes.golden_plate_recorder_db import db as database
@@ -295,13 +416,15 @@ def test_existing_database_upgrade_adds_roster_tracking(monkeypatch):
         connection.execute(text('ALTER TABLE schools DROP COLUMN current_roster_snapshot_id'))
         connection.execute(text('ALTER TABLE sessions DROP COLUMN roster_snapshot_id'))
         connection.execute(text('ALTER TABLE sessions DROP COLUMN roster_mixed'))
+        connection.execute(text('ALTER TABLE sessions DROP COLUMN roster_matched_at'))
+        connection.execute(text('ALTER TABLE sessions DROP COLUMN roster_matched_by'))
         connection.execute(text('DROP TABLE roster_snapshots'))
     monkeypatch.setattr(database, 'engine', engine)
     try:
         database._bootstrap_database()
         inspector = inspect(engine)
         assert 'roster_snapshots' in inspector.get_table_names()
-        assert {'roster_snapshot_id', 'roster_mixed'} <= {c['name'] for c in inspector.get_columns('sessions')}
+        assert {'roster_snapshot_id', 'roster_mixed', 'roster_matched_at', 'roster_matched_by'} <= {c['name'] for c in inspector.get_columns('sessions')}
         assert 'current_roster_snapshot_id' in {c['name'] for c in inspector.get_columns('schools')}
         database._bootstrap_database()
     finally:

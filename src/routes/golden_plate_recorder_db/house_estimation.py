@@ -142,8 +142,11 @@ def estimate_house_stats(meal, records, settings):
     if not snapshot:
         return unavailable('Estimated scores are unavailable because no historical roster was saved for this session. New sessions save their roster automatically.')
     roster = json.loads(snapshot.data)
+    matched_at = getattr(meal, 'roster_matched_at', None)
     metadata = {'roster_snapshot_id': snapshot.id, 'roster_filename': snapshot.filename,
-                'roster_saved_at': snapshot.created_at.isoformat()}
+                'roster_saved_at': snapshot.created_at.isoformat(),
+                'roster_assignment': 'manual' if matched_at else 'automatic',
+                'roster_matched_at': matched_at.isoformat() if matched_at else None}
     if roster['missing_house_count']:
         return unavailable('Estimated scores are unavailable because the saved roster includes students without a house.', **metadata)
     populations = roster['populations']

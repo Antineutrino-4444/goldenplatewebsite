@@ -6,7 +6,7 @@ from datetime import datetime
 
 from flask import Response, jsonify, request, session
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from . import recorder_bp
 import random
@@ -24,7 +24,7 @@ from .domain import serialize_draw_info
 from .draw_db import record_draw_event
 from .house_scoring import house_score_settings
 from .house_estimation import estimate_house_stats
-from .roster_history import current_roster_snapshot, prepare_recording_roster
+from .roster_history import current_roster_snapshot, match_session_to_current_roster, prepare_recording_roster
 from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
 from .storage import (
     delete_requests,
@@ -833,6 +833,30 @@ def finalize_faculty_winner(session_id):
     if data is not None:
         data['faculty_pick'] = faculty
     return jsonify({'status': 'success', 'faculty': faculty})
+
+
+@recorder_bp.route('/session/<session_id>/roster/current', methods=['POST'])
+def match_current_session_roster(session_id):
+    """Match one session to this school's current roster, without changing plates."""
+    if not require_auth():
+        return jsonify({'error': 'Authentication required'}), 401
+    if not require_admin():
+        return jsonify({'error': 'Admin or superadmin access required'}), 403
+    actor_id, _, school_id = _get_request_actor()
+    meal = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not meal:
+        return jsonify({'error': 'Session not found'}), 404
+    try:
+        estimation = match_session_to_current_roster(meal, actor_id, house_score_settings(school_id))
+        db_session.commit()
+    except ValueError as exc:
+        db_session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    except SQLAlchemyError:
+        db_session.rollback()
+        return jsonify({'error': 'Unable to save the roster match. Please try again.'}), 500
+    return jsonify({'status': 'success', 'session_id': session_id, 'estimation': estimation,
+                    'message': 'Session matched to the current roster. Estimates have been recalculated.'})
 
 
 @recorder_bp.route('/session/<session_id>/house-stats', methods=['GET'])

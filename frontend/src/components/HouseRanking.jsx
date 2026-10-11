@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { compareHouses, DEFAULT_HOUSE_SCORE_SETTINGS } from '@/lib/house-ranking.js'
 import HouseEstimates from '@/components/HouseEstimates.jsx'
+import MatchSessionRoster from '@/components/MatchSessionRoster.jsx'
 
 export default function HouseRanking({ app, fillHeight = false }) {
   const { sessionId, houseStats, houseStatsLoading, houseSortBy, setHouseSortBy, loadHouseStats } = app
@@ -16,8 +17,8 @@ export default function HouseRanking({ app, fillHeight = false }) {
             <Home className="h-5 w-5" />House Data
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
-            <div role="tablist" aria-label="House ranking" className="flex border rounded-lg overflow-hidden">
-              {[['score', 'Score'], ['count', 'Count'], ['percentage', 'Clean Rate']].map(([value, label]) => (
+            <div role="tablist" aria-label="House ranking" className="grid grid-cols-2 border rounded-lg overflow-hidden sm:flex">
+              {[['score', 'Score'], ['count', 'Count'], ['percentage', 'Clean Rate'], ['estimates', 'Estimates']].map(([value, label]) => (
                 <button key={value} type="button" role="tab" aria-selected={houseSortBy === value}
                   onClick={() => setHouseSortBy(value)}
                   className={`whitespace-nowrap px-3 py-1.5 text-sm transition-colors ${houseSortBy === value
@@ -33,21 +34,27 @@ export default function HouseRanking({ app, fillHeight = false }) {
           </div>
         </div>
         <CardDescription>
-          {houseSortBy === 'score'
-            ? `Score ranges at 95% overall model coverage. Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}.`
+          {houseSortBy === 'estimates'
+            ? `Estimated score ranges at 95% overall model coverage. Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}.`
+            : houseSortBy === 'score'
+              ? `Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}. Count-only entries and records without a house earn no points.`
             : houseSortBy === 'percentage'
               ? 'Clean rate = clean plates ÷ all recorded plates in that house.'
               : 'Count = all clean, dirty, and very dirty plates recorded for each house.'}
         </CardDescription>
       </CardHeader>
       <CardContent className={fillHeight ? 'flex-1 overflow-x-hidden overflow-y-auto' : undefined}>
+        {sessionId && houseSortBy === 'estimates' && ['admin', 'superadmin'].includes(app.user?.role) && (
+          <MatchSessionRoster key={sessionId} sessionId={sessionId} loading={houseStatsLoading}
+            onMatched={() => loadHouseStats({ silent: false })} />
+        )}
         {!sessionId ? (
           <div className="py-8 text-center text-gray-500">
             No active session selected. Switch to a session to view house data.
           </div>
         ) : houseStatsLoading ? (
           <div className="py-8 text-center text-gray-500">Loading house statistics...</div>
-        ) : houseSortBy === 'score' ? (
+        ) : houseSortBy === 'estimates' ? (
           <HouseEstimates estimation={houseStats?.estimation} />
         ) : !houseStats?.has_house_data ? (
           <div className="py-8 text-center text-gray-500">
@@ -79,11 +86,13 @@ export default function HouseRanking({ app, fillHeight = false }) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-bold text-emerald-600">
-                        {houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
+                      <div className={`text-2xl font-bold ${houseSortBy === 'score' && house.score < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {houseSortBy === 'score' ? house.score
+                          : houseSortBy === 'percentage' ? `${house.clean_rate}%` : house.total_count}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {houseSortBy === 'percentage' ? `${house.clean_count} of ${house.total_count} plates clean`
+                        {houseSortBy === 'score' ? 'points'
+                          : houseSortBy === 'percentage' ? `${house.clean_count} of ${house.total_count} plates clean`
                             : `${house.clean_rate}% clean rate`}
                       </div>
                       <div className="text-xs text-gray-500">{house.percentage}% of all records</div>

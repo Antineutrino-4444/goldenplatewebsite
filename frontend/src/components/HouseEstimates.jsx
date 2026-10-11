@@ -12,6 +12,7 @@ export default function HouseEstimates({ estimation }) {
     <div className="space-y-4">
       <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950 space-y-1">
         <p>Saved roster: {estimation.roster_filename || 'Student roster'} • {number(estimation.population)} students</p>
+        {estimation.roster_assignment === 'manual' && <p>This session was manually matched to this roster.</p>}
         <p>{number(estimation.observed_dirty_count)} dirty plates assigned to houses • {number(estimation.unattributed_counts.dirty)} dirty plates to estimate</p>
         <p>School absences: {number(estimation.school_absent_count)} • Student clean rate: {estimation.student_clean_percentage == null ? 'No student plates' : `${number(estimation.student_clean_percentage)}%`}</p>
       </div>
