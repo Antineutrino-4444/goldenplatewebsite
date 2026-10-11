@@ -13,19 +13,31 @@ export default function HouseEstimates({ estimation }) {
       <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950 space-y-1">
         <p>Saved roster: {estimation.roster_filename || 'Student roster'} • {number(estimation.population)} students</p>
         {estimation.roster_assignment === 'manual' && <p>This session was manually matched to this roster.</p>}
-        <p>{number(estimation.observed_dirty_count)} dirty plates assigned to houses • {number(estimation.unattributed_counts.dirty)} dirty plates to estimate</p>
+        <p>{number(estimation.observed_dirty_count)} dirty plates linked to students • {number(estimation.unattributed_counts.dirty)} dirty plates to estimate</p>
         <p>School absences: {number(estimation.school_absent_count)} • Student clean rate: {estimation.student_clean_percentage == null ? 'No student plates' : `${number(estimation.student_clean_percentage)}%`}</p>
       </div>
-      <p className="text-sm text-gray-600">
+      {!!estimation.unassigned_record_count && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">
+        {number(estimation.unassigned_record_count)} named student records have no house in their plate or saved roster.
+        They are included in school totals but do not appear as a house or receive a rank.
+        Count-only entries remain in the separate estimation pool for actual houses.
+      </p>}
+      {!!estimation.excluded_roster_population && <p className="text-xs text-gray-500">
+        {number(estimation.excluded_roster_population)} roster students have no known house and are excluded from house allocations.
+        School totals still use the full saved roster.
+      </p>}
+      {estimation.house_estimates_available === false && <p role="status" className="py-3 text-sm text-gray-600">
+        {estimation.house_estimates_reason}
+      </p>}
+      {estimation.house_estimates_available !== false && <p className="text-sm text-gray-600">
         Known plates keep their house assignments. Unattributed plates are allocated among the remaining students,
-        assuming their outcomes are equally likely across houses. Counts assume one complete meal with one plate
+        with known houses, assuming their outcomes are equally likely across houses. Counts assume one complete meal with one plate
         per present student; faculty are excluded. Fractional counts are expected values.
-      </p>
-      <p className="text-xs text-gray-500">
+      </p>}
+      {estimation.house_estimates_available !== false && <p className="text-xs text-gray-500">
         Score ranges have at least 95% coverage across all houses together under the model.
         A clear ranking advantage requires strictly separated ranges; touching or overlapping ranges give no advantage.
         Dirty-plate and absence ranges each have 95% model coverage. Possible bounds use the totals alone.
-      </p>
+      </p>}
       {estimation.house_stats.map((house) => (
         <div key={house.house} className="rounded-lg border bg-white p-4 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">

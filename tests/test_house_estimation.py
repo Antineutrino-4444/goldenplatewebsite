@@ -19,7 +19,8 @@ SETTINGS = {'clean_points': 2, 'dirty_penalty': 2, 'very_dirty_penalty': 10}
 def model(populations, known=None, unknown=None, faculty=0):
     members = {f'{house}-{i}': house for house, count in populations.items() for i in range(count)}
     snapshot = RosterSnapshot(school_id=DEFAULT_SCHOOL_ID, data=json.dumps({
-        'members': members, 'populations': populations, 'missing_house_count': 0,
+        'members': members, 'populations': {house: count for house, count in populations.items() if house},
+        'missing_house_count': populations.get('', 0),
     }))
     db_session.add(snapshot)
     db_session.commit()
@@ -280,10 +281,119 @@ def test_legacy_populated_sessions_are_not_assigned_todays_roster(client, estima
     assert 'historical roster' in estimate(client, identifier)['reason']
 
 
-def test_missing_roster_house_is_reported(client, estimation_school):
+def test_missing_roster_houses_keep_estimates_available_without_house_entries(client, estimation_school):
     upload(client, 3, house='')
     identifier = create(client)
-    assert 'without a house' in estimate(client, identifier)['reason']
+    assert client.post('/api/record/clean', json={'input_value': '9000'}).status_code == 200
+    assert client.post('/api/record/dirty', json={}).status_code == 200
+    result = estimate(client, identifier)
+    assert result['available'] and result['population'] == 3
+    assert result['house_stats'] == []
+    assert result['missing_house_count'] == result['excluded_roster_population'] == 3
+    assert result['student_plate_count'] == 2 and result['school_absent_count'] == 1
+    assert result['student_clean_percentage'] == 50
+    assert result['unassigned_record_count'] == 1
+    assert result['unassigned_record_counts'] == {'clean': 1, 'dirty': 0, 'red': 0}
+    assert result['unattributed_counts'] == {'clean': 0, 'dirty': 1, 'red': 0}
+    assert not result['house_estimates_available']
+    assert 'No actual houses' in result['house_estimates_reason']
+
+
+def test_only_named_missing_house_records_are_unassigned_and_counts_use_actual_houses():
+    meal, records = model({'A': 4, 'B': 4, '': 3},
+                          {'A': {'clean': 1}, '': {'clean': 1}}, {'dirty': 3})
+    result = estimate_house_stats(meal, records, SETTINGS)
+    assert result['available'] and result['population'] == 11
+    assert result['school_absent_count'] == 6
+    assert {row['house'] for row in result['house_stats']} == {'A', 'B'}
+    rows = {row['house']: row for row in result['house_stats']}
+    assert rows['A']['dirty_count'] == pytest.approx(9 / 7)
+    assert rows['B']['dirty_count'] == pytest.approx(12 / 7)
+    assert result['unassigned_record_count'] == 1
+    assert result['unassigned_record_counts'] == {'clean': 1, 'dirty': 0, 'red': 0}
+    assert sum(row['dirty_count'] for row in rows.values()) == pytest.approx(3)
+    assert sum(row['clean_count'] for row in rows.values()) + result['unassigned_record_counts']['clean'] == 2
+    assert sum(row['absent_count'] for row in rows.values()) == pytest.approx(4)
+    for row in result['house_stats']:
+        assert row['rank_range'][1] <= 2
+        assert set(row['clearly_ahead_of'] + row['clearly_behind']) <= {'A', 'B'}
+    assert result['score_individual_coverage'] == pytest.approx(1 - .05 / 2)
+
+
+def test_count_only_records_do_not_create_unassigned_student_records():
+    meal, records = model({'A': 4, 'B': 4, '': 2}, unknown={'clean': 1, 'dirty': 2, 'red': 1})
+    result = estimate_house_stats(meal, records, SETTINGS)
+    assert result['available'] and result['house_estimates_available']
+    assert result['unassigned_record_count'] == 0
+    assert result['unassigned_record_counts'] is None
+    assert {row['house'] for row in result['house_stats']} == {'A', 'B'}
+    for category, total in [('clean', 1), ('dirty', 2), ('red', 1)]:
+        assert sum(row[f'{category}_count'] for row in result['house_stats']) == total
+    assert result['population'] == 10 and result['student_plate_count'] == 4
+    assert result['school_absent_count'] == 6
+
+
+def test_unassigned_named_dirty_plate_is_kept_out_of_anonymous_allocation():
+    meal, records = model({'A': 4, 'B': 4, '': 2}, {'': {'dirty': 1}}, {'dirty': 2})
+    result = estimate_house_stats(meal, records, SETTINGS)
+    assert result['unassigned_record_counts'] == {'clean': 0, 'dirty': 1, 'red': 0}
+    assert result['unattributed_counts']['dirty'] == 2
+    assert sum(row['dirty_count'] for row in result['house_stats']) == 2
+    assert result['observed_dirty_count'] == 1
+
+
+def test_incomplete_house_roster_preserves_school_totals_when_house_allocation_cannot_fit():
+    meal, records = model({'A': 1, '': 2}, unknown={'dirty': 2})
+    result = estimate_house_stats(meal, records, SETTINGS)
+    assert result['available'] and not result['house_estimates_available']
+    assert result['house_stats'] == []
+    assert 'Count-only plates exceed' in result['house_estimates_reason']
+    assert result['student_plate_count'] == 2 and result['school_absent_count'] == 1
+    assert result['unassigned_record_count'] == 0
+    assert result['unassigned_record_counts'] is None
+
+
+@pytest.mark.parametrize('missing', [None, '', '   '])
+def test_missing_plate_house_uses_saved_membership_without_becoming_unassigned(missing):
+    meal, records = model({'A': 2}, {'A': {'clean': 1}}, {'dirty': 1})
+    records[0].house = missing
+    result = estimate_house_stats(meal, records, SETTINGS)
+    assert result['available'] and result['house_estimates_available']
+    assert result['unassigned_record_count'] == 0
+    assert result['unassigned_record_counts'] is None
+    assert result['house_stats'][0]['observed_clean_count'] == 1
+    assert result['house_stats'][0]['dirty_count'] == 1
+
+
+@pytest.mark.parametrize('missing', [None, '', '   '])
+def test_linked_plate_supplies_missing_house_without_modifying_saved_roster(missing):
+    meal, records = model({'A': 2, '': 2}, {'': {'clean': 1}}, {'dirty': 1})
+    snapshot = db_session.get(RosterSnapshot, meal.roster_snapshot_id)
+    saved = json.loads(snapshot.data)
+    saved['members']['-0'] = missing
+    snapshot.data = json.dumps(saved)
+    db_session.commit()
+    original = snapshot.data
+    records[0].house = 'A'
+    result = estimate_house_stats(meal, records, SETTINGS)
+    assert result['available'] and result['population'] == 4
+    assert result['missing_house_count'] == 2 and result['resolved_house_count'] == 1
+    assert result['excluded_roster_population'] == 1
+    assert result['unassigned_record_count'] == 0
+    assert result['house_stats'][0]['population'] == 3
+    assert result['house_stats'][0]['observed_clean_count'] == 1
+    assert snapshot.data == original
+
+
+def test_real_house_named_unassigned_house_remains_ranked():
+    meal, records = model({'Unassigned house': 2, '': 1})
+    result = estimate_house_stats(meal, records, SETTINGS)
+    assert result['available']
+    assert len(result['house_stats']) == 1
+    assert result['house_stats'][0]['house'] == 'Unassigned house'
+    assert result['house_stats'][0]['rank_range'] == [1, 1]
+    assert result['unassigned_record_count'] == 0
+    assert result['excluded_roster_population'] == 1
 
 
 def match_roster(client, identifier):
@@ -338,7 +448,7 @@ def test_manual_match_resolves_mixed_roster_and_retains_the_chosen_population(cl
     assert estimate(client, identifier)['population'] == 4
 
 
-@pytest.mark.parametrize('problem', ['missing_member', 'changed_house', 'too_many_plates', 'missing_house'])
+@pytest.mark.parametrize('problem', ['missing_member', 'changed_house', 'too_many_plates'])
 def test_manual_match_rejects_inconsistent_roster_without_replacing_saved_match(client, estimation_school, problem):
     upload(client, 3)
     identifier = create(client)
@@ -351,15 +461,35 @@ def test_manual_match_rejects_inconsistent_roster_without_replacing_saved_match(
     elif problem == 'too_many_plates':
         for _ in range(4):
             assert client.post('/api/record/dirty', json={}).status_code == 200
-    else:
-        assert client.post('/api/record/dirty', json={}).status_code == 200
-        upload(client, 3, house='')
     before = db_session.get(Session, identifier).roster_snapshot_id
     response = match_roster(client, identifier)
     assert response.status_code == 400 and response.get_json()['error']
     db_session.remove()
     assert db_session.get(Session, identifier).roster_snapshot_id == before
     assert db_session.get(Session, identifier).roster_matched_at is None
+
+
+@pytest.mark.parametrize('named', [False, True])
+def test_manual_match_accepts_missing_houses_and_retains_historical_population(client, estimation_school, named):
+    upload(client, 3)
+    identifier = create(client)
+    payload = {'input_value': '9000'} if named else {}
+    assert client.post('/api/record/dirty', json=payload).status_code == 200
+    upload(client, 4, house='')
+    response = match_roster(client, identifier)
+    assert response.status_code == 200
+    result = response.get_json()['estimation']
+    assert result['available'] and result['population'] == 4
+    assert result['roster_assignment'] == 'manual'
+    assert result['missing_house_count'] == 4
+    assert result['excluded_roster_population'] == (3 if named else 4)
+    assert result['unassigned_record_count'] == 0
+    assert len(result['house_stats']) == (1 if named else 0)
+    upload(client, 6)
+    historical = estimate(client, identifier)
+    assert historical['population'] == 4
+    assert historical['excluded_roster_population'] == result['excluded_roster_population']
+    assert historical['roster_snapshot_id'] == result['roster_snapshot_id']
 
 
 def test_manual_match_reports_no_current_roster(client, estimation_school):

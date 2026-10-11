@@ -147,12 +147,20 @@ def estimate_house_stats(meal, records, settings):
                 'roster_saved_at': snapshot.created_at.isoformat(),
                 'roster_assignment': 'manual' if matched_at else 'automatic',
                 'roster_matched_at': matched_at.isoformat() if matched_at else None}
-    if roster['missing_house_count']:
-        return unavailable('Estimated scores are unavailable because the saved roster includes students without a house.', **metadata)
-    populations = roster['populations']
-    members = roster['members']
-    if not populations:
+    members = {identifier: normalize_house(house) for identifier, house in roster['members'].items()}
+    if not members:
         return unavailable('Estimated scores are unavailable because the saved roster has no students.', **metadata)
+    missing_house_count = sum(not house for house in members.values())
+    # A linked plate can supply an otherwise missing house without changing the
+    # immutable roster. Never infer a house from anonymous plates or proportions.
+    for record in records:
+        if record.category in ('clean', 'dirty', 'red') and record.student_id in members:
+            if not members[record.student_id] and normalize_house(record.house):
+                members[record.student_id] = normalize_house(record.house)
+    populations = {}
+    for house in members.values():
+        # The empty key cannot collide with an actual house named "Unassigned house".
+        populations[house] = populations.get(house, 0) + 1
     known = {house: {'clean': 0, 'dirty': 0, 'red': 0} for house in populations}
     unknown = {'clean': 0, 'dirty': 0, 'red': 0}
     seen = set()
@@ -169,24 +177,38 @@ def estimate_house_stats(meal, records, settings):
             if record.student_id in seen:
                 return unavailable('Estimated scores are unavailable because a student has multiple recorded plates in this session.', **metadata)
             seen.add(record.student_id)
-        house = normalize_house(record.house) or members.get(record.student_id)
+        house = normalize_house(record.house) or members.get(record.student_id, '')
         if house not in populations or (record.student_id and house != members[record.student_id]):
             return unavailable('Estimated scores are unavailable because a recorded house does not match this session’s saved roster.', **metadata)
         known[house][record.category] += 1
     residuals = {house: count - sum(known[house].values()) for house, count in populations.items()}
     if any(count < 0 for count in residuals.values()):
         return unavailable('Estimated scores are unavailable because recorded plates exceed a house’s saved population.', **metadata)
-    residual = sum(residuals.values())
-    absences = residual - sum(unknown.values())
+    school_population = sum(populations.values())
+    anonymous_total = sum(unknown.values())
+    absences = sum(residuals.values()) - anonymous_total
     if absences < 0:
         return unavailable('Estimated scores are unavailable because student plate counts exceed the saved roster population.', **metadata)
-    unknown['absent'] = absences
+    # Only named, recorded students can be classified as unassigned. Anonymous
+    # outcomes remain a separate pool allocated across actual houses only.
+    unassigned_counts = known.pop('', dict.fromkeys(unknown, 0))
+    unassigned_record_count = sum(unassigned_counts.values())
+    excluded_population = populations.pop('', 0)
+    residuals.pop('', None)
+    residual = sum(residuals.values())
+    house_estimates_available = bool(populations) and anonymous_total <= residual
+    house_estimates_reason = None
+    if not populations:
+        house_estimates_reason = 'No actual houses are available in this session’s saved roster or linked student plates. School totals are still shown.'
+    elif anonymous_total > residual:
+        house_estimates_reason = 'Count-only plates exceed the remaining students with known houses. House estimates cannot allocate them consistently; school totals are still shown.'
+    unknown['absent'] = max(0, residual - anonymous_total)
     result = []
     points = {'clean': settings['clean_points'], 'dirty': -settings['dirty_penalty'],
               'red': -settings['very_dirty_penalty'], 'absent': 0}
     # Bonferroni across houses gives at least 95% simultaneous score coverage.
-    score_individual_coverage = 1 - (1 - MODEL_COVERAGE) / len(populations)
-    for house in sorted(populations):
+    score_individual_coverage = 1 - (1 - MODEL_COVERAGE) / len(populations) if house_estimates_available else None
+    for house in sorted(populations) if house_estimates_available else []:
         row = {'house': house, 'population': populations[house], 'unknown_students': residuals[house],
                'observed_clean_count': known[house]['clean'], 'observed_dirty_count': known[house]['dirty'],
                'observed_red_count': known[house]['red']}
@@ -219,13 +241,21 @@ def estimate_house_stats(meal, records, settings):
         row['score_interval_method'] = method
         result.append(row)
     result = rank_score_intervals(result)
-    student_clean = sum(known[house]['clean'] for house in known) + unknown['clean']
-    student_total = sum(populations.values()) - absences
+    student_clean = sum(known[house]['clean'] for house in known) + unassigned_counts['clean'] + unknown['clean']
+    student_total = school_population - absences
     return {'available': True, 'reason': None, **metadata, 'model': 'conditional_multivariate_hypergeometric',
-            'coverage': MODEL_COVERAGE, 'score_coverage': MODEL_COVERAGE,
+            'coverage': MODEL_COVERAGE, 'score_coverage': MODEL_COVERAGE if house_estimates_available else None,
             'score_coverage_scope': 'simultaneous_across_houses',
             'score_individual_coverage': score_individual_coverage,
-            'population': sum(populations.values()), 'student_plate_count': student_total,
+            'house_estimates_available': house_estimates_available,
+            'house_estimates_reason': house_estimates_reason,
+            'missing_house_count': missing_house_count,
+            'excluded_roster_population': excluded_population,
+            'resolved_house_count': missing_house_count - excluded_population,
+            'unassigned_record_count': unassigned_record_count,
+            'unassigned_record_counts': unassigned_counts if unassigned_record_count else None,
+            'population': school_population, 'student_plate_count': student_total,
             'student_clean_percentage': 100 * student_clean / student_total if student_total else None,
             'school_absent_count': absences, 'unattributed_counts': {k: v for k, v in unknown.items() if k != 'absent'},
-            'observed_dirty_count': sum(known[h]['dirty'] for h in known), 'house_stats': result}
+            'observed_dirty_count': sum(known[h]['dirty'] for h in known) + unassigned_counts['dirty'],
+            'house_stats': result}
