@@ -23,6 +23,7 @@ from .users import (
     reset_user_store,
 )
 from .utils import extract_student_id_from_key, make_student_key, normalize_house, normalize_name, plate_count_label, split_student_key
+from .roster_history import bind_empty_sessions, current_roster_snapshot
 
 # Student lookup cache keyed by school for fast eligibility checks
 student_lookup = {}
@@ -57,6 +58,9 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
 
     if not unique_rows:
         return result
+
+    # Preserve the previous membership before replacing any student rows.
+    current_roster_snapshot(school_id)
 
     identifiers = [item[0] for item in unique_rows.values()]
     existing_students = (
@@ -140,6 +144,9 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
                 school.roster_filename = filename
                 school.roster_uploaded_at = datetime.now()
                 school.roster_uploaded_by = uploaded_by
+            db_session.flush()
+            snapshot = current_roster_snapshot(school_id, refresh=True)
+            bind_empty_sessions(school_id, snapshot)
             db_session.commit()
             update_student_lookup()
         except Exception:

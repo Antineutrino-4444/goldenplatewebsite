@@ -80,6 +80,7 @@ class School(Base):
     roster_filename = Column(String)
     roster_uploaded_at = Column(DateTime(timezone=True))
     roster_uploaded_by = Column(String)
+    current_roster_snapshot_id = Column(String)
     teacher_roster_filename = Column(String)
     teacher_roster_uploaded_at = Column(DateTime(timezone=True))
     teacher_roster_uploaded_by = Column(String)
@@ -172,6 +173,16 @@ class Student(Base):
     is_active = Column(Integer, nullable=False, default=1, server_default='1')
 
 
+class RosterSnapshot(Base):
+    __tablename__ = 'roster_snapshots'
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=_now_utc, nullable=False)
+    filename = Column(String)
+    data = Column(Text, nullable=False)
+
+
 class Teacher(Base):
     __tablename__ = 'teachers'
     __table_args__ = (
@@ -197,6 +208,8 @@ class Session(Base):
     school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False, default=DEFAULT_SCHOOL_ID)
     created_by = Column(String, ForeignKey('users.id'), nullable=False)
     session_name = Column(String, nullable=False)
+    roster_snapshot_id = Column(String)
+    roster_mixed = Column(Integer, nullable=False, default=0, server_default='0')
     status = Column(String, nullable=False, default='active')
     is_public = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
@@ -706,6 +719,7 @@ def _migrate_schema() -> None:
             _ensure_column(inspector, 'schools', column_name, f'INTEGER NOT NULL DEFAULT {default}')
         for column_name, ddl in [
             ('roster_filename', 'TEXT'), ('roster_uploaded_at', 'DATETIME'), ('roster_uploaded_by', 'TEXT'),
+            ('current_roster_snapshot_id', 'TEXT'),
             ('teacher_roster_filename', 'TEXT'), ('teacher_roster_uploaded_at', 'DATETIME'), ('teacher_roster_uploaded_by', 'TEXT'),
         ]:
             _ensure_column(inspector, 'schools', column_name, ddl)
@@ -733,6 +747,8 @@ def _migrate_schema() -> None:
             ('faculty_finalized_at', 'DATETIME'),
             ('faculty_finalized_by', 'TEXT'),
             ('main_session_id', 'TEXT'),
+            ('roster_snapshot_id', 'TEXT'),
+            ('roster_mixed', 'INTEGER NOT NULL DEFAULT 0'),
         ]:
             if column_name not in session_columns:
                 with engine.begin() as connection:

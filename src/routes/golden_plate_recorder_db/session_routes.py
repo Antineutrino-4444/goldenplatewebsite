@@ -23,6 +23,8 @@ from .db import (
 from .domain import serialize_draw_info
 from .draw_db import record_draw_event
 from .house_scoring import house_score_settings
+from .house_estimation import estimate_house_stats
+from .roster_history import current_roster_snapshot, prepare_recording_roster
 from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
 from .storage import (
     delete_requests,
@@ -275,10 +277,12 @@ def create_session():
             counter += 1
 
     def _make_session(name: str) -> SessionModel:
+        snapshot = current_roster_snapshot(school_id)
         return SessionModel(
             id=session_id,
             school_id=school_id,
             session_name=name,
+            roster_snapshot_id=snapshot.id if snapshot else None,
             created_by=actor_id,
             is_public=1 if is_public else 0,
             status='active',
@@ -920,7 +924,8 @@ def get_house_stats(session_id):
         'session_id': session_id,
         'session_name': db_sess.session_name,
         'total_records_with_house': total_with_house,
-        'house_stats': house_stats
+        'house_stats': house_stats,
+        'estimation': estimate_house_stats(db_sess, records, score_settings),
     }), 200
 
 
@@ -1028,6 +1033,8 @@ def record_student(category):
     has_reference = bool(input_value or provided_student_id or provided_key or
                          provided_preferred or provided_last)
     if not has_reference:
+        if category != 'faculty':
+            prepare_recording_roster(db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).one())
         # Each unnamed plate is a separate count, never a student or draw entry.
         record = {
             'category': category,
@@ -1411,6 +1418,7 @@ def record_student(category):
             'message': f'Student already recorded as {existing_category.upper() if existing_category else "UNKNOWN"} in this session'
         }), 409
 
+    prepare_recording_roster(db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).one())
     record = {
         'preferred_name': preferred_name,
         'first_name': preferred_name,
