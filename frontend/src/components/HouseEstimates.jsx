@@ -2,12 +2,8 @@ const number = (value) => new Intl.NumberFormat(undefined, { maximumFractionDigi
 const range = (values) => values.map(number).join('–')
 const scoreRange = (values) => values.map(number).join(' to ')
 
-export default function HouseEstimates({ estimation }) {
-  if (!estimation?.available) {
-    return <p role="status" className="py-6 text-sm text-gray-600">
-      {estimation?.reason || 'Estimated scores are unavailable for this session.'}
-    </p>
-  }
+export function HouseEstimateDetails({ estimation }) {
+  if (!estimation?.available) return null
   return (
     <div className="space-y-4">
       <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-950 space-y-1">
@@ -26,9 +22,6 @@ export default function HouseEstimates({ estimation }) {
         {number(estimation.excluded_roster_population)} roster students have no known house and are excluded from house allocations.
         School totals still use the full saved roster.
       </p>}
-      {estimation.house_estimates_available === false && <p role="status" className="py-3 text-sm text-gray-600">
-        {estimation.house_estimates_reason}
-      </p>}
       {estimation.house_estimates_available !== false && <p className="text-sm text-gray-600">
         Known plates keep their house assignments. Unattributed plates are allocated among the remaining students,
         with known houses, assuming their outcomes are equally likely across houses. Counts assume one complete meal with one plate
@@ -39,6 +32,21 @@ export default function HouseEstimates({ estimation }) {
         Score ranges have at least 95% coverage across all houses together under the model.
         A clear ranking advantage requires strictly separated ranges.
         Dirty-plate and absence ranges each have 95% model coverage. Possible bounds use the totals alone.
+      </p>}
+    </div>
+  )
+}
+
+export default function HouseEstimates({ estimation }) {
+  if (!estimation?.available) {
+    return <p role="status" className="py-6 text-sm text-gray-600">
+      {estimation?.reason || 'Estimated scores are unavailable for this session.'}
+    </p>
+  }
+  return (
+    <div className="space-y-4">
+      {estimation.house_estimates_available === false && <p role="status" className="py-3 text-sm text-gray-600">
+        {estimation.house_estimates_reason}
       </p>}
       {estimation.house_stats.map((house) => (
         <div key={house.house} className="rounded-lg border bg-white p-4 space-y-3">
@@ -55,9 +63,9 @@ export default function HouseEstimates({ estimation }) {
               <p className="text-xs text-gray-500">{house.population} students • {house.unknown_students} unresolved</p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">Point estimate: {number(house.score)} points</p>
-              <p className={`text-xl font-bold ${house.score_interval[1] < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{scoreRange(house.score_interval)}</p>
-              <p className="text-xs text-gray-500">95% simultaneous model score range</p>
+              <p className="text-sm text-gray-600">95% score range: {scoreRange(house.score_interval)}</p>
+              <p className={`text-xl font-bold ${house.score < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{number(house.score)} points</p>
+              <p className="text-xs text-gray-500">Point estimate</p>
               <p className="text-xs text-gray-500">Possible bounds: {scoreRange(house.score_bounds)}</p>
             </div>
           </div>

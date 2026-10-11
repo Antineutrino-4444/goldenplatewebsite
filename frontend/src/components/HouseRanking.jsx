@@ -1,11 +1,24 @@
-import { useState } from 'react'
-import { Home, RefreshCcw } from 'lucide-react'
+import { useId, useState } from 'react'
+import { ChevronDown, Home, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { compareHouses, DEFAULT_HOUSE_SCORE_SETTINGS } from '@/lib/house-ranking.js'
-import HouseEstimates from '@/components/HouseEstimates.jsx'
+import HouseEstimates, { HouseEstimateDetails } from '@/components/HouseEstimates.jsx'
 import MatchSessionRoster from '@/components/MatchSessionRoster.jsx'
 import SessionRecordExclusions from '@/components/SessionRecordExclusions.jsx'
+
+function HouseDataNotes({ children }) {
+  const [open, setOpen] = useState(false)
+  const contentId = useId()
+  return <div className="mb-4 rounded-lg border bg-gray-50 p-3 space-y-3">
+    <Button type="button" variant="outline" size="sm" onClick={() => setOpen(!open)}
+      aria-expanded={open} aria-controls={contentId}>
+      {open ? 'Hide notes and details' : 'Notes and details'}
+      <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+    </Button>
+    <div id={contentId} hidden={!open} className="space-y-4">{children}</div>
+  </div>
+}
 
 export default function HouseRanking({ app, fillHeight = false }) {
   const { sessionId, houseStats, houseStatsLoading, houseSortBy, setHouseSortBy, loadHouseStats } = app
@@ -40,28 +53,8 @@ export default function HouseRanking({ app, fillHeight = false }) {
             </Button>
           </div>
         </div>
-        <CardDescription>
-          {houseSortBy === 'estimates'
-            ? `Estimated score ranges at 95% overall model coverage. Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}.`
-            : houseSortBy === 'score'
-              ? `Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}. Count-only entries and records without a house earn no points.`
-            : houseSortBy === 'percentage'
-              ? 'Clean rate = clean plates ÷ all recorded plates in that house.'
-              : 'Count = all clean, dirty, and very dirty plates recorded for each house.'}
-        </CardDescription>
       </CardHeader>
       <CardContent className={fillHeight ? 'flex-1 overflow-x-hidden overflow-y-auto' : undefined}>
-        {sessionId && app.user?.role === 'superadmin' && <SessionRecordExclusions key={sessionId} sessionId={sessionId}
-          rosterScope={reviewScope} reviewVersion={reviewVersion} onRosterScopeChange={refreshReview}
-          onChanged={async () => {
-            setCalculationRevision((value) => value + 1)
-            await app.refreshSessionStatus(); await app.loadSessions()
-          }} />}
-        {sessionId && houseSortBy === 'estimates' && ['admin', 'superadmin'].includes(app.user?.role) && (
-          <MatchSessionRoster key={sessionId} sessionId={sessionId} loading={houseStatsLoading}
-            calculationRevision={calculationRevision} onMatchFailed={() => refreshReview('current')}
-            onMatched={async () => { refreshReview('auto'); await loadHouseStats({ silent: false }) }} />
-        )}
         {!sessionId ? (
           <div className="py-8 text-center text-gray-500">
             No active session selected. Switch to a session to view house data.
@@ -119,6 +112,31 @@ export default function HouseRanking({ app, fillHeight = false }) {
             )}
           </div>
         )}
+        <div className="mt-6 border-t pt-4">
+          <HouseDataNotes key={`notes-${sessionId}-${houseSortBy}`}>
+            <CardDescription>
+              {houseSortBy === 'estimates'
+                ? `Estimated score ranges at 95% overall model coverage. Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}.`
+                : houseSortBy === 'score'
+                  ? `Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}. Count-only entries and records without a house earn no points.`
+                : houseSortBy === 'percentage'
+                  ? 'Clean rate = clean plates ÷ all recorded plates in that house.'
+                  : 'Count = all clean, dirty, and very dirty plates recorded for each house.'}
+            </CardDescription>
+            {houseSortBy === 'estimates' && <HouseEstimateDetails estimation={houseStats?.estimation} />}
+          </HouseDataNotes>
+          {sessionId && app.user?.role === 'superadmin' && <SessionRecordExclusions key={`records-${sessionId}`} sessionId={sessionId}
+            rosterScope={reviewScope} reviewVersion={reviewVersion} onRosterScopeChange={refreshReview}
+            onChanged={async () => {
+              setCalculationRevision((value) => value + 1)
+              await app.refreshSessionStatus(); await app.loadSessions()
+            }} />}
+          {sessionId && houseSortBy === 'estimates' && ['admin', 'superadmin'].includes(app.user?.role) && (
+            <MatchSessionRoster key={`roster-${sessionId}`} sessionId={sessionId} loading={houseStatsLoading}
+              calculationRevision={calculationRevision} onMatchFailed={() => refreshReview('current')}
+              onMatched={async () => { refreshReview('auto'); await loadHouseStats({ silent: false }) }} />
+          )}
+        </div>
       </CardContent>
     </Card>
   )
