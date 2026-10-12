@@ -28,7 +28,7 @@ def normalize_estimate_house(value):
 
 
 def _grade(value):
-    match = re.fullmatch(r'(?:grade\s*)?(\d{1,2})(?:\.0)?', str(value or '').strip(), re.I)
+    match = re.fullmatch(r'(?:(?:grade|gr\.?)\s*)?(\d{1,2})(?:\.0)?', str(value or '').strip(), re.I)
     return int(match[1]) if match else None
 
 

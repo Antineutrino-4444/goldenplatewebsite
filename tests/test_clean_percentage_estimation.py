@@ -162,6 +162,27 @@ def test_lower_grades_and_excluded_students_are_removed_once():
     assert result['population'] == 2 and result['unattributed_counts']['dirty'] == 1
 
 
+@pytest.mark.parametrize('format_grade', [
+    str, lambda grade: f'Gr{grade}', lambda grade: f'Gr {grade}',
+    lambda grade: f'Gr. {grade}', lambda grade: f'Grade {grade}',
+    lambda grade: f' gR{grade} ', lambda grade: f'{grade}.0',
+])
+def test_grade_label_variants_produce_the_same_upper_school_estimates(format_grade):
+    meal, records = scenario({'Flavelle': 6}, anonymous={'clean': 1, 'dirty': 1}, grades={
+        f'Flavelle-{index}': format_grade(grade) for index, grade in enumerate([8, 9, 10, 11, 12, 7])
+    })
+    # An identified Lower School plate without a roster link is excluded using
+    # its recorded grade, with the same format support as the saved population.
+    records.append(SimpleNamespace(category='clean', student_id=None, house='Flavelle',
+                                   grade=format_grade(8), is_excluded=False))
+    result = estimate_session_percentages(meal, records, SETTINGS)
+    assert result['available']
+    assert result['population'] == 4 and result['student_plate_count'] == 2
+    assert result['school_absent_count'] == 2
+    assert result['house_stats'][0]['clean_percentage'] == 50
+    assert result['house_stats'][0]['clean_percentage_interval'] == [50, 50]
+
+
 def test_named_unattributed_clean_plates_are_not_treated_as_absences():
     meal, records = scenario({'Smith': 3}, anonymous={'clean': 1})
     records[0].preferred_name = 'Manual record without ID'
@@ -219,7 +240,7 @@ def test_zero_participants_are_unranked_not_zero_percent():
 
 def test_api_preserves_scoring_override_access_and_grade_snapshots(client, login, email_outbox):
     assert login().status_code == 200
-    roster = 'Student ID,Last,Preferred,Grade,House\n99001,One,Student,9,Flavelle\n99002,Two,Student,8,Flavelle\n99003,Three,Student,10,Laidlaw\n'
+    roster = 'Student ID,Last,Preferred,Grade,House\n99001,One,Student,Gr9,Flavelle\n99002,Two,Student,Gr8,Flavelle\n99003,Three,Student,Gr10,Laidlaw\n'
     assert client.post('/api/csv/upload', data={'file': (io.BytesIO(roster.encode()), 'upper-school.csv')}, content_type='multipart/form-data').status_code == 200
     response = client.post('/api/session/create', json={'session_name': f'new-estimate-{uuid.uuid4().hex}'})
     identifier = response.get_json()['session_id']
