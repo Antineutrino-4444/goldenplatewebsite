@@ -23,8 +23,9 @@ Unlinked manual entries follow the recorder's existing identity keys.
 Guest privacy hides personal IDs, grade/advisor details, individual house/clan
 details, staff names, free-text notes, and session titles before sending session
 data to the browser. Aggregate house scores and plate totals remain visible.
-Signed-in school accounts retain their normal access. The setting starts off for
-existing and new schools, and database upgrades happen during initialization.
+Signed-in school accounts retain their normal access. The setting starts on for
+new schools and schools upgrading without a saved privacy setting. Previously
+saved choices are preserved, and database upgrades happen during initialization.
 
 ## Architecture
 - **Backend:** Flask 3 with SQLAlchemy and SQLite located in `src/`

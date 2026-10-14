@@ -125,10 +125,22 @@ def test_toggle_applies_to_existing_guests_and_preserves_staff_and_records(clien
 
 def test_disabled_setting_keeps_original_guest_view(client, privacy_school):
     school, _, sessions = privacy_school
+    enable(client, False)
     assert client.get('/api/admin/guest-privacy').get_json()['enabled'] is False
     guest(client, school)
     client.post(f'/api/session/switch/{sessions[-1]}')
     assert 'PrivateName' in client.get('/api/session/scan-history').get_data(as_text=True)
+
+
+def test_new_schools_anonymize_guest_views_by_default(client, privacy_school):
+    school, _, sessions = privacy_school
+    assert client.get('/api/admin/guest-privacy').get_json()['enabled'] is True
+    guest(client, school)
+    client.post(f'/api/session/switch/{sessions[-1]}')
+    response = client.get('/api/session/scan-history')
+    assert response.status_code == 200
+    assert 'PrivateName' not in response.get_data(as_text=True)
+    assert 'Student ' in response.get_data(as_text=True)
 
 
 def test_roster_name_changes_do_not_reassign_guest_labels(client, privacy_school):
@@ -168,10 +180,10 @@ def test_setting_permissions_and_school_scope(client, privacy_school, role):
         sign_in(client, account)
     expected = 200 if role in {'admin', 'superadmin'} else 401 if role in {'guest', None} else 403
     assert client.get('/api/admin/guest-privacy').status_code == expected
-    assert client.put('/api/admin/guest-privacy', json={'enabled': True, 'school_id': other_id}).status_code == expected
+    assert client.put('/api/admin/guest-privacy', json={'enabled': False, 'school_id': other_id}).status_code == expected
     db_session.expire_all()
-    assert db_session.get(School, other_id).guest_privacy_enabled == 0
-    assert bool(db_session.get(School, school_id).guest_privacy_enabled) is (expected == 200)
+    assert db_session.get(School, other_id).guest_privacy_enabled == 1
+    assert bool(db_session.get(School, school_id).guest_privacy_enabled) is (expected != 200)
 
 
 @pytest.mark.parametrize('data', [None, [], {}, {'enabled': 'true'}, {'enabled': 1}])
@@ -215,10 +227,19 @@ def test_existing_database_upgrades_privacy_setting_and_alias_table(monkeypatch)
     engine = create_engine('sqlite://')
     database.Base.metadata.create_all(engine)
     with engine.begin() as connection:
+        connection.execute(School.__table__.insert().values(
+            id='historical-privacy-school', name='Historical School', slug='historical-privacy-school',
+        ))
         connection.execute(text('ALTER TABLE schools DROP COLUMN guest_privacy_enabled'))
         connection.execute(text('DROP TABLE guest_student_aliases'))
     monkeypatch.setattr(database, 'engine', engine)
     database._bootstrap_database()
     assert 'guest_privacy_enabled' in {column['name'] for column in inspect(engine).get_columns('schools')}
     assert 'guest_student_aliases' in inspect(engine).get_table_names()
+    with engine.begin() as connection:
+        assert connection.execute(text("SELECT guest_privacy_enabled FROM schools WHERE id = 'historical-privacy-school'")).scalar_one() == 1
+        connection.execute(text("UPDATE schools SET guest_privacy_enabled = 0 WHERE id = 'historical-privacy-school'"))
+    database._bootstrap_database()
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT guest_privacy_enabled FROM schools WHERE id = 'historical-privacy-school'")).scalar_one() == 0
     engine.dispose()

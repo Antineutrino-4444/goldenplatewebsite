@@ -74,7 +74,7 @@ class School(Base):
     slug = Column(String, nullable=False, unique=True)
     status = Column(String, nullable=False, default='active')
     contact_email = Column(String(320), nullable=True)
-    guest_privacy_enabled = Column(Integer, nullable=False, default=0, server_default='0')
+    guest_privacy_enabled = Column(Integer, nullable=False, default=1, server_default='1')
     house_clean_points = Column(Integer, nullable=False, default=2, server_default='2')
     house_dirty_penalty = Column(Integer, nullable=False, default=2, server_default='2')
     house_very_dirty_penalty = Column(Integer, nullable=False, default=10, server_default='10')
@@ -755,7 +755,7 @@ def _migrate_schema() -> None:
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
-        _ensure_column(inspector, 'schools', 'guest_privacy_enabled', 'INTEGER NOT NULL DEFAULT 0')
+        _ensure_column(inspector, 'schools', 'guest_privacy_enabled', 'INTEGER NOT NULL DEFAULT 1')
         _ensure_column(inspector, 'schools', 'live_counter_settings', 'TEXT')
         for column_name, default in [
             ('house_clean_points', 2), ('house_dirty_penalty', 2),

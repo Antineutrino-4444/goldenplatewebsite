@@ -141,7 +141,7 @@ function LoginView({ app }) {
               <Input
                 id="guest-school-code"
                 type="text"
-                placeholder="e.g., ABC123"
+                placeholder="e.g., SAC"
                 value={guestSchoolCode}
                 onChange={(e) => setGuestSchoolCode(e.target.value)}
                 onKeyPress={(e) => {
