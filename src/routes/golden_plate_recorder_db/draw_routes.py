@@ -16,7 +16,7 @@ from .draw_db import (
     reset_draw as reset_draw_db,
 )
 from .utils import extract_student_id_from_key, format_display_name, make_student_key, normalize_house, normalize_name
-from .security import require_admin, require_auth_or_guest, require_superadmin
+from .security import get_current_user, is_guest, require_admin, require_auth_or_guest, require_superadmin
 
 
 @recorder_bp.route('/session/<session_id>/draw/summary', methods=['GET'])
@@ -25,14 +25,15 @@ def get_draw_summary(session_id):
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
 
-    sess = db_session.query(SessionModel).filter_by(id=session_id).first()
+    user = get_current_user()
+    school_id = user['school_id'] if user else session.get('school_id')
+    sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
     if not sess:
         return jsonify({'error': 'Session not found'}), 404
 
     # Check access permissions
-    if require_superadmin() is False and require_admin() is False:
-        if session.get('guest_access') and not sess.is_public:
-            return jsonify({'error': 'Access denied'}), 403
+    if is_guest() and not sess.is_public:
+        return jsonify({'error': 'Access denied'}), 403
 
     # Get eligible students with tickets
     eligible = get_eligible_students_with_tickets(session_id)

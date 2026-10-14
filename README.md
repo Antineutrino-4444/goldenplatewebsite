@@ -11,6 +11,20 @@ Golden Plate Recorder is a web application for tracking student attendance and c
 - CLEAN, DIRTY, and RED category recording with barcode scanner support
 - Real-time history display and CSV export
 - Administrative panel for user, invite code, and session management
+- Optional school guest privacy with persistent, unique student labels
+
+School admins and superadmins can enable **Admin Panel → Guest privacy → Anonymize
+student details for guests**. Guest history, draw candidates, winners, and draw logs
+then use saved labels such as **Student 1** and **Student 2**, with separate labels
+for students who share a real name. Labels follow the school's student identifiers
+across sessions, roster name changes, and switching privacy off and back on.
+Unlinked manual entries follow the recorder's existing identity keys.
+
+Guest privacy hides personal IDs, grade/advisor details, individual house/clan
+details, staff names, free-text notes, and session titles before sending session
+data to the browser. Aggregate house scores and plate totals remain visible.
+Signed-in school accounts retain their normal access. The setting starts off for
+existing and new schools, and database upgrades happen during initialization.
 
 ## Architecture
 - **Backend:** Flask 3 with SQLAlchemy and SQLite located in `src/`

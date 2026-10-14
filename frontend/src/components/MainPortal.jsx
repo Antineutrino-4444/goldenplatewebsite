@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import AdminSessionExport from '@/components/AdminSessionExport.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
 import HouseScoreSettings from '@/components/HouseScoreSettings.jsx'
+import GuestPrivacySettings from '@/components/GuestPrivacySettings.jsx'
 import PortalHeader from '@/components/PortalHeader.jsx'
 import SessionSwitcher from '@/components/SessionSwitcher.jsx'
 import StudentRosterUpload from '@/components/StudentRosterUpload.jsx'
@@ -1610,6 +1611,7 @@ function MainPortal({ app }) {
             </div>
 
             {user.role === 'superadmin' && showAdminPanel && <HouseScoreSettings app={app} />}
+            {['admin', 'superadmin'].includes(user.role) && showAdminPanel && <GuestPrivacySettings app={app} />}
 
             <div>
               <h3 className="text-lg font-semibold mb-3">Users</h3>

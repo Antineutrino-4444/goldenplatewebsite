@@ -74,6 +74,7 @@ class School(Base):
     slug = Column(String, nullable=False, unique=True)
     status = Column(String, nullable=False, default='active')
     contact_email = Column(String(320), nullable=True)
+    guest_privacy_enabled = Column(Integer, nullable=False, default=0, server_default='0')
     house_clean_points = Column(Integer, nullable=False, default=2, server_default='2')
     house_dirty_penalty = Column(Integer, nullable=False, default=2, server_default='2')
     house_very_dirty_penalty = Column(Integer, nullable=False, default=10, server_default='10')
@@ -173,6 +174,19 @@ class Student(Base):
     clan = Column(String)
     is_active = Column(Integer, nullable=False, default=1, server_default='1')
     roster_conflicts = Column(Text)
+
+
+class GuestStudentAlias(Base):
+    """Durable, collision-free guest labels; identity keys never leave the server."""
+    __tablename__ = 'guest_student_aliases'
+    __table_args__ = (
+        UniqueConstraint('school_id', 'identity_key', name='uq_guest_alias_school_identity'),
+        {'sqlite_autoincrement': True},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False)
+    identity_key = Column(String, nullable=False)
 
 
 class RosterSnapshot(Base):
@@ -741,6 +755,7 @@ def _migrate_schema() -> None:
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
+        _ensure_column(inspector, 'schools', 'guest_privacy_enabled', 'INTEGER NOT NULL DEFAULT 0')
         _ensure_column(inspector, 'schools', 'live_counter_settings', 'TEXT')
         for column_name, default in [
             ('house_clean_points', 2), ('house_dirty_penalty', 2),

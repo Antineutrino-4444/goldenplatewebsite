@@ -86,6 +86,7 @@ def serialize_school(school):
         'name': school.name,
         'slug': school.slug,
         'status': school.status,
+        'guest_privacy_enabled': bool(school.guest_privacy_enabled),
         'created_at': school.created_at.isoformat() if school.created_at else None,
         'updated_at': school.updated_at.isoformat() if school.updated_at else None,
     }
