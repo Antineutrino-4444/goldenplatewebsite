@@ -67,7 +67,7 @@ function SchoolRegistration({ app }) {
     <div className="school-registration flex items-center justify-center px-4 py-10 sm:py-14">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl sm:text-3xl font-bold text-[#183b2f]">
+          <CardTitle className="text-2xl sm:text-3xl font-bold text-[var(--site-ink)]">
             <h1>Register Your School</h1>
           </CardTitle>
           <CardDescription className="text-gray-600 mt-2 text-sm">

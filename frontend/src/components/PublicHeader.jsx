@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import SiteLink, { originState, siteDestination } from '@/components/SiteLink.jsx'
 import { isMapHost, sitePageLabel, siteReturnPath } from '@/lib/navigation.js'
+import ThemeToggle from '@/components/ThemeToggle.jsx'
 import './LandingPage.css'
 
 export function PlateMark() {
@@ -45,7 +46,7 @@ export default function PublicHeader() {
     <a className="public-skip" href="#main-content">Skip to content</a>
     <div className="public-header-inner">
       <SiteLink className="public-brand" to="/" onClick={close}><PlateMark /><span>golden plate<span className="brand-caption">Student-led food waste prevention</span></span></SiteLink>
-      <button ref={menuButton} className="public-menu-toggle" aria-label={open ? 'Close navigation' : 'Open navigation'} aria-expanded={open} aria-controls="public-navigation" onClick={() => setOpen(!open)}><span className="public-menu-icon" aria-hidden="true"><span /><span /><span /></span></button>
+      <div className="public-header-actions"><ThemeToggle /><button ref={menuButton} className="public-menu-toggle" aria-label={open ? 'Close navigation' : 'Open navigation'} aria-expanded={open} aria-controls="public-navigation" onClick={() => setOpen(!open)}><span className="public-menu-icon" aria-hidden="true"><span /><span /><span /></span></button></div>
       <nav id="public-navigation" className={open ? 'public-nav is-open' : 'public-nav'} aria-label="Main navigation" inert={compact && !open ? true : undefined}>
         <NavLink to={siteDestination('/about')} state={navState} onClick={close}>Our story</NavLink>
         <NavLink to={siteDestination('/how-it-works')} state={navState} onClick={close}>How it works</NavLink>

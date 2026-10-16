@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTheme } from 'next-themes'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Map as VectorMap, Marker, Popup, NavigationControl } from 'mapbox-gl/esm'
 import 'mapbox-gl/dist/mapbox-gl.css'
@@ -69,6 +70,9 @@ export default function WorldMap({
   pendingPoint = null, onMapClick, fillContainer = false, className = '',
   onPlaceSelect, initialSearchQuery = '', showSearch = true, compact = false, focusPoint = null,
 }) {
+  const { resolvedTheme } = useTheme()
+  const themeRef = useRef(resolvedTheme)
+  useEffect(() => { themeRef.current = resolvedTheme }, [resolvedTheme])
   const navigate = useNavigate()
   const location = useLocation()
   const containerRef = useRef(null)
@@ -137,7 +141,7 @@ export default function WorldMap({
     try {
       const initial = initialPoint.current
       map = new VectorMap({
-        container: containerRef.current, style: mapStyleFor(layersRef.current.basemap),
+        container: containerRef.current, style: mapStyleFor(layersRef.current.basemap, themeRef.current),
         accessToken: MAPBOX_TOKEN, worldview: MAP_WORLDVIEW, language: MAP_LANGUAGE,
         center: hasGeographicCoordinates(initial) ? [initial.longitude, initial.latitude] : [GLOBE_ORIGIN.longitude, GLOBE_ORIGIN.latitude],
         zoom: hasGeographicCoordinates(initial) ? 14 : 1.05,
@@ -155,7 +159,7 @@ export default function WorldMap({
         map.setLanguage(MAP_LANGUAGE)
         map.setProjection(projectionFor(viewRef.current))
         map.setFog({ color: '#b5e0ed', 'high-color': '#183951', 'space-color': '#071b2c', 'star-intensity': 0.15 })
-        applyBasemap(map, layersRef.current.basemap)
+        applyBasemap(map, layersRef.current.basemap, themeRef.current)
         setReady(true)
       })
       map.on('idle', () => setLoading(false))
@@ -194,9 +198,9 @@ export default function WorldMap({
   useEffect(() => {
     if (ready) {
       setMapError(false)
-      applyBasemap(mapRef.current, layers.basemap)
+      applyBasemap(mapRef.current, layers.basemap, resolvedTheme)
     }
-  }, [layers.basemap, ready])
+  }, [layers.basemap, ready, resolvedTheme])
 
   useEffect(() => {
     const map = mapRef.current

@@ -52,7 +52,7 @@ export default function SchoolMapPortal({ app }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f7f0] text-slate-900">
+    <div className="min-h-screen bg-[var(--site-paper)] text-slate-900">
       <main id="main-content" className="mx-auto max-w-[1600px] px-4 py-6 sm:px-7">
         <nav aria-label="School map tools" className="mb-6 flex items-center justify-end gap-5">
           <SiteLink to={schoolPortalUrl(window.location)} className="gp-text-link">School portal<ArrowUpRight size={15} /></SiteLink>

@@ -36,5 +36,5 @@ export default function GuestSessionBoundary({ children }) {
     return () => window.removeEventListener('pagehide', leavePage)
   }, [pathname])
 
-  return waiting ? <div className="min-h-screen flex items-center justify-center bg-[#f8f7f0] text-sm text-[#51705b]" role="status">Leaving guest view…</div> : children
+  return waiting ? <div className="min-h-screen flex items-center justify-center bg-[var(--site-paper)] text-sm text-[var(--site-muted)]" role="status">Leaving guest view…</div> : children
 }

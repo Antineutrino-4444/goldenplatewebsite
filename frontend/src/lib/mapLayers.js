@@ -26,13 +26,13 @@ export function readMapLayers(storage) {
   } catch { return { basemap: 'hybrid', showSchools: true } }
 }
 
-export function mapStyleFor(basemap) {
+export function mapStyleFor(basemap, theme = 'light') {
   const street = basemap === 'street'
   const roads = basemap !== 'satellite'
   // Use Standard imports rather than rewriting its internal boundary filters.
   // Even the quieter Satellite mode retains territorial lines and place names.
   const config = {
-    lightPreset: 'day', showPlaceLabels: true, showAdminBoundaries: true,
+    lightPreset: theme === 'dark' ? 'night' : 'day', showPlaceLabels: true, showAdminBoundaries: true,
     showPointOfInterestLabels: roads, showRoadLabels: roads, showTransitLabels: roads,
     ...(street ? { show3dObjects: false } : { showRoadsAndTransit: roads, showPedestrianRoads: roads }),
   }
@@ -40,8 +40,8 @@ export function mapStyleFor(basemap) {
     imports: [{ id: 'basemap', url: street ? STREET_STYLE : SATELLITE_STYLE, config }] }
 }
 
-export function applyBasemap(map, basemap) {
-  const style = mapStyleFor(basemap)
+export function applyBasemap(map, basemap, theme = 'light') {
+  const style = mapStyleFor(basemap, theme)
   const next = style.imports[0]
   const current = map.getStyle()?.imports?.find(({ id }) => id === 'basemap')
   if (current?.url === next.url) {

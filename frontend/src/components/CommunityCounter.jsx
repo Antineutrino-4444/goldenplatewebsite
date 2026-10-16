@@ -55,7 +55,6 @@ export default function CommunityCounter({ compact = false }) {
     {fullscreen && <button ref={exitButton} className="gp-counter-exit" data-edge-visible={exitVisible} onClick={exit}><Minimize size={18} />Exit full screen</button>}
     <div className="gp-counter-numbers" aria-label="Community totals">
       <div><span className="gp-counter-value"><span aria-hidden="true">{snapshot ? displayedCount.toLocaleString() : '—'}</span><span className="sr-only">{snapshot ? snapshot.clean_count.toLocaleString() : 'Loading'}</span></span><span className="gp-counter-unit">clean plates</span></div>
-      <div><span className="gp-counter-value">{snapshot ? snapshot.session_count.toLocaleString() : '—'}</span><span className="gp-counter-unit">sessions</span></div>
     </div>
     {snapshot && <div ref={barElement} className="gp-community-bar" data-counter-visible={seen}>
       <div className="gp-community-bar-control" role="meter" aria-label="Clean plates on an adaptive scale"

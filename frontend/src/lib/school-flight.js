@@ -1,9 +1,9 @@
 import { geoInterpolate } from 'd3-geo'
 import { GLOBE_ORIGIN } from './globe-origin.js'
 
-export const FLIGHT_TURN_MS = 1200
-export const FLIGHT_ZOOM_MS = 1200
-export const FLIGHT_SETTLE_MS = 150
+export const FLIGHT_TURN_MS = 1900
+export const FLIGHT_ZOOM_MS = 1900
+export const FLIGHT_SETTLE_MS = 200
 export const FLIGHT_DURATION_MS = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS + FLIGHT_ZOOM_MS
 const clamp = (value) => Math.max(0, Math.min(1, value))
 

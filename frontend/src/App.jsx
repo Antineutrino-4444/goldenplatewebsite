@@ -25,7 +25,7 @@ const LiveCounterPage = lazy(() => import('@/components/LiveCounterPage.jsx'))
 const CommunityCounter = lazy(() => import('@/components/CommunityCounter.jsx'))
 
 function LoadingPage() {
-  return <div className="min-h-screen bg-[#f8f7f0] flex items-center justify-center text-sm text-[#51705b]" role="status">Opening Golden Plate…</div>
+  return <div className="min-h-screen bg-[var(--site-paper)] flex items-center justify-center text-sm text-[var(--site-muted)]" role="status">Opening Golden Plate…</div>
 }
 
 function AppFrame({ app, children }) {

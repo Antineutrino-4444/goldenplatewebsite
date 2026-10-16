@@ -101,7 +101,7 @@ test('full-globe framing fits phones, landscape, tablets, desktop and resizing',
 })
 
 test('every flight starts over Jiamusi hospital, including destinations nearby', () => {
-  assert.equal(FLIGHT_DURATION_MS, 2550)
+  assert.equal(FLIGHT_DURATION_MS, 4000)
   for (const destination of [school, { longitude: 130.32, latitude: 46.81 }, { longitude: 151.2, latitude: -33.87 }]) {
     const flight = createSchoolFlight(destination)
     const opening = flight(0, 1)

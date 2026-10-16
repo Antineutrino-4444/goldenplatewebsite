@@ -34,8 +34,7 @@ in the existing API routes.
   shared. Responses use `Cache-Control: no-store`. Empty databases and failed
   requests show explicit states, never historical or fabricated totals.
 - The compact live counter on the homepage polls
-  `/api/public/counter` every five seconds. It shows only clean plates and
-  sessions: all-time combined totals from **all schools**, including private
+  `/api/public/counter` every five seconds. It shows only clean plates, with no session-count metric: all-time combined totals from **all schools**, including private
   sessions and disabled schools' historical sessions, excluding discarded
   sessions. Faculty clean plates are included. It uses the same saved counts
   as session dashboards and publishes no per-school breakdown, people, rates,
@@ -171,10 +170,10 @@ the existing public school list and matches the authenticated school ID. The
 full-screen Mapbox globe uses the school map's Hybrid basemap, English labels and
 CN worldview, without changing saved map preferences. All flights start above
 Jiamusi Maternal and Child Health Hospital (佳木斯市妇幼保健院), at WGS84
-130.3128° E, 46.80853° N. After a 150ms opening beat, the globe follows a shortest
-spherical route for 1.2 seconds with quintic ease-in/out. Zoom stays fixed during
+130.3128° E, 46.80853° N. After a 200ms opening beat, the globe follows a shortest
+spherical route for 1.9 seconds with quintic ease-in/out. Zoom stays fixed during
 the turn and is sized against the viewport's smaller dimension, so the whole
-globe remains visible. Then a 1.2-second quadratic zoom accelerates toward the school.
+globe remains visible. Then a 1.9-second quadratic zoom accelerates toward the school.
 The final 28% of
 the zoom crossfades to the actual recorder mounted beneath the map; it does not
 shrink or clip an SVG within a small square. The map can naturally fill the screen
@@ -323,8 +322,8 @@ without horizontal overflow or console warnings. Blocking the globe module
 confirmed that the portal still opens. Timing tests simulate an 11-second load
 followed by the complete camera sequence, plus failed-load and unmount exits.
 
-The subsequent speed update reduces camera playback from 5.5 seconds to 2.55
-seconds (150ms initial hold, 1.2-second turn, 1.2-second zoom). All visitors now
+Camera playback now takes 4 seconds
+(200ms initial hold, 1.9-second turn, 1.9-second zoom). All visitors now
 start above Jiamusi Maternal and Child Health Hospital, replacing IP lookup and
 the previous nearby-school shortcut. The public landing globe, default school
 map/globe view, and world reset use the same hospital orientation. Explicit school
@@ -338,3 +337,10 @@ Loading deadlines, easing, English labels, territorial worldview, and portal fad
 remain in place. Tests cover the fixed opening view for Canadian, nearby Chinese,
 and southern-hemisphere schools, spherical travel across the date line, and the
 complete camera sequence.
+
+## Appearance
+
+A shared light/dark/device appearance menu is available in public and portal
+headers. Theme tokens cover public pages, forms, recorder surfaces, dialogs,
+counters, and map controls; map lighting responds without resetting the camera.
+See [dark mode implementation and QA](dark-mode.md).

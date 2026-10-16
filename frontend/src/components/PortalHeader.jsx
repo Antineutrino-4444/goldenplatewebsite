@@ -1,4 +1,5 @@
 import { Building2, MapPinned, Utensils } from 'lucide-react'
+import ThemeToggle from '@/components/ThemeToggle.jsx'
 import AccountMenu from '@/components/AccountMenu.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { NavLink } from 'react-router-dom'
@@ -13,23 +14,24 @@ export default function PortalHeader({ app, interschool = false }) {
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <Link to="/" aria-label="Golden Plate home" className="text-2xl font-bold tracking-tight text-amber-600">PLATE</Link>
+            <Link to="/" aria-label="Golden Plate home" className="whitespace-nowrap text-xl font-bold tracking-tight text-amber-600 sm:text-2xl">PLATE</Link>
             <p className="sr-only mt-1 text-sm leading-relaxed text-slate-500 md:not-sr-only">
               {interschool ? 'Inter-School Control Center' : 'Prevention, Logging & Assessment of Tossed Edibles'}
             </p>
           </div>
           <nav aria-label="Portal navigation" className="flex shrink-0 items-center gap-2 sm:gap-3">
             {!interschool && <Button asChild variant="ghost" className="h-10 whitespace-nowrap px-2 text-slate-600 sm:px-3">
-              <Link to="/live-counter"><Utensils className="h-4 w-4" aria-hidden="true" />
+              <Link to="/live-counter"><Utensils className="hidden h-4 w-4 min-[420px]:block" aria-hidden="true" />
                 <span className="sm:hidden">Live</span><span className="hidden sm:inline">Live counter</span>
               </Link>
             </Button>}
             {!interschool && <Button asChild variant="ghost" className="h-10 whitespace-nowrap px-2 text-slate-600 sm:px-3">
               <Link to="/map">
-                <MapPinned className="h-4 w-4" aria-hidden="true" />
+                <MapPinned className="hidden h-4 w-4 min-[420px]:block" aria-hidden="true" />
                 <span className="sm:hidden">Map</span><span className="hidden sm:inline">School map</span>
               </Link>
             </Button>}
+            <ThemeToggle />
             <AccountMenu key={app.user?.id || app.user?.username} app={app} />
           </nav>
         </div>

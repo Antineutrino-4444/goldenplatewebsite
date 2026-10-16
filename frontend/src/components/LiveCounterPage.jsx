@@ -65,7 +65,7 @@ export default function LiveCounterPage() {
     finally { setBusy(false) }
   }
 
-  return <div ref={root} tabIndex={-1} className={fullscreen ? 'fixed inset-0 z-40 h-dvh overflow-y-auto bg-emerald-950 text-white outline-none' : 'min-h-screen bg-[#f8f7f0] text-slate-900'}>
+  return <div ref={root} tabIndex={-1} className={fullscreen ? 'fixed inset-0 z-40 h-dvh overflow-y-auto bg-emerald-950 text-white outline-none' : 'min-h-screen bg-[var(--site-paper)] text-slate-900'}>
     {fullscreen && currentRange ? <main>
       <Button ref={exitButton} variant="ghost" data-edge-visible={exitVisible}
         className={`counter-fullscreen-exit fixed right-4 top-4 z-10 bg-white/10 text-white hover:bg-white/20 hover:text-white ${exitVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}

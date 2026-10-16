@@ -73,3 +73,23 @@ test('Street View links use geographic coordinates and never invent an unmapped 
   assert.equal(streetViewUrl({ latitude: null, longitude: null }), null)
   assert.equal(streetViewUrl({ latitude: 91, longitude: 0 }), null)
 })
+
+test('dark map lighting preserves labels, boundaries, imagery and the current map', () => {
+  for (const mode of ['street', 'satellite', 'hybrid']) {
+    const light = mapStyleFor(mode)
+    const dark = mapStyleFor(mode, 'dark')
+    assert.equal(dark.imports[0].config.lightPreset, 'night')
+    assert.equal(light.imports[0].config.lightPreset, 'day')
+    assert.equal(dark.imports[0].url, light.imports[0].url)
+    assert.equal(dark.imports[0].config.showAdminBoundaries, true)
+    assert.equal(dark.imports[0].config.showPlaceLabels, true)
+  }
+  let calls = 0
+  const map = {
+    getStyle: () => mapStyleFor('hybrid'),
+    setConfig: (_id, config) => { calls++; assert.equal(config.lightPreset, 'night') },
+    setStyle: () => assert.fail('Theme changes should keep the current map and camera'),
+  }
+  applyBasemap(map, 'hybrid', 'dark')
+  assert.equal(calls, 1)
+})
