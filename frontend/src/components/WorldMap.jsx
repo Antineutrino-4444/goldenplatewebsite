@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Map as VectorMap, Marker, Popup, NavigationControl } from 'mapbox-gl/esm'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { Globe2, Map as MapIcon, RotateCcw, LocateFixed, Layers3, Check, PersonStanding, ExternalLink, X } from 'lucide-react'
 import './WorldMap.css'
 import PlaceSearch from '@/components/PlaceSearch.jsx'
 import EnglishScaleControl from '@/lib/EnglishScaleControl.js'
-import { maxSchoolSessions, schoolActivity, schoolSessionLabel } from '@/lib/schoolMap.js'
+import { maxSchoolSessions, schoolActivity, schoolGuestPath, schoolSessionLabel } from '@/lib/schoolMap.js'
+import { originState, siteDestination } from '@/components/SiteLink.jsx'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover.jsx'
 import { hasGeographicCoordinates, wrapLongitude } from '@/lib/mapCoordinates.js'
 import { MAP_VIEW_EVENT, MAP_VIEW_KEY, projectionFor, readMapView, schoolBounds } from '@/lib/mapView.js'
@@ -27,8 +29,21 @@ function markerElement(name, selected = false, pending = false) {
   return element
 }
 
-function popupContent(point) {
-  const content = document.createElement('div')
+function popupContent(point, onOpenSchool) {
+  const path = point.type === 'school' ? schoolGuestPath(point) : null
+  const content = document.createElement(path ? 'a' : 'div')
+  if (path) {
+    content.href = siteDestination(path)
+    content.className = 'world-map-school-link'
+    content.setAttribute('aria-label', `View ${point.name} as a guest`)
+    content.addEventListener('click', (event) => {
+      event.stopPropagation()
+      if (onOpenSchool && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && new URL(content.href).origin === window.location.origin) {
+        event.preventDefault()
+        onOpenSchool(path)
+      }
+    })
+  }
   const name = document.createElement('strong')
   name.textContent = point.name || point.location_name || 'Selected location'
   const address = document.createElement('p')
@@ -38,6 +53,12 @@ function popupContent(point) {
     const activity = document.createElement('p')
     activity.textContent = schoolSessionLabel(point.session_count)
     content.append(activity)
+    if (path) {
+      const action = document.createElement('span')
+      action.className = 'world-map-guest-action'
+      action.textContent = 'Open guest view →'
+      content.append(action)
+    }
   }
   return content
 }
@@ -47,9 +68,13 @@ export default function WorldMap({
   pendingPoint = null, onMapClick, fillContainer = false, className = '',
   onPlaceSelect, initialSearchQuery = '', showSearch = true, compact = false, focusPoint = null,
 }) {
+  const navigate = useNavigate()
+  const location = useLocation()
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const callbacks = useRef({ onMapClick, onSelectPin })
+  const openSchool = useRef(null)
+  useEffect(() => { openSchool.current = (path) => navigate(path, { state: originState(location) }) }, [navigate, location])
   const initialPoint = useRef(pendingPoint)
   const [view, setView] = useState(() => { try { return readMapView(window.localStorage) } catch { return 'globe' } })
   const viewRef = useRef(view)
@@ -126,6 +151,7 @@ export default function WorldMap({
       map.addControl(new EnglishScaleControl({ maxWidth: 100 }), 'bottom-left')
       map.on('style.load', () => {
         map.setWorldview(MAP_WORLDVIEW)
+        map.setLanguage(MAP_LANGUAGE)
         map.setProjection(projectionFor(viewRef.current))
         map.setFog({ color: '#b5e0ed', 'high-color': '#183951', 'space-color': '#071b2c', 'star-intensity': 0.15 })
         applyBasemap(map, layersRef.current.basemap)
@@ -193,7 +219,7 @@ export default function WorldMap({
       element.addEventListener('click', (event) => { event.stopPropagation(); callbacks.current.onSelectPin?.(pin.id) })
       markers.push(new Marker({ element, anchor: 'bottom' }).setLngLat([pin.longitude, pin.latitude]).addTo(map))
       if (pin.id === selectedPinId) popups.push(new Popup({ offset: isSchool ? activity.height - 8 : 34, closeButton: false })
-        .setLngLat([pin.longitude, pin.latitude]).setDOMContent(popupContent(pin)).addTo(map))
+        .setLngLat([pin.longitude, pin.latitude]).setDOMContent(popupContent(pin, (path) => openSchool.current?.(path))).addTo(map))
     }
     if (hasGeographicCoordinates(pendingPoint)) {
       const element = markerElement('Selected school location', false, true)

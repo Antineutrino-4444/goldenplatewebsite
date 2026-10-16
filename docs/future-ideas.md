@@ -2,7 +2,7 @@
 
 ## Globe login and flight into the school
 
-Recorded October 15, 2026. **Idea only — do not implement yet.**
+Recorded October 15, 2026. **Implemented October 16, 2026, following the website development request.**
 
 Replace the login screen with a globe, with a clear area for entering login
 credentials. After successful authentication, animate the globe toward the
@@ -16,4 +16,6 @@ reduced-motion or skip option. Schools choosing to remain unmapped need a gracef
 transition into their portal without inventing or revealing a location.
 
 This is separate from the current public school map's globe/flat display modes.
-The login screen and post-login transition remain unchanged for now.
+The dedicated `/login` page now offers a short post-login globe flight for mapped
+school accounts, with immediate skip, reduced-motion support, and a deadline. See
+[landing-page.md](landing-page.md) for the implementation and verification notes.

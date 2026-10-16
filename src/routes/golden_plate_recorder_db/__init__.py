@@ -16,6 +16,7 @@ from . import live_counter_routes  # noqa: F401
 from . import notification_routes  # noqa: F401
 from . import admin_routes  # noqa: F401
 from . import session_routes  # noqa: F401
+from . import public_session_routes  # noqa: F401
 from . import session_export_routes  # noqa: F401
 from . import record_exclusion_routes  # noqa: F401
 from . import csv_routes  # noqa: F401

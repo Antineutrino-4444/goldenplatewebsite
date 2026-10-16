@@ -27,6 +27,7 @@ from .users import readable_user_label, user_labels_for_school
 from .draw_db import record_draw_event
 from .house_scoring import house_score_settings
 from .clean_percentage_estimation import estimate_session_percentages
+from .session_metrics import session_metrics
 from .roster_history import current_roster_snapshot, match_session_to_current_roster, prepare_recording_roster
 from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
 from .storage import (
@@ -659,19 +660,6 @@ def get_session_status():
     if is_guest() and not db_sess.is_public:
         return jsonify({'error': 'Access denied'}), 403
 
-    # Use cached counts from session table
-    clean_count = db_sess.clean_number or 0
-    dirty_count = db_sess.dirty_number or 0
-    red_count = db_sess.red_number or 0
-    faculty_clean_count = db_sess.faculty_number or 0
-    
-    combined_dirty_count = dirty_count + red_count
-    combined_clean_count = clean_count + faculty_clean_count
-    total_recorded = combined_clean_count + combined_dirty_count
-
-    clean_percentage = (combined_clean_count / total_recorded * 100) if total_recorded > 0 else 0
-    dirty_percentage = (combined_dirty_count / total_recorded * 100) if total_recorded > 0 else 0
-
     # Get scan history count and draw_info from JSON storage for backward compatibility
     json_data = session_data.get(session_id, {})
     if json_data.get('school_id') and json_data.get('school_id') != school_id:
@@ -685,14 +673,7 @@ def get_session_status():
         'session_id': session_id,
         'session_name': db_sess.session_name,
         'owner': readable_user_label(db_sess.created_by, school_id=school_id),
-        'clean_count': clean_count,
-        'dirty_count': dirty_count,
-        'red_count': red_count,
-        'combined_dirty_count': combined_dirty_count,
-        'faculty_clean_count': faculty_clean_count,
-        'total_recorded': total_recorded,
-        'clean_percentage': round(clean_percentage, 1),
-        'dirty_percentage': round(dirty_percentage, 1),
+        **session_metrics(db_sess),
         'scan_history_count': scan_history_count,
         'is_discarded': db_sess.status == 'discarded',
         'draw_info': draw_info,

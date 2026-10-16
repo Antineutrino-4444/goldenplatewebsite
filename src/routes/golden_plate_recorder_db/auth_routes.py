@@ -98,6 +98,14 @@ def logout():
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
 
 
+@recorder_bp.route('/auth/guest/logout', methods=['POST'])
+def guest_logout():
+    """End a page-scoped guest visit without signing out a real account."""
+    if is_guest():
+        return logout()
+    return jsonify({'status': 'success'}), 200
+
+
 @recorder_bp.route('/auth/guest', methods=['POST'])
 def guest_login():
     """Guest login - allows viewing sessions without signup."""
@@ -144,6 +152,8 @@ def guest_login():
 @recorder_bp.route('/auth/signup', methods=['POST'])
 def signup():
     """User signup - creates a pending account request for superadmin approval."""
+    if require_auth() or is_guest():
+        return jsonify({'error': 'Unable to sign up while signed in. Please log out and try again.', 'code': 'already_authenticated'}), 409
     data = request.get_json() or {}
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()

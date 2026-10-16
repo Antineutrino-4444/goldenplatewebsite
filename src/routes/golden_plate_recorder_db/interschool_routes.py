@@ -27,7 +27,7 @@ from .email_service import (
     verify_code as verify_email_code,
 )
 from .passwords import hash_password, is_password_hash
-from .security import get_current_user, is_interschool_user, require_auth
+from .security import get_current_user, is_guest, is_interschool_user, require_auth
 from .users import (
     create_school_invite_code_record,
     get_school_invite_code_record,
@@ -237,6 +237,8 @@ def verify_email_code_endpoint():
 @recorder_bp.route('/auth/register-school', methods=['POST'])
 def register_school():
     """Submit a school registration request for interschool admin approval."""
+    if require_auth() or is_guest():
+        return jsonify({'error': 'Unable to sign up while signed in. Please log out before registering a school.', 'code': 'already_authenticated'}), 409
     data = request.get_json(silent=True) or {}
     email = (data.get('email') or '').strip()
     school_name = (data.get('school_name') or '').strip()

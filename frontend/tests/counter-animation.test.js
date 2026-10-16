@@ -1,15 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { counterAnimationValue, crossedMilestone, counterBarLayout } from '../src/lib/counter-animation.js'
+import { counterAnimationValue, crossedMilestone, counterBarLayout, communityBarLayout } from '../src/lib/counter-animation.js'
 
-test('count rises quickly then slows and finishes exactly at the total', () => {
+test('count starts slowly, accelerates through the middle, and finishes slowly at the exact total', () => {
   const values = [0, 0.25, 0.5, 0.75, 1].map((progress) => counterAnimationValue(0, 10000, progress))
   assert.equal(values[0], 0)
   assert.equal(values[4], 10000)
   const increments = values.slice(1).map((value, index) => value - values[index])
-  assert.ok(increments.every((value, index) => index === 0 || value < increments[index - 1]))
+  assert.ok(increments[0] < increments[1])
+  assert.ok(increments[3] < increments[2])
+  assert.equal(values[2], 5000)
   assert.equal(counterAnimationValue(0, 10000, -1), 0)
   assert.equal(counterAnimationValue(0, 10000, 2), 10000)
+})
+
+test('community bar grows without a goal and compresses its ruler as totals increase', () => {
+  let previous = communityBarLayout(0)
+  assert.equal(previous.width, 0)
+  for (const count of [1, 10, 100, 1000, 10000, 1000000, 1000000000]) {
+    const layout = communityBarLayout(count)
+    assert.ok(layout.width > previous.width && layout.width < 100)
+    assert.ok(layout.scale > previous.scale && layout.scale > count)
+    assert.equal(layout.ticks[0].value, 0)
+    assert.equal(layout.ticks.at(-1).value, layout.scale)
+    assert.ok(layout.ticks.every((tick) => tick.position >= 0 && tick.position <= 100))
+    previous = layout
+  }
+  assert.deepEqual(communityBarLayout(-1), communityBarLayout(0))
 })
 
 test('live count transitions can increase or decrease without overshooting', () => {

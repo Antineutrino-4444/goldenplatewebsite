@@ -16,9 +16,9 @@ test('maps always start in hybrid while preserving the school-pin preference', (
   } }), { basemap: 'hybrid', showSchools: false })
 })
 
-test('every Mapbox presentation retains place names and boundaries', () => {
+test('every Mapbox presentation uses English with the CN worldview and retains boundaries', () => {
   assert.equal(MAP_WORLDVIEW, 'CN')
-  assert.equal(MAP_LANGUAGE, 'zh-Hans')
+  assert.equal(MAP_LANGUAGE, 'en')
   for (const mode of ['street', 'hybrid', 'satellite']) {
     const style = mapStyleFor(mode)
     const basemap = style.imports[0]
@@ -69,6 +69,7 @@ test('Street View links use geographic coordinates and never invent an unmapped 
   assert.equal(link.searchParams.get('api'), '1')
   assert.equal(link.searchParams.get('map_action'), 'pano')
   assert.equal(link.searchParams.get('viewpoint'), '44.01213,-79.47816')
+  assert.equal(link.searchParams.get('hl'), 'en')
   assert.equal(streetViewUrl({ latitude: null, longitude: null }), null)
   assert.equal(streetViewUrl({ latitude: 91, longitude: 0 }), null)
 })

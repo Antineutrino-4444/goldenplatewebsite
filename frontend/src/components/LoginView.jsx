@@ -6,7 +6,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 
+function SignupPageContent({ children }) {
+  return <Card className="w-full max-w-md"><CardContent className="space-y-4 pt-6">{children}</CardContent></Card>
+}
+
 function LoginView({ app }) {
+  const SignupContent = app.signupPage ? SignupPageContent : DialogContent
   const {
     loginUsername,
     setLoginUsername,
@@ -48,7 +53,7 @@ function LoginView({ app }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-3 sm:p-4">
-      <Card className="w-full max-w-md">
+      {!app.signupPage && <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
             PLATE
@@ -63,6 +68,7 @@ function LoginView({ app }) {
             <Input
               id="username"
               type="text"
+              autoComplete="username"
               placeholder="Enter username"
               value={loginUsername}
               onChange={(e) => setLoginUsername(e.target.value)}
@@ -74,6 +80,7 @@ function LoginView({ app }) {
             <Input
               id="password"
               type="password"
+              autoComplete="current-password"
               placeholder="Enter password"
               value={loginPassword}
               onChange={(e) => setLoginPassword(e.target.value)}
@@ -117,7 +124,7 @@ function LoginView({ app }) {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
       <Dialog
         open={showGuestSchoolDialog}
@@ -183,7 +190,7 @@ function LoginView({ app }) {
         open={showSignupDialog}
         onOpenChange={handleSignupDialogChange}
       >
-        <DialogContent dismissOnOverlayClick={false} className="max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
+        <SignupContent dismissOnOverlayClick={false} className="max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Request Account</DialogTitle>
             <DialogDescription>
@@ -300,7 +307,7 @@ function LoginView({ app }) {
               </Button>
             </div>
           </div>
-        </DialogContent>
+        </SignupContent>
       </Dialog>
     </div>
   )

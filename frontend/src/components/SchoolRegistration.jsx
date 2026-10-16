@@ -64,11 +64,11 @@ function SchoolRegistration({ app }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-3 sm:p-4">
+    <div className="school-registration flex items-center justify-center px-4 py-10 sm:py-14">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">
-            Register Your School
+          <CardTitle className="text-2xl sm:text-3xl font-bold text-[#183b2f]">
+            <h1>Register Your School</h1>
           </CardTitle>
           <CardDescription className="text-gray-600 mt-2 text-sm">
             Submit your school registration request for PLATE administrator approval.

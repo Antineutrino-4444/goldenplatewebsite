@@ -93,8 +93,9 @@ server or production deployment. A key in the root backend `.env` is not read by
 Vite. Without a token, the map shows a setup message while school search, lists
 and details remain public. Never use a secret (`sk.`) token in the frontend.
 
-The map explicitly uses Mapbox's **China (`CN`) worldview** and Simplified
-Chinese labels (`zh-Hans`, with Mapbox's available-name fallbacks). It uses
+The map explicitly uses Mapbox's **China (`CN`) worldview** and **English
+labels (`en`)** worldwide. Places without an English name fall back to their
+local name, rather than globally translating the map into Chinese. It uses
 Mapbox Standard for Street and Standard Satellite for Hybrid/Satellite, retaining
 their native boundary presentation and attribution. These settings persist
 across style/projection changes and apply to location pickers too. Satellite
@@ -402,5 +403,74 @@ Superadmins can exclude a session using **Discard Session** in the **Session Das
 
 ## Future product ideas
 
-See [future-ideas.md](docs/future-ideas.md) for the globe login and school flight
-transition idea. It is recorded only; the login experience is unchanged.
+The lightweight globe login transition is implemented. See
+[landing-page.md](docs/landing-page.md) for public routes, media sources, and the
+transition’s accessibility and fallback behavior.
+
+
+## Public landing page and navigation
+
+The main domain now opens the public Golden Plate landing page at `/`, including
+case-study photos, initiative information, platform features, public school pins,
+and YouTube, Spotify, and Instagram media. The public pages are `/about`,
+`/how-it-works`, `/getting-started`, and `/stories`. Existing map subdomains keep
+their map at `/`.
+
+How it works introduces the initiative, school routine and recognition model.
+Getting started is a separate, detailed website guide covering registration,
+account approval, roles, student/teacher roster formats, lunch sessions, plate
+recording, result review, draws, guest access and displays. It includes fictional
+student and teacher CSV templates. Both pages offer initiative/website help via
+Matthew Jaekel and SAC's published office contacts, with professional profile and
+source links. Promotional student quotations come from owner-supplied formal
+writing; the private writing archive is not published.
+
+School accounts sign in at `/login`. `/signup` opens the account request form;
+`/register` opens school registration. The school workspace lives at `/portal`,
+with full-page session insights at `/portal/dashboard` and school administration
+at `/portal/admin`. Inter-school accounts use `/interschool`. `/map` and
+`/live-counter` remain public. Session operations and confirmations retain their
+existing controls. Authentication redirects accept supported local destinations
+only; guests and school roles retain the server's existing access checks.
+
+The product preview renders the actual dashboard metrics for a random public,
+non-discarded session, with a read-only guest link to that exact session. Its
+privacy rules apply even without a login. The compact community counter shows
+all-time clean plates and session totals across **all schools**, including private
+sessions in the aggregate, with discarded sessions excluded. It refreshes every
+five seconds and opens the larger `/live-counter/community` display. No rates or
+goals appear in this community counter; the existing `/live-counter` school view
+retains its settings. Public destinations share a persistent header and a return
+link to their source page, with reduced-motion-aware page transitions.
+
+School pin popups, the selected-school details, and the landing globe's school
+callout link to `/guest/schools/:schoolId`. This entry uses the existing
+`/api/auth/guest` sign-in and post-auth initialization, then opens the normal
+`/portal` as that school's Guest User. It uses the established session switcher,
+guest privacy settings and read-only controls. As with guest sign-in from the
+login form, this switches the browser's current account into guest mode. The
+portal's School map link provides the return path.
+
+On a fresh school-account login to the recorder, the full-screen Mapbox satellite
+globe travels from the visitor's approximate IP location to the school's saved
+public pin. It uses the same Hybrid basemap, English labels, and CN worldview as
+the school map. The whole globe fits the viewport during a 2.8-second spherical
+turn with a slow start and finish; a separate 2.4-second accelerating zoom then
+fades into the recording page, already loaded underneath. The animation skips
+unknown/unmapped locations, guests, inter-school accounts, reduced motion, and
+deep links to other destinations. Restored sessions do not replay it. Continue or
+Escape skips immediately; unavailable Mapbox configuration/WebGL also bypasses it.
+Map loading has a 6.5-second deadline and the entire optional arrival is bounded
+by an independent 14-second timeout.
+
+IP orientation uses [IPWho.is](https://ipwhois.io/documentation) over HTTPS with
+only success/latitude/longitude requested, credentials omitted, and no referrer.
+It requests no GPS permission and sends no account information. Rounded
+coordinates are cached only in page memory. A 1.2-second timeout or blocked lookup
+falls back to the normal world view. The provider currently allows 1,000 free
+requests per domain per day; failure or rate limiting never blocks login. The
+lightweight landing-page globe continues to use local Natural Earth outlines.
+
+Run `cd frontend && npm run build` to rebuild the Flask-served frontend, including
+its public media assets. See [landing-page.md](docs/landing-page.md) for source
+attribution and media verification notes.

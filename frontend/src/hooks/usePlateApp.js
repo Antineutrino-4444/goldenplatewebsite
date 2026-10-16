@@ -1,7 +1,9 @@
+import { dashboardMetrics } from '@/lib/session-metrics.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { makeStudentKey, normalizeName, sanitizeSelection } from '@/lib/names.js'
 import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
 import { recordSuccessMessage, submitRecordRequest } from '@/lib/record-submission.js'
+import { guestSession } from '@/lib/guest-session.js'
 
 const API_BASE = '/api'
 
@@ -20,6 +22,8 @@ export function usePlateApp() {
   // Authentication state
   const [user, setUser] = useState(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authReady, setAuthReady] = useState(false)
+  const [loginFlight, setLoginFlight] = useState(false)
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [showLoginDialog, setShowLoginDialog] = useState(false)
@@ -212,28 +216,7 @@ export function usePlateApp() {
     return Array.from(combined.values())
   }, [drawSummary, studentNames])
 
-  const sessionDashboardStats = useMemo(() => {
-    const studentCleanCount = Number(sessionStats.clean_count ?? 0)
-    const dirtyCount = Number(sessionStats.dirty_count ?? 0)
-    const redCount = Number(sessionStats.red_count ?? 0)
-    const combinedDirty = Number(sessionStats.combined_dirty_count ?? (dirtyCount + redCount))
-    const facultyCount = Number(sessionStats.faculty_clean_count ?? 0)
-    const cleanCount = studentCleanCount + facultyCount
-    const totalRecorded = studentCleanCount + dirtyCount + redCount + facultyCount
-    const cleanPercentage = totalRecorded ? (cleanCount / totalRecorded) * 100 : 0
-    const dirtyPercentage = totalRecorded ? (combinedDirty / totalRecorded) * 100 : 0
-
-    return {
-      cleanCount,
-      dirtyCount,
-      redCount,
-      combinedDirty,
-      facultyCount,
-      totalRecorded,
-      cleanPercentage,
-      dirtyPercentage
-    }
-  }, [sessionStats])
+  const sessionDashboardStats = useMemo(() => dashboardMetrics(sessionStats), [sessionStats])
 
   const dashboardWinner = useMemo(() => {
     const drawInfo = drawSummary?.draw_info ?? sessionStats.draw_info ?? null
@@ -552,8 +535,10 @@ export function usePlateApp() {
   }
 
   const checkAuthStatus = async () => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
     try {
-      const response = await fetch(`${API_BASE}/auth/status`)
+      const response = await fetch(`${API_BASE}/auth/status`, { signal: controller.signal })
       if (response.ok) {
         const data = await response.json()
         if (data.authenticated) {
@@ -564,6 +549,9 @@ export function usePlateApp() {
       }
     } catch (error) {
       console.error('Auth check failed:', error)
+    } finally {
+      clearTimeout(timeout)
+      setAuthReady(true)
     }
   }
 
@@ -586,6 +574,7 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
+        setLoginFlight(data.user?.role !== 'inter_school')
         setUser(data.user)
         setIsAuthenticated(true)
         setLoginUsername('')
@@ -602,43 +591,47 @@ export function usePlateApp() {
     }
   }
 
-  const guestLogin = async () => {
+  const guestLogin = async ({ schoolId } = {}) => {
     const trimmedCode = guestSchoolCode.trim()
-    if (!trimmedCode) {
+    if (!schoolId && !trimmedCode) {
       showMessage('Enter a school code to continue as guest', 'error')
-      return
+      return false
     }
 
-    const payload = { school_code: trimmedCode, school_slug: trimmedCode }
+    const payload = schoolId ? { school_id: schoolId } : { school_code: trimmedCode, school_slug: trimmedCode }
 
     setIsLoading(true)
     try {
-      const response = await fetch(`${API_BASE}/auth/guest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      return await guestSession.enter(payload, async (response) => {
+        const data = await response.json()
+        if (response.ok) {
+          setLoginFlight(false)
+          setUser(data.user)
+          setIsAuthenticated(true)
+          showMessage('Welcome, Guest! You can view sessions but cannot create or modify them.', 'info')
+          setGuestSchoolCode('')
+          setShowGuestSchoolDialog(false)
+          await handlePostAuth(data.user)
+          return true
+        } else {
+          showMessage(data.error || 'Guest login failed', 'error')
+        }
+        return false
       })
-
-      const data = await response.json()
-      if (response.ok) {
-        setUser(data.user)
-        setIsAuthenticated(true)
-        showMessage('Welcome, Guest! You can view sessions but cannot create or modify them.', 'info')
-        setGuestSchoolCode('')
-        setShowGuestSchoolDialog(false)
-        await handlePostAuth(data.user)
-      } else {
-        showMessage(data.error || 'Guest login failed', 'error')
-      }
     } catch (error) {
       showMessage('Guest login failed. Please try again.', 'error')
     } finally {
       setIsLoading(false)
     }
+    return false
   }
 
   const signup = async () => {
     if (protectedRequestBusy.current) return
+    if (isAuthenticated) {
+      showMessage('Unable to sign up while signed in. Please log out and try again.', 'error', 'large')
+      return
+    }
     const trimmedInviteCode = signupInviteCode.trim()
     const usingInvite = signupMode === 'invite'
 
@@ -703,8 +696,9 @@ export function usePlateApp() {
         setSignupInviteCode('')
         setSignupMode('school')
         setShowSignupDialog(false)
+        return true
       } else {
-        showMessage(data.error || 'Signup failed', 'error')
+        showMessage(data.error || 'Signup failed', 'error', data.code === 'already_authenticated' ? 'large' : 'small')
       }
     } catch (error) {
       showMessage(recaptchaErrorMessage(error, 'Signup failed. Please try again.'), 'error')
@@ -716,6 +710,10 @@ export function usePlateApp() {
 
   const registerSchool = async () => {
     if (protectedRequestBusy.current) return
+    if (isAuthenticated) {
+      showMessage('Unable to sign up while signed in. Please log out before registering a school.', 'error', 'large')
+      return
+    }
     const trimmedEmail = schoolEmail.trim()
     const trimmedSchoolName = schoolName.trim()
     const trimmedCode = schoolCode.trim()
@@ -796,8 +794,9 @@ export function usePlateApp() {
         showMessage(data.message || 'School registration request submitted! Please wait for approval.', 'success')
         setShowSchoolRegistration(false)
         resetSchoolRegistrationForm()
+        return true
       } else {
-        showMessage(data.error || 'Failed to submit registration request', 'error')
+        showMessage(data.error || 'Failed to submit registration request', 'error', data.code === 'already_authenticated' ? 'large' : 'small')
       }
     } catch (error) {
       showMessage(recaptchaErrorMessage(error, 'Failed to submit registration request. Please try again.'), 'error')
@@ -809,7 +808,8 @@ export function usePlateApp() {
 
   const logout = async () => {
     try {
-      await fetch(`${API_BASE}/auth/logout`, { method: 'POST' })
+      const response = await fetch(`${API_BASE}/auth/logout`, { method: 'POST' })
+      if (!response.ok) throw new Error('Logout request failed')
       setUser(null)
       setIsAuthenticated(false)
       setSessionId(null)
@@ -855,8 +855,10 @@ export function usePlateApp() {
       setShowSchoolRegistration(false)
       resetSchoolRegistrationForm()
       showMessage('Logged out successfully', 'info')
+      return true
     } catch (error) {
       showMessage('Logout failed', 'error')
+      return false
     }
   }
 
@@ -2467,6 +2469,9 @@ export function usePlateApp() {
   return {
     // state
     appEnvironment,
+    authReady,
+    loginFlight,
+    setLoginFlight,
     user,
     setUser,
     isAuthenticated,

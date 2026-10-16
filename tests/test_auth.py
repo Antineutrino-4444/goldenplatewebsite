@@ -253,3 +253,61 @@ def test_guest_login_with_slug(client):
 def test_guest_login_invalid_slug(client):
     resp = client.post('/api/auth/guest', json={'school_slug': 'missing-school'})
     assert resp.status_code == 404
+
+
+def test_guest_exit_clears_guest_cookie_and_selected_session(client):
+    client.post('/api/auth/guest', json={'school_slug': DEFAULT_SCHOOL_SLUG})
+    with client.session_transaction() as cookie:
+        cookie['session_id'] = 'old-guest-session'
+    assert client.post('/api/auth/guest/logout').status_code == 200
+    assert client.get('/api/auth/status').get_json()['authenticated'] is False
+    with client.session_transaction() as cookie:
+        assert 'guest_access' not in cookie
+        assert 'school_id' not in cookie
+        assert 'session_id' not in cookie
+    assert client.post('/api/auth/guest/logout').status_code == 200
+
+
+def test_guest_exit_does_not_log_out_a_school_account(client, login):
+    assert login().status_code == 200
+    before = client.get('/api/auth/status').get_json()['user']
+    assert client.post('/api/auth/guest/logout').status_code == 200
+    after = client.get('/api/auth/status').get_json()
+    assert after['authenticated'] is True
+    assert after['user'] == before
+
+
+def test_signup_and_school_registration_reject_active_guest_sessions(client, email_outbox):
+    client.post('/api/auth/guest', json={'school_slug': DEFAULT_SCHOOL_SLUG})
+    for endpoint in ['/api/auth/signup', '/api/auth/register-school']:
+        response = client.post(endpoint, json={})
+        assert response.status_code == 409
+        assert response.get_json()['code'] == 'already_authenticated'
+        assert 'log out' in response.get_json()['error']
+    assert email_outbox == []
+
+
+def test_signup_and_school_registration_reject_signed_in_accounts(client, login, email_outbox):
+    login()
+    for endpoint in ['/api/auth/signup', '/api/auth/register-school']:
+        response = client.post(endpoint, json={})
+        assert response.status_code == 409
+        assert response.get_json()['code'] == 'already_authenticated'
+        assert 'log out' in response.get_json()['error']
+    assert email_outbox == []
+
+
+def test_guest_login_by_pin_school_id_enters_existing_read_only_mode(client, login):
+    assert login().status_code == 200
+    response = client.post('/api/auth/guest', json={'school_id': DEFAULT_SCHOOL_ID})
+    assert response.status_code == 200
+    assert response.get_json()['user']['role'] == 'guest'
+    status = client.get('/api/auth/status').get_json()
+    assert status['authenticated'] is True
+    assert status['user']['school_id'] == DEFAULT_SCHOOL_ID
+    assert status['user']['role'] == 'guest'
+    with client.session_transaction() as cookie:
+        assert cookie['guest_access'] is True
+        assert 'user_id' not in cookie
+        assert 'password_token' not in cookie
+    assert client.post('/api/session/create', json={'session_name': 'Guest must not create'}).status_code == 401

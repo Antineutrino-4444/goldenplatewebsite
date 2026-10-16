@@ -119,9 +119,9 @@ target; neither the website nor the external demo is certified by this review.
 ## Integration acceptance steps
 
 1. Explicitly set `worldview: 'CN'` rather than relying on a visitor's locale.
-2. For the Chinese labeling check, explicitly use `language: 'zh-Hans'` and
-   inspect the actual labels; Mapbox documents fallback names where translations
-   are unavailable.
+2. Use `language: 'en'` globally, as requested in the subsequent language
+   correction. Inspect actual labels independently of the CN worldview; Mapbox
+   falls back to local names where English translations are unavailable.
 3. Verify Taiwan, 藏南, Aksai Chin, Diaoyu Dao / Chiwei Yu, and all South China Sea
    island groups and maritime segments at suitable regional and detail zooms.
 4. Repeat the content review for every offered style, including Hybrid, and
@@ -197,7 +197,7 @@ confirmation that the school's eventual customized output is approved.
 
 The user subsequently chose Mapbox's CN worldview and provided their own public
 browser token. The frontend now uses Mapbox GL JS 3.32.0 with the worldview fixed
-to CN and label language zh-Hans. Street imports Mapbox Standard; Hybrid and
+to CN and label language English (`en`). Street imports Mapbox Standard; Hybrid and
 Satellite import Standard Satellite. Hybrid remains the default on every map
 mount. Satellite hides roads and POIs but keeps place names and administrative
 boundaries. The same component serves the public map and school-location picker.
@@ -216,9 +216,26 @@ query-string override, browser preference or admin setting. It is passed when
 constructing the map and reapplied on every style load. Changing globe/flat mode
 or any of the three basemaps does not change it.
 
+The user's subsequent language correction overrides the earlier Chinese-label
+choice: the shared map now requests English globally, independently of CN
+worldview, both at construction and on each style load. This applies to globe,
+flat map, all three basemaps, and school-location pickers. Controls and scale
+remain English. Mapbox falls back to a feature's local name when no English name
+exists; it does not globally force Chinese. See Mapbox's
+[language and worldview documentation](https://docs.mapbox.com/help/dive-deeper/maps-internationalization/).
+The earlier Chinese-label demo observations above remain historical; changing
+the language does not change or certify the provider's boundary geometry.
+
 Validation: 11 map unit tests, focused frontend lint, and the production build
 pass. The isolated browser preview successfully loaded the supplied account's
 satellite imagery at SAC, retained the selected school/camera across Satellite,
 Street and Hybrid changes, and rendered the globe after switching from flat
 mode. Testing used temporary databases with email delivery blocked. No Mapbox
 billing settings or payment method were changed, and nothing was deployed.
+
+Language-update validation: 13 map tests, focused source lint, and the production
+build pass. The isolated browser preview rendered English labels on the Hybrid
+globe, Street flat map, and Satellite globe after switching styles/projections.
+English search, controls, scale, and attribution remain in place, and outgoing
+Street View links now request English too. Boundary constants, native boundary
+layers, school markers, and saved geographic locations were not changed.

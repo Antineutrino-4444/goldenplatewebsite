@@ -1,16 +1,12 @@
+import SiteLink from '@/components/SiteLink.jsx'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowUpRight, Building2, Globe2, MapPin, RefreshCcw, X } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Building2, MapPin, RefreshCcw, X } from 'lucide-react'
 import AccountMenu from '@/components/AccountMenu.jsx'
 import WorldMap from '@/components/WorldMap.jsx'
 import SchoolLocationDialog from '@/components/SchoolLocationDialog.jsx'
 import { hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
-import { schoolSessionLabel } from '@/lib/schoolMap.js'
-
-function schoolPortalUrl() {
-  const url = new URL('/', window.location.href)
-  if (url.hostname.startsWith('map.')) url.hostname = url.hostname.slice(4)
-  return url.href
-}
+import { schoolGuestPath, schoolSessionLabel } from '@/lib/schoolMap.js'
+import { schoolPortalUrl } from '@/lib/navigation.js'
 
 export default function SchoolMapPortal({ app }) {
   const [schools, setSchools] = useState([])
@@ -56,20 +52,12 @@ export default function SchoolMapPortal({ app }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f7f5] text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-7">
-          <a href={window.location.hostname.startsWith('map.') ? '/' : '/map'} className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-800 text-white"><Globe2 size={23} /></span>
-            <span><span className="block text-lg font-bold tracking-tight">Golden Plate</span><span className="block text-xs text-slate-500">A world of schools making a difference</span></span>
-          </a>
-          <nav aria-label="School map navigation" className="flex items-center gap-3">
-            <a href={schoolPortalUrl()} className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-teal-800">School portal<ArrowUpRight size={15} /></a>
-            {app.user ? <AccountMenu app={app} onSchoolLocationSaved={loadSchools} /> : <a href="/login" className="rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900">Sign in</a>}
-          </nav>
-        </div>
-      </header>
-      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-7">
+    <div className="min-h-screen bg-[#f8f7f0] text-slate-900">
+      <main id="main-content" className="mx-auto max-w-[1600px] px-4 py-6 sm:px-7">
+        <nav aria-label="School map tools" className="mb-6 flex items-center justify-end gap-5">
+          <SiteLink to={schoolPortalUrl(window.location)} className="gp-text-link">School portal<ArrowUpRight size={15} /></SiteLink>
+          {app.user ? <AccountMenu app={app} onSchoolLocationSaved={loadSchools} /> : <SiteLink to="/login?next=/map" className="gp-text-link">School sign in</SiteLink>}
+        </nav>
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div><p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">The Golden Plate community</p><h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Explore our schools.</h1><p className="mt-2 text-sm text-slate-500">Search a school code like SAC, explore the globe, or find a school in Others.</p></div>
           <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500"><span className="font-semibold text-teal-800">{schools.length}</span> participating {schools.length === 1 ? 'school' : 'schools'} · Public map</div>
@@ -101,6 +89,7 @@ export default function SchoolMapPortal({ app }) {
               <div className="flex items-start justify-between gap-3"><div><p className="mb-1 text-xs font-semibold text-teal-700">{selected.code}</p><h2 className="text-xl font-bold">{selected.name}</h2></div><button type="button" aria-label="Close school details" onClick={() => setSelectedId(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50"><X size={18} /></button></div>
               <p className="mt-3 flex items-start gap-2 text-sm text-slate-500"><MapPin size={16} className="mt-0.5 shrink-0" />{hasGeographicCoordinates(selected) ? selected.address || selected.location_name : 'Listed in Others without a location pin.'}</p>
               <p className="mt-3 text-sm font-semibold text-teal-700">{schoolSessionLabel(selected.session_count)}</p>
+              <SiteLink className="gp-text-link mt-4 inline-flex min-h-11 items-center gap-2" to={schoolGuestPath(selected)}>Open guest view<ArrowUpRight size={15} /></SiteLink>
               {app.user?.role === 'inter_school' && <div className="mt-3"><SchoolLocationDialog key={selected.school_id} app={app} initialSchoolId={selected.school_id} onSaved={loadSchools} /></div>}
               {!hasGeographicCoordinates(selected) && <button type="button" onClick={() => setSection('others')} className="mt-3 flex items-center gap-1 text-xs font-medium text-teal-700"><ArrowLeft size={13} />View Others</button>}
             </section>}

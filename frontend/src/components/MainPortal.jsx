@@ -1,3 +1,4 @@
+import SessionMetrics from '@/components/SessionMetrics.jsx'
 import React, { useRef, useState } from 'react'
 import AdminSessionExport from '@/components/AdminSessionExport.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
@@ -42,8 +43,20 @@ import {
   XCircle
 } from 'lucide-react'
 
+function PortalPageContent({ children }) {
+  return <main id="main-content" className="mx-auto my-6 w-[calc(100%-1.5rem)] max-w-5xl space-y-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">{children}</main>
+}
+
 function MainPortal({ app }) {
+  const DashboardContent = app.pageSection === 'dashboard' ? PortalPageContent : DialogContent
+  const AdminContent = app.pageSection === 'admin' ? PortalPageContent : DialogContent
   const [showSessionExport, setShowSessionExport] = useState(false)
+  const [sessionPanel, setSessionPanel] = useState(null)
+  const selectSessionPanel = (panel) => {
+    setSessionPanel((current) => current === panel || current === 'all' ? null : panel)
+    if (panel === 'draw' || panel === 'all') app.setIsDrawCenterCollapsed(false)
+  }
+  const panelIsOpen = (panel) => sessionPanel === panel || sessionPanel === 'all'
   const recordOrigin = useRef(null)
   const openRecordDialog = (category, event) => {
     recordOrigin.current = { element: event.currentTarget, x: window.scrollX, y: window.scrollY }
@@ -208,7 +221,7 @@ function MainPortal({ app }) {
     <div className="min-h-screen min-w-0 bg-gray-50 [overflow-wrap:anywhere]">
       <PortalHeader app={app} />
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+      <div hidden={app.pageSection === 'dashboard' || app.pageSection === 'admin'} className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         {!sessionId ? (
           <div className="text-center py-16">
             <div className="max-w-md mx-auto">
@@ -289,56 +302,6 @@ function MainPortal({ app }) {
               </div>
             </div>
 
-            <section id="record-entry" aria-labelledby="record-entry-title" className="mb-6 scroll-mt-4 rounded-xl border bg-white p-4">
-              <h2 id="record-entry-title" className="mb-3 text-lg font-semibold">Add a plate record</h2>
-              <div className="grid grid-cols-2 gap-3">
-              {user?.role === 'guest' && (
-                <Alert className="border-blue-200 bg-blue-50">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-blue-800">
-                    You are viewing as a guest. Recording is not available. Please sign up to record plate data.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <Button
-                onClick={(event) => openRecordDialog('clean', event)}
-                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || isRecording || user?.role === 'guest'}
-              >
-                🥇 CLEAN PLATE
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.clean_count} recorded)</span>
-              </Button>
-
-              <Button
-                onClick={(event) => openRecordDialog('faculty', event)}
-                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || isRecording || user?.role === 'guest'}
-              >
-                🧑‍🏫 FACULTY CLEAN
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.faculty_clean_count} recorded)</span>
-              </Button>
-
-              <Button
-                onClick={(event) => openRecordDialog('dirty', event)}
-                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || isRecording || user?.role === 'guest'}
-              >
-                🍽️ DIRTY PLATE
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.dirty_count} total)</span>
-              </Button>
-
-              <Button
-                onClick={(event) => openRecordDialog('red', event)}
-                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || isRecording || user?.role === 'guest'}
-              >
-                🍝 VERY DIRTY PLATE
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.red_count} recorded)</span>
-              </Button>
-            </div>
-            </section>
-
             <div className="flex flex-wrap gap-2 mb-6 justify-center">
               {user?.role !== 'guest' && (
                 <Button onClick={() => setShowNewSessionDialog(true)} className="bg-blue-600 hover:bg-blue-700">
@@ -378,22 +341,80 @@ function MainPortal({ app }) {
               )}
             </div>
 
-            <nav aria-label="Session sections" className="mb-4 flex flex-wrap gap-2 text-sm">
-              <a href="#record-entry" className="inline-flex min-h-11 items-center rounded-lg border bg-white px-4 text-teal-800">Add records</a>
-              <a href="#house-rankings" className="inline-flex min-h-11 items-center rounded-lg border bg-white px-4 text-teal-800">House rankings</a>
-              <a href="#plate-history" className="inline-flex min-h-11 items-center rounded-lg border bg-white px-4 text-teal-800">History</a>
-            </nav>
-            <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2">
-              {canExportSessionData && (
-                <div className="flex flex-col gap-4 lg:row-span-2 min-h-0">
-                  <HouseRanking app={app} fillHeight />
-                </div>
+            <section id="record-entry" aria-labelledby="record-entry-title" className="mb-6 scroll-mt-4 rounded-xl border bg-white p-4">
+              <h2 id="record-entry-title" className="mb-3 text-lg font-semibold">Add a plate record</h2>
+              {user?.role === 'guest' && (
+                <Alert className="mb-3 w-full border-blue-200 bg-blue-50">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-blue-800">
+                    Guest mode is read-only. Sign in with an approved school account to record plate data.
+                  </AlertDescription>
+                </Alert>
               )}
 
+              <div className="grid grid-cols-2 gap-3">
+              <Button
+                onClick={(event) => openRecordDialog('clean', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🥇 CLEAN PLATE
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.clean_count} recorded)</span>
+              </Button>
+
+              <Button
+                onClick={(event) => openRecordDialog('faculty', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🧑‍🏫 FACULTY CLEAN
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.faculty_clean_count} recorded)</span>
+              </Button>
+
+              <Button
+                onClick={(event) => openRecordDialog('dirty', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🍽️ DIRTY PLATE
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.dirty_count} total)</span>
+              </Button>
+
+              <Button
+                onClick={(event) => openRecordDialog('red', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🍝 VERY DIRTY PLATE
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.red_count} recorded)</span>
+              </Button>
+            </div>
+            </section>
+
+            <div role="group" aria-label="Session sections" className="mb-4 flex flex-wrap gap-2 text-sm">
+              {[
+                ['rankings', 'House rankings', 'session-rankings-panel'],
+                ['draw', 'Draw Center', 'session-draw-panel'],
+                ...(['admin', 'superadmin'].includes(user?.role) ? [['databases', 'Student and teacher databases', 'session-databases-panel']] : []),
+              ].map(([panel, label, id]) => (
+                <Button key={panel} type="button" variant={panelIsOpen(panel) ? 'default' : 'outline'}
+                  className="min-h-11 h-auto whitespace-normal" aria-expanded={panelIsOpen(panel)} aria-controls={id}
+                  onClick={() => selectSessionPanel(panel)}>{label}</Button>
+              ))}
+              <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal sm:ml-auto"
+                aria-expanded={sessionPanel === 'all'}
+                aria-controls={`session-rankings-panel session-draw-panel${['admin', 'superadmin'].includes(user?.role) ? ' session-databases-panel' : ''}`}
+                onClick={() => selectSessionPanel('all')}>{sessionPanel === 'all' ? 'Collapse all' : 'Expand all'}</Button>
+            </div>
+            <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${sessionPanel === 'all' && canExportSessionData ? 'lg:grid-cols-2' : ''}`}>
+              <div id="session-rankings-panel" hidden={!panelIsOpen('rankings')} className="min-w-0">
+                <HouseRanking app={app} />
+              </div>
+              <div id="session-draw-panel" hidden={!panelIsOpen('draw')} className="min-w-0">
               {isExtraSession ? (
                 <Card
                   id="draw-center-section"
-                  className={`${canExportSessionData ? '' : 'lg:col-span-2'}`}
+                  className="min-w-0"
                 >
                   <CardHeader>
                     <CardTitle className="flex flex-wrap items-center gap-2">
@@ -432,7 +453,7 @@ function MainPortal({ app }) {
               ) : (
               <Card
                 id="draw-center-section"
-                className={`${canExportSessionData ? '' : 'lg:col-span-2'}`}
+                className="min-w-0"
               >
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -858,11 +879,9 @@ function MainPortal({ app }) {
                   </Card>
               )}
 
-              {!canExportSessionData && (
-                <HouseRanking app={app} />
-              )}
-              {['admin', 'superadmin'].includes(user?.role) && <details className="min-w-0 rounded-lg border bg-white p-4 lg:col-span-2">
-                <summary className="min-h-11 cursor-pointer py-2 font-medium">Student and teacher databases</summary>
+              </div>
+              {['admin', 'superadmin'].includes(user?.role) && <section id="session-databases-panel" hidden={!panelIsOpen('databases')} aria-labelledby="session-databases-title" className={`min-w-0 rounded-lg border bg-white p-4 ${sessionPanel === 'all' && canExportSessionData ? 'lg:col-span-2' : ''}`}>
+                <h2 id="session-databases-title" className="py-2 text-lg font-semibold">Student and teacher databases</h2>
                 <div className="mt-3 grid min-w-0 gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -949,7 +968,7 @@ function MainPortal({ app }) {
               </Card>
 
                 </div>
-              </details>}
+              </section>}
                 </div>
 
             <div className="mt-8">
@@ -1389,7 +1408,7 @@ function MainPortal({ app }) {
       )}
 
       <Dialog open={showDashboard} onOpenChange={setShowDashboard}>
-        <DialogContent
+        <DashboardContent
           className="sm:max-w-2xl lg:max-w-4xl max-h-[82vh] overflow-x-hidden overflow-y-auto"
           dismissOnOverlayClick={false}
         >
@@ -1428,60 +1447,9 @@ function MainPortal({ app }) {
                 </div>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:col-span-2 lg:col-span-3">
-                  <div className="text-sm text-gray-500">Session</div>
-                  <div className="text-2xl font-semibold text-gray-900">{sessionName || 'Untitled session'}</div>
-                  <div className="mt-1 text-sm text-gray-600">Owner: {sessionOwner || 'Unknown account'}</div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                    <Badge variant={isSessionDiscarded ? 'destructive' : 'outline'}>
-                      {isSessionDiscarded ? 'Discarded' : 'Active'}
-                    </Badge>
-                    {drawSummary?.generated_at && (
-                      <span>Updated {new Date(drawSummary.generated_at).toLocaleString()}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="text-sm text-gray-500">Total records</div>
-                  <div className="text-2xl font-semibold text-gray-900">
-                    {sessionDashboardStats.totalRecorded.toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    Includes faculty clean plates
-                  </div>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="text-sm text-gray-500">Clean plates</div>
-                  <div className="text-2xl font-semibold text-emerald-700">
-                    {sessionDashboardStats.cleanCount.toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    Clean rate {sessionDashboardStats.cleanPercentage.toFixed(1)}% • Includes faculty clean
-                  </div>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="text-sm text-gray-500">Dirty plates</div>
-                  <div className="text-2xl font-semibold text-orange-700">
-                    {sessionDashboardStats.combinedDirty.toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    Dirty rate {sessionDashboardStats.dirtyPercentage.toFixed(1)}% • Standard dirty {sessionDashboardStats.dirtyCount.toLocaleString()}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="text-sm text-gray-500">Very dirty plates</div>
-                  <div className="text-2xl font-semibold text-red-700">
-                    {sessionDashboardStats.redCount.toLocaleString()}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="text-sm text-gray-500">Faculty clean plates</div>
-                  <div className="text-2xl font-semibold text-gray-900">
-                    {sessionDashboardStats.facultyCount.toLocaleString()}
-                  </div>
-                </div>
-              </div>
+              <SessionMetrics sessionName={sessionName} sessionOwner={sessionOwner || 'Unknown account'}
+                sessionDashboardStats={sessionDashboardStats} isSessionDiscarded={isSessionDiscarded}
+                updatedAt={drawSummary?.generated_at} />
 
               {canExportSessionData && (
                 <Card>
@@ -1555,11 +1523,11 @@ function MainPortal({ app }) {
           <Button onClick={() => setShowDashboard(false)} className="w-full shrink-0">
             Close
           </Button>
-        </DialogContent>
+        </DashboardContent>
       </Dialog>
 
       <Dialog open={showAdminPanel} onOpenChange={setShowAdminPanel}>
-        <DialogContent
+        <AdminContent
           className="sm:max-w-2xl lg:max-w-3xl max-h-[82vh] overflow-x-hidden overflow-y-auto"
           dismissOnOverlayClick={false}
         >
@@ -1710,7 +1678,7 @@ function MainPortal({ app }) {
           <Button onClick={() => setShowAdminPanel(false)} className="w-full shrink-0">
             Close
           </Button>
-        </DialogContent>
+        </AdminContent>
       </Dialog>
 
       <AdminSessionExport open={showSessionExport} onOpenChange={setShowSessionExport} accountKey={user?.id} />

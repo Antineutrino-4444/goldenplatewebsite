@@ -1,0 +1,81 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { geoDistance } from 'd3-geo'
+import { createSchoolFlight, DEFAULT_FLIGHT_ORIGIN, FLIGHT_DURATION_MS, FLIGHT_SETTLE_MS, FLIGHT_TURN_MS, FLIGHT_ZOOM_MS, flightTurnProgress, fullGlobeZoom, lookupFlightOrigin } from '../src/lib/school-flight.js'
+
+const school = { longitude: -79.46, latitude: 44 }
+
+test('the globe turns slowly at both ends and fastest in the middle', () => {
+  const values = [0, 0.25, 0.5, 0.75, 1].map(flightTurnProgress)
+  const travel = values.slice(1).map((value, index) => value - values[index])
+  assert.equal(values[0], 0)
+  assert.equal(values.at(-1), 1)
+  assert.ok(travel[0] < travel[1] && travel[3] < travel[2])
+  assert.equal(flightTurnProgress(-1), 0)
+  assert.equal(flightTurnProgress(2), 1)
+})
+
+test('school travel follows a shortest spherical arc without zooming or fading', () => {
+  const origin = { longitude: 170, latitude: 40 }
+  const destination = { longitude: -170, latitude: 40 }
+  const flight = createSchoolFlight(origin, destination)
+  const middle = flight(FLIGHT_SETTLE_MS + FLIGHT_TURN_MS / 2, 1)
+  assert.ok(Math.abs(Math.abs(middle.center[0]) - 180) < 1e-8)
+  assert.ok(Math.abs(geoDistance([170, 40], middle.center) - geoDistance(middle.center, [-170, 40])) < 1e-8)
+  assert.equal(middle.zoom, 1)
+  assert.equal(middle.opacity, 1)
+  assert.equal(middle.phase, 'turn')
+})
+
+test('the turn arrives before constant-acceleration zoom and a continuous portal fade', () => {
+  const flight = createSchoolFlight(DEFAULT_FLIGHT_ORIGIN, school)
+  const zoomStart = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS
+  const samples = [0, 0.25, 0.5, 0.75, 1].map((t) => flight(zoomStart + t * FLIGHT_ZOOM_MS, 1))
+  for (const sample of samples) {
+    assert.ok(geoDistance(sample.center, [school.longitude, school.latitude]) < 1e-8)
+  }
+  const increments = samples.slice(1).map((sample, index) => sample.zoom - samples[index].zoom)
+  assert.ok(increments.every((value, index) => index === 0 || value > increments[index - 1]))
+  const accelerations = increments.slice(1).map((value, index) => value - increments[index])
+  assert.ok(accelerations.every((value) => Math.abs(value - accelerations[0]) < 1e-8))
+  assert.equal(samples[2].opacity, 1)
+  assert.ok(samples[3].opacity > 0 && samples[3].opacity < 1)
+  assert.equal(samples[4].opacity, 0)
+  assert.equal(samples[4].zoom, 13)
+  assert.equal(flight(FLIGHT_DURATION_MS, 1).complete, true)
+  assert.equal(flight(FLIGHT_DURATION_MS - 1, 1).complete, false)
+})
+
+test('full-globe framing fits phones, landscape, tablets, desktop and resizing', () => {
+  for (const [width, height] of [[390, 844], [844, 390], [768, 1024], [1440, 1050]]) {
+    const zoom = fullGlobeZoom(width, height)
+    const diameter = 512 * 2 ** zoom / Math.PI
+    assert.ok(diameter < Math.min(width, height) * 0.7)
+    assert.ok(zoom >= -2.5 && zoom <= 2.25)
+  }
+  assert.equal(fullGlobeZoom(390, 844), fullGlobeZoom(844, 390))
+})
+
+test('IP orientation falls back on failed, invalid or aborted responses', async () => {
+  for (const response of [{ ok: false }, { ok: true, json: async () => ({ success: false }) }, { ok: true, json: async () => ({ success: true, latitude: 91, longitude: 0 }) }]) {
+    assert.deepEqual(await lookupFlightOrigin({ fetchImpl: async () => response }), DEFAULT_FLIGHT_ORIGIN)
+  }
+  assert.deepEqual(await lookupFlightOrigin({ fetchImpl: async () => { throw new Error('Offline') } }), DEFAULT_FLIGHT_ORIGIN)
+  let aborted = false
+  assert.deepEqual(await lookupFlightOrigin({ timeoutMs: 5, fetchImpl: (_url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => { aborted = true; reject(new Error('Aborted')) })) }), DEFAULT_FLIGHT_ORIGIN)
+  assert.equal(aborted, true)
+})
+
+test('IP orientation keeps only rounded coordinates and reuses them in memory', async () => {
+  let requests = 0
+  const fetchImpl = async (url, options) => {
+    requests++
+    assert.equal(url, 'https://ipwho.is/?fields=success,latitude,longitude')
+    assert.equal(options.credentials, 'omit')
+    assert.equal(options.referrerPolicy, 'no-referrer')
+    return { ok: true, json: async () => ({ success: true, longitude: 114.16546, latitude: 22.27867, ip: 'unused', city: 'unused' }) }
+  }
+  assert.deepEqual(await lookupFlightOrigin({ fetchImpl }), { longitude: 114.2, latitude: 22.3 })
+  await lookupFlightOrigin({ fetchImpl })
+  assert.equal(requests, 1)
+})

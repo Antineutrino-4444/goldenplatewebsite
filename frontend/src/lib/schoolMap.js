@@ -1,5 +1,10 @@
 import { hasGeographicCoordinates } from './mapCoordinates.js'
 
+export function schoolGuestPath(school) {
+  return typeof school?.school_id === 'string' && school.school_id.trim()
+    ? `/guest/schools/${encodeURIComponent(school.school_id)}` : null
+}
+
 function sessionCount(count) {
   return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0
 }

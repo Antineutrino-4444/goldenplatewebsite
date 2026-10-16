@@ -8,7 +8,9 @@ export const BASEMAPS = [
   { id: 'hybrid', name: 'Hybrid', description: 'Imagery with roads and labels' },
 ]
 export const MAP_WORLDVIEW = 'CN'
-export const MAP_LANGUAGE = 'zh-Hans'
+// Label language is independent of territorial worldview. Use English globally;
+// Mapbox falls back to the place's native name when no English name exists.
+export const MAP_LANGUAGE = 'en'
 export const STREET_STYLE = 'mapbox://styles/mapbox/standard'
 export const SATELLITE_STYLE = 'mapbox://styles/mapbox/standard-satellite'
 
@@ -55,6 +57,6 @@ export function applyBasemap(map, basemap) {
 
 export function streetViewUrl(point) {
   if (!hasGeographicCoordinates(point)) return null
-  const parameters = new URLSearchParams({ api: '1', map_action: 'pano', viewpoint: `${point.latitude},${point.longitude}` })
+  const parameters = new URLSearchParams({ api: '1', map_action: 'pano', viewpoint: `${point.latitude},${point.longitude}`, hl: 'en' })
   return `https://www.google.com/maps/@?${parameters}`
 }
