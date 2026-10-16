@@ -85,7 +85,7 @@ export default function LiveCounterPage() {
         <div>
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Every plate counts</p>
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Live clean plates</h1>
-          <p className="mt-4 text-slate-600">{snapshot?.school.name || user?.school?.name || 'See your school’s progress, one clean plate at a time.'}</p>
+          <p className="mt-4 text-slate-600">{snapshot?.school.name || user?.school?.name || 'Clean plates recorded by your school’s students and faculty.'}</p>
         </div>
         {snapshot && <div className="flex flex-wrap items-center gap-3">
           <Button ref={enterButton} variant="outline" onClick={enter}><Maximize className="h-4 w-4" />Full screen</Button>
@@ -148,7 +148,7 @@ export default function LiveCounterPage() {
               </TabsContent>
             </Tabs>
             <div className="mt-7 flex flex-wrap justify-between gap-2 text-xs leading-relaxed text-slate-500">
-              <p>Both dates included. Count-only plates are included in the totals.</p>
+              <p>Totals include both dates in the selected range and count-only plates.</p>
               <p>Last updated {new Date(snapshot.updated_at).toLocaleTimeString()}</p>
             </div>
             {snapshot.can_manage_ranges && <Dialog open={editing} onOpenChange={setEditing}>

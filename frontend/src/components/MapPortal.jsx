@@ -930,7 +930,7 @@ function FeaturedPostCard({ submissions = [], loading = false, onRefresh }) {
           <div className="rounded-md border bg-slate-50 p-6 text-center text-sm text-slate-500">Loading…</div>
         ) : !current ? (
           <div className="rounded-md border border-dashed bg-slate-50 p-6 text-center text-sm text-slate-500">
-            No featured posts yet — check back soon!
+            No featured posts yet.
           </div>
         ) : (
           <div className="space-y-3">
@@ -1279,7 +1279,7 @@ function MapBackgroundEditor({ open, onClose, onUpload, uploading = false }) {
             <div className="rounded-md border bg-amber-50 px-3 py-2 text-xs text-amber-900">
               <div className="mb-1 flex min-w-0 flex-wrap items-center justify-between gap-2 font-medium">
                 <span>{heicProgress.phase === 'uploading' ? 'Uploading HEIC…'
-                  : heicProgress.phase === 'decoding' ? 'Decoding HEIC on server…'
+                  : heicProgress.phase === 'decoding' ? 'Preparing image preview…'
                   : 'Finishing…'}</span>
                 <span className="tabular-nums">{Math.round(heicProgress.percent)}%</span>
               </div>
@@ -2798,7 +2798,7 @@ function MapPortal({ app }) {
             <div>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-normal text-slate-950">Ecological Map</h2>
               <p className="mt-2 sm:mt-3 max-w-xl text-sm sm:text-base leading-6 sm:leading-7 text-slate-600">
-                Explore locations around the world. Zoom in and select a pin to read approved updates from the Golden Plate community.
+                Select a pin to read stories and approved updates from the Golden Plate community.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -2821,7 +2821,7 @@ function MapPortal({ app }) {
                 Others ({unmappedSchools.length} {unmappedSchools.length === 1 ? 'school' : 'schools'}, {submissionsByPin.others || 0} updates)
               </Button>
             </div>
-            {showLegacyMap && <p className="text-xs text-slate-500">These locations belong to the original image map and have not been assigned geographic coordinates.</p>}
+            {showLegacyMap && <p className="text-xs text-slate-500">Locations on the original map are shown separately from world-map pins.</p>}
             <Button onClick={() => setShowEnlarge(true)} variant="outline" size="sm" className="w-fit">
               <ZoomIn className="mr-2 h-4 w-4" />
               Enlarge map
@@ -2868,7 +2868,7 @@ function MapPortal({ app }) {
                 </div>}
               </div>
             )}
-            {selectedSchool && <p className="text-sm text-slate-600">{selectedSchool.address || selectedSchool.location_name || 'This school appears in Others without a map location.'}</p>}
+            {selectedSchool && <p className="text-sm text-slate-600">{selectedSchool.address || selectedSchool.location_name || 'No map location selected.'}</p>}
             {selectedSchool && !hasGeographicCoordinates(selectedSchool) && <Button variant="outline" size="sm" onClick={() => setSelectedPinId('others')}>Back to Others</Button>}
             {selectedSubmissions.length === 0 ? (
               <div className="rounded-md border bg-white p-6 text-center text-sm text-slate-500">

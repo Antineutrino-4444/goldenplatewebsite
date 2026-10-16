@@ -13,7 +13,7 @@ function HouseDataNotes({ children }) {
   return <div className="mb-4 min-w-0 rounded-lg border bg-gray-50 p-3 space-y-3 [overflow-wrap:anywhere]">
     <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" onClick={() => setOpen(!open)}
       aria-expanded={open} aria-controls={contentId}>
-      {open ? 'Hide notes and details' : 'Notes and details'}
+      {open ? 'Hide calculation details' : 'Calculation details'}
       <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
     </Button>
     <div id={contentId} hidden={!open} className="space-y-4">{children}</div>
@@ -128,7 +128,7 @@ export default function HouseRanking({ app, fillHeight = false }) {
             <CardDescription>
               {houseSortBy === 'estimates'
                 ? houseStats?.estimation?.model === 'conditional_clean_percentage_hypergeometric'
-                  ? 'Expected CLEAN percentage among participants, with individual 90% model-based prediction intervals. Absences do not enter the percentage.'
+                  ? 'Estimated clean rates among participants, with a 90% prediction interval for each house.'
                   : `Estimated score ranges at 95% overall model coverage. Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}.`
                 : houseSortBy === 'score'
                   ? `Clean +${settings.clean_points} • Dirty −${settings.dirty_penalty} • Very Dirty −${settings.very_dirty_penalty}. Count-only entries and records without a house earn no points.`

@@ -87,18 +87,18 @@ function InterschoolPortal({ app }) {
               Inter-School Overview
             </CardTitle>
             <CardDescription>
-              Coordinate onboarding for partner schools across the district.
+              Review school registrations, issue invites, and manage partner schools.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm text-gray-600">
               <p>
-                Use this portal to issue single-use invites for new schools and track onboarding responsibilities.
+                Issue single-use school invites and track which have been redeemed.
               </p>
               <ul className="list-disc list-inside space-y-1">
                 <li>Generate unique school IDs paired with invite codes.</li>
                 <li>Share credentials securely with the school's lead administrator.</li>
-                <li>Reference onboarding guidance and upcoming management tools.</li>
+                <li>Review invite use and registered schools.</li>
               </ul>
             </div>
           </CardContent>
@@ -209,7 +209,7 @@ function InterschoolPortal({ app }) {
               Generate School Invite
             </CardTitle>
             <CardDescription>
-              Create a one-time invite that provisions a new school ID and administrator slot.
+              Create a one-time invite for a new school and its lead administrator.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -293,7 +293,7 @@ function InterschoolPortal({ app }) {
                 School Directory
               </CardTitle>
               <CardDescription>
-                Monitor partner schools as they complete onboarding.
+                View registered schools and their accounts.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -384,7 +384,7 @@ function InterschoolPortal({ app }) {
           <CardContent>
             {interschoolInvites.length === 0 ? (
               <p className="text-sm text-gray-500">
-                Generate a school invite to populate the ledger. Redeemed invites remain visible for auditing.
+                No school invites have been issued yet.
               </p>
             ) : (
               <div className="space-y-3">

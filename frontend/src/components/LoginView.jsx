@@ -159,7 +159,7 @@ function LoginView({ app }) {
                 autoFocus
               />
               <p className="text-xs text-gray-500">
-                Ask your administrator for the code. Guest access is read-only.
+                Ask your school administrator for the code. Guest access is read-only.
               </p>
             </div>
             <div className="flex gap-2">

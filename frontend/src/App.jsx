@@ -102,7 +102,7 @@ function Workspace() {
   if (!authentication && path === '/portal/admin' && !['admin', 'superadmin'].includes(app.user?.role)) return <Navigate to="/portal" replace />
 
   return <><div className={showFlight ? 'arrival-portal' : undefined} inert={showFlight || undefined} aria-hidden={showFlight || undefined}><AppFrame app={app}><Suspense fallback={<LoadingPage />}>
-    {authentication && !showFlight ? <div className="auth-page">{!registration && <div className="auth-intro"><h1>{signup ? 'Join your school community.' : 'Welcome back to your school.'}</h1><p>{signup ? 'Request an account or use an invite from your administrator.' : 'Small actions add up. Pick up where your community left off.'}</p></div>}<main id="main-content">{registration ? <SchoolRegistration app={routeApp} /> : <LoginView app={routeApp} />}</main></div> : app.isInterschoolUser ? <InterschoolPortal app={routeApp} /> : <MainPortal app={routeApp} />}
+    {authentication && !showFlight ? <div className="auth-page">{!registration && <div className="auth-intro"><h1>{signup ? 'Join your school community.' : 'Welcome back to your school.'}</h1><p>{signup ? 'Request an account or use an invite from your administrator.' : 'Sign in to record plates and review your school’s sessions.'}</p></div>}<main id="main-content">{registration ? <SchoolRegistration app={routeApp} /> : <LoginView app={routeApp} />}</main></div> : app.isInterschoolUser ? <InterschoolPortal app={routeApp} /> : <MainPortal app={routeApp} />}
     {!showFlight && <OverlayElements app={routeApp} />}
   </Suspense></AppFrame></div>{showFlight && <SchoolArrival user={app.user} onComplete={finishFlight} />}</>
 }
@@ -113,7 +113,7 @@ function MapApp() {
 }
 
 function NotFound() {
-  return <div className="auth-page"><main id="main-content" className="mx-auto max-w-xl px-6 py-24 text-center"><p className="text-sm">404 · Page not found</p><h1 className="my-5 font-serif text-4xl">Let’s get you back to the table.</h1><p className="mb-7 text-sm">This page may have moved. Explore the initiative or return to your school.</p><div className="flex justify-center gap-4"><Link className="gp-button" to="/">Home</Link><Link className="gp-button" to="/portal">School portal</Link></div></main></div>
+  return <div className="auth-page"><main id="main-content" className="mx-auto max-w-xl px-6 py-24 text-center"><p className="text-sm">404 · Page not found</p><h1 className="my-5 font-serif text-4xl">Page not found.</h1><p className="mb-7 text-sm">Return to the home page or your school portal.</p><div className="flex justify-center gap-4"><Link className="gp-button" to="/">Home</Link><Link className="gp-button" to="/portal">School portal</Link></div></main></div>
 }
 
 function SiteRoutes() {

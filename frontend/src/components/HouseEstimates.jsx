@@ -13,19 +13,23 @@ export function HouseEstimateDetails({ estimation, sessionId }) {
   if (!estimation.available) return null
   return <div className="space-y-3 text-sm text-gray-600">
     <p>Saved roster: {estimation.roster_filename || 'Student roster'} • {number(estimation.population)} eligible students in Grades 9–12.</p>
-    {estimation.roster_assignment === 'manual' && <p>This session uses the existing manual roster override.</p>}
+    {estimation.roster_assignment === 'manual' && <p>This session is matched to a manually selected roster.</p>}
     {estimation.grade_source === 'manual_override_student_profiles' && <p>This older override has no saved grades; eligibility uses the linked student profiles.</p>}
     {!!estimation.excluded_roster_student_count && <p>{number(estimation.excluded_roster_student_count)} excluded students are removed from this session’s calculation population.</p>}
     <p>Recorded student plates: {number(estimation.student_plate_count)} • Assumed lunch absences: {number(estimation.school_absent_count)}.</p>
-    <p>Known houses keep their observed plates. Anonymous CLEAN, DIRTY, and RED plates are allocated jointly among remaining students, preserving each category’s school-wide total and each house’s capacity.</p>
-    <p>The predicted percentage is the expected fraction of CLEAN plates among participants, conditional on at least one participant. Absences do not enter that percentage. The probability of no recorded participants is shown separately.</p>
+    <p>Recorded house assignments stay in place; the model distributes anonymous plates among remaining students while preserving school totals and house sizes.</p>
+    <p>Clean rates estimate the share of participating students with a clean plate. Each house has a 90% prediction interval; rank ranges use wider intervals with at least 90% coverage across participating houses together. Overlapping ranges indicate an uncertain order.</p>
+    <p>The model assumes similar attendance and plate outcomes across houses. The gap between the eligible roster size and recorded student plates counts as assumed absences during counting. Estimates and ranks change as plates arrive.</p>
+    <p>Houses with the same predicted percentage, rounded to three decimals, share a rank.</p>
+    <details className="space-y-2"><summary className="cursor-pointer font-medium">Model assumptions and rank calculations</summary>
     <p>Point estimate = E[100 × CLEAN ÷ (CLEAN + DIRTY + RED) | at least one participant]. Each feasible allocation is weighted by the number of compatible student assignments. This is the expected percentage, rather than a ratio of expected category counts. DIRTY and RED are combined only for the percentage calculation; their separate totals remain intact.</p>
     <p>Equal-tail 90% prediction intervals apply to each house individually, conditional on participation. Discrete outcomes can give more than 90% coverage. These intervals do not promise 90% coverage across all houses together.</p>
     <p>Predicted percentages rounded to three decimals determine ties. Tied houses share a competition rank and appear alphabetically. An estimated tie can still have an uncertain actual order.</p>
     <p>Rank confidence ranges use wider percentage intervals with at least 90% simultaneous model coverage across participating houses. A range applies when that house participates and describes its possible rank by recorded CLEAN percentage. It is not a probability that the point-estimate order is correct. Coverage is unconditional across allocations; it is not a conditional guarantee given that every house participates. Touching or overlapping intervals do not establish a clear lead. Houses that might have zero participants cannot be treated as certainly ahead. Exact outcome ties share a rank.</p>
     <p>With n potentially participating houses, the rank calculation gives each house at least 1 − 0.10/n interval coverage, rounded up to the next supported 0.1% step. A union bound gives at least 90% coverage for all participating houses together, without assuming independence. The best rank counts houses whose entire interval is strictly higher and whose participation is certain. The worst rank counts every other house whose upper endpoint exceeds this house’s lower endpoint. These bounds can be conservative because the house allocations are dependent.</p>
-    <p>The model assumes anonymous plate outcomes and absences are exchangeable across houses. Intervals do not account for systematic differences in house attendance, plate behavior, or recording errors. During counting, students without records are treated as assumed lunch absences; further records can change percentages, intervals, and ranks.</p>
+    <p>The model assumes anonymous plate outcomes and absences are exchangeable across houses. Intervals do not account for systematic differences in house attendance, plate behavior, or recording errors. During counting, the gap between the eligible roster size and recorded student plates is treated as assumed lunch absences; further records can change percentages, intervals, and ranks.</p>
     <p>Houses remain ordered by their predicted percentage even when confidence ranges overlap. A higher prediction does not necessarily mean a greater probability of finishing first.</p>
+    </details>
     {estimation.house_stats.map((house) => <div key={house.house} className="rounded-lg border bg-white p-3 space-y-2">
       <p className="font-semibold text-gray-900">{house.house} — calculation details</p>
       <p>{number(house.population)} eligible students • {number(house.total_count)} expected participants • {number(house.absent_count)} assumed absences</p>
@@ -83,14 +87,14 @@ function SeparatingCoverage({ estimation, sessionId }) {
     <Button type="button" variant="outline" className="h-auto max-w-full whitespace-normal text-left" disabled={busy || !sessionId} onClick={calculate}>
       {busy ? 'Calculating…' : 'Calculate highest separating coverage'}
     </Button>
-    <p className="text-xs text-gray-600">Checks 0.1% to 100% coverage in 0.1 percentage-point steps. Every interval must strictly separate in the displayed ranking order; touching intervals overlap. Default intervals remain at 90%.</p>
+    <p className="text-xs text-gray-600">Checks coverage in 0.1 percentage-point steps to find intervals that strictly separate every house in the displayed order. Touching intervals overlap. The dashboard keeps its 90% intervals.</p>
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     {result && <div role="status" className="text-sm space-y-2">
       <p className="font-medium">{result.available
         ? `Highest fully separating interval coverage: ${result.coverage_percentage.toFixed(1)}%.`
         : result.reason}</p>
-      <p>The reported confidence level describes the coverage of model-based prediction intervals. It does not represent the probability that the rankings are correct or the accuracy of the predicted percentages. Lower confidence levels produce narrower intervals, making separation easier, but provide less coverage.</p>
-      <p className="text-xs text-gray-600">Interval comparisons use values before display rounding. This result updates only when you calculate it; changes to the session clear it.</p>
+      <p>This measures interval coverage, not the chance that the ranking is correct. Lower coverage narrows the intervals, making houses easier to separate.</p>
+      <p className="text-xs text-gray-600">Calculate again after session changes to compare the latest results.</p>
     </div>}
   </div>
 }
@@ -100,7 +104,7 @@ export default function HouseEstimates({ estimation }) {
   if (!estimation.available) return <p role="status" className="py-6 text-sm text-gray-600">{estimation.reason}</p>
   return <div className="space-y-3">
     {estimation.refresh_failed && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Unable to refresh. Showing the last available estimates; retrying automatically.</p>}
-    <p className="text-sm text-gray-500">Predicted CLEAN percentages • Updates during counting. Overlapping ranges mean the order is uncertain.</p>
+    <p className="text-sm text-gray-500">Estimated clean rates update during counting. Overlapping ranges indicate an uncertain order.</p>
     {estimation.house_estimates_available === false && <p role="status" className="py-3 text-sm text-gray-600">{estimation.house_estimates_reason}</p>}
     {estimation.house_stats.map((house) => <div key={house.house} className="min-w-0 rounded-lg border bg-white p-4 shadow-sm space-y-3 [overflow-wrap:anywhere]">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">

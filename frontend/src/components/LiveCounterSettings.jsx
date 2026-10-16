@@ -113,7 +113,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
             {filledRanges.map((range) => <option key={range.id} value={range.id}>{rangeLabel(range)}</option>)}
             {defaultRange !== 'year' && !filledRanges.some((range) => range.id === defaultRange)
               && <option value={defaultRange} disabled>Choose a saved default range</option>}
-          </select></div> : <p className="text-sm text-slate-500">Only superadmins can change the default time range, default view, celebration milestones, and banner text.</p>}
+          </select></div> : <p className="text-sm text-slate-500">Your school superadmin manages the display defaults and celebrations.</p>}
         {canSetDefault && <div className="space-y-2">
           <Label htmlFor="counter-default-metric">Default main view</Label>
           <select id="counter-default-metric" className={selectClass} value={defaultMetric} onChange={(event) => setDefaultMetric(event.target.value)}>
@@ -147,7 +147,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
             <Input id="counter-banner-footer" maxLength={120} placeholder="Less waste. More reason to celebrate." value={banner.celebration_footer}
               onChange={(event) => setBanner((current) => ({ ...current, celebration_footer: event.target.value }))} /></div>
         </div>}
-        <p className="text-sm text-slate-500">The counter always includes both student and faculty plates.</p>
+        <p className="text-sm text-slate-500">Counts student and faculty plates together.</p>
       </fieldset>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save time ranges'}</Button>

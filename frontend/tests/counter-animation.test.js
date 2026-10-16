@@ -49,24 +49,40 @@ test('old ruler marks remain and compress left as new scales accumulate', () => 
 })
 
 test('logarithmic fill uses the same coordinates as the ruler', () => {
-  const layout = communityBarLayout(1000)
-  assert.equal(layout.width, layout.ticks.find(tick => tick.value === 1000).position)
+  const layout = communityBarLayout(1025)
+  assert.equal(layout.width, layout.ticks.find(tick => tick.value === 1025).position)
   const zeroTo100 = layout.ticks.find(tick => tick.value === 100).position
   const hundredTo1000 = layout.width - zeroTo100
   assert.ok(hundredTo1000 > zeroTo100, 'larger ranges have space without losing the original scale')
 })
 
-test('compressed original labels stack visibly and stay inside a phone-width ruler', () => {
-  const ruler = communityRulerLabels(communityBarLayout(1000000).ticks, 320)
-  for (const mark of [0, 25, 50, 75, 100]) {
-    const tick = ruler.ticks.find(tick => tick.value === mark)
-    assert.equal(tick.showLabel, true)
-    assert.ok(tick.left >= 0 && tick.left + tick.size <= 320)
+test('crowded phone labels overlap on one baseline without changing ruler height', () => {
+  for (const width of [280, 350, 728, 1344]) {
+    for (const count of [0, 1, 2800, 1000000, 1000000000]) {
+      const ruler = communityRulerLabels(communityBarLayout(count).ticks, width)
+      assert.equal(ruler.height, 30)
+      assert.ok(ruler.ticks.every(tick => tick.showLabel && tick.row === 0))
+      assert.ok(ruler.ticks.every(tick => tick.left >= 0 && tick.left + tick.size <= width))
+    }
   }
-  assert.ok(ruler.ticks.some(tick => tick.row > 0))
-  for (let row = 0; row < 5; row++) {
-    const labels = ruler.ticks.filter(tick => tick.showLabel && tick.row === row).sort((a, b) => a.left - b.left)
-    for (let i = 1; i < labels.length; i++) assert.ok(labels[i].left > labels[i - 1].left + labels[i - 1].size)
+  const labels = communityRulerLabels(communityBarLayout(1000000).ticks, 350).ticks
+  assert.ok(labels.some((tick, index) => index > 0 && tick.left < labels[index - 1].left + labels[index - 1].size),
+    'crowding is intentionally retained rather than staggered or hidden')
+})
+
+test('scale marks accumulate with gentler growth than adjacent-term Fibonacci', () => {
+  const marks = communityBarLayout(1000000).ticks.filter(tick => !tick.endpoint).map(tick => tick.value)
+  assert.deepEqual(marks.slice(0, 12), [0, 25, 50, 75, 100, 150, 225, 325, 475, 700, 1025, 1500])
+  for (let i = 5; i < marks.length; i++) {
+    assert.ok(marks[i] > marks[i - 1])
+    assert.ok(marks[i] < marks[i - 1] + marks[i - 2], 'each step grows less than an adjacent-term Fibonacci step')
+  }
+  for (const count of [149, 150, 151, 1024, 1025, 1026]) {
+    const a = communityBarLayout(count), b = communityBarLayout(count + 0.001)
+    assert.ok(Math.abs(a.width - b.width) < .001, 'adding a mark does not jump the fill')
+    for (const mark of a.ticks.filter(tick => !tick.endpoint)) {
+      assert.ok(Math.abs(mark.position - b.ticks.find(tick => tick.value === mark.value).position) < .001)
+    }
   }
 })
 

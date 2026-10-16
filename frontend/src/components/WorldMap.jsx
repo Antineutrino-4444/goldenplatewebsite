@@ -322,7 +322,7 @@ export default function WorldMap({
             <div className="my-3 border-t border-slate-100" />
             <div className="px-1">
               <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-700"><PersonStanding size={15} />Street View</p>
-              <p className="mb-2 mt-1 text-[11px] leading-4 text-slate-500">Explore nearby panoramas in Google Maps. Coverage varies by location.</p>
+              <p className="mb-2 mt-1 text-[11px] leading-4 text-slate-500">Choose a location to look for nearby Street View panoramas in Google Maps.</p>
               {streetViewLink && <a href={streetViewLink} target="_blank" rel="noopener noreferrer" className="mb-2 flex items-center gap-1 text-xs font-semibold text-teal-700">Open Street View<ExternalLink size={12} /></a>}
               <button type="button" className="world-map-control w-full" onClick={pickStreetView} disabled={!ready}>Choose a spot on the map</button>
             </div>

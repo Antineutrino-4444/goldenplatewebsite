@@ -80,14 +80,13 @@ export default function SchoolMapPortal({ app }) {
                   <Building2 size={18} className="mt-0.5 shrink-0 text-teal-700" /><span className="min-w-0"><span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-teal-700">{school.code}</span><span className="block text-sm font-semibold">{school.name}</span><span className="mt-1 block text-xs text-slate-500">{school.address || (section === 'others' ? 'No map location' : school.location_name)}</span><span className="mt-2 block text-[11px] font-medium text-teal-700">{schoolSessionLabel(school.session_count)}</span></span>
                 </button></li>)}
               </ul>
-              {section === 'others' && <p className="mt-3 border-t border-slate-100 px-1 pt-3 text-[11px] leading-5 text-slate-400">Schools without a selected location and schools choosing to remain unmapped are listed here.</p>}
             </div>
           </aside>
           <div className="min-w-0 space-y-4">
             <div className="flex h-[72vh] min-h-[520px] max-h-[900px] flex-col"><WorldMap pins={schools} selectedPinId={selectedId} onSelectPin={selectSchool} fillContainer /></div>
             {selected && <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Selected school details">
               <div className="flex items-start justify-between gap-3"><div><p className="mb-1 text-xs font-semibold text-teal-700">{selected.code}</p><h2 className="text-xl font-bold">{selected.name}</h2></div><button type="button" aria-label="Close school details" onClick={() => setSelectedId(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50"><X size={18} /></button></div>
-              <p className="mt-3 flex items-start gap-2 text-sm text-slate-500"><MapPin size={16} className="mt-0.5 shrink-0" />{hasGeographicCoordinates(selected) ? selected.address || selected.location_name : 'Listed in Others without a location pin.'}</p>
+              <p className="mt-3 flex items-start gap-2 text-sm text-slate-500"><MapPin size={16} className="mt-0.5 shrink-0" />{hasGeographicCoordinates(selected) ? selected.address || selected.location_name : 'No map location selected.'}</p>
               <p className="mt-3 text-sm font-semibold text-teal-700">{schoolSessionLabel(selected.session_count)}</p>
               <SiteLink className="gp-text-link mt-4 inline-flex min-h-11 items-center gap-2" to={schoolGuestPath(selected)}>Open guest view<ArrowUpRight size={15} /></SiteLink>
               {app.user?.role === 'inter_school' && <div className="mt-3"><SchoolLocationDialog key={selected.school_id} app={app} initialSchoolId={selected.school_id} onSaved={loadSchools} /></div>}

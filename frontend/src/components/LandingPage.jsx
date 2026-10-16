@@ -85,7 +85,7 @@ function Impact() {
         <div><dt>Before the initiative</dt><dd>Below 50%</dd></div>
         <div><dt>Reported high after launch</dt><dd>75%</dd></div>
       </dl>
-      <p>Share of plates finished at one school. The 75% figure is a reported high, not an average or a measurement of food saved by weight.</p>
+      <p>Clean-plate rates at St. Andrew’s. The case study reports a high of 75%, rather than a session average.</p>
     </div>
   </section>
 }
@@ -100,7 +100,7 @@ function HowItWorks({ standalone = false }) {
     <ol className="gp-steps">
       <li><h2>Make the daily choice visible</h2><div><p>Students choose portions they can finish. At the dish return, student Compost Coaches record plate categories during the school’s chosen lunch sessions.</p><p>The aim is to make thoughtful food choices part of ordinary school life, with students leading the conversation and shaping the program.</p></div></li>
       <li><h2>Recognize participation</h2><div><p>At St. Andrew’s, students with a clean plate can enter a draw for the Golden Plate award. Winners are recognized at assembly, can skip the cafeteria line for a week, and can propose a menu item.</p><p>Each school can agree on an appropriate routine and reward with its student team, staff mentor, and food services. The tradition should reflect the community taking part.</p></div></li>
-      <li><h2>Learn from the record</h2><div><p>PLATE supports the initiative with a consistent record of lunch sessions, student participation, and plate categories. Dashboards, house rankings, and live counters help schools share their progress.</p><p>Students can use the results and feedback from their peers to refine the program. The website supports that ongoing work; the school community gives it purpose.</p></div></li>
+      <li><h2>Learn from the record</h2><div><p>PLATE supports the initiative with a consistent record of lunch sessions, student participation, and plate categories. Dashboards, house rankings, and live counters help schools share their progress.</p><p>Students can use the results and feedback from their peers to refine the program.</p></div></li>
     </ol>
     <div className="gp-how-guide"><h2>Ready to use the website?</h2><p>The getting-started guide explains school registration, accounts, roster uploads, sessions, and recording a plate, step by step.</p><Link className="gp-text-link" to="/getting-started">Open the website guide <ArrowRight size={16} /></Link></div>
   </section>
@@ -111,20 +111,20 @@ function Platform() {
   return <section className="gp-platform gp-container" aria-labelledby="platform-title">
     <div className="gp-platform-intro">
       <p className="gp-section-label">PLATE · The recording website</p>
-      <h2 id="platform-title">A record of what happened at lunch.</h2>
-      <p>Built by students for the people running the program: Compost Coaches, school leads, and the staff sharing the results.</p>
+      <h2 id="platform-title">Schools are using PLATE.</h2>
+      <p>Record plates, review lunch totals, and run your school’s Golden Plate draws. Explore a session below to see PLATE in use.</p>
     </div>
     <div className="gp-platform-body">
-      <figure className="gp-platform-artifact">
+      <div className="gp-platform-artifact">
+        <div className="gp-session-provenance"><p><strong>{result.session ? 'A real session, selected at random' : 'Explore a public school session'}</strong><span>{result.session ? 'Loaded directly from a school’s public records in PLATE.' : 'See how a participating school records its lunch in PLATE.'}</span></p></div>
         <PublicSessionDashboard result={result} />
-        <figcaption>Loaded directly from PLATE, the school recording website. A random public session is selected on each page load; discarded sessions are excluded.</figcaption>
-        <div className="gp-platform-links">{result.session && <Link className="gp-button" to={`/guest/sessions/${encodeURIComponent(result.session.session_id)}`}>Open this session as a guest <ArrowRight size={17} /></Link>}<ExternalLink href={REPO}>Source code & documentation</ExternalLink></div>
-      </figure>
+        <div className="gp-platform-links">{result.session && <Link className="gp-button" to={`/guest/sessions/${encodeURIComponent(result.session.session_id)}`}>Explore this session <ArrowRight size={17} /></Link>}<ExternalLink href={REPO}>Source code & documentation</ExternalLink></div>
+      </div>
       <dl className="gp-feature-list">
         <div><dt>For Compost Coaches</dt><dd>Search part of a name or scan a student card’s identifier. Record plate categories against imported student and staff rosters.</dd></div>
         <div><dt>For school leads</dt><dd>Manage sessions, accounts, and access. Review dashboards and download CSV records.</dd></div>
         <div><dt>For assemblies</dt><dd>Show the live counter, house rankings, and draw results.</dd></div>
-        <div><dt>For guests</dt><dd>Read-only school access, with anonymized student views enabled by default.</dd></div>
+        <div><dt>For guests</dt><dd>View public school sessions without an account.</dd></div>
       </dl>
     </div>
   </section>
@@ -135,10 +135,10 @@ function LiveCounterFeature() {
     <div className="gp-container">
       <p className="gp-section-label">PLATE · Live counter</p>
       <div className="gp-counter-intro"><h2 id="counter-title">Every school’s effort,<br />in one live total.</h2>
-        <p>Clean plates recorded by students and faculty across every school using PLATE. The total refreshes every five seconds, with discarded sessions excluded.</p>
+        <p>Clean plates recorded by students and faculty across all schools using PLATE.</p>
       </div>
       <div className="gp-counter-live"><p>Across all schools · All time</p><CommunityCounter compact /></div>
-      <p className="gp-counter-footnote">No account needed. Open the full counter for a dining-hall or assembly display, or choose your school’s counter there.</p>
+      <p className="gp-counter-footnote">Open the full counter for your dining hall or assembly, or view your school’s total.</p>
     </div>
   </section>
 }
@@ -160,7 +160,7 @@ function Community() {
   return <section className="gp-community gp-container" aria-labelledby="community-title">
     <div>
       <h2 id="community-title">Find another school.</h2>
-      <p>The public map shows participating schools that have chosen to share their location. Schools without a pin are listed in Others.</p>
+      <p>Explore the globe or open the school map to find participating schools and their public sessions.</p>
       <div className="gp-community-status" aria-live="polite">
         {selected ? <Link className="gp-community-school-link" to={schoolGuestPath(selected)}><strong>{selected.name}</strong><span>{selected.code} · {selected.address || selected.location_name}</span><span className="gp-text-link">Open guest view <ArrowRight size={15} /></span></Link> : <strong>{status === 'ready' ? `${schools.length} participating ${schools.length === 1 ? 'school' : 'schools'}` : status === 'error' ? 'School list unavailable here. Try the full map.' : 'Loading schools…'}</strong>}
       </div>
@@ -207,7 +207,6 @@ function Media({ standalone = false }) {
         <a href="https://thesustainableschool.beehiiv.com/p/sustainable-school-newsletter-let-s-eat-55fa70ca5798ec89" target="_blank" rel="noopener noreferrer"><span>The Sustainable School Newsletter</span><strong>The Golden Plate playbook.</strong><ArrowUpRight size={18} /></a>
       </aside>
     </div>
-    <p className="gp-embed-note">Players are provided by YouTube, Spotify, and Instagram. Direct links are available if a player does not load.</p>
   </section>
 }
 

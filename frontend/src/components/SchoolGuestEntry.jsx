@@ -26,7 +26,7 @@ export default function SchoolGuestEntry({ schoolId, guestLogin }) {
   }, [schoolId, attempt, navigate])
   return <main id="main-content" className="auth-page">
     <h1 className="my-6 font-serif text-3xl">{failed ? 'Unable to enter as a guest.' : 'Opening the school portal…'}</h1>
-    <p role="status">{failed ? 'The school may be unavailable. You can try again or return to the map.' : 'Signing you in using the school’s guest mode.'}</p>
+    <p role="status">{failed ? 'The school may be unavailable. You can try again or return to the map.' : 'Opening read-only access to the school’s public sessions.'}</p>
     <div className="gp-platform-links">{failed && <button className="gp-button" onClick={() => setAttempt((value) => value + 1)}>Try again</button>}<Link className="gp-text-link" to="/map">Back to the school map</Link></div>
   </main>
 }

@@ -46,8 +46,8 @@
 @media (prefers-reduced-motion: reduce) { .gp-community-bar-tip { transition: none; } }
 .gp-community-bar-ticks { position: relative; height: 30px; margin-top: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .gp-community-bar-ticks > span { position: absolute; top: 0; width: 0; white-space: nowrap; }
-.gp-community-bar-ticks > span::before { content: ''; position: absolute; left: 0; top: 0; height: calc(5px + var(--tick-depth, 0px)); width: 1px; background: currentColor; opacity: .65; }
-.gp-community-bar-ticks > span > span { position: absolute; top: calc(8px + var(--tick-depth, 0px)); font-size: 11px; }
+.gp-community-bar-ticks > span::before { content: ''; position: absolute; left: 0; top: 0; height: 5px; width: 1px; background: currentColor; opacity: .65; }
+.gp-community-bar-ticks > span > span { position: absolute; top: 8px; font-size: 11px; }
 .gp-community-bar .gp-community-bar-caption { margin-top: 7px; font-size: 12px; color: inherit; opacity: .8; }
 .gp-community-counter .gp-community-bar-track { height: 26px; background: #183b2f18; }
 .gp-community-counter .gp-community-bar-fill { background: #315d42; }
@@ -154,7 +154,10 @@
 .gp-platform-intro h2 { max-width: 600px; }
 .gp-platform-intro > p:last-child { font-size: 15px; line-height: 1.8; max-width: 370px; }
 .gp-platform-body { display: grid; grid-template-columns: 1.6fr 1fr; gap: 70px; align-items: start; }
-.gp-platform-artifact figcaption { max-width: 610px; margin-top: 12px; }
+.gp-session-provenance { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border: 1px solid var(--site-rule); border-bottom: 0; background: var(--site-surface); }
+.gp-session-provenance p { font-size: 14px; line-height: 1.5; }
+.gp-session-provenance strong { display: block; color: var(--gp-ink); font-size: 16px; }
+.gp-session-provenance p span { display: block; margin-top: 4px; }
 .gp-platform-links { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; margin-top: 25px; }
 .gp-platform-links > a { font-size: 13px; }
 .gp-session-dashboard { padding: 20px; border: 1px solid var(--site-rule); background: var(--site-surface); line-height: 1.5; }
@@ -581,7 +584,9 @@
   .golden-public .gp-hero-summary,
   .golden-public .gp-hero-photo,
   .golden-public .gp-hero-notes,
-  .golden-public main > section:not(.gp-hero),
+  /* Live contents animate independently; never fade the whole green section
+     again when its controls gain/lose focus or the counter replays. */
+  .golden-public main > section:not(.gp-hero):not(.gp-counter),
   .golden-public > .gp-footer {
     animation: gp-page-enter 640ms cubic-bezier(.22, 1, .36, 1) both;
     animation-delay: 160ms;

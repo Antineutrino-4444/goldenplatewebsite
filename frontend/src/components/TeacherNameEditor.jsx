@@ -38,7 +38,7 @@ export default function TeacherNameEditor({ teacher, save }) {
     }}>
       <label className="block">First / preferred name<Input value={preferred} onChange={event => setPreferred(event.target.value)} required disabled={busy} /></label>
       <label className="block">Last name<Input value={last} onChange={event => setLast(event.target.value)} required disabled={busy} /></label>
-      <p className="text-xs text-muted-foreground">Past records and draw results will display this name. The original recorded name is kept.</p>
+      <p className="text-xs text-muted-foreground">Past records and draw results display the updated name. The original recorded name is kept.</p>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save name'}</Button>

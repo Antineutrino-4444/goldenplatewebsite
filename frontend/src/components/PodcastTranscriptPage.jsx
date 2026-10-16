@@ -37,7 +37,7 @@ export default function PodcastTranscriptPage() {
       <p className="gp-section-label">Spoiler Alert · Second Harvest National Youth Council</p>
       <h1>The Golden Plate.<br />The conversation.</h1>
       <p>Jiajun (Leo) Li, Shuoyou (Nick) Wang, and Michael Casey discuss food waste, student leadership, and the website they helped build at St. Andrew’s College.</p>
-      <p className="gp-transcript-note">Edited from an Otter.ai transcript for readability. Timestamps are approximate. The edited text has not been independently checked against the recording.</p>
+      <p className="gp-transcript-note">Edited for readability from an automated transcript. Timestamps are approximate.</p>
       <div className="gp-platform-links"><a className="gp-text-link" href={episode} target="_blank" rel="noopener noreferrer">Listen on Spotify ↗</a><a className="gp-text-link" href={PODCAST_TRANSCRIPT_URL} download>Download the text transcript</a><Link className="gp-text-link" to="/stories">Watch & listen</Link></div>
     </header>
     <nav className="gp-transcript-chapters" aria-label="Transcript topics"><a href="#podcast-06-41">Student leadership · 06:41</a><a href="#podcast-09-36">Building the website · 09:36</a><a href="#podcast-18-02">Starting at your school · 18:02</a><a href="#podcast-22-44">Website efficiency · 22:44</a></nav>

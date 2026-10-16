@@ -67,10 +67,10 @@ function SchoolLocationEditor({ app, onSaved, onClose, schoolId, hideHeader = fa
     <>
       {!hideHeader && <DialogHeader>
         <DialogTitle>Choose your school’s location</DialogTitle>
-        <DialogDescription>Search for {schoolName} and choose its location, or choose to remain unmapped. Unmapped schools appear under Others without a location pin.</DialogDescription>
+        <DialogDescription>Put {schoolName} on the community map, or join the school list without a pin.</DialogDescription>
       </DialogHeader>}
       {error && <div className="space-y-2"><p role="alert" className="text-sm text-red-700">{error}</p>{!loaded && !loading && <Button variant="outline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button>}</div>}
-      {unmapped && <p role="status" className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">This school is currently unmapped and listed under Others. You can add a location at any time.</p>}
+      {unmapped && <p role="status" className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">Listed in Others without a map pin. You can add a location here.</p>}
       {loading ? <p role="status" className="p-6 text-sm text-slate-600">Loading school location…</p> : loaded && (
         <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)]">
           <div className="min-w-0 space-y-3">

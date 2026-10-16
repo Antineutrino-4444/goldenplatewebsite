@@ -151,8 +151,8 @@ export default function AdminSessionExport({ open, onOpenChange, accountKey }) {
 
             <section className="space-y-3" aria-labelledby="export-anonymize-heading">
               <h3 id="export-anonymize-heading" className="font-semibold">Anonymize columns</h3>
-              <p className="text-sm text-gray-600">Student details stay as recorded. Roster Status marks students missing from the current roster as Old. House Changed and Roster Notes flag changes and matching conflicts, with Student ID taking priority. Older records with incomplete saved history are noted.</p>
-              <p className="text-sm text-gray-600">Checked columns use anonymous labels instead of their original values. Labels repeat across all sessions in this download and change with each new export. An anonymous Person column lets you follow the same student across sessions, including students with identical names.</p>
+              <p className="text-sm text-gray-600">Exports use details saved with each record. Roster Status marks students missing from the current roster; House Changed and Roster Notes flag roster differences and matching conflicts.</p>
+              <p className="text-sm text-gray-600">Choose which columns to anonymize. Consistent labels and a Person column help you follow each student across sessions within this download. New exports use new labels.</p>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" disabled={exporting} onClick={() => setAnonymized(new Set(['Preferred', 'Last', 'Student ID']))}>Anonymize identities</Button>
                 <Button size="sm" variant="outline" disabled={exporting} onClick={() => setAnonymized(new Set(columns.map((column) => column.key)))}>Anonymize all columns</Button>
@@ -164,7 +164,7 @@ export default function AdminSessionExport({ open, onOpenChange, accountKey }) {
                   {column.label}
                 </label>)}
               </div>
-              <p className="text-xs text-gray-500">Unmasked columns may still identify someone. Blank values stay blank, and the stored records remain unchanged. Individually excluded records are omitted; merged sessions export only their own records.</p>
+              <p className="text-xs text-gray-500">Readable columns may identify students. Anonymizing this download leaves stored records unchanged. Excluded records are left out; merged sessions export their own records only.</p>
             </section>
           </>}
         </div>

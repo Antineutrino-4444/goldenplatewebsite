@@ -1,4 +1,4 @@
-import { ArrowUpRight, Check, Flag, Leaf } from 'lucide-react'
+import { Check, Flag, Leaf } from 'lucide-react'
 import { counterBarLayout } from '@/lib/counter-animation.js'
 
 function UpdatedNumber({ value, updateKey, percentage = false, suffix = '' }) {
@@ -99,7 +99,6 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-black/10 px-6 py-4 text-sm text-emerald-100 sm:px-9 lg:px-11">
         <p>{range.student_clean_count.toLocaleString()} student · {range.faculty_clean_count.toLocaleString()} faculty clean plates</p>
-        <p className="inline-flex items-center gap-1.5"><ArrowUpRight className="h-4 w-4" aria-hidden="true" />Every clean plate makes a difference</p>
       </div>
     </section>
 

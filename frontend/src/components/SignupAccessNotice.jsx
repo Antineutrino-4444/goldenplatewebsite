@@ -9,8 +9,8 @@ export default function SignupAccessNotice({ app }) {
   const [failed, setFailed] = useState(false)
   const guest = app.user?.role === 'guest'
   const message = guest
-    ? 'Unable to sign up while guest mode is still active. Please log out, then continue with your account request or school registration.'
-    : 'Unable to sign up while you are signed in to an existing account. Please log out before requesting another account or registering a school. You can also return to your portal.'
+    ? 'Log out of guest mode to request an account or register a school.'
+    : 'Log out to request another account or register a school, or return to your portal.'
   const leave = async () => {
     setBusy(true)
     setFailed(false)

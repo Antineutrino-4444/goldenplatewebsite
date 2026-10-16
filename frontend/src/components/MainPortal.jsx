@@ -230,7 +230,7 @@ function MainPortal({ app }) {
                 <div className="text-6xl mb-4">🍽️</div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">No Active Session</h2>
                 <p className="text-gray-600 mb-6">
-                  Create a new session to start tracking plate cleanliness and food waste data.
+                  Create a session to record plates from a lunch.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
@@ -348,7 +348,7 @@ function MainPortal({ app }) {
                 <Alert className="mb-3 w-full border-blue-200 bg-blue-50">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-blue-800">
-                    Guest mode is read-only. Sign in with an approved school account to record plate data.
+                    Sign in with your school account to record plates.
                   </AlertDescription>
                 </Alert>
               )}
@@ -891,7 +891,7 @@ function MainPortal({ app }) {
                     Student Database
                   </CardTitle>
                   <CardDescription>
-                    Upload a CSV with columns in any order and any capitalization. Student ID, Last, and Preferred (or First if there is no Preferred column) are required. Preferred is always used when present. Grade, Advisor, House, and Clan can be blank or omitted. Students missing from the new roster are excluded from ticket draws.
+                    Upload your student roster as a CSV. Include Student ID, Last, and Preferred; use First only if there is no Preferred column. Grade, Advisor, House, and Clan are optional. The new roster sets student eligibility for ticket draws.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -899,7 +899,7 @@ function MainPortal({ app }) {
                     <Alert className="border-blue-200 bg-blue-50">
                       <AlertCircle className="h-4 w-4" />
                       <AlertDescription className="text-blue-800">
-                        CSV upload is restricted to admin and super admin users only.
+                        Ask a school admin to upload the student roster.
                       </AlertDescription>
                     </Alert>
                   ) : (
@@ -933,7 +933,7 @@ function MainPortal({ app }) {
                     Teacher Database
                   </CardTitle>
                   <CardDescription>
-                    Upload a CSV or comma-separated TXT file with Last and Preferred (or First if there is no Preferred column), in any order and capitalization. Include Faculty ID to keep the same person when names change between uploads. Without it, only unique matching names can be linked. Files without the required name headers are rejected. Use the preview to edit a name and update how past records and draws display it.
+                    Upload a faculty CSV or comma-separated TXT file with Last and Preferred; use First only if there is no Preferred column. Add Faculty ID to keep records connected when names change. Use the preview to review the roster or edit a name.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -941,7 +941,7 @@ function MainPortal({ app }) {
                     <Alert className="border-blue-200 bg-blue-50">
                       <AlertCircle className="h-4 w-4" />
                       <AlertDescription className="text-blue-800">
-                        Teacher list upload is restricted to admin and super admin users only.
+                        Ask a school admin to upload the faculty roster.
                       </AlertDescription>
                     </Alert>
                   ) : (
@@ -1269,7 +1269,7 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle>Student Database Preview</DialogTitle>
             <DialogDescription>
-              Current student database with pagination
+              Search the uploaded student roster.
             </DialogDescription>
           </DialogHeader>
           <div className="flex min-h-0 flex-col gap-4">
@@ -1339,7 +1339,7 @@ function MainPortal({ app }) {
             <DialogHeader>
               <DialogTitle>Teacher List Preview</DialogTitle>
               <DialogDescription>
-                Preview of the uploaded teacher names
+                Search the uploaded faculty roster.
               </DialogDescription>
             </DialogHeader>
             <div className="flex min-h-0 flex-col gap-4">
@@ -1416,12 +1416,12 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle className="text-purple-600">Session Dashboard</DialogTitle>
             <DialogDescription>
-              Key metrics for the currently selected session.
+              Totals for the selected session.
             </DialogDescription>
           </DialogHeader>
           {!sessionId ? (
             <div className="py-12 text-center text-gray-500">
-              No active session selected. Switch to a session to view dashboard insights.
+              No active session selected. Switch to a session to view its totals.
             </div>
           ) : (
             <div className="space-y-6">
@@ -1535,7 +1535,7 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle className="text-red-600">Admin Panel</DialogTitle>
             <DialogDescription>
-              System administration and management
+              Manage your school’s accounts, sessions, and settings.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
