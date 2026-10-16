@@ -53,6 +53,12 @@ cd ..
 python src/main.py
 ```
 
+Production builds copy Mapbox's precompiled ES modules and workers into a
+versioned local asset directory. This preserves the map features while avoiding
+the memory cost of bundling Mapbox again on small deployment servers. Run
+`node --test frontend/tests/build/mapbox-build.test.js` from the repository root
+to verify a production build with a 384 MB JavaScript heap limit.
+
 ## Development
 ```bash
 # Run backend
