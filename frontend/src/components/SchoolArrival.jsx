@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
-import { lookupFlightOrigin, schoolFlightDeadline } from '@/lib/school-flight.js'
+import { schoolFlightDeadline } from '@/lib/school-flight.js'
 import './LandingPage.css'
 
 function UnavailableFlight({ onComplete }) {
@@ -39,7 +39,7 @@ export default function SchoolArrival({ user, onComplete }) {
       if (!r.ok) throw new Error('Schools unavailable')
       return r.json()
     })
-    Promise.all([schools, lookupFlightOrigin({ signal: controller.signal })]).then(([data, origin]) => {
+    schools.then((data) => {
       if (controller.signal.aborted) return
       const list = Array.isArray(data.schools) ? data.schools : []
       const destination = list.find((s) => s.school_id === schoolId)
@@ -47,7 +47,7 @@ export default function SchoolArrival({ user, onComplete }) {
         console.info('School globe skipped: this school has no published map location.')
         finish(); return
       }
-      setFlight({ schools: list, destination, origin })
+      setFlight({ schools: list, destination })
     }).catch((error) => {
       if (error.name !== 'AbortError') {
         console.warn('Unable to prepare the school globe animation:', error)

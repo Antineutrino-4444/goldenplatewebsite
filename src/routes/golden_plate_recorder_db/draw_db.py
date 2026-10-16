@@ -14,9 +14,11 @@ from .db import (
     SessionRecord,
     SessionTicketEvent,
     Student,
+    Teacher,
     _now_utc,
     db_session,
 )
+from .person_identity import teacher_names
 
 secure_random = random.SystemRandom()
 
@@ -343,6 +345,10 @@ def get_draw_history(session_id: str) -> List[Dict]:
         record = db_session.get(SessionRecord, event.selected_record_id) if event.selected_record_id else None
         is_faculty = event.draw_target == 'faculty' or bool(record and record.category == 'faculty')
         faculty_name = event.faculty_name
+        teacher_id = event.selected_teacher_id or (record.teacher_id if record else None)
+        teacher = db_session.get(Teacher, teacher_id) if teacher_id else None
+        if teacher and teacher.school_id == event.school_id:
+            faculty_name = teacher_names(teacher)[2]
         if not faculty_name and is_faculty and record:
             faculty_name = f"{record.preferred_name or ''} {record.last_name or ''}".strip()
 
@@ -359,6 +365,7 @@ def get_draw_history(session_id: str) -> List[Dict]:
             'created_by': readable_user_label(event.created_by, labels=user_labels),
             'student_name': f"{student.preferred_name} {student.last_name}" if student else None,
             'faculty_name': faculty_name if is_faculty else None,
+            'recorded_name': event.faculty_name if is_faculty else None,
             'student_id': event.selected_student_id,
             'tickets': event.tickets_at_event,
             'probability': probability,

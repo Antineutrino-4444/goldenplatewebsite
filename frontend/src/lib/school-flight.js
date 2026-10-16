@@ -1,21 +1,11 @@
-import { geoDistance, geoInterpolate } from 'd3-geo'
-import { hasGeographicCoordinates } from './mapCoordinates.js'
+import { geoInterpolate } from 'd3-geo'
+import { GLOBE_ORIGIN } from './globe-origin.js'
 
-export const DEFAULT_FLIGHT_ORIGIN = { longitude: -35, latitude: 22 }
 export const FLIGHT_TURN_MS = 1200
 export const FLIGHT_ZOOM_MS = 1200
 export const FLIGHT_SETTLE_MS = 150
 export const FLIGHT_DURATION_MS = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS + FLIGHT_ZOOM_MS
-const EARTH_RADIUS_KM = 6371.0088
-// Representative city centres: the straight-line Aurora, ON–Boston radius.
-const nearbyRadius = geoDistance([-79.4504, 44.0065], [-71.0589, 42.3601])
-export const NEARBY_FLIGHT_RADIUS_KM = nearbyRadius * EARTH_RADIUS_KM
 const clamp = (value) => Math.max(0, Math.min(1, value))
-
-export function isNearSchool(origin, destination) {
-  if (origin === DEFAULT_FLIGHT_ORIGIN || !hasGeographicCoordinates(origin) || !hasGeographicCoordinates(destination)) return false
-  return geoDistance([origin.longitude, origin.latitude], [destination.longitude, destination.latitude]) <= nearbyRadius + 1e-12
-}
 
 // Loading a cold Mapbox module/style must not consume the camera's playback
 // budget. Both stages still have independent exits so login cannot get stuck.
@@ -46,15 +36,11 @@ export function fullGlobeZoom(width, height) {
   return Math.max(-2.5, Math.min(2.25, Math.log2(Math.max(1, Math.min(width, height)) * 0.66 * Math.PI / 512)))
 }
 
-export function createSchoolFlight(origin, destination) {
-  const nearby = isNearSchool(origin, destination)
-  const from = nearby ? destination : hasGeographicCoordinates(origin) ? origin : DEFAULT_FLIGHT_ORIGIN
-  const turnDuration = nearby ? 0 : FLIGHT_TURN_MS
-  const zoomStart = FLIGHT_SETTLE_MS + turnDuration
-  const duration = zoomStart + FLIGHT_ZOOM_MS
-  const route = geoInterpolate([from.longitude, from.latitude], [destination.longitude, destination.latitude])
+export function createSchoolFlight(destination) {
+  const zoomStart = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS
+  const route = geoInterpolate([GLOBE_ORIGIN.longitude, GLOBE_ORIGIN.latitude], [destination.longitude, destination.latitude])
   return (elapsed, worldZoom) => {
-    const turn = nearby ? 1 : flightTurnProgress((elapsed - FLIGHT_SETTLE_MS) / turnDuration)
+    const turn = flightTurnProgress((elapsed - FLIGHT_SETTLE_MS) / FLIGHT_TURN_MS)
     const zoom = clamp((elapsed - zoomStart) / FLIGHT_ZOOM_MS)
     return {
       center: route(turn),
@@ -62,29 +48,7 @@ export function createSchoolFlight(origin, destination) {
       zoom: worldZoom + (13 - worldZoom) * zoom * zoom,
       opacity: 1 - flightTurnProgress((zoom - 0.72) / 0.28),
       phase: elapsed < FLIGHT_SETTLE_MS ? 'ready' : elapsed >= zoomStart ? 'zoom' : 'turn',
-      complete: elapsed >= duration,
+      complete: elapsed >= FLIGHT_DURATION_MS,
     }
   }
-}
-
-// City-level IP orientation only; never request GPS, send account details, or
-// persist the visitor's coordinates. A failed lookup uses the normal world view.
-let approximateOrigin
-export async function lookupFlightOrigin({ signal, fetchImpl = fetch, timeoutMs = 1200 } = {}) {
-  if (approximateOrigin) return approximateOrigin
-  const controller = new AbortController()
-  const abort = () => controller.abort()
-  signal?.addEventListener('abort', abort, { once: true })
-  if (signal?.aborted) controller.abort()
-  const timeout = setTimeout(abort, timeoutMs)
-  try {
-    const response = await fetchImpl('https://ipwho.is/?fields=success,latitude,longitude', {
-      signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer',
-    })
-    if (!response.ok) return DEFAULT_FLIGHT_ORIGIN
-    const point = await response.json()
-    if (point.success !== true || !hasGeographicCoordinates(point)) return DEFAULT_FLIGHT_ORIGIN
-    return (approximateOrigin = { longitude: Math.round(point.longitude * 10) / 10, latitude: Math.round(point.latitude * 10) / 10 })
-  } catch { return DEFAULT_FLIGHT_ORIGIN }
-  finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort) }
 }

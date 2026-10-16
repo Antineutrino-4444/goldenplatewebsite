@@ -41,6 +41,7 @@ class GuestView:
         'student_identifier', 'grade', 'advisor', 'clan', 'email', 'contact_email',
         'student_profile', 'roster_conflicts', 'dedupe_key', 'comment', 'notes',
         'exclusion_reason', 'roster_filename', 'roster_snapshot_id',
+        'teacher_id', 'faculty_identifier', 'recorded_name',
     }
     staff_fields = {
         'owner', 'recorded_by', 'created_by', 'selected_by', 'finalized_by',

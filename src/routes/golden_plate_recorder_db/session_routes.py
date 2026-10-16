@@ -19,10 +19,12 @@ from .db import (
     SessionRecord,
     RecordExclusionEvent,
     Student,
+    Teacher,
     _now_utc,
     db_session,
 )
 from .domain import serialize_draw_info
+from .person_identity import faculty_pick_names, record_names, teacher_names
 from .users import readable_user_label, user_labels_for_school
 from .draw_db import record_draw_event
 from .house_scoring import house_score_settings
@@ -98,9 +100,7 @@ def _serialize_faculty_pick(db_sess, fallback=None):
         or db_sess.faculty_pick_last_name
     ):
         return {
-            'preferred_name': db_sess.faculty_pick_preferred_name,
-            'last_name': db_sess.faculty_pick_last_name,
-            'display_name': db_sess.faculty_pick_display_name,
+            **faculty_pick_names(db_sess),
             'recorded_at': _isoformat_timestamp(db_sess.faculty_pick_recorded_at),
             'recorded_by': db_sess.faculty_pick_recorded_by,
             'finalized': bool(db_sess.faculty_finalized),
@@ -701,6 +701,7 @@ def get_session_history():
     if is_guest() and not data.get('is_public', True):
         return jsonify({'error': 'Access denied'}), 403
 
+    data = hydrate_session_from_db(session_id, persist=False) or data
     return jsonify({
         'scan_history': data['scan_history']
     }), 200
@@ -765,12 +766,15 @@ def pick_random_faculty(session_id):
     db_sess.faculty_pick_recorded_at = _parse_iso_timestamp(recorded_at)
     db_sess.faculty_pick_recorded_by = faculty_payload['recorded_by']
     db_sess.faculty_pick_record_id = chosen.get('record_id')
+    db_sess.faculty_pick_teacher_id = chosen.get('teacher_id')
+    faculty_payload['teacher_id'] = db_sess.faculty_pick_teacher_id
     db_sess.faculty_finalized = 0
     db_sess.faculty_finalized_at = None
     db_sess.faculty_finalized_by = None
     db_sess.updated_at = _now_utc()
     event = record_draw_event(db_sess, 'draw', actor_id, comment='Faculty draw')
     event.selected_record_id = db_sess.faculty_pick_record_id
+    event.selected_teacher_id = db_sess.faculty_pick_teacher_id
     event.draw_target = 'faculty'
     event.faculty_name = display_name
 
@@ -813,6 +817,7 @@ def finalize_faculty_winner(session_id):
             db_sess.faculty_pick_record_id = record.id if record else None
         event = record_draw_event(db_sess, 'finalize', actor_id, comment='Faculty winner finalized')
         event.selected_record_id = db_sess.faculty_pick_record_id
+        event.selected_teacher_id = faculty_pick_names(db_sess)['teacher_id']
         event.draw_target = 'faculty'
         event.faculty_name = _serialize_faculty_pick(db_sess)['display_name']
         db_session.commit()
@@ -969,8 +974,9 @@ def get_scan_history():
 
     # Get all records from session_records table
     records = (
-        db_session.query(SessionRecord, Student)
+        db_session.query(SessionRecord, Student, Teacher)
         .outerjoin(Student, SessionRecord.student_id == Student.id)
+        .outerjoin(Teacher, SessionRecord.teacher_id == Teacher.id)
         .filter(
             SessionRecord.session_id == session_id,
             SessionRecord.school_id == school_id
@@ -980,21 +986,11 @@ def get_scan_history():
     )
 
     formatted_history = []
-    for session_record, student in records:
+    for session_record, student, teacher in records:
         category = session_record.category.lower()
         
-        # Build the name - prioritize names stored in session_record
-        name = ''
-        if session_record.preferred_name or session_record.last_name:
-            # Use names directly from session_record (for faculty and manual entries)
-            preferred = (session_record.preferred_name or '').strip()
-            last = (session_record.last_name or '').strip()
-            name = f"{preferred} {last}".strip()
-        elif student:
-            # Fall back to student record if available
-            preferred = (student.preferred_name or '').strip()
-            last = (student.last_name or '').strip()
-            name = f"{preferred} {last}".strip()
+        labels = record_names(session_record, student=student, teacher=teacher)
+        name = labels['display_name']
         
         # Handle special categories
         if not name:
@@ -1006,6 +1002,7 @@ def get_scan_history():
             'exclusion_reason': session_record.exclusion_reason,
             'timestamp': session_record.recorded_at.isoformat() if session_record.recorded_at else '',
             'name': name,
+            'recorded_name': labels['recorded_name'],
             'category': category.upper(),
             'is_manual_entry': bool(session_record.is_manual_entry),
             'is_count_only': not bool(session_record.student_id or session_record.preferred_name or session_record.last_name),
@@ -1052,6 +1049,7 @@ def _record_student(category):
     data = request.get_json(silent=True) or {}
     input_value = str(data.get('input_value', '') or '').strip()
     provided_student_id = normalize_name(data.get('student_id'))
+    provided_teacher_id = normalize_name(data.get('teacher_id'))
     provided_key_raw = str(data.get('student_key') or '').strip()
     provided_key = provided_key_raw.lower() if provided_key_raw else ''
     provided_preferred = normalize_name(data.get('preferred_name') or data.get('preferred'))
@@ -1060,7 +1058,7 @@ def _record_student(category):
     ensure_session_structure(session_info)
     school_lookup = get_student_lookup_for_school(school_id)
 
-    has_reference = bool(input_value or provided_student_id or provided_key or
+    has_reference = bool(input_value or provided_student_id or provided_teacher_id or provided_key or
                          provided_preferred or provided_last)
     if not has_reference:
         if category != 'faculty':
@@ -1101,25 +1099,39 @@ def _record_student(category):
 
     if category == 'faculty':
         input_value = input_value or ' '.join(filter(None, [provided_preferred, provided_last]))
-        if not input_value:
+        if not input_value and not provided_teacher_id:
             return jsonify({'error': 'Faculty name is required'}), 400
 
-        name_parts = input_value.split()
-        preferred_name = ""
-        last_name = ""
-        if len(name_parts) >= 2:
-            preferred_name = name_parts[0].strip().title()
-            last_name = ' '.join(name_parts[1:]).strip().title()
-        elif len(name_parts) == 1:
-            preferred_name = name_parts[0].strip().title()
-            last_name = ""
+        if provided_teacher_id:
+            teacher = db_session.query(Teacher).filter_by(id=provided_teacher_id, school_id=school_id).first()
+            if not teacher:
+                return jsonify({'error': 'Faculty member not found'}), 404
         else:
-            return jsonify({'error': 'Faculty name is required'}), 400
+            matches = db_session.query(Teacher).filter(Teacher.school_id == school_id, or_(
+                func.lower(Teacher.display_name) == input_value.lower(),
+                func.lower(Teacher.name) == input_value.lower(),
+            )).all()
+            if len(matches) > 1:
+                return jsonify({'error': 'Multiple faculty members have this name. Select the person from the suggestions.'}), 409
+            teacher = matches[0] if matches else None
+        if teacher is None:
+            parts = input_value.split(maxsplit=1)
+            preferred_name = provided_preferred or parts[0].title()
+            last_name = provided_last or (parts[1].title() if len(parts) > 1 else '')
+            teacher = Teacher(school_id=school_id, name=f'{preferred_name} {last_name}'.strip(),
+                              display_name=f'{preferred_name} {last_name}'.strip(),
+                              preferred_name=preferred_name, last_name=last_name, is_active=0)
+            db_session.add(teacher)
+            db_session.flush()
+        preferred_name, last_name, _ = teacher_names(teacher)
 
         # Persisted records are authoritative; an old cache cannot reject a save.
-        existing_faculty = db_session.query(SessionRecord).filter_by(
-            session_id=session_id, school_id=school_id,
-            dedupe_key=f"faculty_{preferred_name.lower()}_{last_name.lower()}",
+        existing_faculty = db_session.query(SessionRecord).filter(
+            SessionRecord.session_id == session_id, SessionRecord.school_id == school_id,
+            SessionRecord.category == 'faculty',
+            or_(SessionRecord.teacher_id == teacher.id,
+                (SessionRecord.teacher_id.is_(None)) &
+                (SessionRecord.dedupe_key == f"faculty_{preferred_name.lower()}_{last_name.lower()}")),
         ).first()
 
         if existing_faculty:
@@ -1130,6 +1142,7 @@ def _record_student(category):
             }), 409
 
         record = {
+            'teacher_id': teacher.id,
             'preferred_name': preferred_name,
             'first_name': preferred_name,
             'last_name': last_name,
@@ -1144,8 +1157,9 @@ def _record_student(category):
         }
         
         # Save to database
-        dedupe_key = f"faculty_{preferred_name.lower()}_{last_name.lower()}"
+        dedupe_key = f'faculty-id:{teacher.id}'
         db_record = SessionRecord(
+            teacher_id=teacher.id,
             school_id=school_id,
             session_id=session_id,
             category='faculty',
@@ -1174,6 +1188,7 @@ def _record_student(category):
         
         return jsonify({
             'status': 'success',
+            'teacher_id': teacher.id,
             'preferred_name': preferred_name,
             'first_name': preferred_name,
             'last_name': last_name,
@@ -1522,6 +1537,7 @@ def export_csv():
 
     output = io.StringIO()
     output.write("CLEAN,DIRTY,RED,FACULTY CLEAN\n")
+    data = hydrate_session_from_db(session_id, persist=False, session_model=db_sess) or data
 
     def format_name(record, category):
         preferred = (record.get('preferred_name') or record.get('first_name', '') or '').strip()

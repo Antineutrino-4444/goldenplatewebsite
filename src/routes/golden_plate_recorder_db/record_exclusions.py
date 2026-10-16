@@ -10,6 +10,7 @@ from .db import (RecordExclusionEvent, RosterSnapshot, School, Session, SessionR
 from .draw_db import (get_clean_student_ids_for_session, get_student_ticket_balance,
                       record_draw_event, update_draft_pool)
 from .utils import normalize_house, plate_count_label
+from .person_identity import record_names
 
 
 def review_records(meal, roster_scope='auto'):
@@ -41,7 +42,7 @@ def review_records(meal, roster_scope='auto'):
             elif row.student_id and normalize_house(row.house) and normalize_house(members[row.student_id]):
                 if normalize_house(row.house) != normalize_house(members[row.student_id]):
                     issue = f'Recorded house conflicts with {roster_label}.'
-        name = f'{row.preferred_name or ""} {row.last_name or ""}'.strip()
+        name = record_names(row)['display_name']
         result.append({'record_id': row.id, 'name': name or plate_count_label(row.category),
                        'category': row.category, 'house': normalize_house(row.house),
                        'is_count_only': not named, 'is_excluded': bool(row.is_excluded),
@@ -142,8 +143,9 @@ def set_record_excluded(meal, row, excluded, actor_id, reason):
         event.draw_target = 'faculty'
         event.faculty_name = meal.faculty_pick_display_name
         event.selected_record_id = meal.faculty_pick_record_id
+        event.selected_teacher_id = meal.faculty_pick_teacher_id
         for field in ('faculty_pick_preferred_name', 'faculty_pick_last_name', 'faculty_pick_display_name',
-                      'faculty_pick_recorded_at', 'faculty_pick_recorded_by', 'faculty_pick_record_id',
+                      'faculty_pick_recorded_at', 'faculty_pick_recorded_by', 'faculty_pick_record_id', 'faculty_pick_teacher_id',
                       'faculty_finalized_at', 'faculty_finalized_by'):
             setattr(meal, field, None)
         meal.faculty_finalized = 0

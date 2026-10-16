@@ -56,13 +56,14 @@ def test_teacher_search_covers_all_pages_and_display_names(client, login):
 
 def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client, login):
     login()
-    assert upload_teachers(client, ['Last,Preferred', 'Morgan,Alex', 'Smith,Jamie']).status_code == 200
-    retained_id = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID, name='Jamie Smith').one().id
+    assert upload_teachers(client, ['Faculty ID,Last,Preferred', 'roster-alex,Morgan,Alex', 'roster-jamie,Smith,Jamie']).status_code == 200
+    retained_id = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID, faculty_identifier='roster-jamie').one().id
     session_id = client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).get_json()['session_id']
-    assert client.post('/api/record/faculty', json={'input_value': 'Alex Morgan'}).status_code == 200
+    alex_id = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID, faculty_identifier='roster-alex').one().id
+    assert client.post('/api/record/faculty', json={'teacher_id': alex_id}).status_code == 200
     assert client.post(f'/api/session/{session_id}/faculty/pick').status_code == 200
     assert client.post(f'/api/session/{session_id}/faculty/finalize').status_code == 200
-    log_before = client.get(f'/api/session/{session_id}/draw/history').get_json()
+    log_before = client.get(f'/api/session/{session_id}/draw/summary').get_json()['history']
     school = School(id=uuid.uuid4().hex, name='Other School', slug=uuid.uuid4().hex)
     db_session.add(school)
     db_session.flush()
@@ -71,7 +72,7 @@ def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client,
     other_id = other_teacher.id
     db_session.commit()
 
-    response = upload_teachers(client, ['First,Last', 'jamie,smith', 'Taylor,Lee', 'Taylor,Lee'], 'new-teachers.txt')
+    response = upload_teachers(client, ['Faculty ID,First,Last', 'roster-jamie,jamie,smith', 'roster-taylor,Taylor,Lee', 'roster-taylor,Taylor,Lee'], 'new-teachers.txt')
     assert response.status_code == 200
     assert response.get_json()['count'] == 2
     names = client.get('/api/teachers/list').get_json()
@@ -81,7 +82,7 @@ def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client,
     assert names['metadata']['filename'] == 'new-teachers.txt'
     assert client.get('/api/session/status').get_json()['faculty_clean_count'] == 1
     assert client.get('/api/session/status').get_json()['faculty_pick']['finalized'] is True
-    assert client.get(f'/api/session/{session_id}/draw/history').get_json() == log_before
+    assert client.get(f'/api/session/{session_id}/draw/summary').get_json()['history'] == log_before
 
 
 @pytest.mark.parametrize('filename', ['teachers.CSV', 'teachers.TXT'])
@@ -124,13 +125,14 @@ def test_teacher_csv_case_changes_keep_existing_identity(client, login):
 def test_teacher_name_parts_survive_reload_and_update_without_changing_identity(client, login):
     login()
     assert upload_teachers(client, ['Last,First,Preferred', 'de la Cruz,Mary Jane,Mary Jo']).status_code == 200
-    teacher = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID).one()
+    teacher = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID, is_active=1).one()
     teacher_id = teacher.id
     assert (teacher.preferred_name, teacher.last_name) == ('Mary Jo', 'de la Cruz')
 
     storage.global_teacher_data.clear()
     db_session.remove()
     expected = {
+        'teacher_id': teacher_id, 'faculty_identifier': None,
         'name': 'Mary Jo de la Cruz', 'display_name': 'Mary Jo de la Cruz',
         'preferred_name': 'Mary Jo', 'last_name': 'de la Cruz',
     }
@@ -176,7 +178,7 @@ def test_invalid_teacher_roster_preserves_roster(client, login, content, filenam
 
 def test_empty_or_failed_teacher_upload_preserves_current_database(client, login, monkeypatch):
     login()
-    assert upload_teachers(client, ['Last,Preferred', 'Morgan,Alex'], 'original.txt').status_code == 200
+    assert upload_teachers(client, ['Faculty ID,Last,Preferred', 'roster-alex,Morgan,Alex'], 'original.txt').status_code == 200
     original = client.get('/api/teachers/list').get_json()
     assert upload_teachers(client, [' ', '""']).status_code == 400
     assert client.get('/api/teachers/list').get_json() == original

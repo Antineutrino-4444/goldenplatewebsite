@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import re
 import uuid
 import zipfile
 
@@ -61,13 +62,13 @@ def test_recorded_profiles_survive_roster_replacement_and_return(client, login, 
         assert client.post('/api/record/clean', json={'input_value': identifier}).status_code == 200
     original_ids = {s.student_identifier: s.id for s in db_session.query(Student).filter_by(school_id=DEFAULT_SCHOOL_ID).all()}
     upload(client, NEW)
-    # Exports must use persisted profiles even if the application cache is missing/stale.
+    # Names follow the permanent person link; recording-time facts remain snapshots.
     storage.session_data.clear()
     rows = {row['Student ID']: row for row in export(client, meal, format)}
     assert rows['9701']['Roster Status'] == 'Current'
     assert rows['9701']['House Changed'] == 'Yes'
     for key, value in zip(FIELDS, OLD[0]):
-        assert rows['9701'][key] == value
+        assert rows['9701'][key] == (NEW[0][FIELDS.index(key)] if key in ('Preferred', 'Last') else value)
     for field in ('Last', 'Preferred', 'Grade', 'Advisor', 'House', 'Clan'):
         assert f'{field} changed:' in rows['9701']['Roster Notes']
     assert 'House changed: Barn -> Hall' in rows['9701']['Roster Notes']
@@ -122,8 +123,10 @@ def test_anonymization_also_masks_values_inside_roster_notes(client, login, form
     masked_fields = ['Preferred', 'Last', 'Student ID', 'House', 'Advisor', 'Clan']
     row = export(client, meal, format, masked_fields)[0]
     text = '\n'.join(row.values())
-    assert all(value not in text for value in ['Alex', 'Avery', 'Original', 'Updated', '9701', '9799',
+    assert all(value not in text for value in ['Alex', 'Avery', 'Original', 'Updated',
                                              'Barn', 'Hall', 'Old Advisor', 'New Advisor', 'Alpha', 'Gamma'])
+    # Random hexadecimal labels can contain the same digits as a school ID.
+    assert not re.search(r'(?<![a-zA-Z0-9])(?:9701|9799)(?![a-zA-Z0-9])', text)
     assert row['House'] in row['Roster Notes'] and row['Preferred'] in row['Roster Notes']
     assert row['Grade'] == '9' and 'Grade changed: 9 -> 11' in row['Roster Notes']
     assert row['Roster Status'] == 'Current'

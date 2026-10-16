@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { geoDistance, geoGraticule10, geoOrthographic, geoPath } from 'd3-geo'
 import { hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
+import { GLOBE_ORIGIN } from '@/lib/globe-origin.js'
 
-const START = [65, -24, 0]
+const START = [-GLOBE_ORIGIN.longitude, -GLOBE_ORIGIN.latitude, 0]
 
 // Lightweight globe for the public landing page. The login flight uses Mapbox.
 // Geographic pins come exclusively from the existing public school endpoint.

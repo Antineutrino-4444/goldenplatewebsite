@@ -45,7 +45,7 @@ def upload_teachers():
     try:
         content = file.read().decode('utf-8-sig')
         teachers = []
-        reader = roster_csv_reader(content, columns=('Last', 'Preferred', 'First'))
+        reader = roster_csv_reader(content, columns=('Last', 'Preferred', 'First', 'Faculty ID'))
         fields = reader.fieldnames or []
         if 'Last' not in fields or not any(name in fields for name in ('Preferred', 'First')):
             return jsonify({'error': 'Teacher roster must contain Last and either Preferred or First column headers. CSV and TXT files must use comma-separated columns; column order and header capitalization do not matter.'}), 400
@@ -54,10 +54,14 @@ def upload_teachers():
             first = normalize_name(row.get(first_column))
             last = normalize_name(row.get('Last'))
             if first and last:
+                identifier = normalize_name(row.get('Faculty ID'))
+                if 'Faculty ID' in fields and not identifier:
+                    return jsonify({'error': 'Every named row must have a Faculty ID when that column is included.'}), 400
                 teacher_name = f'{first} {last}'
                 teachers.append({
                     'name': teacher_name, 'display_name': teacher_name,
                     'preferred_name': first, 'last_name': last,
+                    'faculty_identifier': identifier or None,
                 })
 
         if not teachers:
@@ -70,6 +74,9 @@ def upload_teachers():
                 teachers, school_id=school_id, filename=filename, uploaded_by=current_user['username'],
             )
             print(f"Teacher roster sync complete: {teacher_sync}")
+        except ValueError as exc:
+            db_session.rollback()
+            return jsonify({'error': str(exc)}), 400
         except Exception as exc:
             print(f"Error syncing teachers table: {exc}")
             return jsonify({'error': 'Teacher roster could not be stored in the database'}), 500
@@ -109,7 +116,7 @@ def get_teacher_names():
 
     teachers = (
         db_session.query(Teacher)
-        .filter(Teacher.school_id == school_id)
+        .filter(Teacher.school_id == school_id, Teacher.is_active == 1)
         .order_by(func.lower(Teacher.display_name), func.lower(Teacher.name))
         .all()
     )
@@ -126,6 +133,8 @@ def get_teacher_names():
         display_name = str(teacher.display_name or teacher.name or '').strip()
         name_value = str(teacher.name or '').strip()
         teacher_list.append({
+            'teacher_id': teacher.id,
+            'faculty_identifier': teacher.faculty_identifier,
             'name': name_value,
             'display_name': display_name or name_value,
             'preferred_name': teacher.preferred_name,
@@ -153,7 +162,7 @@ def preview_teachers():
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
 
-    base_query = db_session.query(Teacher).filter(Teacher.school_id == school_id)
+    base_query = db_session.query(Teacher).filter(Teacher.school_id == school_id, Teacher.is_active == 1)
     search = request.args.get('search', '').strip().lower()
     if search:
         base_query = base_query.filter(or_(
@@ -179,6 +188,8 @@ def preview_teachers():
     )
 
     paginated_teachers = [{
+        'teacher_id': teacher.id,
+        'faculty_identifier': teacher.faculty_identifier,
         'name': str(teacher.name or '').strip(),
         'display_name': str(teacher.display_name or teacher.name or '').strip(),
         'preferred_name': teacher.preferred_name,
@@ -198,6 +209,31 @@ def preview_teachers():
         },
         'metadata': _teacher_roster_metadata(school_id),
     }), 200
+
+
+@recorder_bp.route('/teachers/<teacher_id>', methods=['PATCH'])
+def rename_teacher(teacher_id):
+    if not require_admin():
+        return jsonify({'error': 'Admin or super admin access required'}), 403
+    user = get_current_user()
+    teacher = db_session.query(Teacher).filter_by(id=teacher_id, school_id=user['school_id']).first()
+    if not teacher:
+        return jsonify({'error': 'Faculty member not found'}), 404
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'Provide first/preferred and last name.'}), 400
+    preferred = normalize_name(payload.get('preferred_name'))
+    last = normalize_name(payload.get('last_name'))
+    if not preferred or not last:
+        return jsonify({'error': 'First/preferred and last name are required.'}), 400
+    teacher.preferred_name, teacher.last_name = preferred, last
+    teacher.display_name = f'{preferred} {last}'
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Unable to save faculty name.'}), 500
+    return jsonify({'status': 'success', 'teacher_id': teacher.id, 'display_name': teacher.display_name})
 
 
 __all__ = []

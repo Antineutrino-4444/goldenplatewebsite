@@ -9,6 +9,7 @@ import EnglishScaleControl from '@/lib/EnglishScaleControl.js'
 import { maxSchoolSessions, schoolActivity, schoolGuestPath, schoolSessionLabel } from '@/lib/schoolMap.js'
 import { originState, siteDestination } from '@/components/SiteLink.jsx'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover.jsx'
+import { GLOBE_ORIGIN } from '@/lib/globe-origin.js'
 import { hasGeographicCoordinates, wrapLongitude } from '@/lib/mapCoordinates.js'
 import { MAP_VIEW_EVENT, MAP_VIEW_KEY, projectionFor, readMapView, schoolBounds } from '@/lib/mapView.js'
 import { applyBasemap, BASEMAPS, isPublicMapboxToken, MAP_LANGUAGE, MAP_WORLDVIEW, mapStyleFor, MAP_LAYERS_EVENT, MAP_LAYERS_KEY, readMapLayers, streetViewUrl } from '@/lib/mapLayers.js'
@@ -138,7 +139,7 @@ export default function WorldMap({
       map = new VectorMap({
         container: containerRef.current, style: mapStyleFor(layersRef.current.basemap),
         accessToken: MAPBOX_TOKEN, worldview: MAP_WORLDVIEW, language: MAP_LANGUAGE,
-        center: hasGeographicCoordinates(initial) ? [initial.longitude, initial.latitude] : [-35, 22],
+        center: hasGeographicCoordinates(initial) ? [initial.longitude, initial.latitude] : [GLOBE_ORIGIN.longitude, GLOBE_ORIGIN.latitude],
         zoom: hasGeographicCoordinates(initial) ? 14 : 1.05,
         minZoom: 0, maxZoom: 22, maxPitch: 0,
         dragRotate: false, pitchWithRotate: false, touchPitch: false,
@@ -257,7 +258,7 @@ export default function WorldMap({
       window.dispatchEvent(new Event(MAP_VIEW_EVENT))
     } catch { /* The selected view still works when storage is unavailable. */ }
   }
-  const showWorld = () => mapRef.current?.flyTo({ center: [-35, 22], zoom: view === 'globe' ? 1.05 : 0, bearing: 0, pitch: 0, duration: 900 })
+  const showWorld = () => mapRef.current?.flyTo({ center: [GLOBE_ORIGIN.longitude, GLOBE_ORIGIN.latitude], zoom: view === 'globe' ? 1.05 : 0, bearing: 0, pitch: 0, duration: 900 })
   const changeLayers = (updates) => {
     const next = { ...layers, ...updates }
     layersRef.current = next

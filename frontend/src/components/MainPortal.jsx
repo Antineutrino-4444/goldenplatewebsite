@@ -8,6 +8,7 @@ import PortalHeader from '@/components/PortalHeader.jsx'
 import SessionSwitcher from '@/components/SessionSwitcher.jsx'
 import StudentRosterUpload from '@/components/StudentRosterUpload.jsx'
 import RosterUpload from '@/components/RosterUpload.jsx'
+import TeacherNameEditor from '@/components/TeacherNameEditor.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
@@ -932,7 +933,7 @@ function MainPortal({ app }) {
                     Teacher Database
                   </CardTitle>
                   <CardDescription>
-                    Upload a CSV or comma-separated TXT file with Last and Preferred (or First if there is no Preferred column), in any order and any capitalization. Preferred is always used when present; other columns are ignored. Files without these column headers are rejected.
+                    Upload a CSV or comma-separated TXT file with Last and Preferred (or First if there is no Preferred column), in any order and capitalization. Include Faculty ID to keep the same person when names change between uploads. Without it, only unique matching names can be linked. Files without the required name headers are rejected. Use the preview to edit a name and update how past records and draws display it.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1363,8 +1364,8 @@ function MainPortal({ app }) {
                     {teacherPreviewData.data.length === 0 && <p className="py-4 text-center text-sm text-gray-500">No teachers match this name.</p>}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-4">
                       {teacherPreviewData.data.map((teacher, index) => (
-                        <div key={index} className="min-w-0 p-2 bg-gray-50 rounded text-sm [overflow-wrap:anywhere]">
-                          {teacher.display_name || teacher.name}
+                        <div key={teacher.teacher_id || index} className="min-w-0 p-2 bg-gray-50 rounded text-sm [overflow-wrap:anywhere]">
+                          <TeacherNameEditor teacher={teacher} save={app.saveTeacherName} />
                         </div>
                       ))}
                     </div>

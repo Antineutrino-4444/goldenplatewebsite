@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from collections import Counter
 from datetime import datetime
 
 from .db import (
@@ -26,6 +27,7 @@ from .users import (
 from .utils import extract_student_id_from_key, make_student_key, normalize_house, normalize_name, plate_count_label, split_student_key
 from .roster_history import bind_empty_sessions, current_roster_snapshot
 from .student_history import preserve_legacy_profiles, recorded_profile
+from .person_identity import faculty_pick_names, record_names
 
 # Student lookup cache keyed by school for fast eligibility checks
 student_lookup = {}
@@ -168,7 +170,7 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
 
 
 def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, uploaded_by=None):
-    """Replace a school's teacher roster, keeping retained teachers' identities."""
+    """Replace membership, preserving permanent identities and historical links."""
     result = {'processed': 0, 'created': 0, 'updated': 0, 'removed': 0}
     if not isinstance(teachers, list) or not teachers:
         return result
@@ -182,15 +184,19 @@ def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, upl
             display = normalize_name(entry.get('display_name') or entry.get('name'))
             preferred = normalize_name(entry.get('preferred_name')) or None
             last = normalize_name(entry.get('last_name')) or None
+            identifier = normalize_name(entry.get('faculty_identifier')).casefold() or None
         else:
             name = normalize_name(entry)
             display = name
             preferred = last = None
+            identifier = None
         if not name:
             continue
-        key = name.lower()
+        key = ('id', identifier) if identifier else ('name', name.casefold())
+        if key in unique_entries and identifier and unique_entries[key] != (name, display, preferred, last, identifier):
+            raise ValueError('A Faculty ID appears more than once with different names.')
         if key not in unique_entries:
-            unique_entries[key] = (name, display, preferred, last)
+            unique_entries[key] = (name, display, preferred, last, identifier)
 
     if not unique_entries:
         return result
@@ -200,21 +206,47 @@ def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, upl
         .filter(Teacher.school_id == school_id)
         .all()
     )
-    existing_map = {teacher.name.lower(): teacher for teacher in existing_teachers}
+    by_identifier = {teacher.faculty_identifier.casefold(): teacher for teacher in existing_teachers
+                     if teacher.faculty_identifier}
+    planned = []
+    retained = set()
+    name_counts = Counter(entry[0].casefold() for entry in unique_entries.values())
+    for name, display, preferred, last, identifier in unique_entries.values():
+        teacher = by_identifier.get(identifier) if identifier else None
+        if teacher is None:
+            matches = [item for item in existing_teachers
+                       if name.casefold() in {item.name.casefold(), (item.display_name or '').casefold()}
+                       and (not identifier or not item.faculty_identifier)]
+            if identifier and (len(matches) > 1 or name_counts[name.casefold()] > 1):
+                # A new source ID identifies a new person; never choose among namesakes.
+                matches = []
+            if len(matches) > 1:
+                raise ValueError('This faculty name matches multiple people. Include Faculty ID to identify each person.')
+            teacher = matches[0] if matches else None
+        if teacher and teacher.id in retained:
+            raise ValueError('Multiple rows refer to the same faculty member. Use a distinct Faculty ID for each person.')
+        if teacher:
+            retained.add(teacher.id)
+        planned.append((teacher, name, display, preferred, last, identifier))
+
     for teacher in existing_teachers:
-        if teacher.name.lower() not in unique_entries:
-            db_session.delete(teacher)
+        if teacher.is_active and teacher.id not in retained:
+            teacher.is_active = 0
             result['removed'] += 1
 
-    for key, (name, display, preferred, last) in unique_entries.items():
-        teacher = existing_map.get(key)
+    for teacher, name, display, preferred, last, identifier in planned:
         desired_display = display or None
 
         if teacher:
             if (teacher.display_name != desired_display
+                    or not teacher.is_active
+                    or (identifier is not None and teacher.faculty_identifier != identifier)
                     or (preferred is not None and teacher.preferred_name != preferred)
                     or (last is not None and teacher.last_name != last)):
                 teacher.display_name = desired_display
+                teacher.is_active = 1
+                if identifier is not None:
+                    teacher.faculty_identifier = identifier
                 if preferred is not None:
                     teacher.preferred_name = preferred
                 if last is not None:
@@ -228,9 +260,10 @@ def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, upl
                 display_name=desired_display,
                 preferred_name=preferred,
                 last_name=last,
+                faculty_identifier=identifier,
+                is_active=1,
             )
             db_session.add(teacher)
-            existing_map[key] = teacher
             result['created'] += 1
 
         result['processed'] += 1
@@ -543,9 +576,7 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
         or db_sess.faculty_pick_last_name
     ):
         session_info['faculty_pick'] = {
-            'preferred_name': db_sess.faculty_pick_preferred_name,
-            'last_name': db_sess.faculty_pick_last_name,
-            'display_name': db_sess.faculty_pick_display_name,
+            **faculty_pick_names(db_sess),
             'recorded_at': _isoformat_timestamp(db_sess.faculty_pick_recorded_at),
             'recorded_by': db_sess.faculty_pick_recorded_by,
             'finalized': bool(db_sess.faculty_finalized),
@@ -583,6 +614,9 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
     faculty_records = []
     scan_history = []
     dirty_count = 0
+    teacher_ids = {record.teacher_id for record in records if record.teacher_id}
+    teachers_map = {teacher.id: teacher for teacher in db_session.query(Teacher)
+                    .filter(Teacher.id.in_(teacher_ids), Teacher.school_id == db_sess.school_id).all()} if teacher_ids else {}
 
     for record in records:
         timestamp = _isoformat_timestamp(record.recorded_at)
@@ -622,7 +656,10 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
                 'clan': '',
                 'student_id': '',
                 'student_key': None,
+                'teacher_id': record.teacher_id,
             }
+            if record.teacher_id:
+                faculty_entry.update(record_names(record, teacher=teachers_map.get(record.teacher_id)))
             faculty_records.append(faculty_entry)
             scan_history.append(faculty_entry.copy())
             continue
@@ -653,6 +690,8 @@ def hydrate_session_from_db(session_id, *, persist=True, session_model=None):
             'student_id': student_identifier,
             'student_key': student_key.lower() if student_key else None,
         }
+        if student_obj:
+            entry.update(record_names(record, student=student_obj))
 
         if record.category == 'clean':
             clean_records.append(entry)

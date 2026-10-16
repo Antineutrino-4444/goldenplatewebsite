@@ -369,8 +369,8 @@ def override_draw(session_id):
     for session_record, student in record_rows:
         if student and not student.is_active:
             continue
-        preferred = normalize_name(session_record.preferred_name or (student.preferred_name if student else ''))
-        last = normalize_name(session_record.last_name or (student.last_name if student else ''))
+        preferred = normalize_name(student.preferred_name if student else session_record.preferred_name)
+        last = normalize_name(student.last_name if student else session_record.last_name)
         student_identifier = normalize_name(student.student_identifier if student else '')
         if not student_identifier:
             student_identifier = extract_student_id_from_key(session_record.dedupe_key)

@@ -1247,6 +1247,9 @@ export function usePlateApp() {
       const payload = { input_value: trimmedValue }
 
       if (normalizedSelection) {
+        if (category === 'faculty' && normalizedSelection.teacher_id) {
+          payload.teacher_id = normalizedSelection.teacher_id
+        }
         if (selectedStudentId) {
           payload.student_id = selectedStudentId
         }
@@ -1385,6 +1388,18 @@ export function usePlateApp() {
       console.error('Failed to load student names:', error)
       setStudentNames([])
     }
+  }
+
+  const saveTeacherName = async (teacherId, names) => {
+    const response = await fetch(`${API_BASE}/teachers/${encodeURIComponent(teacherId)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(names)
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Unable to save faculty name.')
+    await loadTeacherNames()
+    await previewTeachers(teacherPreviewPage, teacherPreviewSearch)
+    await refreshSessionStatus({ preservePanels: true })
+    showMessage('Faculty name updated. Past records and draws now display this name.', 'success')
   }
 
   const loadTeacherNames = async () => {
@@ -2614,6 +2629,7 @@ export function usePlateApp() {
     teacherNames,
     setTeacherNames,
     teacherRoster,
+    saveTeacherName,
     showTeacherPreview,
     setShowTeacherPreview,
     teacherPreviewData,

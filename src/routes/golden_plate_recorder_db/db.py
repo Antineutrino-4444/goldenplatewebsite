@@ -210,7 +210,7 @@ class EstimateSystemActivation(Base):
 class Teacher(Base):
     __tablename__ = 'teachers'
     __table_args__ = (
-        UniqueConstraint('school_id', 'name', name='uq_teachers_school_name'),
+        UniqueConstraint('school_id', 'faculty_identifier', name='uq_teachers_school_identifier'),
         Index('idx_teachers_school', 'school_id'),
     )
 
@@ -220,6 +220,8 @@ class Teacher(Base):
     display_name = Column(String)
     preferred_name = Column(String)
     last_name = Column(String)
+    faculty_identifier = Column(String)
+    is_active = Column(Integer, nullable=False, default=1, server_default='1')
 
 
 class Session(Base):
@@ -274,6 +276,7 @@ class Session(Base):
     faculty_pick_recorded_at = Column(DateTime(timezone=True))
     faculty_pick_recorded_by = Column(String, ForeignKey('users.id'))
     faculty_pick_record_id = Column(String)
+    faculty_pick_teacher_id = Column(String, ForeignKey('teachers.id'))
     faculty_finalized = Column(Integer, nullable=False, default=0, server_default='0')
     faculty_finalized_at = Column(DateTime(timezone=True))
     faculty_finalized_by = Column(String, ForeignKey('users.id'))
@@ -292,6 +295,7 @@ class SessionRecord(Base):
     school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False, default=DEFAULT_SCHOOL_ID)
     session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
     student_id = Column(String, ForeignKey('students.id'))
+    teacher_id = Column(String, ForeignKey('teachers.id'))
     category = Column(String, nullable=False)
     grade = Column(String)
     house = Column(String)
@@ -337,6 +341,7 @@ class SessionDrawEvent(Base):
     faculty_name = Column(String)
     selected_record_id = Column(String, ForeignKey('session_records.id'))
     selected_student_id = Column(String, ForeignKey('students.id'))
+    selected_teacher_id = Column(String, ForeignKey('teachers.id'))
     tickets_at_event = Column(Integer)
     probability_at_event = Column(Integer)
     eligible_pool_size = Column(Integer)
@@ -759,6 +764,8 @@ def _migrate_schema() -> None:
         # Legacy combined names remain intact; uploads supply exact name parts.
         _ensure_column(inspector, 'teachers', 'preferred_name', 'TEXT')
         _ensure_column(inspector, 'teachers', 'last_name', 'TEXT')
+        _ensure_column(inspector, 'teachers', 'faculty_identifier', 'TEXT')
+        _ensure_column(inspector, 'teachers', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
@@ -795,6 +802,7 @@ def _migrate_schema() -> None:
             ('faculty_pick_recorded_at', 'DATETIME'),
             ('faculty_pick_recorded_by', 'TEXT'),
             ('faculty_pick_record_id', 'TEXT'),
+            ('faculty_pick_teacher_id', 'TEXT REFERENCES teachers(id)'),
             ('faculty_finalized', 'INTEGER NOT NULL DEFAULT 0'),
             ('faculty_finalized_at', 'DATETIME'),
             ('faculty_finalized_by', 'TEXT'),
@@ -926,12 +934,14 @@ def _migrate_schema() -> None:
             ('is_excluded', 'INTEGER NOT NULL DEFAULT 0'),
             ('excluded_at', 'DATETIME'), ('excluded_by', 'TEXT'), ('exclusion_reason', 'TEXT'),
             ('student_profile', 'TEXT'),
+            ('teacher_id', 'TEXT REFERENCES teachers(id)'),
         ]:
             _ensure_column(inspector, 'session_records', column_name, ddl)
 
     if 'session_draw_events' in tables:
         _ensure_column(inspector, 'session_draw_events', 'draw_target', "TEXT NOT NULL DEFAULT 'student'")
         _ensure_column(inspector, 'session_draw_events', 'faculty_name', 'TEXT')
+        _ensure_column(inspector, 'session_draw_events', 'selected_teacher_id', 'TEXT REFERENCES teachers(id)')
 
     if 'draft_pool' in tables:
         draft_columns = {col['name'] for col in inspector.get_columns('draft_pool')}
@@ -979,6 +989,10 @@ def _migrate_schema() -> None:
 
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
+
+    if 'teachers' in tables:
+        from .identity_migration import migrate_faculty_identity
+        migrate_faculty_identity(engine)
 
     with engine.begin() as connection:
         if 'user_invite_codes' in tables:

@@ -10,9 +10,10 @@ import zipfile
 
 from sqlalchemy import and_, func
 
-from .db import SessionRecord, Student, db_session
+from .db import SessionRecord, Student, Teacher, db_session
 from .storage import _extract_faculty_names
 from .student_history import RosterComparison, render_roster_notes
+from .person_identity import record_names
 from .users import readable_user_label, user_labels_for_school
 from .utils import normalize_name, plate_count_label, split_student_key
 
@@ -85,8 +86,9 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
     user_labels = user_labels_for_school(school_id)
     counts = record_counts_for_sessions(sessions, school_id)
     records = (
-        db_session.query(SessionRecord, Student)
+        db_session.query(SessionRecord, Student, Teacher)
         .outerjoin(Student, and_(SessionRecord.student_id == Student.id, Student.school_id == school_id))
+        .outerjoin(Teacher, and_(SessionRecord.teacher_id == Teacher.id, Teacher.school_id == school_id))
         .filter(SessionRecord.school_id == school_id, SessionRecord.session_id.in_(session_map),
                 SessionRecord.is_excluded == 0)
         .order_by(SessionRecord.recorded_at.desc(), SessionRecord.id.asc())
@@ -110,7 +112,7 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
                 row[column] = masked(column, row[column], person_key)
         session_rows[session_id].append([_spreadsheet_safe(row.get(column, '')) for column in CSV_HEADER])
 
-    for record, student in records:
+    for record, student, teacher in records:
         item = session_map[record.session_id]
         faculty = record.category == 'faculty'
         count_only = not (record.student_id or record.preferred_name or record.last_name) and (
@@ -129,12 +131,17 @@ def detailed_sessions_export(sessions, school_id, anonymize_columns, export_form
             )
             preferred = preferred or normalize_name(legacy_preferred)
             last = last or normalize_name(legacy_last)
+        if record.student_id or record.teacher_id:
+            current = record_names(record, student=student, teacher=teacher)
+            preferred, last = current['preferred_name'], current['last_name']
         person_key = None
         if not count_only and (preferred or last or record.student_id):
-            if profile.get('Student ID'):
-                person_key = ['student-id', profile['Student ID'].casefold()]
+            if record.teacher_id:
+                person_key = ['faculty', record.teacher_id]
             elif record.student_id:
                 person_key = ['student', record.student_id]
+            elif profile.get('Student ID'):
+                person_key = ['student-id', profile['Student ID'].casefold()]
             else:
                 person_key = ['faculty' if faculty else 'student-name', preferred.casefold(), last.casefold()]
         row = {

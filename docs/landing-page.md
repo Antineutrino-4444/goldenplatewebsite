@@ -169,13 +169,13 @@ or send messages.
 Only a newly successful school login to `/portal` starts the flight. It fetches
 the existing public school list and matches the authenticated school ID. The
 full-screen Mapbox globe uses the school map's Hybrid basemap, English labels and
-CN worldview, without changing saved map preferences. It starts near the visitor's
-approximate IP location (IPWho.is, 1.2-second timeout, rounded coordinates in memory
-only, no account details or GPS). If lookup fails, the normal world orientation is
-used. After a 300ms opening beat, the globe follows a shortest spherical route for
-2.8 seconds with quintic ease-in/out. Zoom stays fixed during the turn and is sized
-against the viewport's smaller dimension, so the whole globe remains visible.
-Then a 2.4-second quadratic zoom accelerates toward the school. The final 28% of
+CN worldview, without changing saved map preferences. All flights start above
+Jiamusi Maternal and Child Health Hospital (佳木斯市妇幼保健院), at WGS84
+130.3128° E, 46.80853° N. After a 150ms opening beat, the globe follows a shortest
+spherical route for 1.2 seconds with quintic ease-in/out. Zoom stays fixed during
+the turn and is sized against the viewport's smaller dimension, so the whole
+globe remains visible. Then a 1.2-second quadratic zoom accelerates toward the school.
+The final 28% of
 the zoom crossfades to the actual recorder mounted beneath the map; it does not
 shrink or clip an SVG within a small square. The map can naturally fill the screen
 as the camera moves from the full globe to the school area.
@@ -183,7 +183,7 @@ as the camera moves from the full globe to the school area.
 Missing coordinates, guests, inter-school accounts, reduced motion, unavailable
 Mapbox/WebGL, and deep links to other destinations bypass the animation. A visible
 Continue button and Escape always allow entry. Map loading has a 6.5-second limit;
-an independent 14-second overall deadline guards against network/rendering stalls.
+an independent 12-second preparation deadline and a playback deadline guard against network/rendering stalls.
 Backgrounding the page or enabling reduced motion also completes the optional
 arrival. Restored sessions do not replay it. The arrival traps keyboard focus;
 the recorder is inert until arrival completes. Participating schools retain public
@@ -191,7 +191,7 @@ pins, and map attribution remains visible.
 
 The globe follow-up passed 54 frontend tests, including spherical travel across
 the date line, turn easing, constant zoom acceleration, fade timing, viewport
-framing, and IP failure/timeout handling. The new flight modules pass focused
+framing, and fixed hospital origins for distant and nearby destinations. The new flight modules pass focused
 lint and the production build passes. Browser QA used an isolated account and
 copied databases at 390, 768 and 1440 pixels, checked the complete animated
 handoff, Continue, Escape, reduced-motion bypass, and focus on the recording
@@ -324,15 +324,17 @@ confirmed that the portal still opens. Timing tests simulate an 11-second load
 followed by the complete camera sequence, plus failed-load and unmount exits.
 
 The subsequent speed update reduces camera playback from 5.5 seconds to 2.55
-seconds (150ms initial hold, 1.2-second turn, 1.2-second zoom). If the available
-city-level IP location is within the straight-line Aurora–Boston radius
-(approximately 704km) of the destination school, the first map frame is already
-centred on the school pin and rotation is omitted: playback takes 1.35 seconds.
-The radius is calculated geodesically and works across the date line. Unknown
-locations keep the normal default-origin flight. Loading deadlines, easing,
-English labels, territorial worldview, and portal fade remain in place.
-Tests cover the inclusive radius boundary, inside/outside points, unknown
-origins, and the direct camera path. Browser checks used temporary nearby and
-distant city fixtures to verify both paths, including the full trip at 390px;
-request interception and viewport overrides were restored afterward. All 69
-frontend tests, focused flight lint, and the production build passed.
+seconds (150ms initial hold, 1.2-second turn, 1.2-second zoom). All visitors now
+start above Jiamusi Maternal and Child Health Hospital, replacing IP lookup and
+the previous nearby-school shortcut. The public landing globe, default school
+map/globe view, and world reset use the same hospital orientation. Explicit school
+and location editing focus still takes precedence.
+
+The hospital's main campus address is 26 Youyi Road, confirmed in the
+[Jiamusi government hospital directory](https://jms.zwfw.hlj.gov.cn/zczx/tzgg/art/2023/art_8aeb084547934f158d18d2ff9261f7d3.html).
+The WGS84 position comes from the
+[OpenStreetMap hospital footprint, displayed by Mapcarta](https://mapcarta.com/W1360053052).
+Loading deadlines, easing, English labels, territorial worldview, and portal fade
+remain in place. Tests cover the fixed opening view for Canadian, nearby Chinese,
+and southern-hemisphere schools, spherical travel across the date line, and the
+complete camera sequence.

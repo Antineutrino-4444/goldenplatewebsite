@@ -3,11 +3,11 @@ import { Map as VectorMap, Marker } from 'mapbox-gl/esm'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
 import { isPublicMapboxToken, MAP_LANGUAGE, MAP_WORLDVIEW, mapStyleFor } from '@/lib/mapLayers.js'
-import { createSchoolFlight, fullGlobeZoom, isNearSchool } from '@/lib/school-flight.js'
+import { createSchoolFlight, fullGlobeZoom } from '@/lib/school-flight.js'
 
 const token = (import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '').trim()
 
-export default function SchoolFlightMap({ schools, destination, origin, onProgress, onComplete }) {
+export default function SchoolFlightMap({ schools, destination, onProgress, onComplete }) {
   const container = useRef(null)
   const callbacks = useRef({ onProgress, onComplete })
   useEffect(() => { callbacks.current = { onProgress, onComplete } }, [onProgress, onComplete])
@@ -22,7 +22,7 @@ export default function SchoolFlightMap({ schools, destination, origin, onProgre
       cancelAnimationFrame(frame)
       callbacks.current.onComplete()
     }
-    const camera = createSchoolFlight(origin, destination)
+    const camera = createSchoolFlight(destination)
     const animate = (now) => {
       if (finished) return
       started ??= now
@@ -77,6 +77,6 @@ export default function SchoolFlightMap({ schools, destination, origin, onProgre
       markers.forEach((marker) => marker.remove())
       map?.remove()
     }
-  }, [schools, destination, origin])
-  return <div ref={container} className="arrival-map" data-flight-mode={isNearSchool(origin, destination) ? 'direct' : 'turn'} role="img" aria-label={`Satellite globe flying to ${destination.name}`} />
+  }, [schools, destination])
+  return <div ref={container} className="arrival-map" role="img" aria-label={`Satellite globe flying from Jiamusi to ${destination.name}`} />
 }

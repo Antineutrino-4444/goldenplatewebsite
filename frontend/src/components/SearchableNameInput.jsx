@@ -42,7 +42,8 @@ export function SearchableNameInput({
     return names.filter(name => {
       const displayName = name.display_name?.toLowerCase() || ""
       const studentId = String(name.student_id || "").toLowerCase()
-      return displayName.includes(searchTerm) || (studentId && studentId.includes(searchTerm))
+      const facultyId = String(name.faculty_identifier || '').toLowerCase()
+      return displayName.includes(searchTerm) || (studentId && studentId.includes(searchTerm)) || (facultyId && facultyId.includes(searchTerm))
     })
   }, [names, inputValue])
 
@@ -158,8 +159,8 @@ export function SearchableNameInput({
                 ) : (
                   <CommandGroup>
                     {filteredNames.slice(0, 10).map((name, index) => {
-                      const optionKey = name.key || (name.student_id ? `id:${name.student_id}` : `${name.display_name || 'option'}-${index}`)
-                      const optionValue = `${name.display_name || ''} ${name.student_id || ''}`.trim()
+                      const optionKey = name.teacher_id || name.key || (name.student_id ? `id:${name.student_id}` : `${name.display_name || 'option'}-${index}`)
+                      const optionValue = `${name.display_name || ''} ${name.student_id || name.faculty_identifier || ''} ${name.teacher_id || ''}`.trim()
                       return (
                         <CommandItem
                           key={`${optionKey}-${index}`}
@@ -173,6 +174,7 @@ export function SearchableNameInput({
                             {name.student_id && (
                               <span className="text-xs text-muted-foreground">ID: {name.student_id}</span>
                             )}
+                            {name.faculty_identifier && <span className="text-xs text-muted-foreground">Faculty ID: {name.faculty_identifier}</span>}
                           </div>
                           <Check className="ml-2 h-4 w-4 opacity-0 group-data-[selected=true]:opacity-100" />
                         </CommandItem>
