@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { counterAnimationValue, crossedMilestone, counterBarLayout, communityBarLayout } from '../src/lib/counter-animation.js'
+import { counterAnimationValue, crossedMilestone, counterBarLayout, communityBarLayout, communityRulerLabels } from '../src/lib/counter-animation.js'
 
 test('count starts slowly, accelerates through the middle, and finishes slowly at the exact total', () => {
   const values = [0, 0.25, 0.5, 0.75, 1].map((progress) => counterAnimationValue(0, 10000, progress))
@@ -33,6 +33,41 @@ test('live count transitions can increase or decrease without overshooting', () 
   assert.equal(counterAnimationValue(120, 150, 1), 150)
   assert.equal(counterAnimationValue(150, 120, 1), 120)
   assert.ok(counterAnimationValue(150, 120, 0.5) >= 120)
+})
+
+test('old ruler marks remain and compress left as new scales accumulate', () => {
+  let previous = communityBarLayout(0)
+  for (const count of [100, 1000, 10000, 1000000, 1000000000]) {
+    const next = communityBarLayout(count)
+    for (const mark of previous.ticks.filter(tick => !tick.endpoint)) {
+      const retained = next.ticks.find(tick => tick.value === mark.value)
+      assert.ok(retained, `${mark.value} must remain on the expanded ruler`)
+      if (mark.value > 0) assert.ok(retained.position < mark.position)
+    }
+    previous = next
+  }
+})
+
+test('logarithmic fill uses the same coordinates as the ruler', () => {
+  const layout = communityBarLayout(1000)
+  assert.equal(layout.width, layout.ticks.find(tick => tick.value === 1000).position)
+  const zeroTo100 = layout.ticks.find(tick => tick.value === 100).position
+  const hundredTo1000 = layout.width - zeroTo100
+  assert.ok(hundredTo1000 > zeroTo100, 'larger ranges have space without losing the original scale')
+})
+
+test('compressed original labels stack visibly and stay inside a phone-width ruler', () => {
+  const ruler = communityRulerLabels(communityBarLayout(1000000).ticks, 320)
+  for (const mark of [0, 25, 50, 75, 100]) {
+    const tick = ruler.ticks.find(tick => tick.value === mark)
+    assert.equal(tick.showLabel, true)
+    assert.ok(tick.left >= 0 && tick.left + tick.size <= 320)
+  }
+  assert.ok(ruler.ticks.some(tick => tick.row > 0))
+  for (let row = 0; row < 5; row++) {
+    const labels = ruler.ticks.filter(tick => tick.showLabel && tick.row === row).sort((a, b) => a.left - b.left)
+    for (let i = 1; i < labels.length; i++) assert.ok(labels[i].left > labels[i - 1].left + labels[i - 1].size)
+  }
 })
 
 test('celebrate only an upward crossing, including reset and skipped animation values', () => {

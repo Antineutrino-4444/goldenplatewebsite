@@ -130,12 +130,12 @@ function SiteRoutes() {
     <Route path="/live-counter" element={<LiveCounterPage />} />
     <Route path="/live-counter/community" element={<div className="golden-public"><main id="main-content" className="gp-container"><CommunityCounter /></main></div>} />
     <Route element={<Workspace />}>
-      <Route path="/login" />
-      <Route path="/register" />
-      <Route path="/signup" />
-      <Route path="/guest/schools/:schoolId" />
-      <Route path="/portal/*" />
-      <Route path="/interschool" />
+      <Route path="/login" element={<></>} />
+      <Route path="/register" element={<></>} />
+      <Route path="/signup" element={<></>} />
+      <Route path="/guest/schools/:schoolId" element={<></>} />
+      <Route path="/portal/*" element={<></>} />
+      <Route path="/interschool" element={<></>} />
     </Route>
     <Route path="*" element={<NotFound />} />
   </Routes></RouteContent></Suspense>

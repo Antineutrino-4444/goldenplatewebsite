@@ -1,19 +1,23 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
-import { lookupFlightOrigin } from '@/lib/school-flight.js'
+import { lookupFlightOrigin, schoolFlightDeadline } from '@/lib/school-flight.js'
 import './LandingPage.css'
 
 function UnavailableFlight({ onComplete }) {
   useEffect(onComplete, [onComplete])
   return null
 }
-const SchoolFlightMap = lazy(() => import('@/components/SchoolFlightMap.jsx').catch(() => ({ default: UnavailableFlight })))
+const SchoolFlightMap = lazy(() => import('@/components/SchoolFlightMap.jsx').catch((error) => {
+  console.warn('Unable to load the school globe animation:', error)
+  return { default: UnavailableFlight }
+}))
 
 export default function SchoolArrival({ user, onComplete }) {
   const [flight, setFlight] = useState(null)
   const [phase, setPhase] = useState('loading')
   const overlay = useRef(null)
+  const deadline = useRef(null)
   const complete = useRef(onComplete)
   useEffect(() => { complete.current = onComplete }, [onComplete])
   const finish = useCallback(() => complete.current(), [])
@@ -21,7 +25,7 @@ export default function SchoolArrival({ user, onComplete }) {
   useEffect(() => {
     const controller = new AbortController()
     // Always keep an independent exit: network or rendering cannot block login.
-    const deadline = setTimeout(finish, 14000)
+    deadline.current = schoolFlightDeadline(finish)
     const escape = (e) => { if (e.key === 'Escape') finish() }
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const motionChanged = () => { if (motion.matches) finish() }
@@ -39,11 +43,19 @@ export default function SchoolArrival({ user, onComplete }) {
       if (controller.signal.aborted) return
       const list = Array.isArray(data.schools) ? data.schools : []
       const destination = list.find((s) => s.school_id === schoolId)
-      if (!hasGeographicCoordinates(destination)) { finish(); return }
+      if (!hasGeographicCoordinates(destination)) {
+        console.info('School globe skipped: this school has no published map location.')
+        finish(); return
+      }
       setFlight({ schools: list, destination, origin })
-    }).catch((error) => { if (error.name !== 'AbortError') finish() })
+    }).catch((error) => {
+      if (error.name !== 'AbortError') {
+        console.warn('Unable to prepare the school globe animation:', error)
+        finish()
+      }
+    })
     return () => {
-      controller.abort(); clearTimeout(deadline)
+      controller.abort(); deadline.current?.dispose()
       window.removeEventListener('keydown', escape)
       document.removeEventListener('visibilitychange', hidden)
       motion.removeEventListener('change', motionChanged)
@@ -51,6 +63,7 @@ export default function SchoolArrival({ user, onComplete }) {
     }
   }, [schoolId, finish])
   const progress = useCallback((opacity, nextPhase) => {
+    deadline.current?.ready()
     if (overlay.current) overlay.current.style.opacity = opacity
     if (nextPhase) setPhase(nextPhase)
   }, [])

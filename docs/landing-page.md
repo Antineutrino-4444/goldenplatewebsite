@@ -21,7 +21,8 @@ in the existing API routes.
   recorder, roster, dashboard, house-ranking, counter, export, and privacy tools.
   The public product section now renders the same `SessionMetrics` component as
   the school dashboard, with saved totals loaded directly from PLATE. On each
-  mount it requests a random public, non-discarded session belonging to an active
+  mount it requests a random public, non-discarded session with at least 44 total
+  records (clean, dirty, very dirty, and faculty combined), belonging to an active
   school. Sampling is uniform across eligible sessions; repeats are possible.
   Both views use the same backend count serializer and frontend calculations.
   The exact session opens at `/guest/sessions/:sessionId` without an account or
@@ -32,7 +33,7 @@ in the existing API routes.
   deleted, and disabled-school sessions return 404, including after a link was
   shared. Responses use `Cache-Control: no-store`. Empty databases and failed
   requests show explicit states, never historical or fabricated totals.
-- The compact live counter on the homepage and How it works polls
+- The compact live counter on the homepage polls
   `/api/public/counter` every five seconds. It shows only clean plates and
   sessions: all-time combined totals from **all schools**, including private
   sessions and disabled schools' historical sessions, excluding discarded
@@ -40,10 +41,15 @@ in the existing API routes.
   as session dashboards and publishes no per-school breakdown, people, rates,
   goals, or private-session metadata. The user explicitly requested the true
   all-schools aggregate. Loading and connection errors never invent a zero.
-  Its goal-free bar has a labelled ruler that continuously expands as totals
-  grow, compressing the space per plate while the fill moves forward. The same
-  bar is used on the large community display. Initial animation waits until the
-  counter enters view; count and bar move together with slow acceleration,
+  Its goal-free bar has a logarithmic ruler that continuously expands as totals
+  grow. Original 0–100 marks remain, with larger ranges accumulating to the right
+  and earlier marks compressing left. Close labels stack on separate rows;
+  intermediate tick marks remain even when their labels cannot fit. The same
+  ruler is used on the large community display. Animation starts only when at
+  least 75% of the bar is inside a viewport inset of 24–96px at the top/bottom.
+  Fully leaving the viewport resets it to zero; returning comfortably inside
+  starts a fresh animation. Edge movement does not repeatedly restart it.
+  Count and bar move together with slow acceleration,
   a faster middle, and slow deceleration. Subsequent updates animate from the
   current number, including decreases after corrections or discards. Reduced
   motion shows final values immediately. Screen readers receive the saved count.
@@ -52,7 +58,7 @@ in the existing API routes.
   The tip is decorative, cannot intercept input, and stays within the bar's
   bounds near either edge. A 44px target supports tapping without blocking
   normal page scrolling, and touch devices show a short hint. Tip transitions
-  are disabled for reduced motion. The large counter's bar is unchanged.
+  are disabled for reduced motion. The large counter retains its existing track shape.
   `/live-counter/community` provides the same counts at large scale, including
   full screen. A separate link opens the existing `/live-counter` school-specific
   counter, which retains its school login/code, time ranges, and settings.
@@ -298,3 +304,21 @@ without horizontal overflow. No sign-up submissions or real emails were sent.
 The wider backend run encountered the existing legacy-map recipient-settings
 test expecting 200 while that disabled map returns 410; unrelated hook lint
 errors (unused catch variables) and existing effect warnings also remain.
+
+## Login globe loading follow-up
+
+Map loading and camera playback now have separate safety deadlines: up to 12
+seconds to prepare the globe, then the full turn/zoom sequence with its own
+watchdog. The previous 6.5-second map deadline and shared 14-second overall
+deadline could skip or shorten a cold-load flight. The map stays hidden behind
+a readable paper-colored preparation view until its first ready camera frame;
+it then fades in over 240ms. Missing locations, unavailable map modules, Escape,
+and Continue to portal still allow login to finish. Loading/initialization
+failures are logged instead of silently discarded. Explicit workspace route
+elements also remove the misleading empty-leaf-route console warnings.
+
+Browser checks completed the turn, zoom, and portal arrival at 1440px with the
+browser cache disabled (about 7 seconds including preparation), and at 390px
+without horizontal overflow or console warnings. Blocking the globe module
+confirmed that the portal still opens. Timing tests simulate an 11-second load
+followed by the complete camera sequence, plus failed-load and unmount exits.

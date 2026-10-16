@@ -445,11 +445,14 @@ existing controls. Authentication redirects accept supported local destinations
 only; guests and school roles retain the server's existing access checks.
 
 The product preview renders the actual dashboard metrics for a random public,
-non-discarded session, with a read-only guest link to that exact session. Its
+non-discarded session with at least 44 total records, with a read-only guest link
+to that exact session. Its
 privacy rules apply even without a login. The compact community counter shows
 all-time clean plates and session totals across **all schools**, including private
 sessions in the aggregate, with discarded sessions excluded. It refreshes every
-five seconds and opens the larger `/live-counter/community` display. No rates or
+five seconds and opens the larger `/live-counter/community` display. Its
+logarithmic ruler keeps earlier scale marks compressed at the left. The animation
+resets fully offscreen and replays once the bar is comfortably back in view. No rates or
 goals appear in this community counter; the existing `/live-counter` school view
 retains its settings. Public destinations share a persistent header and a return
 link to their source page, with reduced-motion-aware page transitions.

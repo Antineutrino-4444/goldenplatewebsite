@@ -5,12 +5,16 @@ import SiteLink from '@/components/SiteLink.jsx'
 import usePublicCounter from '@/hooks/usePublicCounter.js'
 import useCounterFullscreen from '@/hooks/useCounterFullscreen.js'
 import useAnimatedCounter from '@/hooks/useAnimatedCounter.js'
-import { communityBarLayout } from '@/lib/counter-animation.js'
+import { communityBarLayout, communityRulerLabels } from '@/lib/counter-animation.js'
+import { observeCounterVisibility } from '@/lib/counter-visibility.js'
 
 export default function CommunityCounter({ compact = false }) {
   const { snapshot, connected, error } = usePublicCounter()
   const { root, enterButton, exitButton, fullscreen, exitVisible, enter, exit } = useCounterFullscreen()
   const [seen, setSeen] = useState(false)
+  const barElement = useRef(null)
+  const [rulerWidth, setRulerWidth] = useState(320)
+  const counterReady = Boolean(snapshot)
   const [tipVisible, setTipVisible] = useState(false)
   const tipTimer = useRef(null)
   useEffect(() => () => clearTimeout(tipTimer.current), [])
@@ -26,16 +30,23 @@ export default function CommunityCounter({ compact = false }) {
     setTipVisible(false)
   }
   useEffect(() => {
-    if (!('IntersectionObserver' in window)) { setSeen(true); return }
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { setSeen(true); observer.disconnect() }
-    }, { threshold: 0.15 })
-    observer.observe(root.current)
-    return () => observer.disconnect()
-  }, [])
+    if (!counterReady || !barElement.current) return
+    let disconnect
+    const observe = () => {
+      disconnect?.()
+      disconnect = observeCounterVisibility(barElement.current, setSeen)
+      setRulerWidth(barElement.current.getBoundingClientRect().width)
+    }
+    observe()
+    window.addEventListener('resize', observe)
+    const sizing = new ResizeObserver(() => setRulerWidth(barElement.current.getBoundingClientRect().width))
+    sizing.observe(barElement.current)
+    return () => { disconnect?.(); sizing.disconnect(); window.removeEventListener('resize', observe) }
+  }, [counterReady])
   const displayedCount = useAnimatedCounter({ target: seen ? snapshot?.clean_count || 0 : 0, milestone: null,
     resetKey: snapshot && seen ? 'community' : 'loading' })
   const bar = communityBarLayout(displayedCount)
+  const ruler = communityRulerLabels(bar.ticks, rulerWidth)
   useEffect(() => {
     if (!compact) document.title = 'Community live counter · Golden Plate'
   }, [compact])
@@ -46,19 +57,19 @@ export default function CommunityCounter({ compact = false }) {
       <div><span className="gp-counter-value"><span aria-hidden="true">{snapshot ? displayedCount.toLocaleString() : '—'}</span><span className="sr-only">{snapshot ? snapshot.clean_count.toLocaleString() : 'Loading'}</span></span><span className="gp-counter-unit">clean plates</span></div>
       <div><span className="gp-counter-value">{snapshot ? snapshot.session_count.toLocaleString() : '—'}</span><span className="gp-counter-unit">sessions</span></div>
     </div>
-    {snapshot && <div className="gp-community-bar">
+    {snapshot && <div ref={barElement} className="gp-community-bar" data-counter-visible={seen}>
       <div className="gp-community-bar-control" role="meter" aria-label="Clean plates on an adaptive scale"
         tabIndex={compact ? 0 : undefined} onClick={revealTip} onPointerLeave={hideTipOnMouseLeave}
         aria-valuemin={0} aria-valuemax={bar.scale} aria-valuenow={displayedCount}
-        aria-valuetext={`${displayedCount.toLocaleString()} clean plates. The scale expands automatically; there is no goal.`}>
+        aria-valuetext={`${displayedCount.toLocaleString()} clean plates on a logarithmic scale. Earlier scale marks remain as the scale expands; there is no goal.`}>
         <div className="gp-community-bar-track"><span className="gp-community-bar-fill" style={{ width: `${bar.width}%` }} /></div>
         {compact && <span className={`gp-community-bar-tip${tipVisible ? ' is-visible' : ''}`} aria-hidden="true"
           style={{ left: `clamp(16px, ${bar.width}%, calc(100% - 16px))` }}><PlateMark /></span>}
       </div>
-      <div className="gp-community-bar-ticks" aria-hidden="true">{bar.ticks.map((tick, index) => <span key={index}
-        className={index === 0 ? 'is-first' : index === bar.ticks.length - 1 ? 'is-last' : ''}
-        style={{ left: `${tick.position}%` }}>{tick.value.toLocaleString()}</span>)}</div>
-      <p className="gp-community-bar-caption">Clean plates · scale compresses as the total grows{compact && <span className="gp-counter-touch-hint">. Tap the bar for the Golden Plate.</span>}</p>
+      <div className="gp-community-bar-ticks" style={{ height: ruler.height }} aria-hidden="true">{ruler.ticks.map((tick) => <span key={tick.endpoint ? 'limit' : tick.value}
+        data-scale-mark={tick.value} title={tick.value.toLocaleString()}
+        style={{ left: `${tick.position}%`, '--tick-depth': `${tick.showLabel ? tick.row * 16 : 0}px` }}>{tick.showLabel && <span style={{ left: tick.offset }}>{tick.text}</span>}</span>)}</div>
+      <p className="gp-community-bar-caption">Clean plates · logarithmic scale, with earlier marks retained{compact && <span className="gp-counter-touch-hint">. Tap the bar for the Golden Plate.</span>}</p>
     </div>}
     <p className="gp-counter-connection" role="status">{connected ? 'Live · updates every 5 seconds' : snapshot ? 'Reconnecting… Showing the last successful totals.' : error ? 'Unable to load totals. Retrying automatically…' : 'Connecting to the live counter…'}</p>
     {!fullscreen && <div className="gp-counter-controls">{compact

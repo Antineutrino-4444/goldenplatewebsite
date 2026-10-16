@@ -22,7 +22,6 @@ export default function SchoolFlightMap({ schools, destination, origin, onProgre
       cancelAnimationFrame(frame)
       callbacks.current.onComplete()
     }
-    const deadline = setTimeout(finish, 6500)
     const camera = createSchoolFlight(origin, destination)
     const animate = (now) => {
       if (finished) return
@@ -54,7 +53,6 @@ export default function SchoolFlightMap({ schools, destination, origin, onProgre
       })
       map.once('load', () => {
         if (finished) return
-        clearTimeout(deadline)
         for (const school of schools.filter(hasGeographicCoordinates)) {
           const element = document.createElement('span')
           element.className = `arrival-school-pin${school.school_id === destination.school_id ? ' is-destination' : ''}`
@@ -67,10 +65,12 @@ export default function SchoolFlightMap({ schools, destination, origin, onProgre
       map.on('webglcontextlost', finish)
       resize = new ResizeObserver(() => map.resize())
       resize.observe(container.current)
-    } catch { finish() }
+    } catch (error) {
+      console.warn('Unable to start the school globe animation:', error)
+      finish()
+    }
     return () => {
       finished = true
-      clearTimeout(deadline)
       cancelAnimationFrame(frame)
       resize?.disconnect()
       markers.forEach((marker) => marker.remove())

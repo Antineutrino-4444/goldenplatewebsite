@@ -35,7 +35,24 @@ def public_sessions(client):
 
 def test_random_draws_only_eligible_sessions_and_does_not_cache(client, public_sessions, monkeypatch):
     _, ids = public_sessions
-    eligible = public_session_routes._available_sessions().order_by(Session.id).all()
+    for session_id in ids:
+        row = db_session.get(Session, session_id)
+        row.clean_number = 39
+        # Together with dirty, very dirty and faculty counts: exactly 44.
+    archived = db_session.get(Session, ids[1])
+    archived.clean_number = 45
+    archived.dirty_number = archived.red_number = archived.faculty_number = None
+    first = db_session.get(Session, ids[0])
+    small = Session(id=f'small-{uuid.uuid4().hex}', school_id=first.school_id,
+                    created_by=first.created_by, session_name='Below minimum',
+                    status='active', is_public=1, clean_number=40,
+                    dirty_number=2, red_number=1, faculty_number=None)
+    db_session.add(small)
+    ids.append(small.id)
+    db_session.commit()
+    eligible = [row for row in public_session_routes._available_sessions().order_by(Session.id).all()
+                if sum(getattr(row[0], field) or 0 for field in
+                       ('clean_number', 'dirty_number', 'red_number', 'faculty_number')) >= 44]
     selected = set()
     for index in range(len(eligible)):
         def choose(count):
@@ -48,6 +65,22 @@ def test_random_draws_only_eligible_sessions_and_does_not_cache(client, public_s
         selected.add(response.get_json()['session']['session_id'])
     assert set(ids[:2]) <= selected
     assert not set(ids[2:]) & selected
+
+
+def test_random_returns_empty_when_only_small_sessions_are_public(client, public_sessions):
+    # Hide other public sessions temporarily so the only candidates have 12 records.
+    _, fixture_ids = public_sessions
+    others = [row.id for row, _ in public_session_routes._available_sessions().all()
+              if row.id not in fixture_ids]
+    db_session.query(Session).filter(Session.id.in_(others)).update({Session.is_public: 0}, synchronize_session=False)
+    db_session.commit()
+    try:
+        assert client.get('/api/public/sessions/random').get_json() == {'session': None}
+        # Existing direct session links remain accessible regardless of size.
+        assert client.get(f'/api/public/sessions/{fixture_ids[0]}').status_code == 200
+    finally:
+        db_session.query(Session).filter(Session.id.in_(others)).update({Session.is_public: 1}, synchronize_session=False)
+        db_session.commit()
 
 
 def test_guest_metrics_match_real_dashboard_and_never_contain_people(client, public_sessions):

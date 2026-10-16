@@ -8,6 +8,23 @@ export const FLIGHT_SETTLE_MS = 300
 export const FLIGHT_DURATION_MS = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS + FLIGHT_ZOOM_MS
 const clamp = (value) => Math.max(0, Math.min(1, value))
 
+// Loading a cold Mapbox module/style must not consume the camera's playback
+// budget. Both stages still have independent exits so login cannot get stuck.
+export function schoolFlightDeadline(onComplete, { setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  let playing = false
+  let disposed = false
+  let timer = setTimer(() => { if (!disposed) onComplete() }, 12000)
+  return {
+    ready() {
+      if (playing || disposed) return
+      playing = true
+      clearTimer(timer)
+      timer = setTimer(() => { if (!disposed) onComplete() }, FLIGHT_DURATION_MS + 3000)
+    },
+    dispose() { disposed = true; clearTimer(timer) },
+  }
+}
+
 // Zero velocity and acceleration at both ends of the turn.
 export function flightTurnProgress(value) {
   const t = clamp(value)

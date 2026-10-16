@@ -6,7 +6,7 @@ export default function PublicSessionDashboard({ result }) {
   if (status !== 'ready') {
     return <div className="gp-session-state" role="status" aria-live="polite">
       <p>{status === 'loading' ? 'Loading a session directly from PLATE…'
-        : status === 'empty' ? 'There are no public sessions to show yet.'
+        : status === 'empty' ? 'No public sessions with at least 44 records are available yet.'
         : status === 'unavailable' ? 'This session is no longer available to guests.'
         : 'The session could not be loaded. Please try again.'}</p>
       {(status === 'error' || status === 'unavailable') && <button className="gp-text-link" onClick={retry}>Try again</button>}

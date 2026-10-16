@@ -42,7 +42,11 @@ def _response(payload, status=200):
 
 @recorder_bp.route('/public/sessions/random', methods=['GET'])
 def random_public_session():
-    query = _available_sessions()
+    total_records = (func.coalesce(SessionModel.clean_number, 0)
+                     + func.coalesce(SessionModel.dirty_number, 0)
+                     + func.coalesce(SessionModel.red_number, 0)
+                     + func.coalesce(SessionModel.faculty_number, 0))
+    query = _available_sessions().filter(total_records >= 44)
     count = query.count()
     if not count:
         return _response({'session': None})

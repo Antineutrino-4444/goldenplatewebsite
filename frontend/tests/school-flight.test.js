@@ -1,9 +1,48 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { geoDistance } from 'd3-geo'
-import { createSchoolFlight, DEFAULT_FLIGHT_ORIGIN, FLIGHT_DURATION_MS, FLIGHT_SETTLE_MS, FLIGHT_TURN_MS, FLIGHT_ZOOM_MS, flightTurnProgress, fullGlobeZoom, lookupFlightOrigin } from '../src/lib/school-flight.js'
+import { createSchoolFlight, DEFAULT_FLIGHT_ORIGIN, FLIGHT_DURATION_MS, FLIGHT_SETTLE_MS, FLIGHT_TURN_MS, FLIGHT_ZOOM_MS, flightTurnProgress, fullGlobeZoom, lookupFlightOrigin, schoolFlightDeadline } from '../src/lib/school-flight.js'
 
 const school = { longitude: -79.46, latitude: 44 }
+
+function flightClock() {
+  let now = 0, nextId = 0
+  const timers = new Map()
+  return {
+    setTimer(fn, delay) { const id = ++nextId; timers.set(id, { fn, at: now + delay }); return id },
+    clearTimer(id) { timers.delete(id) },
+    advance(ms) {
+      now += ms
+      for (const [id, timer] of timers) if (timer.at <= now) { timers.delete(id); timer.fn() }
+    },
+  }
+}
+
+test('a slow globe load does not shorten the actual login flight', () => {
+  const clock = flightClock()
+  let completed = 0
+  const deadline = schoolFlightDeadline(() => completed++, clock)
+  clock.advance(11000)
+  deadline.ready()
+  clock.advance(FLIGHT_DURATION_MS)
+  assert.equal(completed, 0, 'the full camera sequence can finish after a slow load')
+  deadline.ready() // Camera frames do not repeatedly extend the safety deadline.
+  clock.advance(3000)
+  assert.equal(completed, 1)
+})
+
+test('an unavailable globe still exits and unmounting cancels the safety deadline', () => {
+  const clock = flightClock()
+  let completed = 0
+  schoolFlightDeadline(() => completed++, clock)
+  clock.advance(12000)
+  assert.equal(completed, 1)
+  const cancelled = schoolFlightDeadline(() => completed++, clock)
+  cancelled.ready()
+  cancelled.dispose()
+  clock.advance(20000)
+  assert.equal(completed, 1)
+})
 
 test('the globe turns slowly at both ends and fastest in the middle', () => {
   const values = [0, 0.25, 0.5, 0.75, 1].map(flightTurnProgress)
