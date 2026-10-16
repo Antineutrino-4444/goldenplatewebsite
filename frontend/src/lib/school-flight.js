@@ -1,12 +1,21 @@
-import { geoInterpolate } from 'd3-geo'
+import { geoDistance, geoInterpolate } from 'd3-geo'
 import { hasGeographicCoordinates } from './mapCoordinates.js'
 
 export const DEFAULT_FLIGHT_ORIGIN = { longitude: -35, latitude: 22 }
-export const FLIGHT_TURN_MS = 2800
-export const FLIGHT_ZOOM_MS = 2400
-export const FLIGHT_SETTLE_MS = 300
+export const FLIGHT_TURN_MS = 1200
+export const FLIGHT_ZOOM_MS = 1200
+export const FLIGHT_SETTLE_MS = 150
 export const FLIGHT_DURATION_MS = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS + FLIGHT_ZOOM_MS
+const EARTH_RADIUS_KM = 6371.0088
+// Representative city centres: the straight-line Aurora, ON–Boston radius.
+const nearbyRadius = geoDistance([-79.4504, 44.0065], [-71.0589, 42.3601])
+export const NEARBY_FLIGHT_RADIUS_KM = nearbyRadius * EARTH_RADIUS_KM
 const clamp = (value) => Math.max(0, Math.min(1, value))
+
+export function isNearSchool(origin, destination) {
+  if (origin === DEFAULT_FLIGHT_ORIGIN || !hasGeographicCoordinates(origin) || !hasGeographicCoordinates(destination)) return false
+  return geoDistance([origin.longitude, origin.latitude], [destination.longitude, destination.latitude]) <= nearbyRadius + 1e-12
+}
 
 // Loading a cold Mapbox module/style must not consume the camera's playback
 // budget. Both stages still have independent exits so login cannot get stuck.
@@ -38,18 +47,22 @@ export function fullGlobeZoom(width, height) {
 }
 
 export function createSchoolFlight(origin, destination) {
-  const from = hasGeographicCoordinates(origin) ? origin : DEFAULT_FLIGHT_ORIGIN
+  const nearby = isNearSchool(origin, destination)
+  const from = nearby ? destination : hasGeographicCoordinates(origin) ? origin : DEFAULT_FLIGHT_ORIGIN
+  const turnDuration = nearby ? 0 : FLIGHT_TURN_MS
+  const zoomStart = FLIGHT_SETTLE_MS + turnDuration
+  const duration = zoomStart + FLIGHT_ZOOM_MS
   const route = geoInterpolate([from.longitude, from.latitude], [destination.longitude, destination.latitude])
   return (elapsed, worldZoom) => {
-    const turn = flightTurnProgress((elapsed - FLIGHT_SETTLE_MS) / FLIGHT_TURN_MS)
-    const zoom = clamp((elapsed - FLIGHT_SETTLE_MS - FLIGHT_TURN_MS) / FLIGHT_ZOOM_MS)
+    const turn = nearby ? 1 : flightTurnProgress((elapsed - FLIGHT_SETTLE_MS) / turnDuration)
+    const zoom = clamp((elapsed - zoomStart) / FLIGHT_ZOOM_MS)
     return {
       center: route(turn),
       // Quadratic progress gives the zoom constant acceleration from rest.
       zoom: worldZoom + (13 - worldZoom) * zoom * zoom,
       opacity: 1 - flightTurnProgress((zoom - 0.72) / 0.28),
-      phase: elapsed < FLIGHT_SETTLE_MS ? 'ready' : zoom > 0 ? 'zoom' : 'turn',
-      complete: elapsed >= FLIGHT_DURATION_MS,
+      phase: elapsed < FLIGHT_SETTLE_MS ? 'ready' : elapsed >= zoomStart ? 'zoom' : 'turn',
+      complete: elapsed >= duration,
     }
   }
 }

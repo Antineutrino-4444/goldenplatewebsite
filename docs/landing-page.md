@@ -322,3 +322,17 @@ browser cache disabled (about 7 seconds including preparation), and at 390px
 without horizontal overflow or console warnings. Blocking the globe module
 confirmed that the portal still opens. Timing tests simulate an 11-second load
 followed by the complete camera sequence, plus failed-load and unmount exits.
+
+The subsequent speed update reduces camera playback from 5.5 seconds to 2.55
+seconds (150ms initial hold, 1.2-second turn, 1.2-second zoom). If the available
+city-level IP location is within the straight-line Aurora–Boston radius
+(approximately 704km) of the destination school, the first map frame is already
+centred on the school pin and rotation is omitted: playback takes 1.35 seconds.
+The radius is calculated geodesically and works across the date line. Unknown
+locations keep the normal default-origin flight. Loading deadlines, easing,
+English labels, territorial worldview, and portal fade remain in place.
+Tests cover the inclusive radius boundary, inside/outside points, unknown
+origins, and the direct camera path. Browser checks used temporary nearby and
+distant city fixtures to verify both paths, including the full trip at 390px;
+request interception and viewport overrides were restored afterward. All 69
+frontend tests, focused flight lint, and the production build passed.

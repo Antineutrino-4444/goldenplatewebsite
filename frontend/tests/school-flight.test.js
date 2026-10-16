@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { geoDistance } from 'd3-geo'
-import { createSchoolFlight, DEFAULT_FLIGHT_ORIGIN, FLIGHT_DURATION_MS, FLIGHT_SETTLE_MS, FLIGHT_TURN_MS, FLIGHT_ZOOM_MS, flightTurnProgress, fullGlobeZoom, lookupFlightOrigin, schoolFlightDeadline } from '../src/lib/school-flight.js'
+import { createSchoolFlight, DEFAULT_FLIGHT_ORIGIN, FLIGHT_DURATION_MS, FLIGHT_SETTLE_MS, FLIGHT_TURN_MS, FLIGHT_ZOOM_MS, flightTurnProgress, fullGlobeZoom, lookupFlightOrigin, schoolFlightDeadline, isNearSchool, NEARBY_FLIGHT_RADIUS_KM } from '../src/lib/school-flight.js'
 
 const school = { longitude: -79.46, latitude: 44 }
 
@@ -93,6 +93,34 @@ test('full-globe framing fits phones, landscape, tablets, desktop and resizing',
     assert.ok(zoom >= -2.5 && zoom <= 2.25)
   }
   assert.equal(fullGlobeZoom(390, 844), fullGlobeZoom(844, 390))
+})
+
+test('nearby shortcut uses an Aurora–Boston radius around the destination school', () => {
+  const aurora = { longitude: -79.4504, latitude: 44.0065 }
+  const boston = { longitude: -71.0589, latitude: 42.3601 }
+  assert.ok(NEARBY_FLIGHT_RADIUS_KM > 690 && NEARBY_FLIGHT_RADIUS_KM < 720)
+  assert.equal(isNearSchool(boston, aurora), true, 'the radius boundary is included')
+  assert.equal(isNearSchool({ longitude: -79.38, latitude: 43.65 }, aurora), true)
+  assert.equal(isNearSchool({ longitude: -71.04, latitude: 42.36 }, aurora), false)
+  assert.equal(isNearSchool({ longitude: 179.8, latitude: 20 }, { longitude: -179.8, latitude: 20 }), true)
+  assert.equal(isNearSchool(undefined, aurora), false)
+  assert.equal(isNearSchool(DEFAULT_FLIGHT_ORIGIN, DEFAULT_FLIGHT_ORIGIN), false)
+})
+
+test('nearby users start directly over the pin and only zoom, in about 1.35 seconds', () => {
+  const flight = createSchoolFlight({ longitude: -79.38, latitude: 43.65 }, school)
+  const duration = FLIGHT_SETTLE_MS + FLIGHT_ZOOM_MS
+  assert.equal(duration, 1350)
+  assert.equal(FLIGHT_DURATION_MS, 2550)
+  for (const elapsed of [0, FLIGHT_SETTLE_MS, duration / 2, duration]) {
+    const frame = flight(elapsed, 1)
+    assert.ok(geoDistance(frame.center, [school.longitude, school.latitude]) < 1e-8)
+    assert.notEqual(frame.phase, 'turn')
+  }
+  assert.equal(flight(duration - 1, 1).complete, false)
+  assert.equal(flight(duration, 1).complete, true)
+  assert.equal(flight(duration, 1).zoom, 13)
+  assert.equal(flight(duration, 1).opacity, 0)
 })
 
 test('IP orientation falls back on failed, invalid or aborted responses', async () => {

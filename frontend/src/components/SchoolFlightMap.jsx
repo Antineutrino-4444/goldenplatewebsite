@@ -3,7 +3,7 @@ import { Map as VectorMap, Marker } from 'mapbox-gl/esm'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
 import { isPublicMapboxToken, MAP_LANGUAGE, MAP_WORLDVIEW, mapStyleFor } from '@/lib/mapLayers.js'
-import { createSchoolFlight, fullGlobeZoom } from '@/lib/school-flight.js'
+import { createSchoolFlight, fullGlobeZoom, isNearSchool } from '@/lib/school-flight.js'
 
 const token = (import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '').trim()
 
@@ -36,12 +36,13 @@ export default function SchoolFlightMap({ schools, destination, origin, onProgre
     }
     try {
       const bounds = container.current.getBoundingClientRect()
+      const initial = camera(0, fullGlobeZoom(bounds.width, bounds.height))
       map = new VectorMap({
         container: container.current, accessToken: token,
         // Standard imports must finish loading before enabling globe terrain.
         style: mapStyleFor('hybrid'),
         worldview: MAP_WORLDVIEW, language: MAP_LANGUAGE,
-        center: [origin.longitude, origin.latitude], zoom: fullGlobeZoom(bounds.width, bounds.height),
+        center: initial.center, zoom: initial.zoom,
         minZoom: -2.5, maxZoom: 14, maxPitch: 0, interactive: false,
         antialias: true, attributionControl: { compact: true },
       })
@@ -77,5 +78,5 @@ export default function SchoolFlightMap({ schools, destination, origin, onProgre
       map?.remove()
     }
   }, [schools, destination, origin])
-  return <div ref={container} className="arrival-map" role="img" aria-label={`Satellite globe flying to ${destination.name}`} />
+  return <div ref={container} className="arrival-map" data-flight-mode={isNearSchool(origin, destination) ? 'direct' : 'turn'} role="img" aria-label={`Satellite globe flying to ${destination.name}`} />
 }
