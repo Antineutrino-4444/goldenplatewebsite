@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react'
-import { ChevronDown, Github, KeyRound, LogOut, Mail, UserRound } from 'lucide-react'
+import { ChevronDown, Github, KeyRound, LogOut, Mail, MapPinned, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.jsx'
 import PasswordSettings from '@/components/PasswordSettings.jsx'
 import SchoolContactSettings from '@/components/SchoolContactSettings.jsx'
+import SchoolLocationDialog from '@/components/SchoolLocationDialog.jsx'
 
-export default function AccountMenu({ app }) {
+export default function AccountMenu({ app, onSchoolLocationSaved }) {
   const { user, logout } = app
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [locationOpen, setLocationOpen] = useState(false)
   const [contactOpen, setContactOpen] = useState(user?.role === 'superadmin' && !user.school_contact_email)
   const trigger = useRef(null)
   const canReset = ['superadmin', 'inter_school'].includes(user?.role)
@@ -31,7 +33,7 @@ export default function AccountMenu({ app }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-2rem)]" onCloseAutoFocus={(event) => {
-          if (passwordOpen || contactOpen) event.preventDefault()
+          if (passwordOpen || contactOpen || locationOpen) event.preventDefault()
         }}>
           <DropdownMenuLabel className="min-w-0 space-y-1 [overflow-wrap:anywhere]">
             <div className="font-semibold">{user.name}</div>
@@ -46,6 +48,9 @@ export default function AccountMenu({ app }) {
           {user.role === 'superadmin' && (
             <DropdownMenuItem onSelect={() => setContactOpen(true)}><Mail />School contact email</DropdownMenuItem>
           )}
+          {['user', 'admin', 'superadmin', 'inter_school'].includes(user.role) && (
+            <DropdownMenuItem onSelect={() => setLocationOpen(true)}><MapPinned />{user.role === 'inter_school' ? 'School locations' : 'School location'}</DropdownMenuItem>
+          )}
           <DropdownMenuItem asChild>
             <a href="https://github.com/Antineutrino-4444/goldenplatewebsite" target="_blank" rel="noopener noreferrer"><Github />GitHub repository</a>
           </DropdownMenuItem>
@@ -57,6 +62,9 @@ export default function AccountMenu({ app }) {
           closes them nor suppresses the automatic missing-email reminder. */}
       <PasswordSettings user={user} open={passwordOpen} onOpenChange={setPasswordOpen} hideTrigger onCloseAutoFocus={restoreFocus} />
       {user.role === 'superadmin' && <SchoolContactSettings app={app} open={contactOpen} onOpenChange={setContactOpen} hideTrigger onCloseAutoFocus={restoreFocus} />}
+      <SchoolLocationDialog app={app} open={locationOpen} onOpenChange={setLocationOpen} hideTrigger
+        autoPrompt allowAutomaticPrompt={!contactOpen && !passwordOpen}
+        onSaved={onSchoolLocationSaved} onCloseAutoFocus={restoreFocus} />
     </>
   )
 }

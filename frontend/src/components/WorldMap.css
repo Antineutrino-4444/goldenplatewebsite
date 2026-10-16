@@ -1,0 +1,40 @@
+.world-map .world-map-canvas { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, #183951, #071b2c 80%); font-family: inherit; }
+.world-map .mapboxgl-canvas:focus-visible { outline: 2px solid #d1a74d; outline-offset: -3px; }
+.world-map .mapboxgl-control-container { font-family: inherit; }
+.world-map .mapboxgl-ctrl-group { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 3px 14px #0f172a14; }
+.world-map .mapboxgl-ctrl-group button { width: 36px; height: 36px; }
+.world-map .mapboxgl-ctrl-attrib { font-size: 10px; background: #fffffff0; }
+.world-map .mapboxgl-ctrl-scale { border-color: #64748b; color: #334155; background: #ffffffe0; font-size: 10px; }
+.world-map .mapboxgl-popup-content { border-radius: 12px; padding: 12px 15px; box-shadow: 0 6px 24px #0f172a26; color: #1e293b; font-size: 12px; line-height: 1.5; }
+.world-map .mapboxgl-popup-content p { margin: 4px 0 0; color: #64748b; }
+.world-map-placement .mapboxgl-canvas-container { cursor: crosshair; }
+.world-map-toolbar { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; gap: 8px; border-bottom: 1px solid #e2e8f0; padding: 10px 12px; background: #fff; }
+.world-map-modes { display: inline-flex; gap: 3px; padding: 3px; border-radius: 10px; background: #f1f5f9; }
+.world-map-modes button { display: flex; align-items: center; gap: 6px; border-radius: 7px; padding: 6px 11px; color: #64748b; font-size: 12px; font-weight: 600; }
+.world-map-modes button[aria-pressed=true] { background: #fff; color: #155e55; box-shadow: 0 1px 4px #0f172a1a; }
+.world-map-control { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; background: white; color: #475569; font-size: 11px; }
+.world-map-control:hover { background: #f8fafc; color: #0f766e; }
+.world-map-control:disabled { opacity: .45; cursor: default; }
+.world-map-control:focus-visible, .world-map-modes button:focus-visible, .world-map select:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }
+.world-map-pin { width: var(--pin-width, 34px); height: var(--pin-height, 42px); padding: 0; border: 0; background: none; cursor: pointer; }
+.world-map-pin span { display: block; filter: drop-shadow(0 3px 4px #0f172a55); transition: filter .15s; }
+.world-map-pin svg { position: relative; width: var(--pin-width, 34px); height: var(--pin-height, 42px); overflow: visible; fill: var(--pin-colour, #0f766e); stroke: #fff; stroke-width: 1.7; }
+.world-map-pin.has-activity::before { content: ''; position: absolute; left: 50%; top: 40%; width: 75%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; background: rgb(245 193 64 / var(--pin-halo)); box-shadow: 0 0 0 5px rgb(245 193 64 / var(--pin-halo)), 0 0 16px 8px rgb(245 193 64 / var(--pin-halo)); }
+.world-map-pin.has-activity.is-selected::before { background: #0f766e44; box-shadow: 0 0 0 5px #0f766e44, 0 0 16px 8px #0f766e44; }
+.world-map-pin.has-activity.is-selected svg { fill: var(--pin-colour); stroke: #134e4a; stroke-width: 2.5; }
+.world-map-activity-key { width: 30px; height: 12px; border-radius: 8px; background: linear-gradient(90deg, #b9b6ac, #f5bb0a); box-shadow: 3px 0 6px #f5c14055; }
+.world-map-pin svg circle { fill: white; stroke: white; stroke-width: 1; }
+.world-map-pin.is-selected svg { fill: #c6922e; }
+.world-map-pin.is-pending svg { fill: #0284c7; }
+.world-map-pin:hover span { filter: drop-shadow(0 4px 6px #0f172a88); }
+.world-map-pin:focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; border-radius: 10px; }
+.world-map-layer-panel { font-family: inherit; background: white; }
+.world-map-layer-option { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid transparent; border-radius: 9px; color: #334155; cursor: pointer; }
+.world-map-layer-option:hover { background: #f8fafc; }
+.world-map-layer-option.is-active { border-color: #99ccc0; background: #f0fdfa; }
+.world-map-layer-option:focus-within { outline: 2px solid #0f766e; outline-offset: 1px; }
+.world-map-layer-swatch { display: block; width: 43px; height: 39px; flex-shrink: 0; border-radius: 7px; border: 1px solid #0f172a15; }
+.world-map-layer-swatch.is-street { background: linear-gradient(30deg, transparent 42%, #fff 43% 49%, transparent 50%), linear-gradient(115deg, #dcead7 25%, #f4efdf 26% 55%, #bcdce6 56% 66%, #e4e9d7 67%); }
+.world-map-layer-swatch.is-satellite { background: radial-gradient(ellipse at 35% 35%, #8a9b5e, transparent 55%), linear-gradient(125deg, #2c482b 35%, #3c5b64 36% 55%, #657348 56% 75%, #253e2f 76%); }
+.world-map-layer-swatch.is-hybrid { background: linear-gradient(30deg, transparent 42%, #e8dc9b 43% 47%, transparent 48%), linear-gradient(112deg, transparent 62%, #eee 63% 65%, transparent 66%), radial-gradient(ellipse at 35% 35%, #8a9b5e, transparent 55%), linear-gradient(125deg, #2c482b 35%, #3c5b64 36% 55%, #657348 56%); }
+@media (max-width: 639px) { .world-map-layer-name { display: none; } }

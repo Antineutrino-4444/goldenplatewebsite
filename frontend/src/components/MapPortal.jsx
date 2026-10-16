@@ -33,6 +33,9 @@ import {
 } from 'lucide-react'
 
 import AccountMenu from '@/components/AccountMenu.jsx'
+import WorldMap from '@/components/WorldMap.jsx'
+import { formatCoordinates, hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
+import { schoolsWithoutLocations, submissionsInOthers } from '@/lib/schoolMap.js'
 
 const API_BASE = '/api'
 const MAP_MAX_IMAGE_BYTES = 50 * 1024 * 1024
@@ -529,7 +532,12 @@ function ImageLightbox({ images, startIndex = 0, onClose }) {
  * so circles/labels never get stretched. Pins/labels are HTML overlays
  * positioned by percentage so they remain perfectly round at any size.
  */
-function EcologicalMapGraphic({
+function EcologicalMapGraphic({ legacy = false, ...props }) {
+  if (!legacy) return <WorldMap {...props} />
+  return <ImageMapGraphic {...props} pins={(props.pins || []).filter((pin) => !hasGeographicCoordinates(pin))} />
+}
+
+function ImageMapGraphic({
   pins = [],
   submissionsByPin = {},
   selectedPinId = null,
@@ -1739,8 +1747,10 @@ function MapPortal({ app }) {
   const [actionLoading, setActionLoading] = useState(false)
 
   const [pins, setPins] = useState([])
+  const [schoolPins, setSchoolPins] = useState([])
   const [selectedPinId, setSelectedPinId] = useState(null)
   const [showEnlarge, setShowEnlarge] = useState(false)
+  const [showLegacyMap, setShowLegacyMap] = useState(false)
   const [showPinPickerEnlarged, setShowPinPickerEnlarged] = useState(false)
 
   const [leaders, setLeaders] = useState([])
@@ -1790,7 +1800,7 @@ function MapPortal({ app }) {
   // Pin selection for submission: 'others' | <existingPinId> | 'new'
   const [pinChoice, setPinChoice] = useState(initialDraft.pinChoice || 'others')
   const [newPinName, setNewPinName] = useState(initialDraft.newPinName || '')
-  const [newPinPoint, setNewPinPoint] = useState(initialDraft.newPinPoint || null)
+  const [newPinPoint, setNewPinPoint] = useState(hasGeographicCoordinates(initialDraft.newPinPoint) ? initialDraft.newPinPoint : null)
 
   const [imageItems, setImageItems] = useState([]) // [{id, file, name, status, heicProgress?, previewUrl, error?}]
   const [submitting, setSubmitting] = useState(false)
@@ -1803,29 +1813,39 @@ function MapPortal({ app }) {
   const isSuperadmin = user?.role === 'superadmin'
   const roleLabel = formatRole(user?.role)
 
+  const worldPins = useMemo(() => [...schoolPins.filter(hasGeographicCoordinates), ...pins], [schoolPins, pins])
+  const unmappedSchools = useMemo(() => schoolsWithoutLocations(schoolPins), [schoolPins])
+  const othersSubmissions = useMemo(() => submissionsInOthers(approvedSubmissions, schoolPins), [approvedSubmissions, schoolPins])
+  const selectedSchool = schoolPins.find((pin) => pin.id === selectedPinId)
+  const geographicPins = useMemo(() => worldPins.filter(hasGeographicCoordinates), [worldPins])
+  const legacyPins = useMemo(() => pins.filter((pin) => !hasGeographicCoordinates(pin)), [pins])
+
   const submissionsByPin = useMemo(() => {
     const result = { others: 0 }
     for (const submission of approvedSubmissions) {
       const key = submission.pin_id || 'others'
       result[key] = (result[key] || 0) + 1
     }
+    result.others = othersSubmissions.length
     return result
-  }, [approvedSubmissions])
+  }, [approvedSubmissions, othersSubmissions])
 
   const selectedSubmissions = useMemo(() => {
     if (!selectedPinId) return []
     if (selectedPinId === 'others') {
-      return approvedSubmissions.filter((submission) => !submission.pin_id)
+      return othersSubmissions
     }
+    if (selectedSchool) return approvedSubmissions.filter((submission) => submission.school_id === selectedSchool.school_id)
     return approvedSubmissions.filter((submission) => submission.pin_id === selectedPinId)
-  }, [approvedSubmissions, selectedPinId])
+  }, [approvedSubmissions, selectedPinId, selectedSchool, othersSubmissions])
 
   const selectedPinName = useMemo(() => {
     if (!selectedPinId) return ''
-    if (selectedPinId === 'others') return 'Others (no pin selected)'
-    const pin = pins.find((candidate) => candidate.id === selectedPinId)
-    return pin ? pin.name : 'Selected pin'
-  }, [pins, selectedPinId])
+    if (selectedPinId === 'others') return 'Others'
+    const school = schoolPins.find((candidate) => candidate.id === selectedPinId)
+    const pin = worldPins.find((candidate) => candidate.id === selectedPinId)
+    return school?.name || pin?.name || 'Selected pin'
+  }, [worldPins, schoolPins, selectedPinId])
 
   const loadApprovedSubmissions = async () => {
     setApprovedLoading(true)
@@ -1865,6 +1885,17 @@ function MapPortal({ app }) {
       showMessage(buildNetworkErrorMessage('MAP_LOAD_PENDING_NETWORK', 'Failed to load pending map submissions', error), 'error')
     } finally {
       setPendingLoading(false)
+    }
+  }
+
+  const loadSchoolPins = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/map/schools`)
+      const data = await response.json()
+      if (response.ok) setSchoolPins(Array.isArray(data.schools) ? data.schools : [])
+      else showMessage(data.error || 'Unable to load school locations. Please refresh the map.', 'error')
+    } catch {
+      showMessage('Unable to load school locations. Check your connection and refresh the map.', 'error')
     }
   }
 
@@ -1986,6 +2017,7 @@ function MapPortal({ app }) {
     loadApprovedSubmissions()
     loadPendingSubmissions()
     loadPins()
+    loadSchoolPins()
     loadLeaders()
     loadBackground()
     loadFeaturedSubmission()
@@ -2308,9 +2340,9 @@ function MapPortal({ app }) {
     setIsDraggingImage(false)
   }
 
-  const handleSubmissionMapClick = (x, y) => {
+  const handleSubmissionMapClick = (latitude, longitude) => {
     if (pinChoice !== 'new') return
-    setNewPinPoint({ x, y })
+    setNewPinPoint({ latitude, longitude })
   }
 
   const submitMapEntry = async () => {
@@ -2346,7 +2378,7 @@ function MapPortal({ app }) {
         showMessage('[MAP_PIN_NAME_REQUIRED_CLIENT] Name your new pin', 'error')
         return
       }
-      if (!newPinPoint) {
+      if (!hasGeographicCoordinates(newPinPoint)) {
         showMessage('[MAP_PIN_LOCATION_REQUIRED_CLIENT] Click on the map to place your pin', 'error')
         return
       }
@@ -2379,8 +2411,8 @@ function MapPortal({ app }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: newPinName.trim(),
-            x: newPinPoint.x,
-            y: newPinPoint.y,
+            latitude: newPinPoint.latitude,
+            longitude: newPinPoint.longitude,
             email: trimmedEmail
           })
         })
@@ -2703,7 +2735,7 @@ function MapPortal({ app }) {
               </a>
             </Button>
             {user ? (
-              <AccountMenu key={user.id || user.username} app={app} />
+              <AccountMenu key={user.id || user.username} app={app} onSchoolLocationSaved={loadSchoolPins} />
             ) : (
               <Button asChild variant="outline" size="sm">
                 <a href="/login">Login</a>
@@ -2731,7 +2763,7 @@ function MapPortal({ app }) {
               <Button onClick={() => setShowApprovals(true)} size="sm" className="bg-amber-700 hover:bg-amber-800">
                 Open Approvals
               </Button>
-              {isSuperadmin && (
+              {isSuperadmin && showLegacyMap && (
                 <Button
                   onClick={() => setShowBackgroundEditor(true)}
                   size="sm"
@@ -2739,7 +2771,7 @@ function MapPortal({ app }) {
                   disabled={backgroundUploading}
                 >
                   <ImageIcon className="mr-2 h-4 w-4" />
-                  {backgroundUploading ? 'Uploading…' : 'Edit Map Background'}
+                  {backgroundUploading ? 'Uploading…' : 'Edit Original Map Background'}
                 </Button>
               )}
               {isSuperadmin && (
@@ -2761,28 +2793,35 @@ function MapPortal({ app }) {
         <section className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,0.55fr)_minmax(0,1.45fr)]">
           <div className="flex flex-col justify-center gap-4 rounded-md border bg-white p-4 sm:p-6 shadow-sm">
             <Badge variant="outline" className="w-fit bg-slate-50">
-              {roleLabel} access
+              {user ? `${roleLabel} access` : 'Visitor access'}
             </Badge>
             <div>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-normal text-slate-950">Ecological Map</h2>
               <p className="mt-2 sm:mt-3 max-w-xl text-sm sm:text-base leading-6 sm:leading-7 text-slate-600">
-                Approved submissions appear here after review. Click a pin to see its submissions, or click <span className="font-semibold">Others</span> to view submissions without a pin.
+                Explore locations around the world. Zoom in and select a pin to read approved updates from the Golden Plate community.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border bg-slate-50 p-3">
-                <div className="text-xs font-semibold uppercase text-slate-500">Pins</div>
-                <div className="mt-1 text-lg font-bold">{pins.length}</div>
+                <div className="text-xs font-semibold uppercase text-slate-500">World locations</div>
+                <div className="mt-1 text-lg font-bold">{geographicPins.length}</div>
               </div>
               <div className="rounded-md border bg-slate-50 p-3">
                 <div className="text-xs font-semibold uppercase text-slate-500">Approved</div>
                 <div className="mt-1 text-lg font-bold">{approvedSubmissions.length}</div>
               </div>
             </div>
-            <div className="flex flex-wrap items-baseline gap-2 rounded-md border bg-slate-50 px-3 py-2">
-              <span className="text-xs font-semibold uppercase text-slate-500">Username</span>
-              <span className="break-all text-base font-bold leading-snug text-slate-800">@{user?.username || 'guest'}</span>
+            <div className="flex flex-wrap gap-2">
+              {(legacyPins.length > 0 || backgroundUrl) && (
+                <Button onClick={() => { setShowLegacyMap((value) => !value); setSelectedPinId(null) }} variant="outline" size="sm" aria-pressed={showLegacyMap}>
+                  {showLegacyMap ? 'World map' : `Original map (${legacyPins.length})`}
+                </Button>
+              )}
+              <Button onClick={() => setSelectedPinId('others')} variant="outline" size="sm">
+                Others ({unmappedSchools.length} {unmappedSchools.length === 1 ? 'school' : 'schools'}, {submissionsByPin.others || 0} updates)
+              </Button>
             </div>
+            {showLegacyMap && <p className="text-xs text-slate-500">These locations belong to the original image map and have not been assigned geographic coordinates.</p>}
             <Button onClick={() => setShowEnlarge(true)} variant="outline" size="sm" className="w-fit">
               <ZoomIn className="mr-2 h-4 w-4" />
               Enlarge map
@@ -2790,7 +2829,8 @@ function MapPortal({ app }) {
           </div>
           <div className="w-full self-center">
             <EcologicalMapGraphic
-              pins={pins}
+              legacy={showLegacyMap}
+              pins={worldPins}
               submissionsByPin={submissionsByPin}
               selectedPinId={selectedPinId}
               onSelectPin={setSelectedPinId}
@@ -2815,6 +2855,21 @@ function MapPortal({ app }) {
                 Close
               </Button>
             </div>
+            {selectedPinId === 'others' && (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">Schools without a map location and updates without a pin appear here.</p>
+                {unmappedSchools.length > 0 && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {unmappedSchools.map((school) => <button key={school.id} type="button"
+                    onClick={() => setSelectedPinId(school.id)}
+                    className="rounded-md border bg-white p-4 text-left hover:border-teal-600 hover:bg-teal-50 focus-visible:outline-teal-700">
+                    <span className="block font-semibold text-slate-900">{school.name}</span>
+                    <span className="mt-1 block text-xs text-slate-500">No map location · View school updates</span>
+                  </button>)}
+                </div>}
+              </div>
+            )}
+            {selectedSchool && <p className="text-sm text-slate-600">{selectedSchool.address || selectedSchool.location_name || 'This school appears in Others without a map location.'}</p>}
+            {selectedSchool && !hasGeographicCoordinates(selectedSchool) && <Button variant="outline" size="sm" onClick={() => setSelectedPinId('others')}>Back to Others</Button>}
             {selectedSubmissions.length === 0 ? (
               <div className="rounded-md border bg-white p-6 text-center text-sm text-slate-500">
                 No approved submissions here yet
@@ -3005,13 +3060,14 @@ function MapPortal({ app }) {
                         <option value="">Select a pin…</option>
                         {pins.map((pin) => (
                           <option key={pin.id} value={pin.id}>
-                            {pin.name}
+                            {pin.name}{hasGeographicCoordinates(pin) ? '' : ' (original map)'}
                           </option>
                         ))}
                       </select>
                       <p className="text-xs text-slate-500">Or click a pin on the map below.</p>
                       <EcologicalMapGraphic
                         pins={pins}
+                        legacy={Boolean(pins.find((pin) => pin.id === pinChoice && !hasGeographicCoordinates(pin)))}
                         submissionsByPin={submissionsByPin}
                         backgroundUrl={backgroundUrl}
                         imageAspect={imageAspect}
@@ -3057,12 +3113,13 @@ function MapPortal({ app }) {
                         backgroundUrl={backgroundUrl}
                         imageAspect={imageAspect}
                         pendingPoint={newPinPoint}
+                        onPlaceSelect={(place) => { setNewPinName(place.name.slice(0, 80)); setNewPinPoint(place) }}
                         onMapClick={handleSubmissionMapClick}
                       />
                       {newPinPoint && (
                         <div className="text-xs text-slate-600">
                           <MapPinIcon className="mr-1 inline h-3.5 w-3.5 text-sky-600" />
-                          Placed at ({newPinPoint.x.toFixed(1)}, {newPinPoint.y.toFixed(1)})
+                          {formatCoordinates(newPinPoint)}
                         </div>
                       )}
                     </div>
@@ -3182,7 +3239,7 @@ function MapPortal({ app }) {
                       {pinChoice === 'others'
                         ? 'Others (no pin)'
                         : pinChoice === 'new'
-                        ? `New pin: ${newPinName || '(no name)'}${newPinPoint ? ` @ (${newPinPoint.x.toFixed(1)}, ${newPinPoint.y.toFixed(1)})` : ' — pick a location'}`
+                        ? `New pin: ${newPinName || '(no name)'}${newPinPoint ? ` @ ${formatCoordinates(newPinPoint)}` : ' — pick a location'}`
                         : pins.find((pin) => pin.id === pinChoice)?.name || 'Choose a pin'}
                     </div>
                   </div>
@@ -3401,22 +3458,33 @@ function MapPortal({ app }) {
           <DialogHeader className="shrink-0">
             <DialogTitle>Ecological Map (enlarged)</DialogTitle>
             <DialogDescription>
-              Scroll to pan, Ctrl/Cmd + scroll or pinch to zoom, drag to move.
+              {showLegacyMap ? 'Drag to move. Pinch or Ctrl/Cmd + scroll to zoom.' : 'Drag to explore the world. Use + / − or pinch to zoom.'}
             </DialogDescription>
           </DialogHeader>
-          <ZoomableMapView naturalSize={imageNaturalSize} imageAspect={imageAspect}>
-            {(size) => (
-              <EcologicalMapGraphic
-                pins={pins}
-                submissionsByPin={submissionsByPin}
-                selectedPinId={selectedPinId}
-                onSelectPin={(id) => { setSelectedPinId(id); setShowEnlarge(false) }}
-                backgroundUrl={backgroundUrl}
-                imageAspect={imageAspect}
-                naturalSize={size}
-              />
-            )}
-          </ZoomableMapView>
+          {showLegacyMap ? (
+            <ZoomableMapView naturalSize={imageNaturalSize} imageAspect={imageAspect}>
+              {(size) => (
+                <EcologicalMapGraphic
+                  legacy
+                  pins={pins}
+                  submissionsByPin={submissionsByPin}
+                  selectedPinId={selectedPinId}
+                  onSelectPin={(id) => { setSelectedPinId(id); setShowEnlarge(false) }}
+                  backgroundUrl={backgroundUrl}
+                  imageAspect={imageAspect}
+                  naturalSize={size}
+                />
+              )}
+            </ZoomableMapView>
+          ) : (
+            <WorldMap
+              pins={worldPins}
+              submissionsByPin={submissionsByPin}
+              selectedPinId={selectedPinId}
+              onSelectPin={(id) => { setSelectedPinId(id); if (id) setShowEnlarge(false) }}
+              fillContainer
+            />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -3425,28 +3493,23 @@ function MapPortal({ app }) {
           <DialogHeader className="shrink-0">
             <DialogTitle>Place your pin (enlarged)</DialogTitle>
             <DialogDescription>
-              Click to drop your pin. Scroll to pan, Ctrl/Cmd + scroll or pinch to zoom.
+              Drag to explore. Use + / − or pinch to zoom. Click to drop your pin, then drag it to adjust.
             </DialogDescription>
           </DialogHeader>
-          <ZoomableMapView naturalSize={imageNaturalSize} imageAspect={imageAspect}>
-            {(size) => (
-              <EcologicalMapGraphic
-                pins={pins}
-                submissionsByPin={submissionsByPin}
-                backgroundUrl={backgroundUrl}
-                imageAspect={imageAspect}
-                pendingPoint={newPinPoint}
-                onMapClick={handleSubmissionMapClick}
-                naturalSize={size}
-              />
-            )}
-          </ZoomableMapView>
+          <WorldMap
+            pins={pins}
+            submissionsByPin={submissionsByPin}
+            pendingPoint={newPinPoint}
+            onPlaceSelect={(place) => { setNewPinName(place.name.slice(0, 80)); setNewPinPoint(place) }}
+            onMapClick={handleSubmissionMapClick}
+            fillContainer
+          />
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-slate-600">
               {newPinPoint ? (
                 <>
                   <MapPinIcon className="mr-1 inline h-4 w-4 text-sky-600" />
-                  Placed at ({newPinPoint.x.toFixed(1)}, {newPinPoint.y.toFixed(1)})
+                  {formatCoordinates(newPinPoint)}
                 </>
               ) : (
                 'No location set yet'

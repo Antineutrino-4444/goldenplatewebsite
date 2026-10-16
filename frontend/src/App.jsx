@@ -8,7 +8,7 @@ import OverlayElements from '@/components/OverlayElements.jsx'
 import SchoolRegistration from '@/components/SchoolRegistration.jsx'
 import { AlertTriangle } from 'lucide-react'
 
-const MapPortal = lazy(() => import('@/components/MapPortal.jsx'))
+const MapPortal = lazy(() => import('@/components/SchoolMapPortal.jsx'))
 const LiveCounterPage = lazy(() => import('@/components/LiveCounterPage.jsx'))
 
 function DevelopmentModeBanner({ app }) {
@@ -148,24 +148,7 @@ function MapApp() {
   return (
     <AppFrame app={app}>
       <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-        {app.isAuthenticated && app.isInterschoolUser ? (
-          <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-            <div className="max-w-md rounded-md border bg-white p-6 text-center shadow-sm">
-              <h1 className="text-xl font-bold text-slate-950">Ecological Map unavailable</h1>
-              <p className="mt-2 text-sm text-slate-600">
-                Inter-school admin accounts do not have access to the Ecological Map.
-              </p>
-              <a
-                href="/"
-                className="mt-4 inline-block rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800"
-              >
-                Go to Inter-school Portal
-              </a>
-            </div>
-          </div>
-        ) : (
-          <MapPortal app={app} />
-        )}
+        <MapPortal app={app} />
       </Suspense>
       <OverlayElements app={app} />
     </AppFrame>

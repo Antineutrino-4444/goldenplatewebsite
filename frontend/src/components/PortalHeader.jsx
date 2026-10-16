@@ -23,15 +23,15 @@ export default function PortalHeader({ app, interschool = false }) {
               </a>
             </Button>}
             {!interschool && <Button asChild variant="ghost" className="h-10 whitespace-nowrap px-2 text-slate-600 sm:px-3">
-              <a href="https://map.goldenplate.ca/">
+              <a href={window.location.hostname.startsWith('map.') ? '/' : '/map'}>
                 <MapPinned className="h-4 w-4" aria-hidden="true" />
-                <span className="sm:hidden">Map</span><span className="hidden sm:inline">Ecological Map</span>
+                <span className="sm:hidden">Map</span><span className="hidden sm:inline">School map</span>
               </a>
             </Button>}
             <AccountMenu key={app.user?.id || app.user?.username} app={app} />
           </nav>
         </div>
-        {school?.name && <div className="mt-3 flex min-w-0 items-start gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 sm:text-sm">
+        {school?.name && <div className="mt-3 flex min-w-0 flex-wrap items-start gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 sm:text-sm">
           <Building2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 [overflow-wrap:anywhere]">{school.name}
             {code && <span className="ml-2 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600 [overflow-wrap:anywhere]">Code: {code}</span>}

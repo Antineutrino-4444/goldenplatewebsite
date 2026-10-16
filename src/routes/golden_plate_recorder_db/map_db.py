@@ -155,6 +155,9 @@ class MapPin(MapBase):
     name = Column(String, nullable=False)
     x = Column(Float, nullable=False)
     y = Column(Float, nullable=False)
+    # Image positions are retained for the original map, never inferred as GPS.
+    latitude = Column(Float)
+    longitude = Column(Float)
     created_at = Column(DateTime(timezone=True), default=_map_now_utc)
     created_by_user_id = Column(String)
     created_by_username = Column(String)
@@ -194,6 +197,44 @@ class MapSetting(MapBase):
     updated_by_username = Column(String)
 
 
+class MapSchoolLocation(MapBase):
+    __tablename__ = 'map_school_locations'
+
+    school_id = Column(String, primary_key=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    location_name = Column(String(200), nullable=False)
+    address = Column(Text, nullable=False, default='')
+    source = Column(String, nullable=False, default='manual')
+    place_id = Column(String(100))
+    updated_at = Column(DateTime(timezone=True), default=_map_now_utc, onupdate=_map_now_utc)
+    updated_by_user_id = Column(String)
+
+
+class MapSchoolMapPreference(MapBase):
+    __tablename__ = 'map_school_preferences'
+
+    school_id = Column(String, primary_key=True)
+    unmapped = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime(timezone=True), default=_map_now_utc, onupdate=_map_now_utc)
+    updated_by_user_id = Column(String)
+
+
+class MapPlaceSearchCache(MapBase):
+    __tablename__ = 'map_place_search_cache'
+
+    key = Column(String(64), primary_key=True)
+    results_json = Column(Text, nullable=False)
+    expires_at = Column(Float, nullable=False, index=True)
+
+
+class MapPlaceSearchQuota(MapBase):
+    __tablename__ = 'map_place_search_quota'
+
+    key = Column(String(64), primary_key=True)
+    next_allowed_at = Column(Float, nullable=False, default=0)
+
+
 def _add_column_if_missing(connection, table_name, column_name, column_ddl):
     inspector = inspect(connection)
     existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
@@ -204,6 +245,8 @@ def _add_column_if_missing(connection, table_name, column_name, column_ddl):
 def _bootstrap_map_database() -> None:
     MapBase.metadata.create_all(bind=map_engine)
     with map_engine.begin() as connection:
+        _add_column_if_missing(connection, 'map_pins', 'latitude', 'FLOAT')
+        _add_column_if_missing(connection, 'map_pins', 'longitude', 'FLOAT')
         _add_column_if_missing(connection, 'map_submissions', 'title', 'VARCHAR')
         _add_column_if_missing(connection, 'map_submissions', 'submission_display_name', 'VARCHAR')
         _add_column_if_missing(connection, 'map_submissions', 'pin_id', 'VARCHAR')

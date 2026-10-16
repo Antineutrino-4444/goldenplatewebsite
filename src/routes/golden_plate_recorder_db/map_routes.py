@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import random
 import re
@@ -378,6 +379,10 @@ def handle_map_request_too_large(error):
 def _block_interschool_from_map():
     if not request.path.startswith('/api/map/'):
         return None
+    if request.path.rstrip('/') in {'/api/map/schools', '/api/map/school-location', '/api/map/places/search'}:
+        return None
+    if os.environ.get('MAP_LEGACY_FEATURES_ENABLED', '').strip().lower() not in {'1', 'true', 'yes'}:
+        return _map_error('MAP_LEGACY_DISABLED', 'The original ecological map features are temporarily disabled.', 410)
     if is_interschool_user():
         return _map_error(
             'MAP_INTERSCHOOL_FORBIDDEN',
@@ -2139,6 +2144,8 @@ def _serialize_pin(pin):
         'name': pin.name,
         'x': pin.x,
         'y': pin.y,
+        'latitude': pin.latitude,
+        'longitude': pin.longitude,
         'created_at': pin.created_at.isoformat() if pin.created_at else None,
         'created_by': {
             'user_id': pin.created_by_user_id,
@@ -2208,14 +2215,30 @@ def create_map_pin():
     if len(name) > 80:
         return _map_error('MAP_PIN_NAME_TOO_LONG', 'Pin name must be 80 characters or fewer', 400)
 
-    try:
-        x = float(x)
-        y = float(y)
-    except (TypeError, ValueError):
-        return _map_error('MAP_PIN_COORDS_INVALID', 'Pin coordinates must be numeric', 400)
+    latitude = longitude = None
+    if 'latitude' in data or 'longitude' in data:
+        try:
+            if isinstance(data.get('latitude'), bool) or isinstance(data.get('longitude'), bool):
+                raise ValueError
+            latitude = float(data.get('latitude'))
+            longitude = float(data.get('longitude'))
+        except (TypeError, ValueError, OverflowError):
+            return _map_error('MAP_PIN_COORDS_INVALID', 'Latitude and longitude must both be numeric', 400)
+        if not (math.isfinite(latitude) and math.isfinite(longitude)
+                and -90 <= latitude <= 90 and -180 <= longitude <= 180):
+            return _map_error('MAP_PIN_COORDS_OUT_OF_RANGE', 'Latitude must be between -90 and 90 and longitude between -180 and 180', 400)
+        # Legacy image columns remain non-null for existing database compatibility.
+        # Geographic pins are excluded from the original image map by the client.
+        x = y = 0
+    else:
+        try:
+            x = float(x)
+            y = float(y)
+        except (TypeError, ValueError):
+            return _map_error('MAP_PIN_COORDS_INVALID', 'Pin coordinates must be numeric', 400)
 
-    if not (0 <= x <= 100 and 0 <= y <= 100):
-        return _map_error('MAP_PIN_COORDS_OUT_OF_RANGE', 'Pin coordinates must be within map bounds (0-100)', 400)
+        if not (0 <= x <= 100 and 0 <= y <= 100):
+            return _map_error('MAP_PIN_COORDS_OUT_OF_RANGE', 'Pin coordinates must be within map bounds (0-100)', 400)
 
     user = get_current_user()
     if user:
@@ -2241,6 +2264,8 @@ def create_map_pin():
         name=name,
         x=x,
         y=y,
+        latitude=latitude,
+        longitude=longitude,
         created_by_user_id=creator_user_id,
         created_by_username=creator_username,
         created_by_display_name=creator_display,

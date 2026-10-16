@@ -63,6 +63,119 @@ cd frontend
 npm run dev
 ```
 
+## Geographic world map
+
+The public school map is available at `/map` on the main site or `/` on the
+map subdomain. For local development, use the local server address plus `/map`
+(for example `http://localhost:59237/map`), or `http://map.localhost:59237/` with
+the same port. The public domain continues to use its deployed build.
+
+Mapbox GL JS renders the school map with a **Globe / Flat map**
+switch. The display preference is saved in the browser and shared across map
+views. Drag to move, scroll or pinch to zoom, use + / −, or reset the view.
+The distance scale uses English metric units (`m` / `km`) independently of map labels.
+School pins grow and turn more golden relative to the highest public session
+count across all participating schools (including schools in Others). The leader
+gets the largest, richest gold pin; ties share that appearance. A square-root
+scale and minimum pin size keep smaller schools readable, with no fixed session
+threshold. Counts include active and archived public sessions, exclude
+discarded/private sessions, and appear in school lists and popups. A teal outline
+marks the selected school without changing its activity colour or size. Refresh
+schools to fetch updated counts and rescale the pins.
+Search, school details, and Others are public. School superadmins can change
+their own school's location or unmapped preference; interschool admins can
+manage these choices for any active school.
+
+Set `VITE_MAPBOX_ACCESS_TOKEN` to your Mapbox **public** token (`pk.`) in
+`frontend/.env.local` for local use, or in the frontend build environment for
+deployment. Restart Vite after changing it; rebuild the frontend for the Python
+server or production deployment. A key in the root backend `.env` is not read by
+Vite. Without a token, the map shows a setup message while school search, lists
+and details remain public. Never use a secret (`sk.`) token in the frontend.
+
+The map explicitly uses Mapbox's **China (`CN`) worldview** and Simplified
+Chinese labels (`zh-Hans`, with Mapbox's available-name fallbacks). It uses
+Mapbox Standard for Street and Standard Satellite for Hybrid/Satellite, retaining
+their native boundary presentation and attribution. These settings persist
+across style/projection changes and apply to location pickers too. Satellite
+keeps place names and administrative boundaries while hiding roads and POIs.
+The CN setting is the selected audience portrayal, not a claim of government
+approval or full conformity with the supplied map-content standard; see
+`docs/map-boundary-reference-review.md` for the review and its limits.
+The former `VITE_MAP_STYLE_URL`, `VITE_MAP_SATELLITE_TILE_URL`,
+`VITE_MAP_SATELLITE_ATTRIBUTION`, and `VITE_MAP_TILE_URL` settings are not used.
+
+The public **Layers** menu offers **Street map**, **Satellite**, and **Hybrid**
+(satellite imagery with roads and labels), plus a school-pin overlay toggle.
+Every newly opened map starts in **Hybrid**, regardless of previous layer choices.
+Visitors can switch layers during their visit; the school-pin visibility preference
+persists in the browser. All layers work in both globe and flat mode, and switching
+layers preserves the current camera and school selection without constructing
+another Map object. Satellite imagery is supplied by Mapbox; the previous
+Esri/OpenFreeMap layers are no longer loaded.
+
+Get a token from the [Mapbox Access Tokens page](https://console.mapbox.com/account/access-tokens/).
+Card-free trial accounts have a smaller monthly allowance and do not include
+all APIs. In particular, Mapbox lists Raster Tiles API access as requiring a
+payment method; check satellite access for the actual account. A payment method
+enables usage beyond the free tier, which can generate charges. See the current
+[trial limits](https://docs.mapbox.com/accounts/guides/signup/) and
+[pricing](https://www.mapbox.com/pricing). For production, use a dedicated public
+token with the public `styles:read` and `fonts:read` scopes and URL restrictions
+for the site origins, including any development hostname/port where it is used.
+Mapbox's CN worldview is separate from its premium Boundaries analytics product;
+the latter is not needed by this implementation.
+
+**Street View** in the Layers menu opens Google Maps for the selected school or
+place, or lets anyone choose a spot on the map. It opens in a separate tab using
+[Google's documented Maps URL](https://developers.google.com/maps/documentation/urls/get-started#street-view-action)
+and requires no Google API key. Panorama availability is determined by Google;
+there is no embedded panorama viewer or coverage overlay. Choosing a Street View
+spot never changes the school's saved location. Unmapped schools are not assigned
+coordinates for Street View.
+
+The old ecological image map, submissions, photos, backgrounds, and leaderboard
+are disabled, including their API endpoints, while their stored data is preserved.
+`MAP_LEGACY_FEATURES_ENABLED=true` enables the archived API for maintenance and
+regression tests; it does not restore the old interface on the public map route.
+The new map never fetches the old image-map content.
+
+Search a school code such as **SAC** first, or use a school name, city, or
+address. Registered schools are searched before the external place database.
+Schools without coordinates open in Others; their locations are never guessed.
+The school-location editor resolves a known code to its school name for address search. Place search uses [Photon](https://github.com/komoot/photon) with OpenStreetMap
+data, without requiring a Google or Apple API account. Searches run only when
+submitted. The server caches results for 24 hours and limits uncached requests
+across workers to one per second, with a longer backoff if the provider is busy.
+The public Photon service has no availability guarantee; set `MAP_PLACE_SEARCH_URL`
+in the backend environment to use another Photon-compatible instance.
+
+School superadmins see a location reminder when signing in or returning to the
+portal or map if their school has not made a location choice. The email reminder
+appears first when both are needed. **Not now** leaves the choice pending, so
+reminders continue on future visits. **Remain unmapped** saves an explicit choice
+and stops location reminders. Both pending and explicitly unmapped schools appear
+under **Others**, along with their approved updates, without a school location pin.
+
+Signed-in school members can reopen **Account menu → School location** to search
+and preview a location. Their school's superadmins can save a location or
+choose to remain unmapped. Interschool admins use **Account menu → School
+locations → School to manage**, or open **School locations** from a selected
+school's public map details. Changing the selected school clears the previous
+school's unsaved draft. Saving a location adds one persistent school marker;
+choosing to remain unmapped removes any previously saved school coordinates.
+School superadmins and interschool admins can change either choice later within
+their permitted school scope. Only active schools appear, and contact
+details and account information are excluded from the school-marker response.
+School result pages and replacement of guest mode are subsequent steps.
+
+The location API requires interschool admins to explicitly target an active
+school with `school_id` in the query string on both reads and writes. School
+accounts cannot use that parameter to access another school's editor. These
+changes record the acting user and time, update the same public marker
+and unmapped preference, and do not generate location reminders for interschool
+admins. School contact-email permissions remain limited to school superadmins.
+
 ## Testing
 ```bash
 pytest
@@ -278,3 +391,8 @@ Admins and superadmins can open **Admin Panel → Export All Sessions** to downl
 Choose any combination of columns to anonymize, including first/preferred name, last name, grade, advisor, house, clan, session name/status, category, recording time, recorder, and manual-entry status. **Anonymize names**, **Anonymize all columns**, and **Keep all readable** provide shortcuts. An anonymous **Person** column groups the same student across selected sessions and distinguishes roster students with identical names. Selected name columns use person-specific labels; other selected columns preserve equal-value groups. A fresh random key creates keyed labels for each download (shared across all CSV files in a ZIP); the key and original student IDs are never exported or saved. Labels are consistent across all sessions in one export and change between downloads. Anonymizing session names also masks section headings and ZIP filenames. Blank values remain blank. Unmasked columns can still identify someone; anonymization affects only the downloaded CSV and leaves stored data unchanged.
 
 Superadmins can exclude a session using **Discard Session** in the **Session Dashboard**. Discard and restore both show a confirmation popup describing their effect. **Restore Session** includes it again. Discard status is saved in the database and also applies to sessions discarded previously. Records, exports, and draw history remain stored. Each session, including an extra session, uses its own discard status; merging does not change that status. The live counter reflects discard/restore changes on its next automatic update.
+
+## Future product ideas
+
+See [future-ideas.md](docs/future-ideas.md) for the globe login and school flight
+transition idea. It is recorded only; the login experience is unchanged.

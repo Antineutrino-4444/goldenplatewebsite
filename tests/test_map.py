@@ -1,3 +1,4 @@
+import pytest
 import io
 from datetime import timedelta
 
@@ -135,3 +136,8 @@ def test_map_submission_password_shortcut(client, login):
     })
     assert second.status_code == 201
     assert second.get_json()['password_used'] is True
+
+
+@pytest.fixture(autouse=True)
+def _enable_archived_map_for_regression_tests(monkeypatch):
+    monkeypatch.setenv("MAP_LEGACY_FEATURES_ENABLED", "true")

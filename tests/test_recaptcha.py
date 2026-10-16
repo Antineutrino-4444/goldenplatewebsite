@@ -158,3 +158,8 @@ def test_expired_map_upload_is_rejected_before_saving_and_retry_uses_new_token(c
     retry = client.post('/api/map/submissions', data={'recaptcha_token': 'fresh-upload-token'})
     assert retry.get_json()['code'] == 'MAP_EMAIL_REQUIRED'
     assert [call['data']['response'] for call in google.calls] == ['expired-upload-token', 'fresh-upload-token']
+
+
+@pytest.fixture(autouse=True)
+def _enable_archived_map_for_regression_tests(monkeypatch):
+    monkeypatch.setenv("MAP_LEGACY_FEATURES_ENABLED", "true")

@@ -24,5 +24,6 @@ from . import draw_routes  # noqa: F401
 from . import superadmin_routes  # noqa: F401
 from . import interschool_routes  # noqa: F401
 from . import map_routes  # noqa: F401
+from . import school_map_routes  # noqa: F401
 
 __all__ = ["recorder_bp"]
