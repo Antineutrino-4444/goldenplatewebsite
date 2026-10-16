@@ -218,6 +218,8 @@ class Teacher(Base):
     school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False, default=DEFAULT_SCHOOL_ID)
     name = Column(String, nullable=False)
     display_name = Column(String)
+    preferred_name = Column(String)
+    last_name = Column(String)
 
 
 class Session(Base):
@@ -752,6 +754,11 @@ def _ensure_student_identifier_scope(inspector):
 def _migrate_schema() -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
+
+    if 'teachers' in tables:
+        # Legacy combined names remain intact; uploads supply exact name parts.
+        _ensure_column(inspector, 'teachers', 'preferred_name', 'TEXT')
+        _ensure_column(inspector, 'teachers', 'last_name', 'TEXT')
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')

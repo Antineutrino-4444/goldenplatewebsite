@@ -180,14 +180,17 @@ def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, upl
         if isinstance(entry, dict):
             name = normalize_name(entry.get('name'))
             display = normalize_name(entry.get('display_name') or entry.get('name'))
+            preferred = normalize_name(entry.get('preferred_name')) or None
+            last = normalize_name(entry.get('last_name')) or None
         else:
             name = normalize_name(entry)
             display = name
+            preferred = last = None
         if not name:
             continue
         key = name.lower()
         if key not in unique_entries:
-            unique_entries[key] = (name, display)
+            unique_entries[key] = (name, display, preferred, last)
 
     if not unique_entries:
         return result
@@ -203,13 +206,19 @@ def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, upl
             db_session.delete(teacher)
             result['removed'] += 1
 
-    for key, (name, display) in unique_entries.items():
+    for key, (name, display, preferred, last) in unique_entries.items():
         teacher = existing_map.get(key)
         desired_display = display or None
 
         if teacher:
-            if teacher.display_name != desired_display:
+            if (teacher.display_name != desired_display
+                    or (preferred is not None and teacher.preferred_name != preferred)
+                    or (last is not None and teacher.last_name != last)):
                 teacher.display_name = desired_display
+                if preferred is not None:
+                    teacher.preferred_name = preferred
+                if last is not None:
+                    teacher.last_name = last
                 result['updated'] += 1
         else:
             teacher = Teacher(
@@ -217,6 +226,8 @@ def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, upl
                 school_id=school_id,
                 name=name,
                 display_name=desired_display,
+                preferred_name=preferred,
+                last_name=last,
             )
             db_session.add(teacher)
             existing_map[key] = teacher

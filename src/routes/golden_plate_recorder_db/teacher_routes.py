@@ -55,7 +55,10 @@ def upload_teachers():
             last = normalize_name(row.get('Last'))
             if first and last:
                 teacher_name = f'{first} {last}'
-                teachers.append({'name': teacher_name, 'display_name': teacher_name})
+                teachers.append({
+                    'name': teacher_name, 'display_name': teacher_name,
+                    'preferred_name': first, 'last_name': last,
+                })
 
         if not teachers:
             return jsonify({'error': 'No valid teacher names found. Rows need Last and Preferred (or First when the Preferred column is absent).'}), 400
@@ -124,7 +127,9 @@ def get_teacher_names():
         name_value = str(teacher.name or '').strip()
         teacher_list.append({
             'name': name_value,
-            'display_name': display_name or name_value
+            'display_name': display_name or name_value,
+            'preferred_name': teacher.preferred_name,
+            'last_name': teacher.last_name,
         })
 
     return jsonify({
@@ -175,7 +180,9 @@ def preview_teachers():
 
     paginated_teachers = [{
         'name': str(teacher.name or '').strip(),
-        'display_name': str(teacher.display_name or teacher.name or '').strip()
+        'display_name': str(teacher.display_name or teacher.name or '').strip(),
+        'preferred_name': teacher.preferred_name,
+        'last_name': teacher.last_name,
     } for teacher in teachers]
 
     return jsonify({

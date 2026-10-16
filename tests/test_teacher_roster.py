@@ -117,6 +117,33 @@ def test_teacher_csv_case_changes_keep_existing_identity(client, login):
     assert response.get_json()['teachers_removed'] == 0
     assert client.get('/api/teachers/list').get_json()['names'][0]['display_name'] == 'aLEX sMITH'
     assert db_session.get(Teacher, teacher_id).name == 'Alex Smith'
+    assert db_session.get(Teacher, teacher_id).preferred_name == 'aLEX'
+    assert db_session.get(Teacher, teacher_id).last_name == 'sMITH'
+
+
+def test_teacher_name_parts_survive_reload_and_update_without_changing_identity(client, login):
+    login()
+    assert upload_teachers(client, ['Last,First,Preferred', 'de la Cruz,Mary Jane,Mary Jo']).status_code == 200
+    teacher = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID).one()
+    teacher_id = teacher.id
+    assert (teacher.preferred_name, teacher.last_name) == ('Mary Jo', 'de la Cruz')
+
+    storage.global_teacher_data.clear()
+    db_session.remove()
+    expected = {
+        'name': 'Mary Jo de la Cruz', 'display_name': 'Mary Jo de la Cruz',
+        'preferred_name': 'Mary Jo', 'last_name': 'de la Cruz',
+    }
+    assert client.get('/api/teachers/list').get_json()['names'] == [expected]
+    assert client.get('/api/teachers/preview').get_json()['data'] == [expected]
+
+    # A corrected boundary between name parts must persist even if the combined name stays the same.
+    response = upload_teachers(client, ['First,Last', 'Mary,Jo de la Cruz'])
+    assert response.status_code == 200
+    assert response.get_json()['teachers_updated'] == 1
+    assert response.get_json()['teachers_created'] == response.get_json()['teachers_removed'] == 0
+    teacher = db_session.get(Teacher, teacher_id)
+    assert (teacher.preferred_name, teacher.last_name) == ('Mary', 'Jo de la Cruz')
 
 
 @pytest.mark.parametrize('filename', ['invalid.csv', 'invalid.txt'])
@@ -181,5 +208,39 @@ def test_teacher_roster_metadata_migrates_existing_schools_without_losing_roster
         with engine.connect() as connection:
             assert connection.execute(text('SELECT name FROM teachers')).scalar_one() == 'Legacy Teacher'
             assert connection.execute(text('SELECT teacher_roster_filename FROM schools WHERE id = :id'), {'id': 'legacy'}).scalar_one() is None
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize('missing_columns', [
+    ('preferred_name', 'last_name'), ('preferred_name',), ('last_name',),
+])
+def test_active_database_bootstrap_adds_only_missing_teacher_fields(monkeypatch, missing_columns):
+    engine = create_engine('sqlite://')
+    database.Base.metadata.create_all(engine)
+    monkeypatch.setattr(database, 'engine', engine)
+    try:
+        with engine.begin() as connection:
+            connection.execute(School.__table__.insert().values(id='legacy', name='Legacy', slug='legacy', status='active'))
+            connection.execute(Teacher.__table__.insert().values(
+                id='teacher', school_id='legacy', name='Mary Jo de la Cruz',
+                display_name='Mary Jo de la Cruz', preferred_name='Mary Jo', last_name='de la Cruz',
+            ))
+            for column in missing_columns:
+                connection.execute(text(f'ALTER TABLE teachers DROP COLUMN {column}'))
+
+        database._bootstrap_database()
+        database._bootstrap_database()
+
+        assert {'preferred_name', 'last_name'} <= {
+            column['name'] for column in inspect(engine).get_columns('teachers')
+        }
+        with engine.connect() as connection:
+            row = connection.execute(Teacher.__table__.select()).one()
+            assert row.id == 'teacher' and row.school_id == 'legacy'
+            assert row.name == row.display_name == 'Mary Jo de la Cruz'
+            # Preserve existing parts; do not guess how to split old combined names.
+            assert row.preferred_name == (None if 'preferred_name' in missing_columns else 'Mary Jo')
+            assert row.last_name == (None if 'last_name' in missing_columns else 'de la Cruz')
     finally:
         engine.dispose()

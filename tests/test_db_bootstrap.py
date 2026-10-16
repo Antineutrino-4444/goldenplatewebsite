@@ -48,6 +48,7 @@ def test_empty_sqlite_database_bootstraps_successfully():
         assert result.returncode == 0, result.stderr
 
         with sqlite3.connect(db_path) as connection:
+            teacher_columns = {row[1] for row in connection.execute('PRAGMA table_info(teachers)')}
             table_names = {
                 row[0]
                 for row in connection.execute(
@@ -60,6 +61,7 @@ def test_empty_sqlite_database_bootstraps_successfully():
 
         assert 'user_invite_codes' in table_names
         assert 'schools' in table_names
+        assert {'preferred_name', 'last_name'} <= teacher_columns
         assert superadmin_row is not None
         assert superadmin_row[0].startswith(('pbkdf2:', 'scrypt:'))
     finally:
