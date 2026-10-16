@@ -932,7 +932,7 @@ function MainPortal({ app }) {
                     Teacher Database
                   </CardTitle>
                   <CardDescription>
-                    Upload a CSV with Last and Preferred (or First if there is no Preferred column), in any order and any capitalization. Preferred is always used when present; other columns are ignored. TXT files can contain one full teacher name per line.
+                    Upload a CSV or comma-separated TXT file with Last and Preferred (or First if there is no Preferred column), in any order and any capitalization. Preferred is always used when present; other columns are ignored. Files without these column headers are rejected.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

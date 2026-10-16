@@ -35,7 +35,7 @@ def test_teacher_filename_and_metadata_survive_cache_reset_and_legacy_rosters(cl
 
 def test_teacher_search_covers_all_pages_and_display_names(client, login):
     login()
-    assert upload_teachers(client, [f'Teacher {i:03}' for i in range(120)]).status_code == 200
+    assert upload_teachers(client, ['First,Last', *[f'Teacher,{i:03}' for i in range(120)]]).status_code == 200
     result = client.get('/api/teachers/preview?per_page=10&search=tEAcHeR%20119').get_json()
     assert result['pagination']['total_records'] == 1
     assert result['data'][0]['name'] == 'Teacher 119'
@@ -56,7 +56,7 @@ def test_teacher_search_covers_all_pages_and_display_names(client, login):
 
 def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client, login):
     login()
-    assert upload_teachers(client, ['Alex Morgan', 'Jamie Smith']).status_code == 200
+    assert upload_teachers(client, ['Last,Preferred', 'Morgan,Alex', 'Smith,Jamie']).status_code == 200
     retained_id = db_session.query(Teacher).filter_by(school_id=DEFAULT_SCHOOL_ID, name='Jamie Smith').one().id
     session_id = client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).get_json()['session_id']
     assert client.post('/api/record/faculty', json={'input_value': 'Alex Morgan'}).status_code == 200
@@ -71,7 +71,7 @@ def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client,
     other_id = other_teacher.id
     db_session.commit()
 
-    response = upload_teachers(client, ['jamie smith', 'Taylor Lee', 'Taylor Lee'], 'new-teachers.txt')
+    response = upload_teachers(client, ['First,Last', 'jamie,smith', 'Taylor,Lee', 'Taylor,Lee'], 'new-teachers.txt')
     assert response.status_code == 200
     assert response.get_json()['count'] == 2
     names = client.get('/api/teachers/list').get_json()
@@ -84,6 +84,7 @@ def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client,
     assert client.get(f'/api/session/{session_id}/draw/history').get_json() == log_before
 
 
+@pytest.mark.parametrize('filename', ['teachers.CSV', 'teachers.TXT'])
 @pytest.mark.parametrize('content, expected_names', [
     ('Last,Preferred\nSmith,Alex\n', {'Alex Smith'}),
     ('First,Last\nAlex,Smith\n', {'Alex Smith'}),
@@ -95,9 +96,9 @@ def test_teacher_replacement_is_school_scoped_and_keeps_recorded_history(client,
     ('preferred,last\nAlex,\n,Smith\nJamie,Morgan\n', {'Jamie Morgan'}),
     ('LAST,FIRST\n"Smith, Jr.",Alex\n', {'Alex Smith, Jr.'}),
 ])
-def test_teacher_csv_matches_name_columns(client, login, content, expected_names):
+def test_teacher_roster_matches_name_columns(client, login, content, expected_names, filename):
     login()
-    response = upload_teachers(client, content.splitlines(), filename='teachers.CSV')
+    response = upload_teachers(client, content.splitlines(), filename=filename)
     assert response.status_code == 200
     assert response.get_json()['count'] == len(expected_names)
     result = client.get('/api/teachers/list').get_json()
@@ -118,27 +119,37 @@ def test_teacher_csv_case_changes_keep_existing_identity(client, login):
     assert db_session.get(Teacher, teacher_id).name == 'Alex Smith'
 
 
+@pytest.mark.parametrize('filename', ['invalid.csv', 'invalid.txt'])
 @pytest.mark.parametrize('content', [
+    '',
+    'Alex Smith\nJamie Morgan\n',
+    'Smith,Alex\nMorgan,Jamie\n',
+    'Name,Email\nAlex Smith,alex@example.com\n',
     'First\nAlex\n',
     'Last\nSmith\n',
     'Last,First,Preferred\nSmith,Alexander,\n',
     'LAST,FIRST\nSmith,\n',
     'LAST,FIRST\n,Alex\n',
     'Last,Preferred,preferred\nSmith,Alex,Alexander\n',
+    'Last,LAST,First\nSmith,Morgan,Alex\n',
+    'Last,First,FIRST\nSmith,Alex,Alexander\n',
     'Last,First\n',
 ])
-def test_invalid_teacher_csv_preserves_roster(client, login, content):
+def test_invalid_teacher_roster_preserves_roster(client, login, content, filename):
     login()
-    assert upload_teachers(client, ['Original Teacher']).status_code == 200
+    assert upload_teachers(client, ['Last,Preferred', 'Teacher,Original']).status_code == 200
     original = client.get('/api/teachers/list').get_json()
-    response = upload_teachers(client, content.splitlines(), filename='invalid.csv')
+    original_cache = storage.global_teacher_data[DEFAULT_SCHOOL_ID].copy()
+    response = upload_teachers(client, content.splitlines(), filename=filename)
     assert response.status_code == 400
+    assert response.get_json()['error']
     assert client.get('/api/teachers/list').get_json() == original
+    assert storage.global_teacher_data[DEFAULT_SCHOOL_ID] == original_cache
 
 
 def test_empty_or_failed_teacher_upload_preserves_current_database(client, login, monkeypatch):
     login()
-    assert upload_teachers(client, ['Alex Morgan'], 'original.txt').status_code == 200
+    assert upload_teachers(client, ['Last,Preferred', 'Morgan,Alex'], 'original.txt').status_code == 200
     original = client.get('/api/teachers/list').get_json()
     assert upload_teachers(client, [' ', '""']).status_code == 400
     assert client.get('/api/teachers/list').get_json() == original
@@ -148,7 +159,7 @@ def test_empty_or_failed_teacher_upload_preserves_current_database(client, login
 
     with monkeypatch.context() as context:
         context.setattr(db_session, 'commit', fail_commit)
-        assert upload_teachers(client, ['New Teacher'], 'replacement.txt').status_code == 500
+        assert upload_teachers(client, ['Last,First', 'Teacher,New'], 'replacement.txt').status_code == 500
     assert client.get('/api/teachers/list').get_json() == original
     assert storage.global_teacher_data[DEFAULT_SCHOOL_ID]['teachers'][0]['name'] == 'Alex Morgan'
 
