@@ -92,12 +92,17 @@ Search, school details, and Others are public. School superadmins can change
 their own school's location or unmapped preference; interschool admins can
 manage these choices for any active school.
 
-Set `VITE_MAPBOX_ACCESS_TOKEN` to your Mapbox **public** token (`pk.`) in
-`frontend/.env.local` for local use, or in the frontend build environment for
-deployment. Restart Vite after changing it; rebuild the frontend for the Python
-server or production deployment. A key in the root backend `.env` is not read by
-Vite. Without a token, the map shows a setup message while school search, lists
-and details remain public. Never use a secret (`sk.`) token in the frontend.
+Set `VITE_MAPBOX_ACCESS_TOKEN` to your Mapbox **public** token (`pk.`) in the
+project's root `.env`. The frontend reads this public map token during development
+and production builds. An exported build-environment value takes precedence;
+root mode-specific and local environment files follow Vite's normal precedence.
+If the root files omit this variable, existing `frontend/.env*` settings remain
+the fallback. An explicitly empty root value disables the map. Restart Vite
+after changing it; rebuild the frontend for the Python server or production
+deployment. Other frontend settings, including reCAPTCHA's public site key, keep
+using their existing frontend files; backend secrets stay on the server.
+Without a token, the map shows a setup message while school search, lists and
+details remain public. Never use a secret (`sk.`) token in the frontend.
 
 The map explicitly uses Mapbox's **China (`CN`) worldview** and **English
 labels (`en`)** worldwide. Places without an English name fall back to their
