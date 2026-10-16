@@ -230,7 +230,7 @@ function MainPortal({ app }) {
                 <div className="text-6xl mb-4">🍽️</div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">No Active Session</h2>
                 <p className="text-gray-600 mb-6">
-                  Create a session to record plates from a lunch.
+                  {user?.role === 'guest' ? 'No public sessions are available for this school.' : 'Create a session to record plates from a lunch.'}
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
@@ -872,7 +872,7 @@ function MainPortal({ app }) {
                         </div>
                       ) : (
                         <div className="py-8 text-center text-gray-500">
-                          No draw data available yet. Record plate data to generate tickets.
+                          No draw data available. Record an eligible student’s plate to generate tickets.
                         </div>
                       )}
                       </CardContent>
@@ -980,7 +980,7 @@ function MainPortal({ app }) {
                     Plate Tracking History
                   </CardTitle>
                   <CardDescription>
-                    Recent plate cleanliness entries for this session
+                    Recent plate records for this session
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1196,7 +1196,7 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle>Create New Session</DialogTitle>
             <DialogDescription>
-              Enter a custom name or leave blank for default naming
+              Name this lunch session, or leave blank to use the default name.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1229,16 +1229,16 @@ function MainPortal({ app }) {
       <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <DialogContent dismissOnOverlayClick={false}>
           <DialogHeader>
-            <DialogTitle className="text-red-600">Delete Session</DialogTitle>
+            <DialogTitle className="text-red-600">{canManageDraw ? 'Delete Session' : 'Request Session Deletion'}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this session? This action cannot be undone.
+              {canManageDraw ? 'Permanently delete this session and its records? This cannot be undone.' : 'Request administrator approval to delete this session and its records.'}
             </DialogDescription>
           </DialogHeader>
           {sessionToDelete && (
             <div className="bg-gray-50 p-4 rounded-lg">
               <div className="font-medium">{sessionToDelete.session_name}</div>
               <div className="text-sm text-gray-600">
-                {sessionToDelete.total_records} records will be permanently deleted
+                {sessionToDelete.total_records} records {canManageDraw ? 'will be permanently deleted' : 'will be permanently deleted if approved'}
               </div>
             </div>
           )}
@@ -1255,7 +1255,7 @@ function MainPortal({ app }) {
               className="flex-1 bg-red-600 hover:bg-red-700"
               disabled={isLoading}
             >
-              Delete Session
+              {canManageDraw ? 'Delete Session' : 'Request Deletion'}
             </Button>
           </div>
         </DialogContent>
@@ -1460,7 +1460,7 @@ function MainPortal({ app }) {
                       Export Food Waste Data
                     </CardTitle>
                     <CardDescription>
-                      Download plate cleanliness records by category (Clean, Dirty Count, Very Dirty, Faculty Clean)
+                      Download plate records by category: clean, dirty, very dirty, and faculty clean.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -1689,7 +1689,7 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle>Account Management</DialogTitle>
             <DialogDescription>
-              Manage user account status (enable/disable accounts)
+              Enable or disable school accounts.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-1">
@@ -1780,7 +1780,7 @@ function MainPortal({ app }) {
                       Requested by: {request.requester_name} (@{request.requester}) • {request.total_records} records
                     </div>
                     <div className="text-xs text-gray-400">
-                      Clean: {request.clean_records} • Dirty: {request.dirty_records} • Red: {request.red_records} • Faculty: {request.faculty_clean_records || 0}
+                      Clean: {request.clean_records} • Dirty: {request.dirty_records} • Very dirty: {request.red_records} • Faculty: {request.faculty_clean_records || 0}
                     </div>
                     <div className="text-xs text-gray-400">
                       {new Date(request.requested_at).toLocaleString()}
@@ -1819,7 +1819,7 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle>Account Creation Requests</DialogTitle>
             <DialogDescription>
-              Review and approve pending account creation requests for your school
+              Review account requests for your school.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-1">

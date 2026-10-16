@@ -18,7 +18,7 @@ export default function PlaceSearch({ onChoose, initialQuery = '', placesOnly = 
     event.stopPropagation()
     const term = query.trim()
     if (term.length < 1 || term.length > 200) {
-      setError('Enter a school code, name, or address.')
+      setError(placesOnly ? 'Enter a school name or address.' : 'Enter a school code, name, or address.')
       return
     }
     requestRef.current?.abort()
@@ -54,7 +54,7 @@ export default function PlaceSearch({ onChoose, initialQuery = '', placesOnly = 
             type="search"
             value={query}
             maxLength={200}
-            placeholder="School code (SAC), name, or address"
+            placeholder={placesOnly ? "School name or address" : "School code (SAC), name, or address"}
             className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-teal-700"
             onChange={(event) => {
               sequence.current += 1
@@ -94,7 +94,7 @@ export default function PlaceSearch({ onChoose, initialQuery = '', placesOnly = 
         )}
       </div>
       <p className="mt-2 text-[11px] text-slate-500">
-        School codes search Golden Plate first. Places by <a className="underline" href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · © <a className="underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
+        Places by <a className="underline" href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon</a> · © <a className="underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
       </p>
     </div>
   )

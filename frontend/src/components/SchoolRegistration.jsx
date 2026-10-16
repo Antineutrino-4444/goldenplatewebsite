@@ -71,7 +71,7 @@ function SchoolRegistration({ app }) {
             <h1>Register Your School</h1>
           </CardTitle>
           <CardDescription className="text-gray-600 mt-2 text-sm">
-            Submit your school registration request for PLATE administrator approval.
+            {isInviteMode ? 'Register a school using your invite code.' : 'Register a school for PLATE administrator approval.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -102,7 +102,7 @@ function SchoolRegistration({ app }) {
               </button>
             </div>
             <p className="text-xs text-gray-500">
-              Use a legacy invite code to create a school immediately, or verify by email to request approval.
+              Email registration requires approval. A legacy invite gives immediate access.
             </p>
           </div>
           {/* Step 1: Email Verification */}
@@ -136,9 +136,6 @@ function SchoolRegistration({ app }) {
                     value={schoolInviteSchoolId}
                     onChange={(e) => setSchoolInviteSchoolId(e.target.value)}
                   />
-                  <p className="text-xs text-gray-500">
-                    Use the school ID that came with the invite if you were given one.
-                  </p>
                 </div>
               </div>
             </div>
@@ -178,12 +175,12 @@ function SchoolRegistration({ app }) {
                   </div>
                   {emailVerified && (
                     <p className="text-xs text-green-600 font-medium">
-                      Email verified successfully!
+                      Email verified.
                     </p>
                   )}
                   {!emailVerified && (
                     <p className="text-xs text-gray-500">
-                      We'll send a verification code to this email address.
+                      Used for email verification and, after approval, school account signup alerts.
                     </p>
                   )}
                 </div>
@@ -206,7 +203,7 @@ function SchoolRegistration({ app }) {
                       </Button>
                     </div>
                     <p className="text-xs text-amber-700 text-center">
-                      Check your email for the 6-digit verification code. The code expires in {verificationExpiryMinutes} minutes.
+                      Enter the 6-digit code from your email. It expires in {verificationExpiryMinutes} minutes.
                       <br />
                       <span className="text-gray-500">Can't find it? Check your junk/spam folder.</span>
                     </p>
@@ -249,7 +246,7 @@ function SchoolRegistration({ app }) {
                       onChange={(e) => setSchoolCode(e.target.value)}
                     />
                     <p className="text-xs text-gray-500">
-                      Leave blank and we will generate one automatically.
+                      Leave blank to generate a school code.
                     </p>
                   </div>
                 </div>
@@ -290,7 +287,7 @@ function SchoolRegistration({ app }) {
                     <Input
                       id="admin-password"
                       type="password"
-                      placeholder="Choose a secure password"
+                      placeholder="Choose a password (at least 6 characters)"
                       value={schoolAdminPassword}
                       onChange={(e) => setSchoolAdminPassword(e.target.value)}
                     />
@@ -312,7 +309,7 @@ function SchoolRegistration({ app }) {
                 className="bg-amber-600 hover:bg-amber-700 sm:w-auto w-full"
                 disabled={isLoading}
               >
-                {isLoading ? 'Submitting...' : 'Submit Registration Request'}
+                {isLoading ? 'Submitting...' : isInviteMode ? 'Register School' : 'Submit Registration Request'}
               </Button>
             )}
           </div>

@@ -48,7 +48,6 @@
 .gp-community-bar-ticks > span { position: absolute; top: 0; width: 0; white-space: nowrap; }
 .gp-community-bar-ticks > span::before { content: ''; position: absolute; left: 0; top: 0; height: 5px; width: 1px; background: currentColor; opacity: .65; }
 .gp-community-bar-ticks > span > span { position: absolute; top: 8px; font-size: 11px; }
-.gp-community-bar .gp-community-bar-caption { margin-top: 7px; font-size: 12px; color: inherit; opacity: .8; }
 .gp-community-counter .gp-community-bar-track { height: 26px; background: #183b2f18; }
 .gp-community-counter .gp-community-bar-fill { background: #315d42; }
 .gp-community-counter-fullscreen .gp-community-bar { max-width: 1100px; }

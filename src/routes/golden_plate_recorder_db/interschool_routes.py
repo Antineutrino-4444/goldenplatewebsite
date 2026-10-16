@@ -416,7 +416,7 @@ def register_school():
 
     return jsonify({
         'status': 'success',
-        'message': 'School registration request submitted successfully. Please wait for approval from the PLATE administrator.'
+        'message': 'School registration request submitted. A PLATE administrator must approve it before you can sign in.'
     }), 201
 
 

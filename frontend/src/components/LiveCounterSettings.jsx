@@ -119,7 +119,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
           <select id="counter-default-metric" className={selectClass} value={defaultMetric} onChange={(event) => setDefaultMetric(event.target.value)}>
             <option value="count">Count</option><option value="percentage">Percentage</option>
           </select>
-          <p className="text-xs leading-relaxed text-slate-500">Opens first, on the left. Viewers can switch views before entering full screen. Each view uses its own milestone.</p>
+          <p className="text-xs leading-relaxed text-slate-500">Choose which view opens first. Each view has its own milestone.</p>
         </div>}
         {canSetDefault && <div className="space-y-2">
           <Label htmlFor="counter-milestone">Celebration milestone (clean plates)</Label>
@@ -131,7 +131,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
           <Label htmlFor="counter-percentage-milestone">Celebration milestone (clean percentage)</Label>
           <Input id="counter-percentage-milestone" type="number" min={0.1} max={100} step={0.1}
             placeholder="e.g. 80" value={percentageMilestone} onChange={(event) => setPercentageMilestone(event.target.value)} />
-          <p className="text-xs leading-relaxed text-slate-500">The percentage view celebrates when the clean-plate rate reaches this percentage (0.1–100%). Leave blank to disable its celebration. Both goals apply only to your school.</p>
+          <p className="text-xs leading-relaxed text-slate-500">The percentage view celebrates when the clean-plate rate reaches this percentage (0.1–100%). Leave blank to disable its celebration. Both goals apply to your school.</p>
         </div>}
         {canSetDefault && <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
           <div><h3 className="font-semibold text-slate-800">Celebration banner text</h3>

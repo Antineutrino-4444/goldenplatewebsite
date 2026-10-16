@@ -12,7 +12,7 @@ export default function RosterUpload({ roster, kind, accept, isLoading, upload, 
     }
     setModal({
       type: 'confirm', title: 'Upload a new database?', confirmLabel: 'Choose new file',
-      message: `Choose a new ${kind} roster to replace the loaded database. You will confirm the replacement before it is uploaded.`,
+      message: `Choose a ${kind} roster to replace the loaded database.`,
       onConfirm: chooseFile
     })
   }

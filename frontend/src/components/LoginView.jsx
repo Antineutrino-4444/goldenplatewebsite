@@ -192,9 +192,9 @@ function LoginView({ app }) {
       >
         <SignupContent dismissOnOverlayClick={false} className="max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Request Account</DialogTitle>
+            <DialogTitle>{signupMode === 'invite' ? 'Join Your School' : 'Request an Account'}</DialogTitle>
             <DialogDescription>
-              Enter your information to request an account. Your school administrator will review your request.
+              {signupMode === 'invite' ? 'Create an account with a one-time invite from your school administrator.' : 'Your school superadmin must approve your account before you can sign in.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -288,9 +288,6 @@ function LoginView({ app }) {
                   value={signupInviteCode}
                   onChange={(e) => setSignupInviteCode(e.target.value)}
                 />
-                <p className="text-xs text-gray-500">
-                  Enter the one-time invite code provided by your administrator.
-                </p>
               </div>
             )}
             <RecaptchaNotice />
@@ -303,7 +300,7 @@ function LoginView({ app }) {
                 className="flex-1 bg-amber-600 hover:bg-amber-700"
                 disabled={isLoading}
               >
-                {isLoading ? 'Submitting...' : 'Submit Request'}
+                {isLoading ? 'Submitting...' : signupMode === 'invite' ? 'Create Account' : 'Submit Request'}
               </Button>
             </div>
           </div>

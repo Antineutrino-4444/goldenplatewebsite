@@ -339,12 +339,12 @@ export default function WorldMap({
           className={`world-map-canvas absolute inset-0 ${onMapClick || streetViewPicking ? 'world-map-placement' : ''}`} />
         {(streetViewPicking || streetViewPoint) && <div className="world-map-street-view absolute left-3 right-14 top-3 z-10 max-w-xs rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
           <div className="flex items-start gap-2"><PersonStanding size={18} className="shrink-0 text-teal-700" /><div className="flex-1">
-            <p className="text-xs font-semibold text-slate-800">{streetViewPicking ? 'Choose a Street View spot' : 'Street View at this spot'}</p>
+            <p className="text-xs font-semibold text-slate-800">{streetViewPicking ? 'Choose a Street View spot' : 'Find Street View nearby'}</p>
             {streetViewPicking ? <p role="status" className="mt-1 text-[11px] text-slate-500">Zoom in, then click a road or place on the map.</p> : <a href={streetViewLink} target="_blank" rel="noopener noreferrer" className="mt-1 flex items-center gap-1 text-xs font-semibold text-teal-700">Open in Google Maps<ExternalLink size={12} /></a>}
           </div><button type="button" aria-label="Close Street View selection" onClick={() => { setStreetViewPicking(false); setStreetViewPoint(null) }} className="text-slate-400 hover:text-slate-700"><X size={15} /></button></div>
         </div>}
         {!MAP_CONFIGURED && <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950/95 p-6 text-center text-sm text-white">
-          <Globe2 size={30} /><p>The map is being set up.</p><p className="max-w-xs text-xs text-slate-300">You can still search participating schools and view their details.</p>
+          <Globe2 size={30} /><p>The map is unavailable.</p><p className="max-w-xs text-xs text-slate-300">You can still search participating schools and view their details.</p>
         </div>}
         {MAP_CONFIGURED && loading && !fatalError && !streetViewPicking && !streetViewPoint && <div role="status" className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs text-slate-600 shadow">Loading map…</div>}
         {fatalError && <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950/95 p-6 text-center text-sm text-white">
@@ -353,8 +353,8 @@ export default function WorldMap({
         </div>}
       </div>
       {geographicPins.some((pin) => pin.type === 'school') && <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500" aria-label="School activity legend">
-        <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="world-map-activity-key" />More public sessions → bigger, golder pins</span>
-        <span>Relative to all schools · Teal outline = selected</span>
+        <span className="inline-flex items-center gap-2"><span aria-hidden="true" className="world-map-activity-key" />More public sessions → larger gold pins</span>
+        <span>Teal outline = selected school</span>
       </div>}
       {mapError && !fatalError && <div role="status" className="flex items-center gap-3 bg-amber-50 px-3 py-2 text-xs text-amber-950">
         <span>The map service could not load some detail. Please try again later.</span>

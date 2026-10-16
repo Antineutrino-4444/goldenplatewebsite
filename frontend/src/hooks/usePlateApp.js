@@ -380,7 +380,7 @@ export function usePlateApp() {
         if (data.expiry_minutes) {
           setVerificationExpiryMinutes(data.expiry_minutes)
         }
-        showMessage('Verification code sent to your email!', 'success')
+        showMessage('Verification code sent.', 'success')
         return true
       } else {
         // Show detailed error if available (helps with debugging)
@@ -438,7 +438,7 @@ export function usePlateApp() {
 
       if (response.ok && data.verified) {
         setEmailVerified(true)
-        showMessage('Email verified successfully!', 'success')
+        showMessage('Email verified.', 'success')
         return true
       } else {
         // Build a more informative error message
@@ -608,7 +608,7 @@ export function usePlateApp() {
           setLoginFlight(false)
           setUser(data.user)
           setIsAuthenticated(true)
-          showMessage('Welcome, Guest! You can view sessions but cannot create or modify them.', 'info')
+          showMessage('Guest access opened. Sessions are read-only.', 'info')
           setGuestSchoolCode('')
           setShowGuestSchoolDialog(false)
           await handlePostAuth(data.user)
@@ -688,7 +688,7 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
-        showMessage(data.message || 'Account request submitted! Please wait for approval.', 'success')
+        showMessage(data.message || (usingInvite ? 'Account created. You can now sign in.' : 'Account request submitted. Your school superadmin must approve it before you can sign in.'), 'success')
         setSignupUsername('')
         setSignupPassword('')
         setSignupName('')
@@ -791,7 +791,7 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
-        showMessage(data.message || 'School registration request submitted! Please wait for approval.', 'success')
+        showMessage(data.message || (usingInvite ? 'School registered. You can now sign in.' : 'School registration request submitted for PLATE administrator approval.'), 'success')
         setShowSchoolRegistration(false)
         resetSchoolRegistrationForm()
         return true
@@ -854,7 +854,7 @@ export function usePlateApp() {
       setGuestSchoolCode('')
       setShowSchoolRegistration(false)
       resetSchoolRegistrationForm()
-      showMessage('Logged out successfully', 'info')
+      showMessage('Logged out.', 'info')
       return true
     } catch (error) {
       showMessage('Logout failed', 'error')
@@ -974,7 +974,7 @@ export function usePlateApp() {
           isDiscardedOverride: data.is_discarded
         })
         await loadSessions()
-        showMessage(`Session "${data.session_name}" created successfully`, 'success')
+        showMessage(`Session "${data.session_name}" created`, 'success')
         setShowNewSessionDialog(false)
         setCustomSessionName('')
       } else {
@@ -1127,7 +1127,7 @@ export function usePlateApp() {
       const data = await response.json()
       if (response.ok) {
         setCsvData(data)
-        showMessage(`CSV uploaded successfully! ${data.rows_count} students loaded.`, 'success')
+        showMessage(`Student roster uploaded. ${data.rows_count} students loaded.`, 'success')
         await loadStudentNames()
         await loadDrawSummary({ silent: true })
         await loadHouseStats({ silent: true })
@@ -1162,7 +1162,7 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
-        showMessage(`Teacher list uploaded successfully! ${data.count} teachers loaded.`, 'success')
+        showMessage(`Teacher roster uploaded. ${data.count} teachers loaded.`, 'success')
         setTeacherRoster(data)
         setTeacherPreviewData(null)
         setTeacherPreviewSearch('')
@@ -1621,7 +1621,7 @@ export function usePlateApp() {
     if (facultyPick?.finalized && !confirmed) {
       setModal({
         type: 'confirm', title: 'Redo the finalized faculty draw?', confirmLabel: 'Redo faculty draw',
-        message: 'Are you sure you want to redo this draw? The finalized faculty winner will be replaced. This action will be recorded in the drawing log and is public.',
+        message: 'Replace the finalized faculty winner? This action is recorded in the public draw history.',
         onConfirm: () => pickRandomFaculty({ confirmed: true })
       })
       return
@@ -1696,7 +1696,7 @@ export function usePlateApp() {
     if (currentDrawInfo?.finalized && !confirmed) {
       setModal({
         type: 'confirm', title: 'Redo the finalized draw?', confirmLabel: 'Redo draw',
-        message: 'Are you sure you want to redo this draw? The finalized winner will be replaced. This action will be recorded in the drawing log and is public.',
+        message: 'Replace the finalized winner? This action is recorded in the public draw history.',
         onConfirm: () => startDrawProcess({ confirmed: true })
       })
       return
@@ -1787,7 +1787,7 @@ export function usePlateApp() {
       const data = await response.json()
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
-        showMessage('Draw reset successfully', 'success')
+        showMessage('Draw reset.', 'success')
         setDrawActionComment('')
         await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
@@ -1878,7 +1878,7 @@ export function usePlateApp() {
       const data = await response.json()
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
-        showMessage('Winner overridden successfully', 'success')
+        showMessage('Winner overridden.', 'success')
         setDrawActionComment('')
         await loadDrawSummary({ silent: true })
         await refreshSessionStatus()
@@ -1909,8 +1909,8 @@ export function usePlateApp() {
         title: nextDiscarded ? 'Discard this session?' : 'Restore this session?',
         confirmLabel: nextDiscarded ? 'Discard Session' : 'Restore Session',
         message: nextDiscarded
-          ? `Discarding "${sessionName}" excludes all of this session's plates from the live clean count, total count, percentage, and milestone progress. It also disables draws for this session. Records, exports, and draw history remain saved. You can restore the session later.`
-          : `Restoring "${sessionName}" includes its plates in the live clean count, total count, percentage, and milestone progress again, and enables its draws.`,
+          ? `Discarding "${sessionName}" excludes its plates from live totals and milestone progress, and disables its draws. Records, exports, and draw history remain saved. You can restore the session later.`
+          : `Restoring "${sessionName}" includes its plates in live totals and milestone progress again. Draws remain disabled if this is a merged extra session.`,
         onConfirm: () => toggleDiscardState(nextDiscarded, { confirmed: true }),
       })
       return
@@ -1959,7 +1959,7 @@ export function usePlateApp() {
       })
       const data = await response.json()
       if (response.ok) {
-        showMessage(data.message || 'Session merged successfully', 'success')
+        showMessage(data.message || 'Session merged.', 'success')
         await loadSessions()
         if (sessionId === extraSessionId) {
           await refreshSessionStatus()
@@ -1994,7 +1994,7 @@ export function usePlateApp() {
       })
       const data = await response.json()
       if (response.ok) {
-        showMessage(data.message || 'Session unmerged successfully', 'success')
+        showMessage(data.message || 'Session unmerged.', 'success')
         await loadSessions()
         if (sessionId === extraSessionId) {
           await refreshSessionStatus()
@@ -2039,7 +2039,7 @@ export function usePlateApp() {
         a.click()
         window.URL.revokeObjectURL(url)
         document.body.removeChild(a)
-        showMessage('Records exported successfully', 'success')
+        showMessage('Records exported.', 'success')
       } else {
         showMessage('Failed to export records', 'error')
       }
@@ -2061,7 +2061,7 @@ export function usePlateApp() {
         a.click()
         window.URL.revokeObjectURL(url)
         document.body.removeChild(a)
-        showMessage('Detailed records exported successfully', 'success')
+        showMessage('Detailed records exported.', 'success')
       } else {
         showMessage('Failed to export detailed records', 'error')
       }

@@ -281,7 +281,7 @@ def signup():
     _notify_saved_signup(school, account_request)
     return jsonify({
         'status': 'success',
-        'message': 'Account request submitted successfully. Please wait for your school administrator to approve your request.'
+        'message': 'Account request submitted. Your school superadmin must approve it before you can sign in.'
     }), 201
 
 

@@ -219,7 +219,7 @@ def test_historical_cutoff_is_persistent_and_manual_override_remains_an_exceptio
     meal, records = scenario({'Smith': 1}, {'Smith': {'clean': 1}})
     cutoff = db_session.get(EstimateSystemActivation, VERSION).activated_at
     meal.created_at = cutoff - timedelta(seconds=1)
-    assert 'before the updated estimation system' in estimate_session_percentages(meal, records, SETTINGS)['reason']
+    assert 'predates the current model' in estimate_session_percentages(meal, records, SETTINGS)['reason']
     _bootstrap_database()
     db_session.expire_all()
     assert db_session.get(EstimateSystemActivation, VERSION).activated_at == cutoff

@@ -92,7 +92,7 @@ export default function LiveCounterPage() {
           <span role="status" className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm ${connected
             ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
             <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-            {connected ? 'Live · updates every 5 seconds' : 'Reconnecting…'}
+            {connected ? 'Live' : 'Reconnecting…'}
           </span>
           {snapshot.can_manage_ranges && <Button variant="outline" onClick={() => { setSaved(false); setEditing(true) }}>
             <Settings2 className="h-4 w-4" />Manage time ranges
@@ -148,7 +148,6 @@ export default function LiveCounterPage() {
               </TabsContent>
             </Tabs>
             <div className="mt-7 flex flex-wrap justify-between gap-2 text-xs leading-relaxed text-slate-500">
-              <p>Totals include both dates in the selected range and count-only plates.</p>
               <p>Last updated {new Date(snapshot.updated_at).toLocaleTimeString()}</p>
             </div>
             {snapshot.can_manage_ranges && <Dialog open={editing} onOpenChange={setEditing}>

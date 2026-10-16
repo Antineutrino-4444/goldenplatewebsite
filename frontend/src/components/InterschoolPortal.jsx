@@ -96,8 +96,8 @@ function InterschoolPortal({ app }) {
                 Issue single-use school invites and track which have been redeemed.
               </p>
               <ul className="list-disc list-inside space-y-1">
-                <li>Generate unique school IDs paired with invite codes.</li>
-                <li>Share credentials securely with the school's lead administrator.</li>
+                <li>Generate an invite for a new school.</li>
+                <li>Share the invite with the school's lead administrator.</li>
                 <li>Review invite use and registered schools.</li>
               </ul>
             </div>
@@ -109,7 +109,7 @@ function InterschoolPortal({ app }) {
             <div>
               <CardTitle className="flex flex-wrap items-center gap-2">
                 <UserPlus className="h-5 w-5 text-amber-600" />
-                Pending School Registration Requests
+                School Registration Requests
                 {pendingRegistrationRequests.length > 0 && (
                   <Badge className="bg-amber-500 text-white">
                     {pendingRegistrationRequests.length}
@@ -117,7 +117,7 @@ function InterschoolPortal({ app }) {
                 )}
               </CardTitle>
               <CardDescription>
-                Review and approve school registration requests submitted via the registration form.
+                Review school registration requests.
               </CardDescription>
             </div>
             <Button
@@ -134,7 +134,7 @@ function InterschoolPortal({ app }) {
           <CardContent>
             {interschoolRegistrationRequests.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No school registration requests have been submitted yet. Schools can register via the registration form.
+                No school registration requests yet.
               </p>
             ) : (
               <div className="space-y-3">
@@ -216,7 +216,7 @@ function InterschoolPortal({ app }) {
             <Alert className="mb-4 border-amber-200 bg-amber-50 text-amber-800">
               <ShieldCheck className="h-4 w-4" />
               <AlertDescription className="text-amber-800">
-                Codes are shown once. Copy the invite and school ID before closing the dialog.
+                Copy an invite from Recent invites or the Invite Codes Ledger.
               </AlertDescription>
             </Alert>
             <div className="flex flex-wrap items-center gap-3">
@@ -229,7 +229,7 @@ function InterschoolPortal({ app }) {
                 {schoolInviteLoading ? 'Generating…' : 'Generate Invite'}
               </Button>
               <span className="text-sm text-gray-500">
-                Each invite is single-use and locks when redeemed.
+                Each invite can be used once.
               </span>
             </div>
             <div className="mt-6">
@@ -246,7 +246,7 @@ function InterschoolPortal({ app }) {
               </div>
               {latestSchoolInvites.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  Invites generated during this session will appear here for quick copying.
+                  No invites generated since signing in.
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -278,9 +278,6 @@ function InterschoolPortal({ app }) {
                   ))}
                 </div>
               )}
-              <div className="mt-3 text-xs text-gray-500">
-                The list keeps invites created after you signed in.
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -317,7 +314,7 @@ function InterschoolPortal({ app }) {
           <CardContent>
             {interschoolSchools.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No partner schools have been registered yet. Once an invite is redeemed the school will appear here.
+                No partner schools registered yet.
               </p>
             ) : (
               <div className="space-y-3">
@@ -466,16 +463,10 @@ function InterschoolPortal({ app }) {
           </CardHeader>
           <CardContent>
             <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
-              <li>Generate a new invite and copy the code and school ID.</li>
-              <li>Send the credentials securely to the school's lead administrator.</li>
+              <li>Generate a new invite and copy the code.</li>
+              <li>Share the invite code with the school's lead administrator.</li>
               <li>The administrator completes the registration workflow using the invite.</li>
             </ol>
-            <Alert className="mt-4 border-amber-200 bg-amber-50 text-amber-800">
-              <ShieldCheck className="h-4 w-4" />
-              <AlertDescription className="text-amber-800">
-                Need to audit or disable a school? Coordinate with a super admin while expanded management tools are rolling out here.
-              </AlertDescription>
-            </Alert>
           </CardContent>
         </Card>
       </main>

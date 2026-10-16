@@ -1,5 +1,5 @@
 THE GOLDEN PLATE FOOD WASTE INITIATIVE
-Cleaned Four-Speaker Podcast Transcript
+Edited podcast transcript
 
 Source: Otter.ai transcript of "Spoiler Alert" podcast episode, "The Golden Plate"
 
@@ -9,12 +9,7 @@ Speaker key
   Jiajun (Leo) Li = Speaker 3 (LEO below)
   Michael Casey = Speaker 4
 
-Editing notes
-  - Full speaker names were confirmed by the website owner; spoken references to Nick and Leo are preserved below.
-  - Obvious transcription errors have been corrected using the surrounding conversation, including "Great Falls" to "Grade 12," "Golden Fate/Golden Play" to "Golden Plate," and "SAG" to "SAC."
-  - Punctuation, grammar, false starts, and repetitive filler have been cleaned up for readability. Meaning, speaking order, and substantive details have been retained.
-  - This is an edited transcript, not a verbatim or independently audio-verified record. Proper names and ambiguous statements should be checked against the recording before publication or quotation.
-  - Timestamps indicate the approximate start of each speaking turn.
+Edited for readability from an automated transcript. Timestamps are approximate.
 
 TRANSCRIPT
 ==========

@@ -67,13 +67,13 @@ button{padding:12px 18px;border-radius:9px;border:1px solid #cbd5e1;background:w
 </style></head><body><main>
 <div class="brand">PLATE</div><h1>Notification preferences</h1>
 <p class="email">{{email}}</p>
-<p>Choose the notifications you want to receive. Enabled types are sent when your address is on the relevant recipient list.</p>
-{% if saved %}<p class="notice" role="status">Your preferences have been saved.</p>{% endif %}
+<p>Choose which notifications to receive from the lists you belong to.</p>
+{% if saved %}<p class="notice" role="status">Preferences saved.</p>{% endif %}
 <form method="post">
 {% for key, description in types.items() %}
 <label class="row"><input type="checkbox" name="{{key}}" {% if key not in disabled %}checked{% endif %}>
 <span><strong>{{description[0]}}</strong><small>{{description[1]}}</small>
-<span class="status">{% if key in disabled %}Unsubscribed{% elif key in configured %}Currently subscribed{% else %}Enabled · no recipient list configured for this address{% endif %}</span></span></label>
+<span class="status">{% if key in disabled %}Unsubscribed{% elif key in configured %}Currently subscribed{% else %}Enabled · not on a recipient list{% endif %}</span></span></label>
 {% endfor %}
 <div class="buttons"><button class="save" type="submit" name="action" value="save">Save preferences</button>
 <button type="submit" name="action" value="unsubscribe_all">Unsubscribe from all notifications</button></div>

@@ -50,14 +50,14 @@ def estimate_session_percentages(meal, records, settings, *, include_separation=
     if not activation:
         return _unavailable('The updated estimation system has no saved activation date.')
     if not matched_at and (not created_at or _utc(created_at) < _utc(activation.activated_at)):
-        return _unavailable('Estimates unavailable — this session was recorded before the updated estimation system was implemented.')
+        return _unavailable('Estimates are unavailable for this session because it predates the current model.')
     if meal.roster_mixed:
         return _unavailable('Estimates are unavailable because this session contains student records from multiple roster versions.')
     snapshot = db_session.query(RosterSnapshot).filter_by(
         id=meal.roster_snapshot_id, school_id=meal.school_id,
     ).first() if meal.roster_snapshot_id else None
     if not snapshot:
-        return _unavailable('Estimates are unavailable because no roster was saved for this session. Use the existing roster override if an applicable roster is available.')
+        return _unavailable('No roster is saved for this session. If the current roster applies to this lunch, use Match session roster to calculate estimates.')
     metadata = {'roster_snapshot_id': snapshot.id, 'roster_filename': snapshot.filename,
                 'roster_saved_at': snapshot.created_at.isoformat(),
                 'roster_assignment': 'manual' if matched_at else 'automatic',

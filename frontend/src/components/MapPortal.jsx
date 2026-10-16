@@ -2101,7 +2101,7 @@ function MapPortal({ app }) {
         // only complain when the user clearly tried to paste an image.
         const onlyTextLikeTarget = event.target && /input|textarea/i.test(event.target.tagName || '')
         if (!onlyTextLikeTarget) {
-          showMessage('[MAP_PASTE_NO_IMAGE] Nothing image-like found in the clipboard. Copy an image first, then paste.', 'error')
+          showMessage('[MAP_PASTE_NO_IMAGE] No image found in the clipboard. Copy an image, then paste.', 'error')
         }
       }
     }
@@ -2665,7 +2665,7 @@ function MapPortal({ app }) {
         showMessage(
           recipients.length
             ? `Saved ${recipients.length} approval recipient${recipients.length === 1 ? '' : 's'}`
-            : 'Cleared approval recipients (will fall back to defaults)',
+            : 'Saved reviewer list cleared. Site-configured recipients still apply.',
           'success',
         )
       } else {
@@ -3231,7 +3231,7 @@ function MapPortal({ app }) {
                   </div>
                   <div className="rounded-md border bg-slate-50 p-4">
                     <div className="text-xs font-semibold uppercase text-slate-500">Display name</div>
-                    <div className="mt-1 break-words text-sm">{displayName || '— (will fall back to email)'}</div>
+                    <div className="mt-1 break-words text-sm">{displayName || 'Email address will be shown'}</div>
                   </div>
                   <div className="rounded-md border bg-slate-50 p-4">
                     <div className="text-xs font-semibold uppercase text-slate-500">Pin</div>
@@ -3275,7 +3275,6 @@ function MapPortal({ app }) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="text-2xl font-bold text-slate-950">All approved submissions</h2>
-                    <p className="text-sm text-slate-500">Visible to admins and super admins.</p>
                   </div>
                   <Button onClick={loadApprovedSubmissions} variant="outline" disabled={approvedLoading}>
                     <RefreshCcw className="mr-2 h-4 w-4" />
@@ -3328,7 +3327,7 @@ function MapPortal({ app }) {
         <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto" dismissOnOverlayClick={false}>
           <DialogHeader>
             <DialogTitle>Map Approval Queue</DialogTitle>
-            <DialogDescription>Review pending map submissions with full submission details.</DialogDescription>
+            <DialogDescription>Approve or reject pending map submissions.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {pendingLoading ? (
@@ -3372,10 +3371,9 @@ function MapPortal({ app }) {
               Approval notification recipients
             </DialogTitle>
             <DialogDescription>
-              These email addresses receive a notification (with the submission images and a
-              single-use speed-approval link) every time someone submits an Ecological Map entry
-              for approval. One address per line, or separated by commas. Configured
-              website update recipients also receive these notifications.
+              Add map reviewers who should receive submission alerts and approval links.
+              Enter one address per line, or separate addresses with commas.
+              Website update recipients also receive these alerts.
             </DialogDescription>
           </DialogHeader>
 

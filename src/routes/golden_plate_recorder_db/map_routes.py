@@ -1715,8 +1715,7 @@ def quick_approve_map_submission(submission_id):
     if not provided_token or not stored_token or not secrets.compare_digest(provided_token, stored_token):
         return _quick_approve_html_response(
             'Approval link no longer valid',
-            'This speed-approval link is invalid. Please open the Ecological Map admin '
-            'view to review the submission instead.',
+            'This approval link is invalid. Open Map approvals to review the submission.',
             ok=False,
         ), 410
 
@@ -1730,8 +1729,7 @@ def quick_approve_map_submission(submission_id):
     if submission.status == 'rejected':
         return _quick_approve_html_response(
             'Already rejected',
-            'This submission has already been rejected by a reviewer. The speed-approval '
-            'link will not override that decision.',
+            'A reviewer has rejected this submission. This link cannot approve it.',
             ok=False,
         ), 410
 
@@ -1741,7 +1739,7 @@ def quick_approve_map_submission(submission_id):
     if submission.status == 'approved':
         return _quick_approve_html_response(
             'Submission approved ✓',
-            success_message + ' (This link has already been used; no further action was needed.)',
+            success_message + ' This submission was already approved.',
             ok=True,
         ), 200
 
@@ -1817,10 +1815,10 @@ def _quick_approve_confirm_page(submission, token: str):
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 4px 14px rgba(15,23,42,0.06);overflow:hidden;">
     <div style="background:#fffbeb;border-bottom:1px solid #fcd34d;padding:20px 28px;">
       <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#475569;">Ecological Map</div>
-      <div style="font-size:22px;font-weight:700;color:#b45309;margin-top:4px;">Confirm speed approval</div>
+      <div style="font-size:22px;font-weight:700;color:#b45309;margin-top:4px;">Confirm approval</div>
     </div>
     <div style="padding:24px 28px;font-size:15px;line-height:1.55;">
-      <p style="margin:0 0 16px;">You are about to approve the following submission. This will publish it to the Ecological Map immediately.</p>
+      <p style="margin:0 0 16px;">Approve this submission for the Ecological Map.</p>
       <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
         <tr><td style="padding:6px 0;color:#64748b;width:120px;">Title</td><td style="padding:6px 0;font-weight:600;">{safe_title}</td></tr>
         <tr><td style="padding:6px 0;color:#64748b;">Submitted by</td><td style="padding:6px 0;">{safe_submitter}</td></tr>
@@ -1833,7 +1831,7 @@ def _quick_approve_confirm_page(submission, token: str):
         </button>
       </form>
       <p style="margin:18px 0 0;font-size:12px;color:#64748b;">
-        If you didn't expect this email, you can simply close this page — no action will be taken.
+        Close this page to leave the submission pending.
       </p>
     </div>
   </div>

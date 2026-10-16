@@ -15,7 +15,7 @@ export default function GuestSessionPage() {
     <main id="main-content" className="gp-container gp-guest-session">
       <p className="gp-section-label">PLATE · Guest access</p>
       <h1>A look at lunch.</h1>
-      <p className="gp-guest-intro">View this school’s latest recorded lunch totals without an account.</p>
+      <p className="gp-guest-intro">View this school’s recorded lunch totals without an account.</p>
       <PublicSessionDashboard result={result} />
       <div className="gp-platform-links"><button className="gp-text-link" onClick={result.retry} disabled={result.status === 'loading'}>Refresh this session</button><Link className="gp-text-link" to="/">Back to the initiative</Link><Link className="gp-text-link" to="/login">School login</Link></div>
     </main>

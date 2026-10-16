@@ -54,7 +54,7 @@ export default function SessionSwitcher({ app }) {
                     setSessionToDelete(session)
                     setShowDeleteConfirm(true)
                   }} disabled={session.delete_requested} className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                    aria-label={`Delete ${session.session_name}`} title={session.delete_requested ? 'Delete request pending' : 'Delete session'}>
+                    aria-label={`${canManageDraw ? 'Delete' : 'Request deletion of'} ${session.session_name}`} title={session.delete_requested ? 'Delete request pending' : canManageDraw ? 'Delete session' : 'Request session deletion'}>
                     <Trash2 className="h-4 w-4" />
                   </Button>}
                 </div>

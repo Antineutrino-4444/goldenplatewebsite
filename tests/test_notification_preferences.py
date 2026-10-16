@@ -37,7 +37,7 @@ def test_selective_unsubscribe_filters_notifications_but_not_requested_codes(cli
     path = preferences_path(email_outbox[-1])
     data = {key: 'on' for key in NOTIFICATION_TYPES if key != 'server_startup'}
     response = client.post(path, data={**data, 'action': 'save'}, follow_redirects=True)
-    assert response.status_code == 200 and b'preferences have been saved' in response.data
+    assert response.status_code == 200 and b'Preferences saved.' in response.data
     email_outbox.clear()
     result = notify_website_update('Website started', 'Startup')
     assert result['success'] and result['deliveries']['reader@example.com']['skipped']

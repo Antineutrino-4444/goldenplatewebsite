@@ -14,7 +14,7 @@ export function HouseEstimateDetails({ estimation, sessionId }) {
   return <div className="space-y-3 text-sm text-gray-600">
     <p>Saved roster: {estimation.roster_filename || 'Student roster'} • {number(estimation.population)} eligible students in Grades 9–12.</p>
     {estimation.roster_assignment === 'manual' && <p>This session is matched to a manually selected roster.</p>}
-    {estimation.grade_source === 'manual_override_student_profiles' && <p>This older override has no saved grades; eligibility uses the linked student profiles.</p>}
+    {estimation.grade_source === 'manual_override_student_profiles' && <p>This manually matched roster has no saved grades; eligibility uses the linked student profiles.</p>}
     {!!estimation.excluded_roster_student_count && <p>{number(estimation.excluded_roster_student_count)} excluded students are removed from this session’s calculation population.</p>}
     <p>Recorded student plates: {number(estimation.student_plate_count)} • Assumed lunch absences: {number(estimation.school_absent_count)}.</p>
     <p>Recorded house assignments stay in place; the model distributes anonymous plates among remaining students while preserving school totals and house sizes.</p>
@@ -38,7 +38,7 @@ export function HouseEstimateDetails({ estimation, sessionId }) {
       {!!house.overlapping_houses?.length && <p>Overlapping rank intervals: {house.overlapping_houses.join(', ')}.</p>}
       {!!house.tied_houses?.length && <p>Same rounded point estimate: {house.tied_houses.join(', ')}.</p>}
       <div className="grid gap-2 sm:grid-cols-3">
-        {[['clean', 'CLEAN'], ['dirty', 'DIRTY'], ['red', 'RED']].map(([category, label]) => <div key={category}>
+        {[['clean', 'CLEAN'], ['dirty', 'DIRTY'], ['red', 'VERY DIRTY']].map(([category, label]) => <div key={category}>
           <p className="font-medium">{label}: {number(house[`${category}_count`])} expected</p>
           <p className="text-xs">{house[`observed_${category}_count`]} recorded + {number(house[`${category}_count`] - house[`observed_${category}_count`])} allocated</p>
         </div>)}
@@ -104,7 +104,7 @@ export default function HouseEstimates({ estimation }) {
   if (!estimation.available) return <p role="status" className="py-6 text-sm text-gray-600">{estimation.reason}</p>
   return <div className="space-y-3">
     {estimation.refresh_failed && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Unable to refresh. Showing the last available estimates; retrying automatically.</p>}
-    <p className="text-sm text-gray-500">Estimated clean rates update during counting. Overlapping ranges indicate an uncertain order.</p>
+    <p className="text-sm text-gray-500">Overlapping ranges indicate an uncertain order.</p>
     {estimation.house_estimates_available === false && <p role="status" className="py-3 text-sm text-gray-600">{estimation.house_estimates_reason}</p>}
     {estimation.house_stats.map((house) => <div key={house.house} className="min-w-0 rounded-lg border bg-white p-4 shadow-sm space-y-3 [overflow-wrap:anywhere]">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">

@@ -85,7 +85,7 @@ function Impact() {
         <div><dt>Before the initiative</dt><dd>Below 50%</dd></div>
         <div><dt>Reported high after launch</dt><dd>75%</dd></div>
       </dl>
-      <p>Clean-plate rates at St. Andrew’s. The case study reports a high of 75%, rather than a session average.</p>
+      <p>Clean-plate rates reported in the St. Andrew’s case study.</p>
     </div>
   </section>
 }
@@ -116,7 +116,7 @@ function Platform() {
     </div>
     <div className="gp-platform-body">
       <div className="gp-platform-artifact">
-        <div className="gp-session-provenance"><p><strong>{result.session ? 'A real session, selected at random' : 'Explore a public school session'}</strong><span>{result.session ? 'Loaded directly from a school’s public records in PLATE.' : 'See how a participating school records its lunch in PLATE.'}</span></p></div>
+        <div className="gp-session-provenance"><p><strong>{result.session ? 'A public school session' : 'Explore a public school session'}</strong><span>{result.session ? 'Lunch totals from a participating school.' : 'See how a participating school records its lunch in PLATE.'}</span></p></div>
         <PublicSessionDashboard result={result} />
         <div className="gp-platform-links">{result.session && <Link className="gp-button" to={`/guest/sessions/${encodeURIComponent(result.session.session_id)}`}>Explore this session <ArrowRight size={17} /></Link>}<ExternalLink href={REPO}>Source code & documentation</ExternalLink></div>
       </div>
