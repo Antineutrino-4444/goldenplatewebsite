@@ -149,3 +149,76 @@ def test_count_only_records_do_not_change_existing_tickets(client, login):
     assert len(summary['candidates']) == 1
     assert summary['candidates'][0]['student_identifier'] == '123'
     assert summary['candidates'][0]['tickets'] == 1
+
+
+@pytest.mark.parametrize('category,payload', [
+    ('clean', {'input_value': '123'}),
+    ('dirty', {}),
+    ('red', {'input_value': '456'}),
+    ('faculty', {'input_value': 'Faculty Retry'}),
+])
+def test_failed_save_does_not_leave_phantom_duplicate_or_counts(client, login, monkeypatch, category, payload):
+    from sqlalchemy.exc import SQLAlchemyError
+    from src.routes.golden_plate_recorder_db.storage import get_session_entry
+
+    login()
+    upload_csv(client)
+    identifier = client.post('/api/session/create', json={'session_name': f'retry-{uuid.uuid4().hex}'}).get_json()['session_id']
+    with monkeypatch.context() as patch:
+        patch.setattr(db_session, 'commit', lambda: (_ for _ in ()).throw(SQLAlchemyError('simulated save failure')))
+        response = client.post(f'/api/record/{category}', json=payload)
+    assert response.status_code == 503
+    assert response.get_json()['error'] == 'record_save_failed'
+    assert db_session.query(SessionRecord).filter_by(session_id=identifier).count() == 0
+    info = get_session_entry(identifier)
+    assert not info['scan_history']
+    assert info['dirty_count'] == 0
+    assert client.get('/api/session/status').get_json()['total_recorded'] == 0
+    assert client.post(f'/api/record/{category}', json=payload).status_code == 200
+    assert db_session.query(SessionRecord).filter_by(session_id=identifier).count() == 1
+    assert client.get('/api/session/status').get_json()['total_recorded'] == 1
+    if payload:
+        duplicate = client.post(f'/api/record/{category}', json=payload)
+        assert duplicate.status_code == 409
+        assert duplicate.get_json()['existing_category'] == category
+        assert 'No new plate was added' in duplicate.get_json()['message']
+
+
+def test_lookup_refresh_failure_does_not_report_a_committed_plate_as_failed(client, login, monkeypatch):
+    from src.routes.golden_plate_recorder_db import session_routes
+
+    login()
+    client.post('/api/session/create', json={'session_name': f'cache-failure-{uuid.uuid4().hex}'})
+    with monkeypatch.context() as patch:
+        patch.setattr(session_routes, 'update_student_lookup', lambda: (_ for _ in ()).throw(RuntimeError('cache failed')))
+        response = client.post('/api/record/clean', json={'student_id': f'new-{uuid.uuid4().hex}', 'preferred_name': 'Manual', 'last_name': 'Student'})
+    assert response.status_code == 200
+    assert response.get_json()['is_manual_entry'] is True
+    assert client.get('/api/session/status').get_json()['total_recorded'] == 1
+
+
+def test_unmatched_student_id_stays_manual_in_later_sessions(client, login):
+    login()
+    student_id = f'unmatched-{uuid.uuid4().hex}'
+    for _ in range(2):
+        client.post('/api/session/create', json={'session_name': f'manual-{uuid.uuid4().hex}'})
+        response = client.post('/api/record/dirty', json={'student_id': student_id, 'preferred_name': 'Manual', 'last_name': 'Student'})
+        assert response.status_code == 200
+        assert response.get_json()['is_manual_entry'] is True
+
+
+def test_duplicate_checks_ignore_uncommitted_cache_entries(client, login):
+    from src.routes.golden_plate_recorder_db.storage import get_session_entry
+
+    login()
+    upload_csv(client)
+    identifier = client.post('/api/session/create', json={'session_name': f'cached-{uuid.uuid4().hex}'}).get_json()['session_id']
+    cached = get_session_entry(identifier)
+    cached['clean_records'].append({'student_id': '123', 'student_key': 'id:123', 'preferred_name': 'John', 'last_name': 'Doe'})
+    assert client.post('/api/record/dirty', json={'input_value': '123'}).status_code == 200
+    cached['clean_records'].clear()
+    # Even an empty cache cannot hide the committed plate or its category.
+    cached['dirty_records'].clear()
+    response = client.post('/api/record/red', json={'input_value': '123'})
+    assert response.status_code == 409
+    assert response.get_json()['existing_category'] == 'dirty'

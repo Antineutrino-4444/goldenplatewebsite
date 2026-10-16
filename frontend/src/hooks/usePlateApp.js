@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { makeStudentKey, normalizeName, sanitizeSelection } from '@/lib/names.js'
 import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
+import { recordSuccessMessage, submitRecordRequest } from '@/lib/record-submission.js'
 
 const API_BASE = '/api'
 
 export function usePlateApp() {
   const protectedRequestBusy = useRef(false)
+  const recordRequestBusy = useRef(false)
+  const notificationTimer = useRef(null)
+  const [isRecording, setIsRecording] = useState(false)
   const [appEnvironment, setAppEnvironment] = useState({
     environment: 'unknown',
     is_development: false,
@@ -137,9 +141,10 @@ export function usePlateApp() {
   const [drawActionComment, setDrawActionComment] = useState('')
 
   // House stats state
+  const houseStatsRequest = useRef(0)
   const [houseStats, setHouseStats] = useState(null)
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
-  const [houseSortBy, setHouseSortBy] = useState('score') // 'score', 'count', 'percentage', or 'estimates'
+  const [houseSortBy, setHouseSortBy] = useState('estimates') // 'score', 'count', 'percentage', or 'estimates'
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -274,9 +279,10 @@ export function usePlateApp() {
   }, [])
 
   const showMessage = (text, type = 'info', size = 'small') => {
+    clearTimeout(notificationTimer.current)
     setNotification({ text, type, size })
     if (size === 'small') {
-      setTimeout(() => setNotification(null), 3000)
+      notificationTimer.current = setTimeout(() => setNotification(null), type === 'error' ? 8000 : 5000)
     }
   }
 
@@ -1219,6 +1225,8 @@ export function usePlateApp() {
   }
 
   const recordEntry = async (category, entryInputValue = '', selectedEntry = null) => {
+    if (recordRequestBusy.current) return
+    recordRequestBusy.current = true
     const trimmedValue = entryInputValue.trim()
     const normalizedSelection = selectedEntry || null
 
@@ -1232,7 +1240,7 @@ export function usePlateApp() {
       ? normalizeName(normalizedSelection.last_name ?? normalizedSelection.last)
       : ''
 
-    setIsLoading(true)
+    setIsRecording(true)
     try {
       const payload = { input_value: trimmedValue }
 
@@ -1252,59 +1260,33 @@ export function usePlateApp() {
         }
       }
 
-      const response = await fetch(`${API_BASE}/record/${category}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      const data = await submitRecordRequest(category, payload)
+      showMessage(recordSuccessMessage(category, data), 'success')
+
+      setPopupInputValue('')
+      setShowCleanDialog(false)
+      setShowDirtyDialog(false)
+      setShowRedDialog(false)
+      setShowFacultyDialog(false)
+      setPopupSelectedEntry(null)
+
+      // Refresh failures cannot turn a completed save into a failed submission.
+      void refreshSessionStatus({ preservePanels: true }).catch(() => {
+        showMessage('Plate saved. Some totals could not refresh; refresh the page to update them.', 'info')
       })
-
-      const data = await response.json()
-      if (response.ok) {
-        if (data.is_count_only) {
-          showMessage(`${data.display_name} recorded`, 'success')
-        } else if (category === 'dirty') {
-          const totalDirty = data.dirty_count ?? 0
-          const totalSuffix = totalDirty ? ` (total ${totalDirty})` : ''
-          const name = [data.preferred_name, data.last_name].filter(Boolean).join(' ')
-          showMessage(`${name || 'Dirty plate'} recorded as DIRTY${totalSuffix}`, 'success')
-        } else {
-          const preferredName = (data.preferred_name ?? data.first_name ?? '').trim()
-          const lastName = (data.last_name ?? '').trim()
-          const nameParts = [preferredName, lastName].filter(Boolean)
-          const displayName = nameParts.join(' ')
-          const subjectLabel = category === 'faculty' ? 'Faculty' : 'Student'
-          const categoryLabel =
-            category === 'faculty' ? 'FACULTY CLEAN' : category === 'red' ? 'VERY DIRTY' : category.toUpperCase()
-
-          showMessage(`${displayName || subjectLabel} recorded as ${categoryLabel}`, 'success')
-        }
-
-        setPopupInputValue('')
-        setShowCleanDialog(false)
-        setShowDirtyDialog(false)
-        setShowRedDialog(false)
-        setShowFacultyDialog(false)
-        setPopupSelectedEntry(null)
-
-        await refreshSessionStatus()
-      } else {
-        if (data.error === 'duplicate') {
-          showMessage(data.message, 'error')
-        } else {
-          showMessage(data.error || 'Failed to record entry', 'error')
-        }
-      }
     } catch (error) {
-      showMessage('Failed to record entry', 'error')
+      showMessage(error.message || 'The plate could not be saved. Please try again.', 'error')
     } finally {
-      setIsLoading(false)
+      recordRequestBusy.current = false
+      setIsRecording(false)
     }
   }
 
   const refreshSessionStatus = async ({
     sessionIdOverride = null,
     sessionNameOverride = null,
-    isDiscardedOverride = undefined
+    isDiscardedOverride = undefined,
+    preservePanels = false
   } = {}) => {
     let nextSessionId = sessionIdOverride ?? sessionId
     let nextSessionName = sessionNameOverride ?? sessionName
@@ -1348,9 +1330,10 @@ export function usePlateApp() {
       silent: true,
       sessionIdOverride: nextSessionId,
       sessionNameOverride: nextSessionName,
-      isDiscarded: nextIsDiscarded
+      isDiscarded: nextIsDiscarded,
+      background: preservePanels
     })
-    await loadHouseStats({ silent: true, sessionIdOverride: nextSessionId })
+    await loadHouseStats({ silent: true, sessionIdOverride: nextSessionId, background: preservePanels })
   }
 
   const loadScanHistory = async () => {
@@ -1461,14 +1444,14 @@ export function usePlateApp() {
     }
   }
 
-  const loadDrawSummary = async ({ silent = false, sessionIdOverride = null, sessionNameOverride = null, isDiscarded = undefined } = {}) => {
+  const loadDrawSummary = async ({ silent = false, sessionIdOverride = null, sessionNameOverride = null, isDiscarded = undefined, background = false } = {}) => {
     const targetSessionId = sessionIdOverride || sessionId
     if (!targetSessionId) {
       updateDrawSummaryState(null, { resetOverrideInput: true })
       return
     }
 
-    setDrawSummaryLoading(true)
+    if (!background) setDrawSummaryLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${targetSessionId}/draw/summary`)
       const data = await response.json()
@@ -1510,11 +1493,12 @@ export function usePlateApp() {
         showMessage('Failed to load draw summary', 'error')
       }
     } finally {
-      setDrawSummaryLoading(false)
+      if (!background) setDrawSummaryLoading(false)
     }
   }
 
   const loadHouseStats = async ({ silent = false, sessionIdOverride = null, background = false, signal = null } = {}) => {
+    const requestId = ++houseStatsRequest.current
     const targetSessionId = sessionIdOverride || sessionId
     if (!targetSessionId) {
       setHouseStats(null)
@@ -1525,7 +1509,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/session/${targetSessionId}/house-stats`, { signal })
       const data = await response.json()
-      if (signal?.aborted) return
+      if (signal?.aborted || requestId !== houseStatsRequest.current) return
       if (response.ok) {
         setHouseStats(data)
       } else {
@@ -1538,7 +1522,7 @@ export function usePlateApp() {
         } : previous)
       }
     } catch (error) {
-      if (signal?.aborted) return
+      if (signal?.aborted || requestId !== houseStatsRequest.current) return
       console.error('Failed to load house stats:', error)
       if (!silent) {
         showMessage('Failed to load house statistics', 'error')
@@ -1548,7 +1532,7 @@ export function usePlateApp() {
         ...previous, estimation: { ...previous.estimation, refresh_failed: true }
       } : previous)
     } finally {
-      if (!background) setHouseStatsLoading(false)
+      if (requestId === houseStatsRequest.current) setHouseStatsLoading(false)
     }
   }
 
@@ -2098,7 +2082,8 @@ export function usePlateApp() {
   }
 
   const handleKeyPress = (e, category) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.repeat && !e.nativeEvent?.isComposing) {
+      e.preventDefault()
       handlePopupSubmit(category)
     }
   }
@@ -2716,6 +2701,7 @@ export function usePlateApp() {
     previewCSV,
     previewTeachers,
     recordEntry,
+    isRecording,
     refreshSessionStatus,
     loadScanHistory,
     loadStudentNames,

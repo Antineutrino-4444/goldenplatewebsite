@@ -5,8 +5,8 @@ import re
 import uuid
 from datetime import datetime
 
-from flask import Response, jsonify, request, session
-from sqlalchemy import func
+from flask import Response, current_app, jsonify, request, session
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from . import recorder_bp
@@ -1037,6 +1037,16 @@ def get_scan_history():
 
 @recorder_bp.route('/record/<category>', methods=['POST'])
 def record_student(category):
+    try:
+        return _record_student(category)
+    except SQLAlchemyError:
+        db_session.rollback()
+        current_app.logger.exception('Unable to save plate record')
+        return jsonify({'error': 'record_save_failed',
+                        'message': 'The plate could not be saved. Please try again.'}), 503
+
+
+def _record_student(category):
     """Record a student in a category."""
     if not require_auth():
         return jsonify({'error': 'Authentication required'}), 401
@@ -1083,12 +1093,6 @@ def record_student(category):
             'display_name': plate_count_label(category),
         }
         records_key = 'faculty_clean_records' if category == 'faculty' else f'{category}_records'
-        session_info[records_key].append(record)
-        if category == 'dirty':
-            session_info['dirty_count'] += 1
-        session_info['scan_history'].append(record)
-        save_session_data()
-
         db_session.add(SessionRecord(
             school_id=school_id, session_id=session_id, category=category,
             recorded_by=actor_id, is_manual_entry=0,
@@ -1104,6 +1108,11 @@ def record_student(category):
             db_sess.total_records = (db_sess.total_records or 0) + 1
             db_sess.updated_at = datetime.now()
         db_session.commit()
+        session_info[records_key].append(record)
+        if category == 'dirty':
+            session_info['dirty_count'] += 1
+        session_info['scan_history'].append(record)
+        save_session_data()
         return jsonify({
             'status': 'success', 'category': category, 'is_count_only': True,
             'dirty_count': session_info['dirty_count'], 'display_name': record['display_name'],
@@ -1126,31 +1135,17 @@ def record_student(category):
         else:
             return jsonify({'error': 'Faculty name is required'}), 400
 
-        duplicate_check = any(
-            (record.get('preferred_name') or record.get('first_name', '')).lower() == preferred_name.lower() and
-            record.get('last_name', '').lower() == last_name.lower()
-            for record in session_info['faculty_clean_records']
-        )
-        
-        # Also check database for duplicates
-        if not duplicate_check:
-            dedupe_key_to_check = f"faculty_{preferred_name.lower()}_{last_name.lower()}"
-            existing_db_record = (
-                db_session.query(SessionRecord)
-                .filter(
-                    SessionRecord.session_id == session_id,
-                    SessionRecord.school_id == school_id,
-                    SessionRecord.dedupe_key == dedupe_key_to_check
-                )
-                .first()
-            )
-            if existing_db_record:
-                duplicate_check = True
+        # Persisted records are authoritative; an old cache cannot reject a save.
+        existing_faculty = db_session.query(SessionRecord).filter_by(
+            session_id=session_id, school_id=school_id,
+            dedupe_key=f"faculty_{preferred_name.lower()}_{last_name.lower()}",
+        ).first()
 
-        if duplicate_check:
+        if existing_faculty:
             return jsonify({
                 'error': 'duplicate',
-                'message': 'Faculty member already recorded in this session'
+                'existing_category': 'faculty',
+                'message': 'This faculty member already has a FACULTY CLEAN plate recorded in this session. No new plate was added.'
             }), 409
 
         record = {
@@ -1166,9 +1161,6 @@ def record_student(category):
                 'recorded_by': actor_username,
             'is_manual_entry': True
         }
-        session_info['faculty_clean_records'].append(record)
-        session_info['scan_history'].append(record)
-        save_session_data()
         
         # Save to database
         dedupe_key = f"faculty_{preferred_name.lower()}_{last_name.lower()}"
@@ -1195,6 +1187,9 @@ def record_student(category):
             db_sess.updated_at = datetime.now()
         
         db_session.commit()
+        session_info['faculty_clean_records'].append(record)
+        session_info['scan_history'].append(record)
+        save_session_data()
         
         return jsonify({
             'status': 'success',
@@ -1262,7 +1257,7 @@ def record_student(category):
             .first()
         )
         if student_obj:
-            dataset_match = True
+            dataset_match = bool(student_obj.is_active)
 
     cleaned_input = input_value
     if cleaned_input:
@@ -1298,7 +1293,7 @@ def record_student(category):
         )
         if len(name_matches) == 1:
             student_obj = name_matches[0]
-            dataset_match = True
+            dataset_match = bool(student_obj.is_active)
 
     student_record = build_student_record(student_obj)
 
@@ -1368,102 +1363,21 @@ def record_student(category):
 
     is_manual_entry = not dataset_match
 
-    student_records = session_info['clean_records'] + session_info['red_records'] + session_info['dirty_records']
-
-    def normalize_field(value):
-        return str(value or '').strip().lower()
-
     student_key = student_key or ''
-
-    target_student_id = normalize_field(student_id)
-    target_preferred = normalize_field(preferred_name)
-    target_last = normalize_field(last_name)
-    target_grade = normalize_field(grade)
-    target_advisor = normalize_field(advisor)
-    target_house = normalize_field(house)
-    target_clan = normalize_field(clan)
-    target_key = normalize_field(student_key)
-
-    def is_duplicate(existing_record):
-        existing_student_id = normalize_field(existing_record.get('student_id'))
-
-        if target_student_id and existing_student_id:
-            return existing_student_id == target_student_id
-
-        if target_student_id and not existing_student_id:
-            return False
-
-        if not target_student_id and existing_student_id:
-            return False
-
-        existing_key = normalize_field(existing_record.get('student_key'))
-        if target_key and existing_key:
-            return existing_key == target_key
-
-        existing_preferred = normalize_field(existing_record.get('preferred_name') or existing_record.get('first_name'))
-        existing_last = normalize_field(existing_record.get('last_name'))
-        existing_grade = normalize_field(existing_record.get('grade'))
-        existing_advisor = normalize_field(existing_record.get('advisor'))
-        existing_house = normalize_field(existing_record.get('house'))
-        existing_clan = normalize_field(existing_record.get('clan'))
-
-        return (
-            existing_preferred == target_preferred and
-            existing_last == target_last and
-            existing_grade == target_grade and
-            existing_advisor == target_advisor and
-            existing_house == target_house and
-            existing_clan == target_clan
-        )
-
-    duplicate_check = any(
-        is_duplicate(record)
-        for record in student_records
-    )
-    
-    # Also check database for duplicates
-    if not duplicate_check:
-        dedupe_key_to_check = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
-        existing_db_record = (
-            db_session.query(SessionRecord)
-            .filter(
-                SessionRecord.school_id == school_id,
-                SessionRecord.session_id == session_id,
-                SessionRecord.dedupe_key == dedupe_key_to_check
-            )
-            .first()
-        )
-        if existing_db_record:
-            duplicate_check = True
-
-    if duplicate_check:
-        existing_category = None
-        for cat in ['clean', 'red', 'dirty']:
-            if any(
-                is_duplicate(record)
-                for record in session_info[f'{cat}_records']
-            ):
-                existing_category = cat
-                break
-        
-        # If not found in JSON, check database
-        if not existing_category:
-            dedupe_key_to_check = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
-            db_record = (
-                db_session.query(SessionRecord)
-                .filter(
-                    SessionRecord.school_id == school_id,
-                    SessionRecord.session_id == session_id,
-                    SessionRecord.dedupe_key == dedupe_key_to_check
-                )
-                .first()
-            )
-            if db_record:
-                existing_category = db_record.category
-
+    dedupe_key_to_check = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
+    identity_filters = [SessionRecord.dedupe_key == dedupe_key_to_check]
+    if student_obj:
+        identity_filters.append(SessionRecord.student_id == student_obj.id)
+    existing_record = db_session.query(SessionRecord).filter(
+        SessionRecord.school_id == school_id, SessionRecord.session_id == session_id,
+        or_(*identity_filters),
+    ).first()
+    if existing_record:
+        existing_category = existing_record.category
         return jsonify({
             'error': 'duplicate',
-            'message': f'Student already recorded as {existing_category.upper() if existing_category else "UNKNOWN"} in this session'
+            'existing_category': existing_category,
+            'message': f'This student already has a {"VERY DIRTY" if existing_category == "red" else (existing_category or "student").upper()} plate recorded in this session. No new plate was added.'
         }), 409
 
     prepare_recording_roster(db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).one())
@@ -1482,12 +1396,6 @@ def record_student(category):
         'recorded_by': actor_username,
         'is_manual_entry': is_manual_entry
     }
-
-    session_info[f'{category}_records'].append(record)
-    if category == 'dirty':
-        session_info['dirty_count'] += 1
-    session_info['scan_history'].append(record)
-    save_session_data()
 
     # Save to database
     # Look up or create student in database
@@ -1580,8 +1488,17 @@ def record_student(category):
         )
     
     db_session.commit()
+    session_info[f'{category}_records'].append(record)
+    if category == 'dirty':
+        session_info['dirty_count'] += 1
+    session_info['scan_history'].append(record)
+    save_session_data()
     if lookup_refresh_needed:
-        update_student_lookup()
+        try:
+            update_student_lookup()
+        except Exception:
+            # The record is committed. A cache refresh must not report a failed save.
+            current_app.logger.exception('Plate saved, but student suggestions could not refresh')
 
     return jsonify({
         'status': 'success',

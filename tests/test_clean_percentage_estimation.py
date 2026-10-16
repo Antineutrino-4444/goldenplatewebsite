@@ -275,3 +275,65 @@ def test_api_preserves_scoring_override_access_and_grade_snapshots(client, login
     assert not email_outbox
     assert client.post('/api/auth/logout').status_code == 200
     assert client.get(path + '?estimate_separation=1').status_code == 401
+
+
+def test_rank_ranges_separate_clear_outcomes_and_preserve_exact_competition_ties():
+    from src.routes.golden_plate_recorder_db.clean_percentage_model import add_rank_ranges
+
+    distributions = {'A': point_distribution(100), 'B': point_distribution(100),
+                     'C': point_distribution(50), 'D': clean_percentage_distribution(0, 0, 2, 2)}
+    rows = add_rank_ranges(rank_percentages([{'house': name} for name in distributions], distributions), distributions)
+    assert [row['rank_range'] for row in rows] == [[1, 1], [1, 1], [3, 3], None]
+    assert rows[0]['tied_houses'] == ['B']
+    assert rows[-1]['ranking_uncertain'] is False
+
+
+def test_overlapping_near_equal_estimates_do_not_claim_resolved_order():
+    meal, records = scenario({'A': 8, 'B': 8}, {'A': {'clean': 1}, 'B': {'clean': 1}}, {'clean': 3, 'dirty': 3})
+    result = estimate_session_percentages(meal, records, SETTINGS)
+    assert result['rank_coverage'] == .9
+    for row in result['house_stats']:
+        assert row['rank_range'] == [1, 2]
+        assert row['percentage_rank'] == 1
+        assert row['ranking_uncertain'] is True
+        assert row['tied_houses']
+        assert row['rank_percentage_interval'][0] <= row['clean_percentage_interval'][0]
+        assert row['rank_percentage_interval'][1] >= row['clean_percentage_interval'][1]
+
+
+def test_joint_rank_coverage_against_labeled_allocations_including_nonparticipation():
+    from src.routes.golden_plate_recorder_db.clean_percentage_model import add_rank_ranges
+
+    # Independently assign labeled outcomes to houses; count realized ranks
+    # among participating houses, without assuming independent marginals.
+    for clean, nonclean, absent in [(2, 2, 2), (1, 1, 4), (4, 1, 1), (0, 2, 4)]:
+        outcomes = [1] * clean + [0] * nonclean + [None] * absent
+        for known in [((0, 0), (0, 0), (0, 0)), ((1, 0), (0, 1), (0, 0))]:
+            distributions = {name: clean_percentage_distribution(clean, nonclean, absent, 2, *counts)
+                             for name, counts in zip('ABC', known)}
+            rows = add_rank_ranges(rank_percentages([{'house': name} for name in 'ABC'], distributions), distributions)
+            ranges = {row['house']: row['rank_range'] for row in rows}
+            covered = total = 0
+            for first in combinations(range(6), 2):
+                remaining = set(range(6)) - set(first)
+                for second in combinations(sorted(remaining), 2):
+                    groups = [first, second, remaining - set(second)]
+                    percentages = {}
+                    for name, indices, (known_clean, known_nonclean) in zip('ABC', groups, known):
+                        values = [outcomes[index] for index in indices if outcomes[index] is not None]
+                        participants = known_clean + known_nonclean + len(values)
+                        if participants:
+                            percentages[name] = Fraction(100 * (known_clean + sum(values)), participants)
+                    total += 1
+                    covered += all(ranges[name][0] <= 1 + sum(other > value for other in percentages.values()) <= ranges[name][1]
+                                   for name, value in percentages.items())
+            assert covered * 10 >= total * 9
+
+
+def test_potentially_absent_house_is_not_certainly_ahead():
+    from src.routes.golden_plate_recorder_db.clean_percentage_model import add_rank_ranges
+
+    distributions = {'A': clean_percentage_distribution(1, 0, 9, 1), 'B': point_distribution(50)}
+    rows = add_rank_ranges(rank_percentages([{'house': name} for name in distributions], distributions), distributions)
+    assert rows[0]['rank_range'] == [1, 1]
+    assert rows[1]['rank_range'] == [1, 2]

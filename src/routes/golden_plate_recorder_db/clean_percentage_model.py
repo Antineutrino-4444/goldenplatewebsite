@@ -108,6 +108,39 @@ def rank_percentages(rows, distributions):
     return ranked + sorted(unranked, key=lambda row: row['house'])
 
 
+def add_rank_ranges(rows, distributions):
+    """Conservative 90% simultaneous ranges for ranks among participating houses.
+
+    Allocate at most 10% / n failure probability to each marginal interval,
+    rounding coverage up on the supported grid. The union bound does not
+    assume independent house allocations. A potentially absent house cannot
+    be counted as certainly ahead. Exact ties share competition ranks.
+    """
+    ranked = [row for row in rows if distributions[row['house']].participant_weight]
+    level = 1000 - 100 // len(ranked) if ranked else 1000
+    intervals = {row['house']: distributions[row['house']].interval(level) for row in ranked}
+    for row in rows:
+        house = row['house']
+        if house not in intervals:
+            row.update(rank_range=None, rank_percentage_interval=None, overlapping_houses=[],
+                       tied_houses=[], ranking_uncertain=False)
+            continue
+        low, high = intervals[house]
+        others = [other['house'] for other in ranked if other['house'] != house]
+        ahead = [name for name in others if intervals[name][0] > high
+                 and not distributions[name].zero_participation_probability]
+        possibly_ahead = [name for name in others if intervals[name][1] > low]
+        row['rank_range'] = [1 + len(ahead), 1 + len(possibly_ahead)]
+        row['rank_percentage_interval'] = [float(low), float(high)]
+        row['overlapping_houses'] = sorted(name for name in others
+                                          if intervals[name][0] <= high and intervals[name][1] >= low)
+        row['tied_houses'] = sorted(name for name in others
+                                   if distributions[name].rounded_percentage_key()
+                                   == distributions[house].rounded_percentage_key())
+        row['ranking_uncertain'] = row['rank_range'][0] != row['rank_range'][1]
+    return rows
+
+
 def highest_separating_coverage(rows, distributions):
     ranked = [row for row in rows if row['percentage_rank'] is not None]
     if len(ranked) < 2:

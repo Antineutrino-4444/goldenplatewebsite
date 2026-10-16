@@ -68,7 +68,7 @@ export function SearchableNameInput({
     // Keep focus on input after selection
     setTimeout(() => {
       if (inputRef.current) {
-        inputRef.current.focus()
+        inputRef.current.focus({ preventScroll: true })
       }
     }, 0)
   }
@@ -84,7 +84,7 @@ export function SearchableNameInput({
     if (e.key === 'Escape') {
       setOpen(false)
       if (inputRef.current) {
-        inputRef.current.focus()
+        inputRef.current.focus({ preventScroll: true })
       }
     }
   }
@@ -97,8 +97,9 @@ export function SearchableNameInput({
 
   const handleInputBlur = (e) => {
     // Don't close dropdown if clicking on a dropdown item
+    const input = e.currentTarget
     setTimeout(() => {
-      if (!e.currentTarget.contains(document.activeElement)) {
+      if (!input.contains(document.activeElement)) {
         setOpen(false)
       }
     }, 150)
@@ -148,6 +149,7 @@ export function SearchableNameInput({
             align="start"
             side="bottom"
             onOpenAutoFocus={(e) => e.preventDefault()}
+            onCloseAutoFocus={(e) => e.preventDefault()}
           >
             <Command>
               <CommandList>

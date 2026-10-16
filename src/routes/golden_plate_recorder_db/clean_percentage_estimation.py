@@ -6,7 +6,7 @@ import re
 from datetime import timezone
 
 from .clean_percentage_model import (
-    clean_percentage_distribution, highest_separating_coverage, rank_percentages,
+    add_rank_ranges, clean_percentage_distribution, highest_separating_coverage, rank_percentages,
 )
 from .db import DEFAULT_SCHOOL_ID, EstimateSystemActivation, RosterSnapshot, Student, db_session
 from .house_estimation import estimate_house_stats, hypergeometric_interval
@@ -168,7 +168,7 @@ def estimate_session_percentages(meal, records, settings, *, include_separation=
             row[f'{category}_bounds'] = [observed.get(category, 0) + value for value in bounds]
         row['total_count'] = sum(row[f'{category}_count'] for category in CATEGORIES)
         rows.append(row)
-    rows = rank_percentages(rows, distributions)
+    rows = add_rank_ranges(rank_percentages(rows, distributions), distributions)
     signature_data = {'populations': populations, 'known': known, 'anonymous': anonymous,
                       'absences': absences, 'snapshot': snapshot.id}
     signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True).encode()).hexdigest()
@@ -176,6 +176,7 @@ def estimate_session_percentages(meal, records, settings, *, include_separation=
     total = sum(sum(values.values()) for values in known.values()) + sum(anonymous.values())
     result = {'model': MODEL, 'available': True, 'reason': None, **metadata,
               'coverage': .90, 'coverage_scope': 'individual_house_conditional_on_participation',
+              'rank_coverage': .90, 'rank_coverage_scope': 'simultaneous_participating_houses',
               'calculation_method': 'exact_joint_allocation', 'calculation_signature': signature,
               'house_stats': rows, 'population': sum(populations.values()),
               'student_plate_count': total, 'school_absent_count': absences,

@@ -10,8 +10,8 @@ import SessionRecordExclusions from '@/components/SessionRecordExclusions.jsx'
 function HouseDataNotes({ children }) {
   const [open, setOpen] = useState(false)
   const contentId = useId()
-  return <div className="mb-4 rounded-lg border bg-gray-50 p-3 space-y-3">
-    <Button type="button" variant="outline" size="sm" onClick={() => setOpen(!open)}
+  return <div className="mb-4 min-w-0 rounded-lg border bg-gray-50 p-3 space-y-3 [overflow-wrap:anywhere]">
+    <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" onClick={() => setOpen(!open)}
       aria-expanded={open} aria-controls={contentId}>
       {open ? 'Hide notes and details' : 'Notes and details'}
       <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -45,24 +45,24 @@ export default function HouseRanking({ app, fillHeight = false }) {
   }, [sessionId, houseSortBy, estimationModel])
 
   return (
-    <Card className={fillHeight ? 'flex-1 flex flex-col min-h-0' : undefined}>
+    <Card id="house-rankings" className={`min-w-0 scroll-mt-4 ${fillHeight ? 'flex-1 flex flex-col min-h-0' : ''}`}>
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex flex-wrap items-center gap-2">
-            <Home className="h-5 w-5" />House Data
+            <Home className="h-5 w-5" />House Rankings
           </CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <div role="tablist" aria-label="House ranking" className="grid grid-cols-2 border rounded-lg overflow-hidden sm:flex">
-              {[['score', 'Score'], ['count', 'Count'], ['percentage', 'Clean Rate'], ['estimates', 'Estimates']].map(([value, label]) => (
-                <button key={value} type="button" role="tab" aria-selected={houseSortBy === value}
+          <div className="flex w-full min-w-0 items-center gap-2">
+            <div role="group" aria-label="House ranking view" className="grid min-w-0 flex-1 grid-cols-2 border rounded-lg overflow-hidden sm:grid-cols-4">
+              {[['estimates', 'Estimates'], ['score', 'Score'], ['count', 'Count'], ['percentage', 'Clean Rate']].map(([value, label]) => (
+                <button key={value} type="button" aria-pressed={houseSortBy === value}
                   onClick={() => setHouseSortBy(value)}
-                  className={`whitespace-nowrap px-3 py-1.5 text-sm transition-colors ${houseSortBy === value
+                  className={`min-h-11 whitespace-nowrap px-2 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-3px] ${houseSortBy === value
                     ? 'bg-teal-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
                   {label}
                 </button>
               ))}
             </div>
-            <Button onClick={() => loadHouseStats({ silent: false })} variant="outline" size="sm"
+            <Button onClick={() => loadHouseStats({ silent: false, background: Boolean(houseStats) })} variant="outline" className="h-11 w-11 shrink-0" size="sm"
               aria-label="Refresh house rankings">
               <RefreshCcw className="h-4 w-4" />
             </Button>
@@ -88,9 +88,6 @@ export default function HouseRanking({ app, fillHeight = false }) {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="text-sm text-gray-500">
-              Total records with house data: <span className="font-medium">{houseStats.total_records_with_house}</span>
-            </div>
             <div className="space-y-2">
               {(houseStats.house_stats || []).slice().sort((a, b) => compareHouses(a, b, houseSortBy))
                 .map((house, index) => (
@@ -117,7 +114,6 @@ export default function HouseRanking({ app, fillHeight = false }) {
                           : houseSortBy === 'percentage' ? `${house.clean_count} of ${house.total_count} plates clean`
                             : `${house.clean_rate}% clean rate`}
                       </div>
-                      <div className="text-xs text-gray-500">{house.percentage}% of all records</div>
                     </div>
                   </div>
                 ))}
@@ -140,7 +136,11 @@ export default function HouseRanking({ app, fillHeight = false }) {
                   ? 'Clean rate = clean plates ÷ all recorded plates in that house.'
                   : 'Count = all clean, dirty, and very dirty plates recorded for each house.'}
             </CardDescription>
-            {houseSortBy === 'estimates' && <HouseEstimateDetails estimation={houseStats?.estimation} />}
+            {houseSortBy !== 'estimates' && <div className="space-y-2 text-sm text-gray-600">
+              <p>Records with a known house: {houseStats?.total_records_with_house ?? 0}.</p>
+              {(houseStats?.house_stats || []).map((house) => <p key={house.house}>{house.house}: {house.total_count} plates • {house.percentage}% of house-attributed records • {house.clean_rate}% clean.</p>)}
+            </div>}
+            {houseSortBy === 'estimates' && <HouseEstimateDetails estimation={houseStats?.estimation} sessionId={sessionId} />}
           </HouseDataNotes>
           {sessionId && app.user?.role === 'superadmin' && <SessionRecordExclusions key={`records-${sessionId}`} sessionId={sessionId}
             rosterScope={reviewScope} reviewVersion={reviewVersion} onRosterScopeChange={refreshReview}

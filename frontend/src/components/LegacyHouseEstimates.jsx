@@ -33,6 +33,33 @@ export function HouseEstimateDetails({ estimation }) {
         A clear ranking advantage requires strictly separated ranges.
         Dirty-plate and absence ranges each have 95% model coverage. Possible bounds use the totals alone.
       </p>}
+      {estimation.house_stats.map((house) => <div key={house.house} className="rounded-lg border bg-white p-3 space-y-2">
+        <p className="font-semibold">{house.house} — calculation details</p>
+        <p className="text-xs text-gray-500">{house.population} students • {house.unknown_students} unresolved • Possible score bounds: {scoreRange(house.score_bounds)}</p>
+          <div className="text-xs text-gray-600 space-y-1">
+            <p>{house.clearly_ahead_of.length
+              ? `Clear advantage over: ${house.clearly_ahead_of.join(', ')}`
+              : 'No clear ranking advantage over another house.'}</p>
+            {!!house.clearly_behind.length && <p>Clearly behind: {house.clearly_behind.join(', ')}</p>}
+          </div>
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <p className="font-medium">Dirty plates: {number(house.dirty_count)}</p>
+              <p className="text-xs text-gray-600">{house.observed_dirty_count} recorded + {number(house.estimated_additional_dirty)} estimated</p>
+              <p className="text-xs text-gray-600">95% model range: {range(house.dirty_interval)}</p>
+              <p className="text-xs text-gray-500">Possible: {range(house.dirty_bounds)}</p>
+            </div>
+            <div>
+              <p className="font-medium">Estimated absences: {number(house.absent_count)}</p>
+              <p className="text-xs text-gray-600">95% model range: {range(house.absent_interval)}</p>
+              <p className="text-xs text-gray-500">Possible: {range(house.absent_bounds)}</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            Clean: {number(house.clean_count)} ({house.observed_clean_count} recorded) • Very Dirty: {number(house.red_count)} ({house.observed_red_count} recorded)
+            {' '}• Estimated clean rate: {house.clean_rate == null ? 'No plates' : `${number(house.clean_rate)}%`}
+          </p>
+      </div>)}
     </div>
   )
 }
@@ -60,38 +87,13 @@ export default function HouseEstimates({ estimation }) {
                 {house.rank_range[0] === house.rank_range[1]
                   ? `Clear rank: ${house.rank_range[0]}` : `Order uncertain • Range-based rank: ${range(house.rank_range)}`}
               </p>
-              <p className="text-xs text-gray-500">{house.population} students • {house.unknown_students} unresolved</p>
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-600">95% score range: {scoreRange(house.score_interval)}</p>
               <p className={`text-xl font-bold ${house.score < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{number(house.score)} points</p>
               <p className="text-xs text-gray-500">Point estimate</p>
-              <p className="text-xs text-gray-500">Possible bounds: {scoreRange(house.score_bounds)}</p>
             </div>
           </div>
-          <div className="text-xs text-gray-600 space-y-1">
-            <p>{house.clearly_ahead_of.length
-              ? `Clear advantage over: ${house.clearly_ahead_of.join(', ')}`
-              : 'No clear ranking advantage over another house.'}</p>
-            {!!house.clearly_behind.length && <p>Clearly behind: {house.clearly_behind.join(', ')}</p>}
-          </div>
-          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <p className="font-medium">Dirty plates: {number(house.dirty_count)}</p>
-              <p className="text-xs text-gray-600">{house.observed_dirty_count} recorded + {number(house.estimated_additional_dirty)} estimated</p>
-              <p className="text-xs text-gray-600">95% model range: {range(house.dirty_interval)}</p>
-              <p className="text-xs text-gray-500">Possible: {range(house.dirty_bounds)}</p>
-            </div>
-            <div>
-              <p className="font-medium">Estimated absences: {number(house.absent_count)}</p>
-              <p className="text-xs text-gray-600">95% model range: {range(house.absent_interval)}</p>
-              <p className="text-xs text-gray-500">Possible: {range(house.absent_bounds)}</p>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500">
-            Clean: {number(house.clean_count)} ({house.observed_clean_count} recorded) • Very Dirty: {number(house.red_count)} ({house.observed_red_count} recorded)
-            {' '}• Estimated clean rate: {house.clean_rate == null ? 'No plates' : `${number(house.clean_rate)}%`}
-          </p>
         </div>
       ))}
     </div>

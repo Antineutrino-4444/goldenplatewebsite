@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import AdminSessionExport from '@/components/AdminSessionExport.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
 import HouseScoreSettings from '@/components/HouseScoreSettings.jsx'
@@ -44,6 +44,21 @@ import {
 
 function MainPortal({ app }) {
   const [showSessionExport, setShowSessionExport] = useState(false)
+  const recordOrigin = useRef(null)
+  const openRecordDialog = (category, event) => {
+    recordOrigin.current = { element: event.currentTarget, x: window.scrollX, y: window.scrollY }
+    app.handleCategoryClick(category)
+  }
+  const restoreRecordPosition = (event) => {
+    event.preventDefault()
+    const origin = recordOrigin.current
+    if (!origin) return
+    // Radix has no DialogTrigger for these controlled dialogs. Restore focus
+    // explicitly, without letting focus or the mobile keyboard scroll the page.
+    origin.element?.focus({ preventScroll: true })
+    window.scrollTo({ left: origin.x, top: origin.y, behavior: 'instant' })
+    requestAnimationFrame(() => window.scrollTo({ left: origin.x, top: origin.y, behavior: 'instant' }))
+  }
   const {
     user,
     sessionId,
@@ -110,7 +125,7 @@ function MainPortal({ app }) {
     setShowRedDialog,
     showFacultyDialog,
     setShowFacultyDialog,
-    handleCategoryClick,
+    isRecording,
     handlePopupSubmit,
     handleKeyPress,
     popupInputValue,
@@ -274,6 +289,56 @@ function MainPortal({ app }) {
               </div>
             </div>
 
+            <section id="record-entry" aria-labelledby="record-entry-title" className="mb-6 scroll-mt-4 rounded-xl border bg-white p-4">
+              <h2 id="record-entry-title" className="mb-3 text-lg font-semibold">Add a plate record</h2>
+              <div className="grid grid-cols-2 gap-3">
+              {user?.role === 'guest' && (
+                <Alert className="border-blue-200 bg-blue-50">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-blue-800">
+                    You are viewing as a guest. Recording is not available. Please sign up to record plate data.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Button
+                onClick={(event) => openRecordDialog('clean', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🥇 CLEAN PLATE
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.clean_count} recorded)</span>
+              </Button>
+
+              <Button
+                onClick={(event) => openRecordDialog('faculty', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🧑‍🏫 FACULTY CLEAN
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.faculty_clean_count} recorded)</span>
+              </Button>
+
+              <Button
+                onClick={(event) => openRecordDialog('dirty', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🍽️ DIRTY PLATE
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.dirty_count} total)</span>
+              </Button>
+
+              <Button
+                onClick={(event) => openRecordDialog('red', event)}
+                className="w-full h-auto min-h-20 flex-col gap-1 whitespace-normal px-2 py-3 text-sm sm:text-base font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || isRecording || user?.role === 'guest'}
+              >
+                🍝 VERY DIRTY PLATE
+                <span className="text-xs sm:text-sm opacity-90">({sessionStats.red_count} recorded)</span>
+              </Button>
+            </div>
+            </section>
+
             <div className="flex flex-wrap gap-2 mb-6 justify-center">
               {user?.role !== 'guest' && (
                 <Button onClick={() => setShowNewSessionDialog(true)} className="bg-blue-600 hover:bg-blue-700">
@@ -313,91 +378,12 @@ function MainPortal({ app }) {
               )}
             </div>
 
+            <nav aria-label="Session sections" className="mb-4 flex flex-wrap gap-2 text-sm">
+              <a href="#record-entry" className="inline-flex min-h-11 items-center rounded-lg border bg-white px-4 text-teal-800">Add records</a>
+              <a href="#house-rankings" className="inline-flex min-h-11 items-center rounded-lg border bg-white px-4 text-teal-800">House rankings</a>
+              <a href="#plate-history" className="inline-flex min-h-11 items-center rounded-lg border bg-white px-4 text-teal-800">History</a>
+            </nav>
             <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2">
-                    <Upload className="h-5 w-5" />
-                    Student Database
-                  </CardTitle>
-                  <CardDescription>
-                    Upload a CSV with columns in any order and any capitalization. Student ID, Last, and Preferred (or First if there is no Preferred column) are required. Preferred is always used when present. Grade, Advisor, House, and Clan can be blank or omitted. Students missing from the new roster are excluded from ticket draws.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!['admin', 'superadmin'].includes(user?.role) ? (
-                    <Alert className="border-blue-200 bg-blue-50">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription className="text-blue-800">
-                        CSV upload is restricted to admin and super admin users only.
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <StudentRosterUpload app={app} />
-                  )}
-                  {['admin', 'superadmin'].includes(user?.role) && (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      <Button
-                        onClick={() => previewCSV(1)}
-                        variant="outline"
-                        className="flex-1"
-                        disabled={csvPreviewLoading}
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        {csvPreviewLoading ? 'Loading...' : 'Preview Database'}
-                      </Button>
-                    </div>
-                  )}
-                  {csvData && (
-                    <div className="text-sm text-green-600">
-                      ✓ {csvData.rows_count} students loaded
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2">
-                    <Users className="h-5 w-5" />
-                    Teacher Database
-                  </CardTitle>
-                  <CardDescription>
-                    Upload a CSV with Last and Preferred (or First if there is no Preferred column), in any order and any capitalization. Preferred is always used when present; other columns are ignored. TXT files can contain one full teacher name per line.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!['admin', 'superadmin'].includes(user?.role) ? (
-                    <Alert className="border-blue-200 bg-blue-50">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription className="text-blue-800">
-                        Teacher list upload is restricted to admin and super admin users only.
-                      </AlertDescription>
-                    </Alert>
-                  ) : (
-                    <RosterUpload roster={app.teacherRoster} kind="teacher" accept=".csv,.txt" isLoading={isLoading} upload={uploadTeachers} setModal={app.setModal} />
-                  )}
-                  {['admin', 'superadmin'].includes(user?.role) && (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      <Button
-                        onClick={() => previewTeachers(1)}
-                        variant="outline"
-                        className="flex-1"
-                        disabled={teacherPreviewLoading}
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        {teacherPreviewLoading ? 'Loading...' : 'Preview Teacher List'}
-                      </Button>
-                    </div>
-                  )}
-                  {teacherNames.length > 0 && (
-                    <div className="text-sm text-green-600">
-                      ✓ {teacherNames.length} teachers loaded
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
               {canExportSessionData && (
                 <div className="flex flex-col gap-4 lg:row-span-2 min-h-0">
                   <HouseRanking app={app} fillHeight />
@@ -875,63 +861,101 @@ function MainPortal({ app }) {
               {!canExportSessionData && (
                 <HouseRanking app={app} />
               )}
+              {['admin', 'superadmin'].includes(user?.role) && <details className="min-w-0 rounded-lg border bg-white p-4 lg:col-span-2">
+                <summary className="min-h-11 cursor-pointer py-2 font-medium">Student and teacher databases</summary>
+                <div className="mt-3 grid min-w-0 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2">
+                    <Upload className="h-5 w-5" />
+                    Student Database
+                  </CardTitle>
+                  <CardDescription>
+                    Upload a CSV with columns in any order and any capitalization. Student ID, Last, and Preferred (or First if there is no Preferred column) are required. Preferred is always used when present. Grade, Advisor, House, and Clan can be blank or omitted. Students missing from the new roster are excluded from ticket draws.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!['admin', 'superadmin'].includes(user?.role) ? (
+                    <Alert className="border-blue-200 bg-blue-50">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-blue-800">
+                        CSV upload is restricted to admin and super admin users only.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <StudentRosterUpload app={app} />
+                  )}
+                  {['admin', 'superadmin'].includes(user?.role) && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <Button
+                        onClick={() => previewCSV(1)}
+                        variant="outline"
+                        className="flex-1"
+                        disabled={csvPreviewLoading}
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        {csvPreviewLoading ? 'Loading...' : 'Preview Database'}
+                      </Button>
+                    </div>
+                  )}
+                  {csvData && (
+                    <div className="text-sm text-green-600">
+                      ✓ {csvData.rows_count} students loaded
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Teacher Database
+                  </CardTitle>
+                  <CardDescription>
+                    Upload a CSV with Last and Preferred (or First if there is no Preferred column), in any order and any capitalization. Preferred is always used when present; other columns are ignored. TXT files can contain one full teacher name per line.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!['admin', 'superadmin'].includes(user?.role) ? (
+                    <Alert className="border-blue-200 bg-blue-50">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-blue-800">
+                        Teacher list upload is restricted to admin and super admin users only.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <RosterUpload roster={app.teacherRoster} kind="teacher" accept=".csv,.txt" isLoading={isLoading} upload={uploadTeachers} setModal={app.setModal} />
+                  )}
+                  {['admin', 'superadmin'].includes(user?.role) && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <Button
+                        onClick={() => previewTeachers(1)}
+                        variant="outline"
+                        className="flex-1"
+                        disabled={teacherPreviewLoading}
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        {teacherPreviewLoading ? 'Loading...' : 'Preview Teacher List'}
+                      </Button>
+                    </div>
+                  )}
+                  {teacherNames.length > 0 && (
+                    <div className="text-sm text-green-600">
+                      ✓ {teacherNames.length} teachers loaded
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
                 </div>
-
-            <div className="mt-8 space-y-4">
-              {user?.role === 'guest' && (
-                <Alert className="border-blue-200 bg-blue-50">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-blue-800">
-                    You are viewing as a guest. Recording is not available. Please sign up to record plate data.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <Button
-                onClick={() => handleCategoryClick('clean')}
-                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-yellow-500 hover:bg-yellow-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || user?.role === 'guest'}
-              >
-                🥇 CLEAN PLATE
-                <br />
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.clean_count} recorded)</span>
-              </Button>
-
-              <Button
-                onClick={() => handleCategoryClick('faculty')}
-                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-green-500 hover:bg-green-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || user?.role === 'guest'}
-              >
-                🧑‍🏫 FACULTY CLEAN
-                <br />
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.faculty_clean_count} recorded)</span>
-              </Button>
-
-              <Button
-                onClick={() => handleCategoryClick('dirty')}
-                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || user?.role === 'guest'}
-              >
-                🍽️ DIRTY PLATE
-                <br />
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.dirty_count} total)</span>
-              </Button>
-
-              <Button
-                onClick={() => handleCategoryClick('red')}
-                className="w-full h-16 sm:h-20 text-base sm:text-xl font-semibold bg-red-500 hover:bg-red-600 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading || user?.role === 'guest'}
-              >
-                🍝 VERY DIRTY PLATE
-                <br />
-                <span className="text-xs sm:text-sm opacity-90">({sessionStats.red_count} recorded)</span>
-              </Button>
-            </div>
+              </details>}
+                </div>
 
             <div className="mt-8">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2">
+                  <CardTitle id="plate-history" className="flex scroll-mt-4 flex-wrap items-center gap-2">
                     <FileText className="h-5 w-5" />
                     Plate Tracking History
                   </CardTitle>
@@ -980,7 +1004,7 @@ function MainPortal({ app }) {
       </div>
 
       <Dialog open={showCleanDialog} onOpenChange={setShowCleanDialog}>
-        <DialogContent dismissOnOverlayClick={false}>
+        <DialogContent dismissOnOverlayClick={false} onCloseAutoFocus={restoreRecordPosition}>
           <DialogHeader>
             <DialogTitle className="text-yellow-600">🥇 Record as CLEAN PLATE</DialogTitle>
             <DialogDescription>
@@ -1011,8 +1035,8 @@ function MainPortal({ app }) {
               </Button>
               <Button
                 onClick={() => handlePopupSubmit('clean')}
-                className="flex-1 bg-yellow-500 hover:bg-yellow-600"
-                disabled={isLoading}
+                className="min-h-11 h-auto flex-1 whitespace-normal bg-yellow-500 hover:bg-yellow-600"
+                disabled={isRecording}
               >
                 Record as CLEAN PLATE
               </Button>
@@ -1022,7 +1046,7 @@ function MainPortal({ app }) {
       </Dialog>
 
       <Dialog open={showDirtyDialog} onOpenChange={setShowDirtyDialog}>
-        <DialogContent dismissOnOverlayClick={false}>
+        <DialogContent dismissOnOverlayClick={false} onCloseAutoFocus={restoreRecordPosition}>
           <DialogHeader>
             <DialogTitle className="text-orange-600">🍽️ Add DIRTY PLATE</DialogTitle>
             <DialogDescription>
@@ -1053,8 +1077,8 @@ function MainPortal({ app }) {
               </Button>
               <Button
                 onClick={() => handlePopupSubmit('dirty')}
-                className="flex-1 bg-orange-500 hover:bg-orange-600"
-                disabled={isLoading}
+                className="min-h-11 h-auto flex-1 whitespace-normal bg-orange-500 hover:bg-orange-600"
+                disabled={isRecording}
               >
                 Add Dirty Plate
               </Button>
@@ -1064,7 +1088,7 @@ function MainPortal({ app }) {
       </Dialog>
 
       <Dialog open={showFacultyDialog} onOpenChange={setShowFacultyDialog}>
-        <DialogContent dismissOnOverlayClick={false}>
+        <DialogContent dismissOnOverlayClick={false} onCloseAutoFocus={restoreRecordPosition}>
           <DialogHeader>
             <DialogTitle className="text-green-600">🧑‍🏫 Record FACULTY CLEAN PLATE</DialogTitle>
             <DialogDescription>
@@ -1095,8 +1119,8 @@ function MainPortal({ app }) {
               </Button>
               <Button
                 onClick={() => handlePopupSubmit('faculty')}
-                className="flex-1 bg-green-500 hover:bg-green-600"
-                disabled={isLoading}
+                className="min-h-11 h-auto flex-1 whitespace-normal bg-green-500 hover:bg-green-600"
+                disabled={isRecording}
               >
                 Record Faculty Clean Plate
               </Button>
@@ -1106,7 +1130,7 @@ function MainPortal({ app }) {
       </Dialog>
 
       <Dialog open={showRedDialog} onOpenChange={setShowRedDialog}>
-        <DialogContent dismissOnOverlayClick={false}>
+        <DialogContent dismissOnOverlayClick={false} onCloseAutoFocus={restoreRecordPosition}>
           <DialogHeader>
             <DialogTitle className="text-red-600">🍝 Record as VERY DIRTY PLATE</DialogTitle>
             <DialogDescription>
@@ -1137,8 +1161,8 @@ function MainPortal({ app }) {
               </Button>
               <Button
                 onClick={() => handlePopupSubmit('red')}
-                className="flex-1 bg-red-500 hover:bg-red-600"
-                disabled={isLoading}
+                className="min-h-11 h-auto flex-1 whitespace-normal bg-red-500 hover:bg-red-600"
+                disabled={isRecording}
               >
                 Record as VERY DIRTY PLATE
               </Button>
