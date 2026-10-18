@@ -2,7 +2,7 @@ import { geoInterpolate } from 'd3-geo'
 import { GLOBE_ORIGIN } from './globe-origin.js'
 
 export const FLIGHT_TURN_MS = 1600
-export const FLIGHT_ZOOM_MS = 1000
+export const FLIGHT_ZOOM_MS = 650
 export const FLIGHT_SETTLE_MS = 150
 export const FLIGHT_DURATION_MS = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS + FLIGHT_ZOOM_MS
 const clamp = (value) => Math.max(0, Math.min(1, value))
@@ -49,9 +49,10 @@ export function createSchoolFlight(destination) {
     const zoom = clamp((elapsed - zoomStart) / FLIGHT_ZOOM_MS)
     return {
       center: route(turn),
-      // Cubic progress keeps increasing acceleration right through the zoom.
-      zoom: worldZoom + (13 - worldZoom) * zoom ** 3,
-      opacity: 1 - smootherstep((zoom - 0.72) / 0.28),
+      // Launch with momentum instead of easing from rest, then keep building
+      // acceleration. Hold the globe longer so the fast dive stays visible.
+      zoom: worldZoom + (13 - worldZoom) * (0.3 * zoom + 0.7 * zoom ** 3),
+      opacity: 1 - smootherstep((zoom - 0.82) / 0.18),
       phase: elapsed < FLIGHT_SETTLE_MS ? 'ready' : elapsed >= zoomStart ? 'zoom' : 'turn',
       complete: elapsed >= FLIGHT_DURATION_MS,
     }

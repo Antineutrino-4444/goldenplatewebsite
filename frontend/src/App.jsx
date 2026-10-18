@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './App.css'
 import { usePlateApp } from '@/hooks/usePlateApp.js'
-import { isMapHost, safeReturnPath } from '@/lib/navigation.js'
+import { isMapHost, isSchoolPortalPath, safeReturnPath } from '@/lib/navigation.js'
 import { AlertTriangle } from 'lucide-react'
 import SchoolArrival from '@/components/SchoolArrival.jsx'
 import SiteShell, { RouteContent } from '@/components/SiteShell.jsx'
@@ -50,7 +50,7 @@ function Workspace() {
   const target = safeReturnPath(new URLSearchParams(location.search).get('next'), fallback)
   const setLoginFlight = app.setLoginFlight
   const skipFlight = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const showFlight = authentication && !registration && app.isAuthenticated && app.loginFlight && !skipFlight && !app.isInterschoolUser && app.user?.role !== 'guest' && target.split(/[?#]/)[0] === '/portal'
+  const showFlight = authentication && !registration && app.isAuthenticated && app.loginFlight && !skipFlight && !app.isInterschoolUser && app.user?.role !== 'guest' && isSchoolPortalPath(target)
   const finishFlight = useCallback(() => {
     navigate(target, { replace: true, state: { schoolArrival: true } })
   }, [navigate, target])

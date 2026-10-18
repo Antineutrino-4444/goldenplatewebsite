@@ -6,6 +6,11 @@ export function isMapHost(hostname = '') {
   return hostname.toLowerCase().startsWith('map.')
 }
 
+export function isSchoolPortalPath(value) {
+  const path = value.split(/[?#]/)[0].replace(/\/+$/, '')
+  return ['/portal', '/portal/dashboard', '/portal/admin'].includes(path)
+}
+
 // Never allow a login redirect to leave this origin or return to authentication.
 export function safeReturnPath(value, fallback = '/portal') {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || hasUnsafePathCharacters(value)) return fallback

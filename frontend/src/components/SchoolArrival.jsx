@@ -77,7 +77,7 @@ export default function SchoolArrival({ user, onComplete }) {
   return <section ref={overlay} className="school-arrival" role="dialog" aria-modal="true" aria-labelledby="arrival-title" data-phase={phase} onKeyDown={keepFocus}>
     {flight && <Suspense fallback={null}><SchoolFlightMap {...flight} onProgress={progress} onComplete={finish} /></Suspense>}
     <header className="arrival-heading"><p>Golden Plate</p><h1 id="arrival-title">Welcome to {user?.school?.name || 'your school'}.</h1></header>
-    <div className="arrival-controls"><p role="status">{phase === 'loading' ? 'Opening your school’s globe…' : phase === 'zoom' ? 'Opening your recording page…' : 'On our way to your school.'}</p>
+    <div className="arrival-controls"><p role="status">{phase === 'loading' ? 'Opening your school’s globe…' : phase === 'zoom' ? 'Opening your school portal…' : 'On our way to your school.'}</p>
       <button autoFocus className="gp-button" onClick={finish}>Continue to portal <ArrowRight size={17} /></button>
     </div>
   </section>

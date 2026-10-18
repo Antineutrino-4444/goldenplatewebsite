@@ -85,9 +85,13 @@ test('the turn arrives before a faster zoom with increasing acceleration and a c
   assert.ok(increments.every((value, index) => index === 0 || value > increments[index - 1]))
   const accelerations = increments.slice(1).map((value, index) => value - increments[index])
   assert.ok(accelerations.every((value, index) => value > 0 && (index === 0 || value > accelerations[index - 1])))
-  assert.ok(FLIGHT_ZOOM_MS <= 1000, 'zoom completes in at most one second')
+  assert.ok(FLIGHT_ZOOM_MS <= 650, 'zoom completes in at most 650 milliseconds')
+  const launch = flight(zoomStart + FLIGHT_ZOOM_MS * 0.1, 1)
+  assert.ok(launch.zoom > 1.36, 'zoom starts with momentum instead of lingering at world scale')
   assert.equal(samples[2].opacity, 1)
-  assert.ok(samples[3].opacity > 0 && samples[3].opacity < 1)
+  assert.equal(samples[3].opacity, 1, 'keep the accelerating dive visible before fading')
+  const fade = flight(zoomStart + FLIGHT_ZOOM_MS * 0.9, 1)
+  assert.ok(fade.opacity > 0 && fade.opacity < 1)
   assert.equal(samples[4].opacity, 0)
   assert.equal(samples[4].zoom, 13)
   assert.equal(flight(FLIGHT_DURATION_MS, 1).complete, true)
@@ -105,7 +109,7 @@ test('full-globe framing fits phones, landscape, tablets, desktop and resizing',
 })
 
 test('every flight starts over Jiamusi hospital, including destinations nearby', () => {
-  assert.equal(FLIGHT_DURATION_MS, 2750)
+  assert.equal(FLIGHT_DURATION_MS, 2400)
   for (const destination of [school, { longitude: 130.32, latitude: 46.81 }, { longitude: 151.2, latitude: -33.87 }]) {
     const flight = createSchoolFlight(destination)
     const opening = flight(0, 1)
