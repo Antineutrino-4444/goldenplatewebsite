@@ -46,12 +46,15 @@ test('an unavailable globe still exits and unmounting cancels the safety deadlin
   assert.equal(completed, 1)
 })
 
-test('the globe turns slowly at both ends and fastest in the middle', () => {
+test('the globe has a dramatic, symmetric surge and slowdown during the turn', () => {
   const values = [0, 0.25, 0.5, 0.75, 1].map(flightTurnProgress)
   const travel = values.slice(1).map((value, index) => value - values[index])
   assert.equal(values[0], 0)
   assert.equal(values.at(-1), 1)
   assert.ok(travel[0] < travel[1] && travel[3] < travel[2])
+  assert.ok(travel[1] > travel[0] * 20, 'most travel happens around the middle of the turn')
+  assert.ok(Math.abs(travel[0] - travel[3]) < 1e-8)
+  assert.ok(Math.abs(travel[1] - travel[2]) < 1e-8)
   assert.equal(flightTurnProgress(-1), 0)
   assert.equal(flightTurnProgress(2), 1)
 })
@@ -71,7 +74,7 @@ test('school travel follows a shortest spherical arc without zooming or fading',
   assert.equal(middle.phase, 'turn')
 })
 
-test('the turn arrives before constant-acceleration zoom and a continuous portal fade', () => {
+test('the turn arrives before a faster zoom with increasing acceleration and a continuous portal fade', () => {
   const flight = createSchoolFlight(school)
   const zoomStart = FLIGHT_SETTLE_MS + FLIGHT_TURN_MS
   const samples = [0, 0.25, 0.5, 0.75, 1].map((t) => flight(zoomStart + t * FLIGHT_ZOOM_MS, 1))
@@ -81,7 +84,8 @@ test('the turn arrives before constant-acceleration zoom and a continuous portal
   const increments = samples.slice(1).map((sample, index) => sample.zoom - samples[index].zoom)
   assert.ok(increments.every((value, index) => index === 0 || value > increments[index - 1]))
   const accelerations = increments.slice(1).map((value, index) => value - increments[index])
-  assert.ok(accelerations.every((value) => Math.abs(value - accelerations[0]) < 1e-8))
+  assert.ok(accelerations.every((value, index) => value > 0 && (index === 0 || value > accelerations[index - 1])))
+  assert.ok(FLIGHT_ZOOM_MS <= 1000, 'zoom completes in at most one second')
   assert.equal(samples[2].opacity, 1)
   assert.ok(samples[3].opacity > 0 && samples[3].opacity < 1)
   assert.equal(samples[4].opacity, 0)
@@ -101,7 +105,7 @@ test('full-globe framing fits phones, landscape, tablets, desktop and resizing',
 })
 
 test('every flight starts over Jiamusi hospital, including destinations nearby', () => {
-  assert.equal(FLIGHT_DURATION_MS, 4000)
+  assert.equal(FLIGHT_DURATION_MS, 2750)
   for (const destination of [school, { longitude: 130.32, latitude: 46.81 }, { longitude: 151.2, latitude: -33.87 }]) {
     const flight = createSchoolFlight(destination)
     const opening = flight(0, 1)
