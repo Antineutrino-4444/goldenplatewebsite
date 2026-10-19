@@ -210,14 +210,6 @@ function MainPortal({ app }) {
     closeMergeDialog
   } = app
 
-  const formatSchoolNameWithCode = (school) => {
-    if (!school?.name) {
-      return null
-    }
-    const code = (school.code ?? school.slug ?? '').trim()
-    return code ? `${school.name} (Code: ${code})` : school.name
-  }
-
   const deleteRequestsCount = deleteRequests.length
   const pendingAccountRequestsCount = accountRequests.filter(r => r.status === 'pending').length
 
@@ -1623,11 +1615,11 @@ function MainPortal({ app }) {
                     <div>
                       <div className="font-medium">{adminUser.name}</div>
                       <div className="text-sm text-gray-500">
-                        @{adminUser.username} • {adminUser.role}
-                        {formatSchoolNameWithCode(adminUser.school) && (
-                          <> • {formatSchoolNameWithCode(adminUser.school)}</>
-                        )}
+                        @{adminUser.username}
                       </div>
+                      {user.role === 'superadmin' && <div className="mt-1 break-all text-sm text-gray-500">
+                        {adminUser.email ? <>Email: {adminUser.email} · {adminUser.email_verified ? 'Verified' : 'Not verified'}</> : 'No email added'}
+                      </div>}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge
@@ -1723,11 +1715,11 @@ function MainPortal({ app }) {
                 <div>
                   <div className="font-medium">{userAccount.name}</div>
                   <div className="text-sm text-gray-500">
-                    @{userAccount.username} • {userAccount.role}
-                    {formatSchoolNameWithCode(userAccount.school) && (
-                      <> • {formatSchoolNameWithCode(userAccount.school)}</>
-                    )}
+                    @{userAccount.username}
                   </div>
+                  {user.role === 'superadmin' && <div className="mt-1 break-all text-sm text-gray-500">
+                    {userAccount.email ? <>Email: {userAccount.email} · {userAccount.email_verified ? 'Verified' : 'Not verified'}</> : 'No email added'}
+                  </div>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge
