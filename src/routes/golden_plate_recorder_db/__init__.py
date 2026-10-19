@@ -13,6 +13,7 @@ from . import auth_routes  # noqa: F401
 from . import account_email_routes  # noqa: F401
 from . import account_lifecycle_routes  # noqa: F401
 from . import password_routes  # noqa: F401
+from . import password_recovery_routes  # noqa: F401
 from . import school_contact_routes  # noqa: F401
 from . import live_counter_routes  # noqa: F401
 from . import notification_routes  # noqa: F401

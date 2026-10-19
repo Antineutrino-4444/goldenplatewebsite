@@ -1,4 +1,4 @@
-"""Shared, fail-closed validation for the five reCAPTCHA v3 actions."""
+"""Shared, fail-closed validation for reCAPTCHA v3 actions."""
 import math
 import os
 import re

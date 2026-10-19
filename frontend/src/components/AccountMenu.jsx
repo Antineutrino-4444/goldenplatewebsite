@@ -9,11 +9,22 @@ import AccountEmailSettings from '@/components/AccountEmailSettings.jsx'
 import SchoolEmailPolicySettings from '@/components/SchoolEmailPolicySettings.jsx'
 import { beginOwnAccountDeletion } from '@/lib/account-deletion.js'
 
+function emailReminderKey(user) {
+  return `gp:account-email-reminder:${user?.id}:${user?.last_login_at || 'session'}`
+}
+
+function needsEmailReminder(user) {
+  if (user?.role !== 'superadmin' || (user.email && user.email_verified)) return false
+  try { return sessionStorage.getItem(emailReminderKey(user)) !== 'dismissed' }
+  catch { return true }
+}
+
 export default function AccountMenu({ app, onSchoolLocationSaved }) {
   const { user, logout } = app
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
-  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailReminderPending, setEmailReminderPending] = useState(() => needsEmailReminder(user))
+  const [emailOpen, setEmailOpen] = useState(() => needsEmailReminder(user) && !!user.school_contact_email)
   const [emailPolicyOpen, setEmailPolicyOpen] = useState(false)
   const [contactOpen, setContactOpen] = useState(user?.role === 'superadmin' && !user.school_contact_email)
   const trigger = useRef(null)
@@ -21,6 +32,17 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
   const restoreFocus = (event) => {
     event.preventDefault()
     trigger.current?.focus()
+  }
+  const changeEmailOpen = (next) => {
+    setEmailOpen(next)
+    if (!next && emailReminderPending) {
+      setEmailReminderPending(false)
+      try { sessionStorage.setItem(emailReminderKey(user), 'dismissed') } catch { /* Dismissal still lasts until unmount. */ }
+    }
+  }
+  const changeContactOpen = (next) => {
+    setContactOpen(next)
+    if (!next && emailReminderPending) setEmailOpen(true)
   }
 
   if (!user) return null
@@ -69,9 +91,12 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
       {/* Keep dialogs mounted outside the menu so closing the menu neither
           closes them nor suppresses the automatic missing-email reminder. */}
       <PasswordSettings user={user} open={passwordOpen} onOpenChange={setPasswordOpen} hideTrigger onCloseAutoFocus={restoreFocus} />
-      {user.role !== 'guest' && <AccountEmailSettings app={app} open={emailOpen} onOpenChange={setEmailOpen} onCloseAutoFocus={restoreFocus} />}
+      {user.role !== 'guest' && <AccountEmailSettings app={app} open={emailOpen} onOpenChange={changeEmailOpen} reminder={emailReminderPending} onCloseAutoFocus={restoreFocus} />}
       {['admin', 'superadmin'].includes(user.role) && <SchoolEmailPolicySettings app={app} open={emailPolicyOpen} onOpenChange={setEmailPolicyOpen} onCloseAutoFocus={restoreFocus} />}
-      {user.role === 'superadmin' && <SchoolContactSettings app={app} open={contactOpen} onOpenChange={setContactOpen} hideTrigger onCloseAutoFocus={restoreFocus} />}
+      {user.role === 'superadmin' && <SchoolContactSettings app={app} open={contactOpen} onOpenChange={changeContactOpen} hideTrigger onCloseAutoFocus={(event) => {
+        if (emailReminderPending) event.preventDefault()
+        else restoreFocus(event)
+      }} />}
       <SchoolLocationDialog app={app} open={locationOpen} onOpenChange={setLocationOpen} hideTrigger
         autoPrompt allowAutomaticPrompt={!contactOpen && !passwordOpen && !emailOpen && !emailPolicyOpen}
         onSaved={onSchoolLocationSaved} onCloseAutoFocus={restoreFocus} />

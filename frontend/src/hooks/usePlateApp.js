@@ -585,7 +585,7 @@ export function usePlateApp() {
 
   const login = async () => {
     if (!loginUsername.trim() || !loginPassword.trim()) {
-      showMessage('Please enter both username and password', 'error')
+      showMessage('Please enter your username or verified email and password', 'error')
       return
     }
 

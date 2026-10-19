@@ -7,7 +7,7 @@ import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
 import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
 import { beginOwnAccountDeletion } from '@/lib/account-deletion.js'
 
-function AccountEmailForm({ app, required = false, onSaved }) {
+function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
   const [email, setEmail] = useState(app.user.email || '')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
@@ -82,6 +82,7 @@ function AccountEmailForm({ app, required = false, onSaved }) {
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
     <RecaptchaNotice />
     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+      {onDismiss && <Button type="button" variant="outline" onClick={onDismiss}>Not now</Button>}
       {required && <Button type="button" variant="outline" onClick={app.logout} disabled={!!busy}>Log out</Button>}
       <Button type="submit" disabled={!!busy || !sent || code.length !== 6}>{busy === 'save' ? 'Verifying…' : required ? 'Verify and continue' : 'Verify and save email'}</Button>
     </div>
@@ -101,14 +102,16 @@ export function AccountEmailRequired({ app }) {
   </main>
 }
 
-export default function AccountEmailSettings({ app, open, onOpenChange, onCloseAutoFocus }) {
+export default function AccountEmailSettings({ app, open, onOpenChange, onCloseAutoFocus, reminder = false }) {
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent dismissOnOverlayClick={false} onCloseAutoFocus={onCloseAutoFocus}>
       <DialogHeader>
-        <DialogTitle>Your account email</DialogTitle>
-        <DialogDescription>Add or change your personal account email by verifying a code sent to that address.</DialogDescription>
+        <DialogTitle>{reminder ? 'Verify your account email' : 'Your account email'}</DialogTitle>
+        <DialogDescription>{reminder
+          ? 'Add your personal email and verify the code we send you. You can do this later from “Your account email” in the account menu.'
+          : 'Add or change your personal account email by verifying a code sent to that address.'}</DialogDescription>
       </DialogHeader>
-      {open && <AccountEmailForm key={app.user.id} app={app} onSaved={() => onOpenChange(false)} />}
+      {open && <AccountEmailForm key={app.user.id} app={app} onSaved={() => onOpenChange(false)} onDismiss={reminder ? () => onOpenChange(false) : undefined} />}
     </DialogContent>
   </Dialog>
 }

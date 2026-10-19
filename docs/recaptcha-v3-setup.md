@@ -1,8 +1,10 @@
 # reCAPTCHA v3 setup
 
-The local implementation now uses score-based reCAPTCHA v3 for the five actions
-previously protected by v2. It does not add CAPTCHA to ordinary login or password
-management. It retains email verification and administrator approval workflows.
+The local implementation uses score-based reCAPTCHA v3 for the actions previously
+protected by v2, account-email codes (`account_email_code`), and password recovery
+requests (`password_recovery`). It does not add CAPTCHA to ordinary password login
+or signed-in password management. It retains email verification and administrator
+approval workflows.
 Google's [v3 guide](https://developers.google.com/recaptcha/docs/v3) describes the
 action and score model.
 

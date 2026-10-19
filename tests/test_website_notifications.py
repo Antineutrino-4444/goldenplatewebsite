@@ -77,6 +77,7 @@ def test_map_environment_recipients_deduplicate_and_can_be_removed(monkeypatch):
 
 
 def test_map_recipient_editor_reports_environment_or_no_recipients(client, login, monkeypatch):
+    monkeypatch.setenv('MAP_LEGACY_FEATURES_ENABLED', 'true')
     login()
     query = Mock()
     query.filter.return_value.first.return_value = None

@@ -14,7 +14,7 @@ from sqlalchemy import or_
 
 from src.routes.golden_plate_recorder_db.db import (
     AccountCreationRequest, AccountDeletionGrant, AccountLifecycleControl,
-    AccountLifecycleNotice, Base, EmailVerification, SessionFactory,
+    AccountLifecycleNotice, Base, EmailVerification, PasswordRecovery, SessionFactory,
     SchoolInviteCode, User, UserInviteCode, _now_utc,
 )
 from .email_delivery import send_email_via_brevo
@@ -147,6 +147,7 @@ def permanently_delete_account(store, user, now, *, explicit=False):
             if any(foreign.target_fullname == 'users.id' for foreign in column.foreign_keys):
                 store.execute(table.update().where(column == user.id).values({column.name: actor_id}))
     store.query(EmailVerification).filter_by(user_id=user.id).delete(synchronize_session=False)
+    store.query(PasswordRecovery).filter_by(user_id=user.id).delete(synchronize_session=False)
     store.query(AccountCreationRequest).filter_by(school_id=user.school_id, username=user.username).delete(synchronize_session=False)
     store.delete(user)
 

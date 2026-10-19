@@ -509,6 +509,19 @@ class EmailNotificationPreference(Base):
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
 
 
+class PasswordRecovery(Base):
+    __tablename__ = 'password_recoveries'
+    user_id = Column(String, primary_key=True)
+    token_hash = Column(String(64), unique=True, index=True)
+    email = Column(String(320), nullable=False)
+    password_token = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True))
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    send_count = Column(Integer, nullable=False, default=1)
+
+
 class EmailVerification(Base):
     __tablename__ = 'email_verifications'
     __table_args__ = (
@@ -1261,6 +1274,7 @@ __all__ = [
     'DraftPool',
     'EstimateSystemActivation',
     'EmailVerification',
+    'PasswordRecovery',
     'EmailNotificationPreference',
     'INTERSCHOOL_SCHOOL_ID',
     'INTERSCHOOL_SCHOOL_NAME',

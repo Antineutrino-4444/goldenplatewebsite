@@ -290,7 +290,8 @@ disable signup notifications to an existing school contact.
 ## reCAPTCHA
 
 The frontend now uses score-based reCAPTCHA v3 for account signup, school
-registration/email-code sending, and map submission/email-code sending. Each
+registration/email-code sending, account email verification, password recovery
+requests, and map submission/email-code sending. Each
 request obtains a fresh token. The server verifies its action, hostname, score,
 expiry, and Google error codes; ordinary login is unchanged.
 
@@ -310,6 +311,13 @@ background. Production key verification still requires the matching secret and
 a deployment on the configured domains.
 
 ## Passwords and Environment Mode
+Users may sign in with their username or a uniquely matching verified email and
+their password. Email verification codes do not sign users in. **Forgot password?**
+offers superadmin help first and requires confirmation before emailing a reset
+link to an already verified address. Configure `WEBSITE_PUBLIC_URL` for recovery
+links. See [email login and password recovery](docs/email-login-and-password-recovery.md)
+for expiry, throttling, shared addresses, and session invalidation.
+
 The app has a built-in development super admin account for local setup:
 - Username: `greenguys`
 - Password: `begreendogood`

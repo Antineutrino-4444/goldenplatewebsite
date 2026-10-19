@@ -25,6 +25,7 @@ from .users import (
     get_school_by_id,
     get_school_by_slug,
     get_user_by_username,
+    get_user_by_login,
     mark_invite_code_used,
     serialize_school,
     serialize_user_model,
@@ -54,17 +55,22 @@ def _is_default_superadmin_login_attempt(username, password):
 @recorder_bp.route('/auth/login', methods=['POST'])
 def login():
     """User login."""
-    data = request.get_json() or {}
-    username = data.get('username', '').strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Enter your username or email and password.'}), 400
+    username = data.get('username', '')
     password = data.get('password', '')
+    if not isinstance(username, str) or not isinstance(password, str) or len(password) > 4096:
+        return jsonify({'error': 'Invalid username or password'}), 401
+    username = username.strip()
+    user = get_user_by_login(username)
 
     if (
-        _is_default_superadmin_login_attempt(username, password)
+        _is_default_superadmin_login_attempt(user.username if user else username, password)
         and not default_admin_credentials_enabled()
     ):
         return jsonify({'error': 'Default development admin credentials are disabled'}), 401
 
-    user = get_user_by_username(username)
     if not user or user.is_record_actor or not verify_password(user.password_hash, password):
         return jsonify({'error': 'Invalid username or password'}), 401
 
@@ -79,8 +85,8 @@ def login():
     if not is_password_hash(user.password_hash):
         user.password_hash = hash_password(password)
     session['user_uuid'] = user.id
-    session['user_id'] = username
-    session['username'] = username
+    session['user_id'] = user.username
+    session['username'] = user.username
     session['school_id'] = user.school_id
     session['password_token'] = password_session_token(user)
     session['authenticated_at'] = _now_utc().isoformat()

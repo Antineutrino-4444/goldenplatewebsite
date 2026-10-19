@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
+import PasswordRecoveryDialog from '@/components/PasswordRecoveryDialog.jsx'
 import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -11,6 +12,7 @@ function SignupPageContent({ children }) {
 }
 
 function LoginView({ app }) {
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
   const SignupContent = app.signupPage ? SignupPageContent : DialogContent
   const {
     loginUsername,
@@ -72,12 +74,12 @@ function LoginView({ app }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username">Username or verified email</Label>
             <Input
               id="username"
               type="text"
               autoComplete="username"
-              placeholder="Enter username"
+              placeholder="Enter username or verified email"
               value={loginUsername}
               onChange={(e) => setLoginUsername(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && login()}
@@ -102,6 +104,8 @@ function LoginView({ app }) {
           >
             {isLoading ? 'Logging in...' : 'Login'}
           </Button>
+
+          <Button variant="link" className="w-full" onClick={() => setRecoveryOpen(true)} disabled={isLoading}>Forgot password?</Button>
 
           <Button
             onClick={() => setShowGuestSchoolDialog(true)}
@@ -133,6 +137,7 @@ function LoginView({ app }) {
           </div>
         </CardContent>
       </Card>}
+      <PasswordRecoveryDialog open={recoveryOpen} onOpenChange={setRecoveryOpen} identifier={loginUsername} />
 
       <Dialog
         open={showGuestSchoolDialog}

@@ -15,7 +15,7 @@ from .db import (
 )
 from .app_config import default_admin_credentials_enabled
 from .passwords import hash_password, is_password_hash, verify_password
-from .email_policy import account_requires_email, school_email_policy
+from .email_policy import account_requires_email, normalize_email, school_email_policy
 
 DEFAULT_SUPERADMIN = {
     'username': 'greenguys',
@@ -131,6 +131,25 @@ def get_user_by_username(username, *, school_id=None):
     else:
         query = query.filter(User.username == username)
     return query.options(joinedload(User.school)).first()
+
+
+def get_user_by_login(identifier):
+    """Keep exact usernames; email aliases require one uniquely verified owner."""
+    if not isinstance(identifier, str) or not identifier.strip() or len(identifier) > 320:
+        return None
+    identifier = identifier.strip()
+    user = get_user_by_username(identifier)
+    if user:
+        return user
+    try:
+        email = normalize_email(identifier)
+    except ValueError:
+        return None
+    matches = db_session.query(User).filter(
+        func.lower(User.email) == email, User.email_verified_at.isnot(None),
+        User.is_record_actor == 0,
+    ).limit(2).all()
+    return matches[0] if len(matches) == 1 else None
 
 
 def list_all_users(*, school_id=None):
