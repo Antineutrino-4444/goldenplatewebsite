@@ -43,7 +43,6 @@ def test_valid_v3_token_uses_server_secret_and_expected_action(google):
     {'score': None}, {'score': '0.9'}, {'score': True}, {'score': float('nan')},
     {'score': -0.1}, {'score': 1.1}, {'challenge_ts': 'invalid'}, {'challenge_ts': None},
     {'challenge_ts': datetime.now().isoformat()},
-    {'challenge_ts': lambda: (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()},
     {'error-codes': ['quota-exceeded']},
 ])
 def test_invalid_v3_results_are_rejected_even_when_success_is_true(google, overrides):
@@ -98,12 +97,31 @@ def test_malformed_google_response_is_rejected(google, payload):
 
 
 def test_expiry_and_single_use_errors_request_a_fresh_token(google):
-    google.result = google_result(challenge_ts=(datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat())
-    assert recaptcha.recaptcha_failure('old-token', 'account_signup').code == 'RECAPTCHA_EXPIRED'
     google.result = google_result(**{'success': False, 'error-codes': ['timeout-or-duplicate']})
     assert recaptcha.recaptcha_failure('used-token', 'account_signup').code == 'RECAPTCHA_EXPIRED'
     google.result = google_result()
     assert recaptcha.recaptcha_failure('new-token', 'account_signup') is None
+
+
+@pytest.mark.parametrize('offset', [timedelta(minutes=-3), timedelta(hours=-2), timedelta(minutes=1)])
+def test_google_valid_tokens_do_not_expire_based_on_challenge_load_time_or_server_clock(google, offset):
+    google.result = google_result(challenge_ts=(datetime.now(timezone.utc) + offset).isoformat())
+    assert recaptcha.recaptcha_failure('freshly-executed-token', 'account_signup') is None
+
+
+@pytest.mark.parametrize('accepted', [False, True])
+def test_account_email_code_uses_google_validity_even_after_page_was_left_open(client, login, google, email_outbox, accepted):
+    login()
+    google.result = google_result(action='account_email_code',
+        challenge_ts=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        **({} if accepted else {'success': False, 'error-codes': ['timeout-or-duplicate']}))
+    response = client.post('/api/auth/account-email/send-verification-code', json={
+        'email': 'fresh-click@example.com', 'recaptcha_token': 'button-click-token',
+    })
+    assert response.status_code == (200 if accepted else 400)
+    assert len(email_outbox) == (1 if accepted else 0)
+    if not accepted:
+        assert response.get_json()['code'] == 'RECAPTCHA_EXPIRED'
 
 
 def test_missing_secret_is_allowed_only_in_development(client, monkeypatch):

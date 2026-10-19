@@ -3,7 +3,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import requests
 
@@ -47,7 +47,7 @@ def recaptcha_failure(token, expected_action):
     errors = result.get('error-codes')
     if errors:
         if isinstance(errors, list) and 'timeout-or-duplicate' in errors:
-            return RecaptchaFailure('RECAPTCHA_EXPIRED', 'Verification expired or was already used. Please submit again to get a fresh verification.')
+            return RecaptchaFailure('RECAPTCHA_EXPIRED', 'The background security check expired or was already used. Please try again.')
         # Reject errors even when Google also reports success (e.g. quota errors).
         return RecaptchaFailure('RECAPTCHA_INVALID', 'Verification failed. Please try again or contact an administrator.')
     if result.get('success') is not True or result.get('action') != expected_action:
@@ -69,11 +69,9 @@ def recaptcha_failure(token, expected_action):
         timestamp = datetime.fromisoformat(result['challenge_ts'].replace('Z', '+00:00'))
         if timestamp.tzinfo is None:
             raise ValueError('Missing timezone')
-        age = (datetime.now(timezone.utc) - timestamp).total_seconds()
     except (KeyError, AttributeError, TypeError, ValueError):
         return RecaptchaFailure('RECAPTCHA_INVALID', 'Verification failed. Please try again.')
-    if age < -30:
-        return RecaptchaFailure('RECAPTCHA_INVALID', 'Verification failed. Please try again.')
-    if age > 120:
-        return RecaptchaFailure('RECAPTCHA_EXPIRED', 'Verification expired. Please submit again to get a fresh verification.')
+    # challenge_ts is the challenge LOAD time, not the token's issue time.
+    # SiteVerify already enforces token expiry and single use. Comparing this
+    # timestamp to our server clock rejects valid clicks on long-open pages.
     return None

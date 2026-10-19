@@ -72,7 +72,10 @@ Signup uses the ordinary modal again, since v3 does not open an external image
 challenge. No separate React CAPTCHA package is needed.
 
 One shared server validator checks success, Google error codes, the endpoint's
-expected action, the hostname allowlist, a finite score, and a fresh timestamp.
+expected action, the hostname allowlist, a finite score, and timestamp format.
+Google's SiteVerify enforces token expiry and single use. Its `challenge_ts`
+describes when the challenge loaded, so the server does not treat it as token
+issue time or compare its age against the application server's clock.
 v2 or incomplete responses cannot pass these checks. The configured minimum
 score defaults to 0.5; observe scores in Google's console and adjust this setting
 to the site's traffic. A low score offers retry/contact-administrator guidance.
