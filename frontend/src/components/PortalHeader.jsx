@@ -1,6 +1,7 @@
 import { Building2, MapPinned, Utensils } from 'lucide-react'
 import ThemeToggle from '@/components/ThemeToggle.jsx'
 import AccountMenu from '@/components/AccountMenu.jsx'
+import RequestCountBadge from '@/components/RequestCountBadge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { NavLink } from 'react-router-dom'
 import Link from '@/components/SiteLink.jsx'
@@ -46,7 +47,10 @@ export default function PortalHeader({ app, interschool = false }) {
             ['/portal', 'Recorder'],
             ['/portal/dashboard', 'Session dashboard'],
             ...(['admin', 'superadmin'].includes(app.user?.role) ? [['/portal/admin', 'School administration']] : []),
-          ].map(([to, label]) => <NavLink key={to} end to={to} className={({ isActive }) => `rounded-md px-3 py-2 ${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-slate-500 hover:bg-slate-50'}`}>{label}</NavLink>)}
+          ].map(([to, label]) => <NavLink key={to} end to={to} className={({ isActive }) => `inline-flex items-center gap-2 rounded-md px-3 py-2 ${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-slate-500 hover:bg-slate-50'}`}>
+            {label}
+            {to === '/portal/admin' && <RequestCountBadge count={app.adminNotificationsCount} />}
+          </NavLink>)}
         </nav>}
       </div>
     </header>

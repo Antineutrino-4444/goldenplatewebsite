@@ -1,5 +1,5 @@
 import { dashboardMetrics } from '@/lib/session-metrics.js'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { makeStudentKey, normalizeName, sanitizeSelection } from '@/lib/names.js'
 import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
 import { recordSuccessMessage, submitRecordRequest } from '@/lib/record-submission.js'
@@ -104,6 +104,11 @@ export function usePlateApp() {
   const [accountRequests, setAccountRequests] = useState([])
   const [showAccountRequests, setShowAccountRequests] = useState(false)
   const [accountRequestsLoading, setAccountRequestsLoading] = useState(false)
+  const accountRequestsFetchId = useRef(0)
+  const pendingAccountRequestsCount = user?.role === 'superadmin'
+    ? accountRequests.filter(request => request.status === 'pending').length : 0
+  const adminNotificationsCount = ['admin', 'superadmin'].includes(user?.role)
+    ? deleteRequests.length + pendingAccountRequestsCount : 0
   
   // Popup states for each category
   const [showCleanDialog, setShowCleanDialog] = useState(false)
@@ -289,13 +294,13 @@ export function usePlateApp() {
     return () => { active = false; clearInterval(timer); window.removeEventListener('focus', refreshEmailRequirement) }
   }, [isAuthenticated, user?.id, user?.role, user?.email_required])
 
-  const showMessage = (text, type = 'info', size = 'small') => {
+  const showMessage = useCallback((text, type = 'info', size = 'small') => {
     clearTimeout(notificationTimer.current)
     setNotification({ text, type, size })
     if (size === 'small') {
       notificationTimer.current = setTimeout(() => setNotification(null), type === 'error' ? 8000 : 5000)
     }
-  }
+  }, [])
 
   const loadAppEnvironment = async () => {
     try {
@@ -2485,29 +2490,49 @@ export function usePlateApp() {
     }
   }
 
-  const loadAccountRequests = async () => {
-    if (user?.role !== 'superadmin') {
-      setAccountRequests([])
-      return
-    }
+  const loadAccountRequests = useCallback(async ({ silent = false } = {}) => {
+    if (!isAuthenticated || user?.role !== 'superadmin' || user?.email_required) return
 
-    setAccountRequestsLoading(true)
+    const fetchId = ++accountRequestsFetchId.current
+    if (!silent) setAccountRequestsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/superadmin/account-requests`)
+      const data = await response.json()
+      if (fetchId !== accountRequestsFetchId.current) return
       if (response.ok) {
-        const data = await response.json()
         setAccountRequests(data.requests || [])
-      } else {
-        const error = await response.json()
-        showMessage(error.error || 'Failed to load account requests', 'error')
+      } else if (!silent) {
+        showMessage(data.error || 'Failed to load account requests', 'error')
       }
-    } catch (error) {
-      showMessage('Failed to load account requests', 'error')
-      setAccountRequests([])
+    } catch {
+      if (!silent && fetchId === accountRequestsFetchId.current) {
+        showMessage('Failed to load account requests', 'error')
+      }
     } finally {
-      setAccountRequestsLoading(false)
+      if (fetchId === accountRequestsFetchId.current) setAccountRequestsLoading(false)
     }
-  }
+  }, [isAuthenticated, user?.role, user?.email_required, showMessage])
+
+  useEffect(() => {
+    setAccountRequests([])
+    setAccountRequestsLoading(false)
+    if (!isAuthenticated || user?.role !== 'superadmin' || user?.email_required) return
+
+    const refresh = () => {
+      if (document.visibilityState !== 'hidden') loadAccountRequests({ silent: true })
+    }
+    refresh()
+    const timer = setInterval(refresh, 15000)
+    const fetchSequence = accountRequestsFetchId
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      ++fetchSequence.current
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [isAuthenticated, user?.id, user?.username, user?.school_id, user?.role, user?.email_required, loadAccountRequests])
 
   const loadPendingAccountRequests = async () => {
     if (user?.role !== 'superadmin') {
@@ -2695,6 +2720,8 @@ export function usePlateApp() {
     deleteRequests,
     setDeleteRequests,
     accountRequests,
+    pendingAccountRequestsCount,
+    adminNotificationsCount,
     setAccountRequests,
     showAccountRequests,
     setShowAccountRequests,

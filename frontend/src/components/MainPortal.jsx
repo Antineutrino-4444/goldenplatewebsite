@@ -7,6 +7,7 @@ import HouseRanking from '@/components/HouseRanking.jsx'
 import HouseScoreSettings from '@/components/HouseScoreSettings.jsx'
 import GuestPrivacySettings from '@/components/GuestPrivacySettings.jsx'
 import PortalHeader from '@/components/PortalHeader.jsx'
+import RequestCountBadge from '@/components/RequestCountBadge.jsx'
 import SessionSwitcher from '@/components/SessionSwitcher.jsx'
 import StudentRosterUpload from '@/components/StudentRosterUpload.jsx'
 import RosterUpload from '@/components/RosterUpload.jsx'
@@ -192,6 +193,8 @@ function MainPortal({ app }) {
     userToDelete,
     deleteUserAccount,
     accountRequests,
+    pendingAccountRequestsCount,
+    adminNotificationsCount,
     showAccountRequests,
     setShowAccountRequests,
     accountRequestsLoading,
@@ -211,7 +214,6 @@ function MainPortal({ app }) {
   } = app
 
   const deleteRequestsCount = deleteRequests.length
-  const pendingAccountRequestsCount = accountRequests.filter(r => r.status === 'pending').length
 
   return (
     <div className="min-h-screen min-w-0 bg-gray-50 [overflow-wrap:anywhere]">
@@ -250,11 +252,7 @@ function MainPortal({ app }) {
                   >
                     <Shield className="h-5 w-5 mr-2" />
                     Admin Panel
-                    {deleteRequestsCount > 0 && (
-                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
-                        {deleteRequestsCount}
-                      </span>
-                    )}
+                    <RequestCountBadge count={adminNotificationsCount} className="absolute -top-2 -right-2" />
                   </Button>
                 )}
               </div>
@@ -328,11 +326,7 @@ function MainPortal({ app }) {
                 >
                   <Shield className="h-4 w-4 mr-2" />
                   Admin Panel
-                  {deleteRequestsCount > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
-                      {deleteRequestsCount}
-                    </span>
-                  )}
+                  <RequestCountBadge count={adminNotificationsCount} className="absolute -top-2 -right-2" />
                 </Button>
               )}
             </div>
@@ -1589,11 +1583,7 @@ function MainPortal({ app }) {
                 >
                   <UserPlus className="h-4 w-4 mr-2" />
                   Account Requests
-                  {pendingAccountRequestsCount > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs rounded-full px-2 py-0.5">
-                      {pendingAccountRequestsCount}
-                    </span>
-                  )}
+                  <RequestCountBadge count={pendingAccountRequestsCount} label="pending account requests" className="absolute -top-2 -right-2" />
                 </Button>
               )}
               {['admin', 'superadmin'].includes(user.role) && (
