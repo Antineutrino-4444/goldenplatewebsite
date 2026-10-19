@@ -31,6 +31,11 @@ export function usePlateApp() {
   const [signupUsername, setSignupUsername] = useState('')
   const [signupPassword, setSignupPassword] = useState('')
   const [signupName, setSignupName] = useState('')
+  const [signupEmail, setSignupEmail] = useState('')
+  const [signupVerificationCode, setSignupVerificationCode] = useState('')
+  const [signupCodeSent, setSignupCodeSent] = useState(false)
+  const [signupCodeLoading, setSignupCodeLoading] = useState(false)
+  const [signupCodeExpiryMinutes, setSignupCodeExpiryMinutes] = useState(5)
   const [signupSchoolCode, setSignupSchoolCode] = useState('')
   const [signupInviteCode, setSignupInviteCode] = useState('')
   const [signupMode, setSignupMode] = useState('school')
@@ -260,6 +265,29 @@ export function usePlateApp() {
     loadAppEnvironment()
     checkAuthStatus()
   }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated || user?.role === 'guest') return
+    let active = true
+    const refreshEmailRequirement = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/auth/status`)
+        if (!response.ok || !active) return
+        const data = await response.json()
+        if (!active) return
+        if (data.authenticated) {
+          setUser(data.user)
+          if (user?.email_required && !data.user.email_required) await handlePostAuth(data.user)
+        } else {
+          setUser(null)
+          setIsAuthenticated(false)
+        }
+      } catch { /* The next refresh retries a temporary connection failure. */ }
+    }
+    const timer = setInterval(refreshEmailRequirement, 15000)
+    window.addEventListener('focus', refreshEmailRequirement)
+    return () => { active = false; clearInterval(timer); window.removeEventListener('focus', refreshEmailRequirement) }
+  }, [isAuthenticated, user?.id, user?.role, user?.email_required])
 
   const showMessage = (text, type = 'info', size = 'small') => {
     clearTimeout(notificationTimer.current)
@@ -523,7 +551,7 @@ export function usePlateApp() {
   }
 
   const handlePostAuth = async (userPayload) => {
-    if (!userPayload) {
+    if (!userPayload || userPayload.email_required) {
       return
     }
     if (userPayload.role === 'inter_school') {
@@ -626,6 +654,52 @@ export function usePlateApp() {
     return false
   }
 
+  const changeSignupEmail = (email) => {
+    setSignupEmail(email)
+    setSignupVerificationCode('')
+    setSignupCodeSent(false)
+  }
+
+  const sendSignupVerificationCode = async () => {
+    if (protectedRequestBusy.current) return
+    const email = signupEmail.trim().toLowerCase()
+    const schoolDetails = signupMode === 'invite'
+      ? { invite_code: signupInviteCode.trim() }
+      : { school_code: signupSchoolCode.trim() }
+    if (!Object.values(schoolDetails)[0]) {
+      showMessage('Enter your school code or invite code before requesting a verification code.', 'error')
+      return
+    }
+    if (email.length > 320 || !/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(email)) {
+      showMessage('Enter a valid email address', 'error')
+      return
+    }
+    protectedRequestBusy.current = true
+    setSignupCodeLoading(true)
+    try {
+      const recaptchaToken = await getRecaptchaToken('account_email_code')
+      const response = await fetch(`${API_BASE}/auth/signup/send-verification-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, ...schoolDetails, recaptcha_token: recaptchaToken }),
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setSignupCodeSent(true)
+        setSignupVerificationCode('')
+        setSignupCodeExpiryMinutes(data.expiry_minutes || 5)
+        showMessage('Verification code sent. Check your inbox or spam folder.', 'success')
+      } else {
+        showMessage(data.error || 'Unable to send the verification email. Please try again.', 'error')
+      }
+    } catch (error) {
+      showMessage(recaptchaErrorMessage(error, 'Unable to send the verification email. Please try again.'), 'error')
+    } finally {
+      protectedRequestBusy.current = false
+      setSignupCodeLoading(false)
+    }
+  }
+
   const signup = async () => {
     if (protectedRequestBusy.current) return
     if (isAuthenticated) {
@@ -634,6 +708,16 @@ export function usePlateApp() {
     }
     const trimmedInviteCode = signupInviteCode.trim()
     const usingInvite = signupMode === 'invite'
+    const email = signupEmail.trim().toLowerCase()
+
+    if (!email) {
+      showMessage('Please enter your email address', 'error')
+      return
+    }
+    if (email.length > 320 || !/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(email)) {
+      showMessage('Enter a valid email address', 'error')
+      return
+    }
 
     if (!signupUsername.trim() || !signupPassword.trim() || !signupName.trim() || (!trimmedInviteCode && !signupSchoolCode.trim())) {
       showMessage('Please fill in all fields', 'error')
@@ -660,6 +744,11 @@ export function usePlateApp() {
       return
     }
 
+    if (!signupCodeSent || !/^[0-9]{6}$/.test(signupVerificationCode.trim())) {
+      showMessage('Send a verification code to your email and enter the 6-digit code.', 'error')
+      return
+    }
+
     protectedRequestBusy.current = true
     setIsLoading(true)
     try {
@@ -667,7 +756,9 @@ export function usePlateApp() {
       const payload = {
         username: signupUsername.trim(),
         password: signupPassword.trim(),
-        name: signupName.trim()
+        name: signupName.trim(),
+        email,
+        verification_code: signupVerificationCode.trim(),
       }
 
       if (usingInvite) {
@@ -692,6 +783,9 @@ export function usePlateApp() {
         setSignupUsername('')
         setSignupPassword('')
         setSignupName('')
+        setSignupEmail('')
+        setSignupVerificationCode('')
+        setSignupCodeSent(false)
         setSignupSchoolCode('')
         setSignupInviteCode('')
         setSignupMode('school')
@@ -2505,10 +2599,18 @@ export function usePlateApp() {
     setSignupPassword,
     signupName,
     setSignupName,
+    signupEmail,
+    setSignupEmail: changeSignupEmail,
+    signupVerificationCode,
+    setSignupVerificationCode,
+    signupCodeSent,
+    signupCodeLoading,
+    signupCodeExpiryMinutes,
+    sendSignupVerificationCode,
     signupSchoolCode,
-    setSignupSchoolCode,
+    setSignupSchoolCode: (value) => { setSignupSchoolCode(value); setSignupCodeSent(false); setSignupVerificationCode('') },
     signupInviteCode,
-    setSignupInviteCode,
+    setSignupInviteCode: (value) => { setSignupInviteCode(value); setSignupCodeSent(false); setSignupVerificationCode('') },
     signupMode,
     setSignupMode,
     showSchoolRegistration,

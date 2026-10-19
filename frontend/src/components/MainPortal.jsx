@@ -1,4 +1,5 @@
 import SessionMetrics from '@/components/SessionMetrics.jsx'
+import RequireAdminEmailButton from '@/components/RequireAdminEmailButton.jsx'
 import React, { useRef, useState } from 'react'
 import AdminSessionExport from '@/components/AdminSessionExport.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
@@ -1626,6 +1627,7 @@ function MainPortal({ app }) {
                       >
                         {adminUser.role}
                       </Badge>
+                      <RequireAdminEmailButton app={app} account={adminUser} />
                       {user.role === 'superadmin' && adminUser.username !== user.username && (
                         <div className="flex gap-1">
                           <select
@@ -1710,6 +1712,7 @@ function MainPortal({ app }) {
                   >
                     {userAccount.status}
                   </Badge>
+                  <RequireAdminEmailButton app={app} account={userAccount} />
                   {((user.role === 'superadmin' && userAccount.username !== user.username) ||
                     (user.role === 'admin' && !['superadmin', 'admin'].includes(userAccount.role))) && (
                     <Button
@@ -1839,6 +1842,9 @@ function MainPortal({ app }) {
                     <div className="text-sm text-gray-500">
                       Username: @{request.username}
                     </div>
+                    {request.email && <div className="break-all text-sm text-gray-500">
+                      Email: {request.email}
+                    </div>}
                     <div className="text-xs text-gray-400">
                       Requested: {new Date(request.requested_at).toLocaleString()}
                     </div>

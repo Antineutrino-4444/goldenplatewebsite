@@ -8,6 +8,7 @@ import SchoolArrival from '@/components/SchoolArrival.jsx'
 import SiteShell, { RouteContent } from '@/components/SiteShell.jsx'
 import { originState } from '@/components/SiteLink.jsx'
 import GuestSessionBoundary from '@/components/GuestSessionBoundary.jsx'
+import { AccountEmailRequired } from '@/components/AccountEmailSettings.jsx'
 
 const LandingPage = lazy(() => import('@/components/LandingPage.jsx'))
 const PodcastTranscriptPage = lazy(() => import('@/components/PodcastTranscriptPage.jsx'))
@@ -29,6 +30,7 @@ function LoadingPage() {
 }
 
 function AppFrame({ app, children }) {
+  if (app.authReady && app.user?.email_required) return <AccountEmailRequired app={app} />
   return <>
     {app.appEnvironment?.is_development && <div className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-950"><div className="mx-auto flex max-w-7xl items-center justify-center gap-2 text-center text-sm font-medium"><AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" /><span>Development mode is active. Default development admin credentials are enabled. Set APP_ENV=production before deploying.</span></div></div>}
     {children}
@@ -50,7 +52,7 @@ function Workspace() {
   const target = safeReturnPath(new URLSearchParams(location.search).get('next'), fallback)
   const setLoginFlight = app.setLoginFlight
   const skipFlight = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const showFlight = authentication && !registration && app.isAuthenticated && app.loginFlight && !skipFlight && !app.isInterschoolUser && app.user?.role !== 'guest' && isSchoolPortalPath(target)
+  const showFlight = authentication && !registration && app.isAuthenticated && !app.user?.email_required && app.loginFlight && !skipFlight && !app.isInterschoolUser && app.user?.role !== 'guest' && isSchoolPortalPath(target)
   const finishFlight = useCallback(() => {
     navigate(target, { replace: true, state: { schoolArrival: true } })
   }, [navigate, target])
@@ -86,8 +88,8 @@ function Workspace() {
     setShowAdminPanel: (open) => navigate(open ? '/portal/admin' : '/portal'),
   }
   useEffect(() => {
-    if (app.isAuthenticated && path === '/portal/admin' && ['admin', 'superadmin'].includes(app.user?.role)) app.loadAdminData()
-  }, [app.isAuthenticated, app.user?.role, path])
+    if (app.isAuthenticated && !app.user?.email_required && path === '/portal/admin' && ['admin', 'superadmin'].includes(app.user?.role)) app.loadAdminData()
+  }, [app.isAuthenticated, app.user?.role, app.user?.email_required, path])
 
   if (!app.authReady) return <LoadingPage />
   if (guestEntry) return <AppFrame app={app}><Suspense fallback={<LoadingPage />}><SchoolGuestEntry key={schoolId} schoolId={schoolId} guestLogin={app.guestLogin} /><OverlayElements app={app} /></Suspense></AppFrame>

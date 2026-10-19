@@ -1,5 +1,8 @@
 import uuid
 import logging
+import re
+import secrets
+from datetime import timedelta, timezone
 
 from src.services.signup_notifications import notify_school_signup
 
@@ -8,8 +11,13 @@ from flask import jsonify, request, session
 from . import recorder_bp
 from .recaptcha import recaptcha_failure
 from .app_config import default_admin_credentials_enabled
-from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, User, _now_utc, db_session
+from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, EmailVerification, User, _now_utc, db_session
+from .email_service import (
+    MAX_VERIFICATION_ATTEMPTS, VERIFICATION_CODE_EXPIRY_MINUTES,
+    create_verification_code, send_verification_email,
+)
 from .passwords import hash_password, is_password_hash, verify_password
+from .email_policy import email_allowed, normalize_email
 from .security import get_current_user, is_guest, password_session_token, require_auth
 from .users import (
     create_user_record,
@@ -70,6 +78,7 @@ def login():
     session['username'] = username
     session['school_id'] = user.school_id
     session['password_token'] = password_session_token(user)
+    session['authenticated_at'] = _now_utc().isoformat()
     session.pop('guest_access', None)
     user.last_login_at = _now_utc()
     user.updated_at = _now_utc()
@@ -81,7 +90,7 @@ def login():
 
     return jsonify({
         'status': 'success',
-        'user': serialize_user_model(user),
+        'user': get_current_user(),
     }), 200
 
 
@@ -95,6 +104,9 @@ def logout():
     session.pop('session_id', None)
     session.pop('guest_access', None)
     session.pop('password_token', None)
+    session.pop('authenticated_at', None)
+    session.pop('account_email_challenge', None)
+    session.pop('signup_email_challenge', None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
 
 
@@ -149,6 +161,117 @@ def guest_login():
     }), 200
 
 
+def _valid_signup_email(value):
+    try:
+        normalize_email(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _signup_school(data):
+    invite_code = data.get('invite_code')
+    school_code = data.get('school_code')
+    if isinstance(invite_code, str) and invite_code.strip():
+        invite = get_invite_code_record(invite_code.strip())
+        if not invite or invite.status != 'unused':
+            return None, (jsonify({'error': 'Invalid or already used invite code'}), 403)
+        if invite.expires_at:
+            expiry = invite.expires_at.replace(tzinfo=timezone.utc) if invite.expires_at.tzinfo is None else invite.expires_at
+            if expiry <= _now_utc():
+                return None, (jsonify({'error': 'Invite code has expired'}), 403)
+        school = get_school_by_id(invite.school_id)
+    elif isinstance(school_code, str) and school_code.strip():
+        school = get_school_by_slug(school_code.strip())
+    else:
+        return None, (jsonify({'error': 'Enter your school code or invite code before requesting a verification code.'}), 400)
+    if not school:
+        return None, (jsonify({'error': 'School not found. Check your school code or invite.'}), 404)
+    if school.status != 'active':
+        return None, (jsonify({'error': 'This school is not accepting new registrations'}), 403)
+    return school, None
+
+
+@recorder_bp.route('/auth/signup/send-verification-code', methods=['POST'])
+def send_signup_verification_code():
+    if require_auth() or is_guest():
+        return jsonify({'error': 'Please log out before signing up.', 'code': 'already_authenticated'}), 409
+    data = request.get_json(silent=True) or {}
+    failure = recaptcha_failure(data.get('recaptcha_token'), 'account_email_code')
+    if failure:
+        return jsonify({'error': failure.message, 'code': failure.code}), failure.status
+    email = data.get('email')
+    email = email.strip().lower() if isinstance(email, str) else ''
+    if not _valid_signup_email(email):
+        return jsonify({'error': 'Enter a valid email address'}), 400
+    email = normalize_email(email)
+    school, error = _signup_school(data)
+    if error:
+        return error
+    if not email_allowed(school, email):
+        return jsonify({'error': 'This email is not allowed by your school. Use an approved domain or ask an administrator for an exception.', 'code': 'SCHOOL_EMAIL_NOT_ALLOWED'}), 400
+    recent = db_session.query(EmailVerification).filter(
+        EmailVerification.email == email,
+        EmailVerification.purpose == 'account_signup',
+        EmailVerification.school_id == school.id,
+        EmailVerification.created_at > _now_utc() - timedelta(seconds=60),
+    ).first()
+    if recent:
+        return jsonify({'error': 'Please wait a minute before requesting another code.'}), 429, {'Retry-After': '60'}
+    session.pop('signup_email_challenge', None)
+    try:
+        verification = create_verification_code(email, purpose='account_signup', school_id=school.id)
+        result = send_verification_email(email, verification.code, purpose='account_signup')
+        if not result.get('success') or result.get('skipped'):
+            db_session.delete(verification)
+            db_session.commit()
+            logger.error('Account signup verification email could not be delivered')
+            return jsonify({'error': 'Unable to send the verification email. Please try again.'}), 503
+        session['signup_email_challenge'] = verification.id
+    except Exception:
+        db_session.rollback()
+        logger.exception('Unable to send account signup verification email')
+        return jsonify({'error': 'Unable to send the verification email. Please try again.'}), 503
+    return jsonify({
+        'status': 'success', 'message': 'Verification code sent. Check your email.',
+        'expiry_minutes': VERIFICATION_CODE_EXPIRY_MINUTES,
+    }), 200
+
+
+def _signup_email_verification(email, code, *, school_id=None, user_id=None, purpose='account_signup', session_key='signup_email_challenge'):
+    challenge_id = session.get(session_key)
+    verification = db_session.get(EmailVerification, challenge_id) if challenge_id else None
+    if (not verification or verification.email != email or verification.purpose != purpose
+            or verification.school_id != school_id or verification.user_id != user_id or verification.verified_at):
+        return None, 'Please send a verification code to your email address first.'
+    expires = verification.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires <= _now_utc():
+        return None, 'Verification code has expired. Please request a new code.'
+    if verification.attempts >= MAX_VERIFICATION_ATTEMPTS:
+        return None, 'Too many failed attempts. Please request a new code.'
+    if not isinstance(code, str) or not code.strip():
+        return None, 'Enter the 6-digit verification code from your email.'
+    if not re.fullmatch(r'[0-9]{6}', code.strip()) or not secrets.compare_digest(verification.code, code.strip()):
+        db_session.query(EmailVerification).filter_by(id=verification.id).update({
+            EmailVerification.attempts: EmailVerification.attempts + 1,
+        })
+        db_session.commit()
+        return None, 'Invalid verification code. After five failed attempts, you must request a new code.'
+    return verification, None
+
+
+def _consume_signup_verification(verification):
+    # Claim once in the same transaction that saves the account or request.
+    return db_session.query(EmailVerification).filter(
+        EmailVerification.id == verification.id,
+        EmailVerification.verified_at.is_(None),
+        EmailVerification.attempts < MAX_VERIFICATION_ATTEMPTS,
+        EmailVerification.expires_at > _now_utc(),
+    ).update({EmailVerification.verified_at: _now_utc()}, synchronize_session=False) == 1
+
+
 @recorder_bp.route('/auth/signup', methods=['POST'])
 def signup():
     """User signup - creates a pending account request for superadmin approval."""
@@ -160,12 +283,20 @@ def signup():
     name = data.get('name', '').strip()
     school_code = data.get('school_code', '').strip()
     invite_code = data.get('invite_code', '').strip()
+    email = data.get('email')
     recaptcha_token = data.get('recaptcha_token', '')
 
     # Verify this endpoint's reCAPTCHA v3 action.
     failure = recaptcha_failure(recaptcha_token, 'account_signup')
     if failure:
         return jsonify({'error': failure.message, 'code': failure.code}), failure.status
+
+    if not isinstance(email, str) or not email.strip():
+        return jsonify({'error': 'Email address is required'}), 400
+    email = email.strip().lower()
+    if not _valid_signup_email(email):
+        return jsonify({'error': 'Enter a valid email address'}), 400
+    email = normalize_email(email)
 
     if not username or not password or not name or (not school_code and not invite_code):
         error_message = 'Username, password, name, and school code are required'
@@ -201,6 +332,8 @@ def signup():
 
         if school.status != 'active':
             return jsonify({'error': 'This school is not accepting new registrations'}), 403
+        if not email_allowed(school, email):
+            return jsonify({'error': 'This email is not allowed by your school.', 'code': 'SCHOOL_EMAIL_NOT_ALLOWED'}), 400
 
         if get_user_by_username(username, school_id=invite.school_id):
             return jsonify({'error': 'Username already exists in this school'}), 409
@@ -208,13 +341,21 @@ def signup():
         if get_user_by_username(username):
             return jsonify({'error': 'Username already exists'}), 409
 
+        verification, error = _signup_email_verification(email, data.get('verification_code'), school_id=school.id)
+        if error:
+            return jsonify({'error': error, 'code': 'SIGNUP_EMAIL_NOT_VERIFIED'}), 400
         try:
+            if not _consume_signup_verification(verification):
+                db_session.rollback()
+                return jsonify({'error': 'Please request a new verification code.'}), 400
             user = User(
                 id=str(uuid.uuid4()),
                 school_id=invite.school_id,
                 username=username,
                 password_hash=hash_password(password),
                 display_name=name,
+                email=email,
+                email_verified_at=_now_utc(),
                 role=invite.role or 'user',
                 status='active',
                 created_at=_now_utc(),
@@ -231,6 +372,7 @@ def signup():
             db_session.rollback()
             return jsonify({'error': 'Could not create account with invite code'}), 500
 
+        session.pop('signup_email_challenge', None)
         _notify_saved_signup(school, user, invited=True)
         return jsonify({
             'status': 'success',
@@ -244,6 +386,8 @@ def signup():
 
     if school.status != 'active':
         return jsonify({'error': 'This school is not accepting new registrations'}), 403
+    if not email_allowed(school, email):
+        return jsonify({'error': 'This email is not allowed by your school.', 'code': 'SCHOOL_EMAIL_NOT_ALLOWED'}), 400
 
     # Check if username already exists in this school
     if get_user_by_username(username, school_id=school.id):
@@ -263,12 +407,20 @@ def signup():
     if existing_request:
         return jsonify({'error': 'A request for this username is already pending approval'}), 409
 
+    verification, error = _signup_email_verification(email, data.get('verification_code'), school_id=school.id)
+    if error:
+        return jsonify({'error': error, 'code': 'SIGNUP_EMAIL_NOT_VERIFIED'}), 400
     try:
+        if not _consume_signup_verification(verification):
+            db_session.rollback()
+            return jsonify({'error': 'Please request a new verification code.'}), 400
         account_request = AccountCreationRequest(
             school_id=school.id,
             username=username,
             password_hash=hash_password(password),
             display_name=name,
+            email=email,
+            email_verified_at=_now_utc(),
             status='pending',
             requested_at=_now_utc(),
         )
@@ -278,6 +430,7 @@ def signup():
         db_session.rollback()
         return jsonify({'error': 'Could not submit account request'}), 500
 
+    session.pop('signup_email_challenge', None)
     _notify_saved_signup(school, account_request)
     return jsonify({
         'status': 'success',

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import random
+import secrets
 import string
 from datetime import datetime, timedelta, timezone
 
@@ -18,10 +18,10 @@ MAX_VERIFICATION_ATTEMPTS = 5
 
 def generate_verification_code() -> str:
     """Generate a random 6-digit verification code."""
-    return "".join(random.choices(string.digits, k=VERIFICATION_CODE_LENGTH))
+    return "".join(secrets.choice(string.digits) for _ in range(VERIFICATION_CODE_LENGTH))
 
 
-def create_verification_code(email: str, purpose: str = 'school_registration') -> EmailVerification:
+def create_verification_code(email: str, purpose: str = 'school_registration', *, school_id=None, user_id=None) -> EmailVerification:
     """Create a new email verification code record."""
     from sqlalchemy import func
 
@@ -37,6 +37,8 @@ def create_verification_code(email: str, purpose: str = 'school_registration') -
     existing_codes = db_session.query(EmailVerification).filter(
         func.lower(EmailVerification.email) == normalized_email,
         EmailVerification.purpose == purpose,
+        EmailVerification.school_id == school_id,
+        EmailVerification.user_id == user_id,
         EmailVerification.verified_at.is_(None),
     ).all()
 
@@ -53,6 +55,8 @@ def create_verification_code(email: str, purpose: str = 'school_registration') -
         email=normalized_email,  # Store normalized email
         code=code,
         purpose=purpose,
+        school_id=school_id,
+        user_id=user_id,
         expires_at=expires_at,
         attempts=0,
     )
@@ -60,14 +64,21 @@ def create_verification_code(email: str, purpose: str = 'school_registration') -
     db_session.add(verification)
     db_session.commit()
 
-    logger.info(f'Created verification code for {normalized_email}, code={code}, expires_at={expires_at.isoformat()}')
+    logger.info('Created email verification challenge; expires_at=%s', expires_at.isoformat())
 
     return verification
 
 
-def send_verification_email(email: str, code: str) -> dict:
+def send_verification_email(email: str, code: str, *, purpose: str = 'school_registration') -> dict:
     """Send a verification code email to the specified address."""
     subject = 'Golden Plate - Email Verification Code'
+    heading = 'Account Email Verification' if purpose in {'account_signup', 'account_email'} else 'School Registration Verification'
+    if purpose == 'account_email':
+        introduction = 'Use the verification code below to verify the email address for your Golden Plate Recorder account:'
+    elif purpose == 'account_signup':
+        introduction = 'Use the verification code below to confirm your email and join your school on Golden Plate Recorder:'
+    else:
+        introduction = 'You have requested to register your school with Golden Plate Recorder. Please use the verification code below to complete your registration:'
 
     html_content = f'''
     <!DOCTYPE html>
@@ -128,11 +139,11 @@ def send_verification_email(email: str, code: str) -> dict:
     <body>
         <div class="header">
             <h1 style="margin: 0; font-size: 24px;">Golden Plate Recorder</h1>
-            <p style="margin: 10px 0 0 0; opacity: 0.9;">School Registration Verification</p>
+            <p style="margin: 10px 0 0 0; opacity: 0.9;">{heading}</p>
         </div>
         <div class="content">
             <p>Hello,</p>
-            <p>You have requested to register your school with Golden Plate Recorder. Please use the verification code below to complete your registration:</p>
+            <p>{introduction}</p>
 
             <div class="code-box">
                 <p style="margin: 0 0 10px 0; color: #6b7280; font-size: 14px;">Your Verification Code</p>

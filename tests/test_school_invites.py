@@ -71,6 +71,7 @@ def test_school_registration_flow(client, login):
     assert verify_password(created_admin.password_hash, 'pytest-pass')
 
     # Attempting to reuse the invite should fail
+    client.post('/api/auth/logout')
     reuse_resp = client.post('/api/auth/register-school', json={
         'invite_code': invite_code,
         'school_name': 'Duplicate Academy',

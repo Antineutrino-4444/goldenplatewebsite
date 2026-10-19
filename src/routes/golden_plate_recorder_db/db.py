@@ -74,6 +74,7 @@ class School(Base):
     slug = Column(String, nullable=False, unique=True)
     status = Column(String, nullable=False, default='active')
     contact_email = Column(String(320), nullable=True)
+    signup_email_policy = Column(Text)
     guest_privacy_enabled = Column(Integer, nullable=False, default=1, server_default='1')
     house_clean_points = Column(Integer, nullable=False, default=2, server_default='2')
     house_dirty_penalty = Column(Integer, nullable=False, default=2, server_default='2')
@@ -105,6 +106,9 @@ class User(Base):
     username = Column(String, nullable=False)
     password_hash = Column(Text, nullable=False)
     display_name = Column(String, nullable=False)
+    email = Column(String(320), nullable=True)
+    email_verified_at = Column(DateTime(timezone=True))
+    admin_email_required_at = Column(DateTime(timezone=True))
     role = Column(String, nullable=False)
     last_login_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=_now_utc)
@@ -415,6 +419,8 @@ class AccountCreationRequest(Base):
     username = Column(String, nullable=False)
     password_hash = Column(Text, nullable=False)
     display_name = Column(String, nullable=False)
+    email = Column(String(320), nullable=True)
+    email_verified_at = Column(DateTime(timezone=True))
     requested_at = Column(DateTime(timezone=True), default=_now_utc)
     status = Column(String, nullable=False, default='pending')
     reviewed_by = Column(String, ForeignKey('users.id'))
@@ -467,6 +473,8 @@ class EmailVerification(Base):
     email = Column(String, nullable=False)
     code = Column(String(6), nullable=False)
     purpose = Column(String, nullable=False, default='school_registration')
+    school_id = Column(String)
+    user_id = Column(String)
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     verified_at = Column(DateTime(timezone=True))
@@ -760,6 +768,17 @@ def _migrate_schema() -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
 
+    # Existing accounts and requests may predate email collection.
+    for table_name in ('users', 'account_creation_requests'):
+        if table_name in tables:
+            _ensure_column(inspector, table_name, 'email', 'VARCHAR(320)')
+            _ensure_column(inspector, table_name, 'email_verified_at', 'DATETIME')
+    if 'users' in tables:
+        _ensure_column(inspector, 'users', 'admin_email_required_at', 'DATETIME')
+    if 'email_verifications' in tables:
+        _ensure_column(inspector, 'email_verifications', 'school_id', 'TEXT')
+        _ensure_column(inspector, 'email_verifications', 'user_id', 'TEXT')
+
     if 'teachers' in tables:
         # Legacy combined names remain intact; uploads supply exact name parts.
         _ensure_column(inspector, 'teachers', 'preferred_name', 'TEXT')
@@ -769,6 +788,7 @@ def _migrate_schema() -> None:
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
+        _ensure_column(inspector, 'schools', 'signup_email_policy', 'TEXT')
         _ensure_column(inspector, 'schools', 'guest_privacy_enabled', 'INTEGER NOT NULL DEFAULT 1')
         _ensure_column(inspector, 'schools', 'live_counter_settings', 'TEXT')
         for column_name, default in [

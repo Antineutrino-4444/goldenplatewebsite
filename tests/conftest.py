@@ -227,6 +227,28 @@ def email_outbox(monkeypatch):
 
 
 @pytest.fixture
+def signup_email_code(client):
+    """Seed an email challenge for tests focused on later signup behavior."""
+    from datetime import timedelta
+    from src.routes.golden_plate_recorder_db.db import DEFAULT_SCHOOL_ID, EmailVerification, _now_utc, db_session
+
+    def prepare(email, school_id=DEFAULT_SCHOOL_ID):
+        verification = EmailVerification(
+            email=email.strip().lower(), code='135790', purpose='account_signup',
+            school_id=school_id,
+            expires_at=_now_utc() + timedelta(minutes=5),
+        )
+        db_session.add(verification)
+        db_session.commit()
+        challenge_id = verification.id
+        with client.session_transaction() as session:
+            session['signup_email_challenge'] = challenge_id
+        return '135790'
+
+    return prepare
+
+
+@pytest.fixture
 def login(client):
     """Helper to log in a user"""
     def _login(username=TEST_SUPERADMIN_USERNAME, password=None):

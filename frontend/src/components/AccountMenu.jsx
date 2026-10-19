@@ -5,11 +5,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import PasswordSettings from '@/components/PasswordSettings.jsx'
 import SchoolContactSettings from '@/components/SchoolContactSettings.jsx'
 import SchoolLocationDialog from '@/components/SchoolLocationDialog.jsx'
+import AccountEmailSettings from '@/components/AccountEmailSettings.jsx'
+import SchoolEmailPolicySettings from '@/components/SchoolEmailPolicySettings.jsx'
 
 export default function AccountMenu({ app, onSchoolLocationSaved }) {
   const { user, logout } = app
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailPolicyOpen, setEmailPolicyOpen] = useState(false)
   const [contactOpen, setContactOpen] = useState(user?.role === 'superadmin' && !user.school_contact_email)
   const trigger = useRef(null)
   const canReset = ['superadmin', 'inter_school'].includes(user?.role)
@@ -33,7 +37,7 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-2rem)]" onCloseAutoFocus={(event) => {
-          if (passwordOpen || contactOpen || locationOpen) event.preventDefault()
+          if (passwordOpen || contactOpen || locationOpen || emailOpen || emailPolicyOpen) event.preventDefault()
         }}>
           <DropdownMenuLabel className="min-w-0 space-y-1 [overflow-wrap:anywhere]">
             <div className="font-semibold">{user.name}</div>
@@ -51,6 +55,8 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
           {['user', 'admin', 'superadmin', 'inter_school'].includes(user.role) && (
             <DropdownMenuItem onSelect={() => setLocationOpen(true)}><MapPinned />{user.role === 'inter_school' ? 'School locations' : 'School location'}</DropdownMenuItem>
           )}
+          {user.role !== 'guest' && <DropdownMenuItem onSelect={() => setEmailOpen(true)}><Mail />Your account email</DropdownMenuItem>}
+          {['admin', 'superadmin'].includes(user.role) && <DropdownMenuItem onSelect={() => setEmailPolicyOpen(true)}><Mail />School email rules</DropdownMenuItem>}
           <DropdownMenuItem asChild>
             <a href="https://github.com/Antineutrino-4444/goldenplatewebsite" target="_blank" rel="noopener noreferrer"><Github />GitHub repository</a>
           </DropdownMenuItem>
@@ -61,9 +67,11 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
       {/* Keep dialogs mounted outside the menu so closing the menu neither
           closes them nor suppresses the automatic missing-email reminder. */}
       <PasswordSettings user={user} open={passwordOpen} onOpenChange={setPasswordOpen} hideTrigger onCloseAutoFocus={restoreFocus} />
+      {user.role !== 'guest' && <AccountEmailSettings app={app} open={emailOpen} onOpenChange={setEmailOpen} onCloseAutoFocus={restoreFocus} />}
+      {['admin', 'superadmin'].includes(user.role) && <SchoolEmailPolicySettings app={app} open={emailPolicyOpen} onOpenChange={setEmailPolicyOpen} onCloseAutoFocus={restoreFocus} />}
       {user.role === 'superadmin' && <SchoolContactSettings app={app} open={contactOpen} onOpenChange={setContactOpen} hideTrigger onCloseAutoFocus={restoreFocus} />}
       <SchoolLocationDialog app={app} open={locationOpen} onOpenChange={setLocationOpen} hideTrigger
-        autoPrompt allowAutomaticPrompt={!contactOpen && !passwordOpen}
+        autoPrompt allowAutomaticPrompt={!contactOpen && !passwordOpen && !emailOpen && !emailPolicyOpen}
         onSaved={onSchoolLocationSaved} onCloseAutoFocus={restoreFocus} />
     </>
   )

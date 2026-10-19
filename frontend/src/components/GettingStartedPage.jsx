@@ -36,7 +36,7 @@ export default function GettingStartedPage() {
         </GuideStep>
         <GuideStep index={1}>
           <p>Ask your school administrator for the school code.</p>
-          <ol><li>Open <Link to="/signup">Request a school account</Link> and choose <strong>School Code</strong>.</li><li>Enter your full name, choose a username and password, and enter the school code.</li><li>Select <strong>Submit Request</strong>. Your school administrator reviews the request before you can sign in.</li></ol>
+          <ol><li>Open <Link to="/signup">Request a school account</Link> and choose <strong>School Code</strong>.</li><li>Enter your school code, full name, and email address. Select <strong>Send Verification Code</strong> and enter the code from your email. Your email must meet any rules set by your school.</li><li>Choose a username and password and select <strong>Submit Request</strong>. Your school administrator reviews the request before you can sign in.</li></ol>
           <p><strong>For school superadmins:</strong> open <strong>Admin Panel → Account Requests</strong> to review pending member requests. Only approve people who should have access to your school.</p>
           <p>If an administrator gave you a one-time account invite, choose <strong>Legacy Invite</strong> and enter that invite code for immediate access.</p>
         </GuideStep>

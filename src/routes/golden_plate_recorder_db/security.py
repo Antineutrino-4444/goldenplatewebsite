@@ -4,6 +4,7 @@ import hmac
 from flask import current_app, session
 
 from .users import get_user_by_id, get_user_by_username, serialize_user_model
+from .email_policy import account_requires_email
 
 
 def password_session_token(user):
@@ -33,7 +34,9 @@ def get_current_user():
     ):
         session.clear()
         return None
-    return serialize_user_model(user)
+    result = serialize_user_model(user)
+    result['email_required'] = account_requires_email(user, session.get('authenticated_at', ''))
+    return result
 
 
 def require_auth():

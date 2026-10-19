@@ -116,6 +116,7 @@ def test_missing_secret_is_allowed_only_in_development(client, monkeypatch):
 
 ENDPOINTS = [
     ('/api/auth/signup', 'account_signup', False),
+    ('/api/auth/signup/send-verification-code', 'account_email_code', False),
     ('/api/auth/send-verification-code', 'school_email_code', False),
     ('/api/auth/register-school', 'school_register', False),
     ('/api/map/send-verification-code', 'map_email_code', False),
@@ -136,9 +137,11 @@ def test_each_protected_route_checks_its_own_action(client, google, email_outbox
     assert email_outbox == []
 
 
-def test_valid_signup_token_creates_request_without_exposing_token(client, google):
+def test_valid_signup_token_creates_request_without_exposing_token(client, google, signup_email_code):
     response = client.post('/api/auth/signup', json={
         'username': 'v3-signup-test', 'password': 'test-password', 'name': 'V3 Signup',
+        'email': 'v3-signup@example.com',
+        'verification_code': signup_email_code('v3-signup@example.com'),
         'school_code': 'SAC', 'recaptcha_token': 'valid-signup-token',
     })
     assert response.status_code == 201

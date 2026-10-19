@@ -15,6 +15,7 @@ from .db import (
 )
 from .app_config import default_admin_credentials_enabled
 from .passwords import hash_password, is_password_hash, verify_password
+from .email_policy import account_requires_email, school_email_policy
 
 DEFAULT_SUPERADMIN = {
     'username': 'greenguys',
@@ -105,6 +106,13 @@ def serialize_user_model(user):
         'school_id': user.school_id,
         'school': serialize_school(school) if school else None,
         'last_login_at': user.last_login_at.isoformat() if user.last_login_at else None,
+        'email': user.email or '',
+        'email_verified': bool(user.email_verified_at),
+        'email_required': account_requires_email(user),
+        'email_verification_requested': bool(user.role == 'admin' and user.admin_email_required_at
+                                             and account_requires_email(user)),
+        'allowed_email_domains': school_email_policy(school)['allowed_domains'],
+        'email_policy_enabled': school_email_policy(school)['enabled'],
     }
     if user.role == 'superadmin':
         data['school_contact_email'] = (school.contact_email or '') if school else ''
@@ -163,7 +171,7 @@ def _password_for_storage(password, *, already_hashed=False):
     return hash_password(password)
 
 
-def create_user_record(username, password, display_name, role='user', status='active', *, school_id=None, password_is_hash=False):
+def create_user_record(username, password, display_name, role='user', status='active', *, school_id=None, password_is_hash=False, email=None, email_verified_at=None):
     school_id = _resolve_school_id(school_id)
     existing = get_user_by_username(username, school_id=school_id)
     if existing:
@@ -175,6 +183,8 @@ def create_user_record(username, password, display_name, role='user', status='ac
         username=username,
         password_hash=stored_password,
         display_name=display_name,
+        email=email,
+        email_verified_at=email_verified_at,
         role=role,
         status=status,
         created_at=_now_utc(),

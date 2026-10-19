@@ -6,14 +6,15 @@ def test_non_admin_cannot_generate_invite(client, login):
     client.post('/api/auth/signup', json={
         'username': 'regular',
         'password': 'userpass',
-        'name': 'Regular User'
+        'name': 'Regular User',
+        'email': 'regular@example.com',
     })
     login(username='regular', password='userpass')
     resp = client.post('/api/admin/invite')
     assert resp.status_code == 403
 
 
-def test_invite_signup_flow(client, login):
+def test_invite_signup_flow(client, login, signup_email_code):
     # Admin generates invite code
     login()
     invite = client.post('/api/admin/invite')
@@ -26,6 +27,8 @@ def test_invite_signup_flow(client, login):
         'username': 'pytestuser',
         'password': 'pass123',
         'name': 'Pytest User',
+        'email': 'pytest@example.com',
+        'verification_code': signup_email_code('pytest@example.com'),
         'invite_code': code
     })
     assert signup.status_code == 201
@@ -39,6 +42,7 @@ def test_invite_signup_flow(client, login):
         'username': 'pytestuser2',
         'password': 'pass123',
         'name': 'Another',
+        'email': 'another@example.com',
         'invite_code': code
     })
     assert reuse.status_code == 403

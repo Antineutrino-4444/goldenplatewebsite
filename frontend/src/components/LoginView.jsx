@@ -32,6 +32,14 @@ function LoginView({ app }) {
     setSignupPassword,
     signupName,
     setSignupName,
+    signupEmail,
+    setSignupEmail,
+    signupVerificationCode,
+    setSignupVerificationCode,
+    signupCodeSent,
+    signupCodeLoading,
+    signupCodeExpiryMinutes,
+    sendSignupVerificationCode,
     signupSchoolCode,
     setSignupSchoolCode,
     signupInviteCode,
@@ -234,36 +242,6 @@ function LoginView({ app }) {
                 Use a legacy invite code for immediate access, or request approval with your school code.
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="signup-name">Full Name</Label>
-              <Input
-                id="signup-name"
-                type="text"
-                placeholder="Enter your full name"
-                value={signupName}
-                onChange={(e) => setSignupName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="signup-username">Username</Label>
-              <Input
-                id="signup-username"
-                type="text"
-                placeholder="Choose a username (min 3 characters)"
-                value={signupUsername}
-                onChange={(e) => setSignupUsername(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="signup-password">Password</Label>
-              <Input
-                id="signup-password"
-                type="password"
-                placeholder="Choose a password (min 6 characters)"
-                value={signupPassword}
-                onChange={(e) => setSignupPassword(e.target.value)}
-              />
-            </div>
             {signupMode === 'school' ? (
               <div className="space-y-2">
                 <Label htmlFor="signup-school">School Code</Label>
@@ -290,6 +268,76 @@ function LoginView({ app }) {
                 />
               </div>
             )}
+            <div className="space-y-2">
+              <Label htmlFor="signup-name">Full Name</Label>
+              <Input
+                id="signup-name"
+                type="text"
+                placeholder="Enter your full name"
+                value={signupName}
+                onChange={(e) => setSignupName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-email">Email address (required)</Label>
+              <Input
+                id="signup-email"
+                type="email"
+                autoComplete="email"
+                required
+                maxLength={320}
+                disabled={signupCodeLoading || isLoading}
+                placeholder="Enter your email address"
+                value={signupEmail}
+                onChange={(e) => setSignupEmail(e.target.value)}
+              />
+              <Button
+                onClick={sendSignupVerificationCode}
+                disabled={signupCodeLoading || isLoading || !signupEmail.trim()}
+                variant="outline"
+                className="w-full"
+              >
+                {signupCodeLoading ? 'Sending...' : signupCodeSent ? 'Resend Code' : 'Send Verification Code'}
+              </Button>
+            </div>
+            {signupCodeSent && <div className="space-y-2">
+              <Label htmlFor="signup-verification-code">Verification code</Label>
+              <Input
+                id="signup-verification-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+                placeholder="Enter the 6-digit code"
+                value={signupVerificationCode}
+                onChange={(e) => setSignupVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                disabled={signupCodeLoading || isLoading}
+              />
+              <p className="text-xs text-gray-500">
+                Check your inbox or spam folder. The code expires in {signupCodeExpiryMinutes} minutes and is checked when you submit.
+              </p>
+            </div>}
+            <div className="space-y-2">
+              <Label htmlFor="signup-username">Username</Label>
+              <Input
+                id="signup-username"
+                type="text"
+                placeholder="Choose a username (min 3 characters)"
+                value={signupUsername}
+                onChange={(e) => setSignupUsername(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-password">Password</Label>
+              <Input
+                id="signup-password"
+                type="password"
+                placeholder="Choose a password (min 6 characters)"
+                value={signupPassword}
+                onChange={(e) => setSignupPassword(e.target.value)}
+              />
+            </div>
             <RecaptchaNotice />
             <div className="flex gap-2">
               <Button onClick={() => handleSignupDialogChange(false)} variant="outline" className="flex-1">
@@ -298,7 +346,7 @@ function LoginView({ app }) {
               <Button
                 onClick={signup}
                 className="flex-1 bg-amber-600 hover:bg-amber-700"
-                disabled={isLoading}
+                disabled={isLoading || signupCodeLoading || !signupCodeSent || signupVerificationCode.length !== 6}
               >
                 {isLoading ? 'Submitting...' : signupMode === 'invite' ? 'Create Account' : 'Submit Request'}
               </Button>

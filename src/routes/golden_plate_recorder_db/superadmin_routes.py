@@ -126,6 +126,7 @@ def serialize_account_request(request_obj):
         'school': serialize_school(school) if school else None,
         'username': request_obj.username,
         'display_name': request_obj.display_name,
+        'email': request_obj.email,
         'status': request_obj.status,
         'requested_at': request_obj.requested_at.isoformat() if request_obj.requested_at else None,
         'reviewed_by': request_obj.reviewed_by,
@@ -222,6 +223,8 @@ def approve_account_request(request_id):
             status='active',
             school_id=school_id,
             password_is_hash=is_password_hash(account_request.password_hash),
+            email=account_request.email,
+            email_verified_at=account_request.email_verified_at,
         )
         account_request.password_hash = new_user.password_hash
 

@@ -198,7 +198,7 @@ def test_login_upgrades_legacy_plaintext_password(client):
     assert verify_password(upgraded.password_hash, password)
 
 
-def test_school_code_signup_request_and_approval_store_hashes(client, login):
+def test_school_code_signup_request_and_approval_store_hashes(client, login, signup_email_code):
     username = f'request-{uuid.uuid4().hex[:8]}'
     password = 'request-pass'
 
@@ -206,6 +206,8 @@ def test_school_code_signup_request_and_approval_store_hashes(client, login):
         'username': username,
         'password': password,
         'name': 'Request User',
+        'email': ' Request.User@Example.com ',
+        'verification_code': signup_email_code('request.user@example.com'),
         'school_code': DEFAULT_SCHOOL_SLUG,
     })
     assert signup.status_code == 201
@@ -216,15 +218,19 @@ def test_school_code_signup_request_and_approval_store_hashes(client, login):
         .first()
     )
     assert account_request is not None
+    assert account_request.email == 'request.user@example.com'
     assert is_password_hash(account_request.password_hash)
     assert verify_password(account_request.password_hash, password)
 
     login()
+    pending = client.get('/api/superadmin/account-requests/pending').get_json()['requests']
+    assert next(req for req in pending if req['id'] == account_request.id)['email'] == 'request.user@example.com'
     approved = client.post(f'/api/superadmin/account-requests/{account_request.id}/approve')
     assert approved.status_code == 200
 
     created = db_session.query(User).filter_by(username=username).first()
     assert created is not None
+    assert created.email == 'request.user@example.com'
     assert is_password_hash(created.password_hash)
     assert verify_password(created.password_hash, password)
 

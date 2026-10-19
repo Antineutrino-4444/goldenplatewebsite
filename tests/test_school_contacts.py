@@ -30,7 +30,7 @@ def sign_in(client, account):
 
 def signup_payload(school, **kwargs):
     return dict(username=f'contact-signup-{uuid.uuid4().hex[:8]}', password='signup-secret-password',
-                name='Applicant <script>unsafe</script>', school_code=school.slug, **kwargs)
+                name='Applicant <script>unsafe</script>', email='Applicant@Example.com', school_code=school.slug, **kwargs)
 
 
 def test_superadmin_reminder_and_contact_save_are_school_scoped(client, contact_school):
@@ -92,12 +92,14 @@ def test_contact_update_rejects_invalid_email(client, contact_school, email):
     assert db_session.get(School, school.id).contact_email is None
 
 
-def test_pending_signup_notifies_only_school_contact_and_configured_recipients(client, contact_school, monkeypatch, email_outbox):
+def test_pending_signup_notifies_only_school_contact_and_configured_recipients(client, contact_school, monkeypatch, email_outbox, signup_email_code):
     school, _ = contact_school
     school.contact_email = 'school@example.com'
     db_session.commit()
     monkeypatch.setenv('WEBSITE_UPDATE_NOTIFY_EMAILS', 'updates@example.com,SCHOOL@example.com')
     payload = signup_payload(school)
+    school_name = school.name
+    payload['verification_code'] = signup_email_code(payload['email'], school_id=school.id)
     response = client.post('/api/auth/signup', json=payload)
     assert response.status_code == 201
     assert len(email_outbox) == 2
@@ -106,24 +108,26 @@ def test_pending_signup_notifies_only_school_contact_and_configured_recipients(c
     ]
     for email in email_outbox:
         assert 'New account signup request' in email['subject']
-        assert school.name in email['htmlContent']
+        assert school_name in email['htmlContent']
         assert 'Account requests' in email['htmlContent']
         assert '&lt;script&gt;' in email['htmlContent']
         assert '<script>' not in email['htmlContent']
         assert payload['password'] not in email['htmlContent']
+        assert payload['verification_code'] not in email['htmlContent']
         saved = db_session.query(AccountCreationRequest).filter_by(username=payload['username']).one()
         assert saved.password_hash not in email['htmlContent']
     assert client.post('/api/auth/signup', json=payload).status_code == 409
     assert len(email_outbox) == 2
 
 
-def test_invite_signup_notifies_school_and_cannot_be_repeated(client, contact_school, monkeypatch, email_outbox):
+def test_invite_signup_notifies_school_and_cannot_be_repeated(client, contact_school, monkeypatch, email_outbox, signup_email_code):
     school, admin = contact_school
     school.contact_email = 'school@example.com'
     db_session.commit()
     monkeypatch.setenv('WEBSITE_UPDATE_NOTIFY_EMAILS', '')
     invite = create_invite_code_record(admin, admin)
     payload = signup_payload(school, invite_code=invite.code)
+    payload['verification_code'] = signup_email_code(payload['email'], school_id=school.id)
     response = client.post('/api/auth/signup', json=payload)
     assert response.status_code == 201
     assert len(email_outbox) == 1
@@ -133,28 +137,59 @@ def test_invite_signup_notifies_school_and_cannot_be_repeated(client, contact_sc
     assert 'already active' in email['htmlContent']
     assert 'no approval is needed' in email['htmlContent']
     assert payload['password'] not in email['htmlContent']
-    assert invite.code not in email['htmlContent']
-    assert db_session.query(User).filter_by(username=payload['username']).one().status == 'active'
+    assert payload['invite_code'] not in email['htmlContent']
+    assert payload['verification_code'] not in email['htmlContent']
+    user = db_session.query(User).filter_by(username=payload['username']).one()
+    assert user.status == 'active'
+    assert user.email == 'applicant@example.com'
     assert client.post('/api/auth/signup', json=payload).status_code == 403
     assert len(email_outbox) == 1
 
 
+@pytest.mark.parametrize('invited', [False, True])
+@pytest.mark.parametrize('email', ['missing', None, '', '   ', 'invalid', 'missing@domain',
+                                  'a@example.com,b@example.com', 'a@example.com\nb@example.com',
+                                  [], 123, 'a' * 321 + '@example.com'])
+def test_account_signup_requires_valid_email_before_saving(client, contact_school, email_outbox, invited, email):
+    school, admin = contact_school
+    payload = signup_payload(school)
+    if invited:
+        invite = create_invite_code_record(admin, admin)
+        payload.pop('school_code')
+        payload['invite_code'] = invite.code
+    if email == 'missing':
+        payload.pop('email')
+    else:
+        payload['email'] = email
+    response = client.post('/api/auth/signup', json=payload)
+    assert response.status_code == 400
+    assert 'email' in response.get_json()['error'].lower()
+    assert db_session.query(User).filter_by(username=payload['username']).first() is None
+    assert db_session.query(AccountCreationRequest).filter_by(username=payload['username']).first() is None
+    if invited:
+        assert database.db_session.query(database.UserInviteCode).filter_by(code=payload['invite_code']).one().status == 'unused'
+    assert email_outbox == []
+
+
 @pytest.mark.parametrize('invited', [True, False])
-def test_notification_failure_preserves_saved_signup(client, contact_school, monkeypatch, invited):
+def test_notification_failure_preserves_saved_signup(client, contact_school, monkeypatch, invited, signup_email_code):
     school, admin = contact_school
     monkeypatch.setattr(auth_routes, 'notify_school_signup', lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError('Mail unavailable')))
     payload = signup_payload(school)
     if invited:
         payload['invite_code'] = create_invite_code_record(admin, admin).code
+    payload['verification_code'] = signup_email_code(payload['email'], school_id=school.id)
     assert client.post('/api/auth/signup', json=payload).status_code == 201
     model = User if invited else AccountCreationRequest
     assert db_session.query(model).filter_by(username=payload['username']).one() is not None
 
 
-def test_no_configured_recipients_and_no_contact_skip_signup_alert(client, contact_school, monkeypatch, email_outbox):
+def test_no_configured_recipients_and_no_contact_skip_signup_alert(client, contact_school, monkeypatch, email_outbox, signup_email_code):
     school, _ = contact_school
     monkeypatch.setenv('WEBSITE_UPDATE_NOTIFY_EMAILS', '')
-    assert client.post('/api/auth/signup', json=signup_payload(school)).status_code == 201
+    payload = signup_payload(school)
+    payload['verification_code'] = signup_email_code(payload['email'], school_id=school.id)
+    assert client.post('/api/auth/signup', json=payload).status_code == 201
     assert email_outbox == []
 
 
@@ -197,8 +232,24 @@ def test_existing_database_upgrade_adds_and_backfills_contact_once(monkeypatch):
             admin_display_name='Old Admin', status='approved',
         ))
         connection.execute(text('ALTER TABLE schools DROP COLUMN contact_email'))
+        connection.execute(User.__table__.insert().values(
+            id='historical-user', school_id='historical-school', username='historical-user',
+            password_hash='unchanged', display_name='Historical User', role='user',
+        ))
+        connection.execute(AccountCreationRequest.__table__.insert().values(
+            id='historical-account-request', school_id='historical-school', username='historical-applicant',
+            password_hash='unchanged', display_name='Historical Applicant',
+        ))
+        for table_name in ('users', 'account_creation_requests'):
+            connection.execute(text(f'ALTER TABLE {table_name} DROP COLUMN email'))
     monkeypatch.setattr(database, 'engine', engine)
     database._bootstrap_database()
+    for table_name in ('users', 'account_creation_requests'):
+        assert 'email' in {column['name'] for column in inspect(engine).get_columns(table_name)}
+    with engine.begin() as connection:
+        assert connection.execute(text("SELECT email FROM users WHERE id = 'historical-user'")).scalar_one() is None
+        assert connection.execute(text("SELECT email FROM account_creation_requests WHERE id = 'historical-account-request'")).scalar_one() is None
+        connection.execute(text("UPDATE users SET email = 'saved@example.com' WHERE id = 'historical-user'"))
     assert 'contact_email' in {column['name'] for column in inspect(engine).get_columns('schools')}
     with engine.begin() as connection:
         email = connection.execute(text("SELECT contact_email FROM schools WHERE id = 'historical-school'")).scalar_one()
@@ -206,6 +257,7 @@ def test_existing_database_upgrade_adds_and_backfills_contact_once(monkeypatch):
         connection.execute(text("UPDATE schools SET contact_email = NULL WHERE id = 'historical-school'"))
     database._bootstrap_database()
     with engine.connect() as connection:
+        assert connection.execute(text("SELECT email FROM users WHERE id = 'historical-user'")).scalar_one() == 'saved@example.com'
         assert connection.execute(text("SELECT contact_email FROM schools WHERE id = 'historical-school'")).scalar_one() is None
     engine.dispose()
 

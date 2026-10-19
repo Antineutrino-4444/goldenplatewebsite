@@ -94,6 +94,9 @@ def admin_get_users():
     for user in list_all_users(school_id=current_school_id):
         payload = {
             'id': user['id'],
+            'email': user['email'],
+            'email_verified': user['email_verified'],
+            'email_verification_requested': user['email_verification_requested'],
             'username': user['username'],
             'name': user['name'],
             'role': user['role'],
@@ -290,6 +293,10 @@ def admin_overview():
     users = []
     for user in list_all_users(school_id=current_school_id):
         payload = {
+            'id': user['id'],
+            'email': user['email'],
+            'email_verified': user['email_verified'],
+            'email_verification_requested': user['email_verification_requested'],
             'username': user['username'],
             'name': user['name'],
             'role': user['role'],
