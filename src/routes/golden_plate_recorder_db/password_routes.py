@@ -84,7 +84,7 @@ def password_accounts():
         return jsonify({'error': 'Please log in to manage passwords'}), 401
     if actor['role'] not in {'superadmin', 'inter_school'}:
         return jsonify({'error': 'Password reset access required'}), 403
-    query = db_session.query(User).order_by(User.username.asc())
+    query = db_session.query(User).filter(User.is_record_actor == 0).order_by(User.username.asc())
     if actor['role'] == 'superadmin':
         query = query.filter(User.school_id == actor['school_id'])
     accounts = [serialize_user_model(user) for user in query.all() if _can_reset_password(actor, user)]

@@ -1,5 +1,3 @@
-import os
-
 from flask import jsonify, request, session
 
 from . import recorder_bp
@@ -7,7 +5,6 @@ from .db import AccountCreationRequest, School, _now_utc, db_session
 from .house_scoring import SCORE_FIELDS, house_score_settings
 from .passwords import is_password_hash
 from .security import get_current_user, require_superadmin
-from .storage import save_session_data, session_data
 from .users import create_user_record, get_user_by_username, serialize_school, update_user_credentials
 
 
@@ -93,24 +90,16 @@ def delete_user_account():
     if not target_user_model:
         return jsonify({'error': 'User not found'}), 404
 
+    from src.services.account_lifecycle import permanently_delete_account
     try:
-        db_session.delete(target_user_model)
+        permanently_delete_account(db_session, target_user_model, _now_utc(), explicit=True)
         db_session.commit()
+    except ValueError as error:
+        db_session.rollback()
+        return jsonify({'error': str(error)}), 403
     except Exception:
         db_session.rollback()
         return jsonify({'error': 'Failed to delete user account'}), 500
-
-    legacy_file = f'user_csv_{target_username}.json'
-    if os.path.exists(legacy_file):
-        os.remove(legacy_file)
-
-    sessions_to_remove = [
-        sid for sid, info in session_data.items()
-        if info.get('owner') == target_username and info.get('school_id') == current_user['school_id']
-    ]
-    for session_id in sessions_to_remove:
-        session_data.pop(session_id, None)
-    save_session_data()
 
     return jsonify({'status': 'success', 'message': 'User account deleted successfully'}), 200
 

@@ -436,6 +436,7 @@ def get_interschool_overview():
 
     user_counts = dict(
         db_session.query(User.school_id, func.count(User.id))
+        .filter(User.is_record_actor == 0)
         .group_by(User.school_id)
         .all()
     )

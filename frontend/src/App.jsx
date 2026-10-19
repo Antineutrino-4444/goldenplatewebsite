@@ -24,6 +24,7 @@ const OverlayElements = lazy(() => import('@/components/OverlayElements.jsx'))
 const MapPortal = lazy(() => import('@/components/SchoolMapPortal.jsx'))
 const LiveCounterPage = lazy(() => import('@/components/LiveCounterPage.jsx'))
 const CommunityCounter = lazy(() => import('@/components/CommunityCounter.jsx'))
+const AccountDeletionPage = lazy(() => import('@/components/AccountDeletionPage.jsx'))
 
 function LoadingPage() {
   return <div className="min-h-screen bg-[var(--site-paper)] flex items-center justify-center text-sm text-[var(--site-muted)]" role="status">Opening Golden Plate…</div>
@@ -127,6 +128,7 @@ function SiteRoutes() {
     <Route path="/getting-started" element={<GettingStartedPage />} />
     <Route path="/stories" element={<LandingPage page="stories" />} />
     <Route path="/stories/transcript" element={<PodcastTranscriptPage />} />
+    <Route path="/account-deletion" element={<AccountDeletionPage />} />
     <Route path="/guest/sessions/:sessionId" element={<GuestSessionPage />} />
     <Route path="/map/*" element={<MapApp />} />
     <Route path="/live-counter" element={<LiveCounterPage />} />

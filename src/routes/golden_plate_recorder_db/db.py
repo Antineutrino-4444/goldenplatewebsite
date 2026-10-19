@@ -57,6 +57,8 @@ def _now_utc():
 DEFAULT_SCHOOL_ID = 'default-school'
 DEFAULT_SCHOOL_NAME = "St. Andrew's College"
 DEFAULT_SCHOOL_SLUG = 'SAC'
+# Midnight November 1, 2026 in New York, before that morning's DST change.
+ACCOUNT_INACTIVITY_START = datetime(2026, 11, 1, 4, tzinfo=timezone.utc)
 
 INTERSCHOOL_SCHOOL_ID = 'a11'
 INTERSCHOOL_SCHOOL_NAME = 'Inter-School Control'
@@ -109,6 +111,11 @@ class User(Base):
     email = Column(String(320), nullable=True)
     email_verified_at = Column(DateTime(timezone=True))
     admin_email_required_at = Column(DateTime(timezone=True))
+    inactivity_disabled_at = Column(DateTime(timezone=True))
+    inactivity_delete_at = Column(DateTime(timezone=True))
+    inactivity_restored_at = Column(DateTime(timezone=True))
+    disabled_reason = Column(String)
+    is_record_actor = Column(Integer, nullable=False, default=0, server_default='0')
     role = Column(String, nullable=False)
     last_login_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=_now_utc)
@@ -116,6 +123,46 @@ class User(Base):
     status = Column(String, nullable=False, default='active')
 
     school = relationship('School', lazy='joined')
+
+
+class AccountLifecycleControl(Base):
+    __tablename__ = 'account_lifecycle_control'
+    id = Column(String, primary_key=True)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    lease_owner = Column(String)
+    lease_until = Column(DateTime(timezone=True))
+    next_run_at = Column(DateTime(timezone=True))
+
+
+class AccountDeletionGrant(Base):
+    __tablename__ = 'account_deletion_grants'
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    school_id = Column(String, nullable=False)
+    cycle = Column(String, nullable=False)
+    recipient = Column(String(320), nullable=False)
+    permission = Column(String, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True))
+    authorization_attempts = Column(Integer, nullable=False, default=0)
+    authorization_locked_until = Column(DateTime(timezone=True))
+
+
+class AccountLifecycleNotice(Base):
+    __tablename__ = 'account_lifecycle_notices'
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    dedupe_key = Column(String, nullable=False, unique=True)
+    user_id = Column(String, nullable=False, index=True)
+    event = Column(String, nullable=False)
+    recipient = Column(String(320), nullable=False)
+    details = Column(Text, nullable=False)
+    grant_id = Column(String, nullable=False)
+    status = Column(String, nullable=False, default='pending')
+    attempts = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime(timezone=True))
+    claimed_until = Column(DateTime(timezone=True))
+    sent_at = Column(DateTime(timezone=True))
+    last_error = Column(Text)
 
 
 class UserInviteCode(Base):
@@ -775,6 +822,10 @@ def _migrate_schema() -> None:
             _ensure_column(inspector, table_name, 'email_verified_at', 'DATETIME')
     if 'users' in tables:
         _ensure_column(inspector, 'users', 'admin_email_required_at', 'DATETIME')
+        for name in ('inactivity_disabled_at', 'inactivity_delete_at', 'inactivity_restored_at'):
+            _ensure_column(inspector, 'users', name, 'DATETIME')
+        _ensure_column(inspector, 'users', 'disabled_reason', 'TEXT')
+        _ensure_column(inspector, 'users', 'is_record_actor', 'INTEGER NOT NULL DEFAULT 0')
     if 'email_verifications' in tables:
         _ensure_column(inspector, 'email_verifications', 'school_id', 'TEXT')
         _ensure_column(inspector, 'email_verifications', 'user_id', 'TEXT')
@@ -1166,6 +1217,20 @@ def _bootstrap_database() -> None:
 
     _migrate_schema()
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        table = AccountLifecycleControl.__table__
+        if connection.execute(table.select().where(table.c.id == 'default')).first() is None:
+            try:
+                with connection.begin_nested():
+                    connection.execute(table.insert().values(
+                        id='default', started_at=ACCOUNT_INACTIVITY_START,
+                    ))
+            except IntegrityError:
+                pass
+        # Upgrade databases initialized with the earlier October start date.
+        connection.execute(table.update().where(
+            table.c.id == 'default', table.c.started_at < ACCOUNT_INACTIVITY_START,
+        ).values(started_at=ACCOUNT_INACTIVITY_START, next_run_at=None))
     # Persist the first activation, rather than moving the boundary on reloads.
     with engine.begin() as connection:
         table = EstimateSystemActivation.__table__

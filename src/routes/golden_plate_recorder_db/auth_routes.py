@@ -65,11 +65,16 @@ def login():
         return jsonify({'error': 'Default development admin credentials are disabled'}), 401
 
     user = get_user_by_username(username)
-    if not user or not verify_password(user.password_hash, password):
+    if not user or user.is_record_actor or not verify_password(user.password_hash, password):
         return jsonify({'error': 'Invalid username or password'}), 401
 
     if user.status != 'active':
         return jsonify({'error': 'Account is disabled. Please contact an administrator.'}), 403
+
+    from src.services.account_lifecycle import enforce_inactivity_for_login, revoke_account_links
+    if enforce_inactivity_for_login(db_session, user, _now_utc()):
+        db_session.commit()
+        return jsonify({'error': 'This account was disabled for inactivity. Ask a school administrator to recover it.', 'code': 'ACCOUNT_INACTIVE'}), 403
 
     if not is_password_hash(user.password_hash):
         user.password_hash = hash_password(password)
@@ -82,6 +87,7 @@ def login():
     session.pop('guest_access', None)
     user.last_login_at = _now_utc()
     user.updated_at = _now_utc()
+    revoke_account_links(db_session, user.id)
     try:
         db_session.commit()
     except Exception:

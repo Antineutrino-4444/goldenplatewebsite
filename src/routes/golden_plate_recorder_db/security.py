@@ -29,9 +29,16 @@ def get_current_user():
     token = session.get('password_token')
     if (
         user.status != 'active'
+        or user.is_record_actor
         or not isinstance(token, str)
         or not hmac.compare_digest(token, password_session_token(user))
     ):
+        session.clear()
+        return None
+    from src.services.account_lifecycle import enforce_inactivity_for_login
+    from .db import _now_utc, db_session
+    if enforce_inactivity_for_login(db_session, user, _now_utc()):
+        db_session.commit()
         session.clear()
         return None
     result = serialize_user_model(user)

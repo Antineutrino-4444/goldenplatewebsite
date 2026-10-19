@@ -1,4 +1,5 @@
 from flask import jsonify, request, session
+from datetime import timedelta
 
 from . import recorder_bp
 from .db import Session as SessionModel, SessionDeleteRequest, db_session as db, _now_utc
@@ -37,9 +38,11 @@ def manage_account_status():
 
     if not target_username or not new_status:
         return jsonify({'error': 'Username and status are required'}), 400
+    if new_status not in {'active', 'disabled'}:
+        return jsonify({'error': 'Status must be active or disabled'}), 400
 
     target_user_model = get_user_by_username(target_username, school_id=current_school_id)
-    if not target_user_model:
+    if not target_user_model or target_user_model.is_record_actor:
         return jsonify({'error': 'User not found'}), 404
 
     target_role = target_user_model.role
@@ -53,9 +56,25 @@ def manage_account_status():
     else:
         return jsonify({'error': 'Insufficient permissions'}), 403
 
+    if target_user_model.status == new_status:
+        return jsonify({'status': 'success', 'message': f'Account {target_username} is already {new_status}'}), 200
+
     try:
-        update_user_credentials(target_user_model, status=new_status)
+        if new_status == 'active' and target_user_model.inactivity_disabled_at:
+            from src.services.account_lifecycle import restore_account
+            restore_account(db, target_user_model, _now_utc())
+            db.commit()
+        else:
+            if new_status == 'disabled' and target_user_model.role not in {'superadmin', 'inter_school'}:
+                now = _now_utc()
+                target_user_model.inactivity_disabled_at = now
+                target_user_model.inactivity_delete_at = now + timedelta(days=30)
+                target_user_model.disabled_reason = 'manual'
+                from src.services.account_lifecycle import policy_start, queue_notice
+                queue_notice(db, target_user_model, 'disabled', now, policy_start(db))
+            update_user_credentials(target_user_model, status=new_status)
     except Exception:
+        db.rollback()
         return jsonify({'error': 'Failed to update user status'}), 500
 
     return jsonify({

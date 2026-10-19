@@ -7,6 +7,7 @@ import SchoolContactSettings from '@/components/SchoolContactSettings.jsx'
 import SchoolLocationDialog from '@/components/SchoolLocationDialog.jsx'
 import AccountEmailSettings from '@/components/AccountEmailSettings.jsx'
 import SchoolEmailPolicySettings from '@/components/SchoolEmailPolicySettings.jsx'
+import { beginOwnAccountDeletion } from '@/lib/account-deletion.js'
 
 export default function AccountMenu({ app, onSchoolLocationSaved }) {
   const { user, logout } = app
@@ -61,6 +62,7 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
             <a href="https://github.com/Antineutrino-4444/goldenplatewebsite" target="_blank" rel="noopener noreferrer"><Github />GitHub repository</a>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          {['user', 'admin'].includes(user.role) && <DropdownMenuItem onSelect={() => beginOwnAccountDeletion(app)} variant="destructive">Delete my account</DropdownMenuItem>}
           <DropdownMenuItem onSelect={logout} variant="destructive"><LogOut />Log out</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

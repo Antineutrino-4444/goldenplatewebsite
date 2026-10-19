@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 
 NOTIFICATION_TYPES = {
+    'account_lifecycle': ('Account inactivity notices', 'Warnings about disabled accounts and permanent account deletion.'),
     'server_startup': ('Server restarts', 'Announcements when the website server starts or reloads.'),
     'school_registration': ('School registration requests', 'New schools requesting registration.'),
     'account_signup': ('Account signup requests', 'People requesting an account at a school.'),

@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 def require_account_email():
     if not request.path.startswith('/api/') or request.method == 'OPTIONS':
         return None
+    if request.path.startswith('/api/account-deletion/'):
+        return None
     if request.path in {
         '/api/auth/login', '/api/auth/logout', '/api/auth/status',
         '/api/auth/account-email/send-verification-code', '/api/auth/account-email',

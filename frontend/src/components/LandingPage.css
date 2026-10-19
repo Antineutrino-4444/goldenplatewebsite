@@ -384,7 +384,7 @@
 .auth-page .auth-intro h1 { font: 400 32px/1.2 Georgia, serif; letter-spacing: -.035em; }
 .auth-page .auth-intro p { font-size: 14px; color: var(--site-muted); line-height: 1.8; margin-top: 8px; }
 .auth-page .auth-intro + #main-content > div { min-height: auto; padding-block: 25px 60px; }
-.school-arrival { position: fixed; inset: 0; z-index: 100; background: #071b2c; color: #fff9e9; text-align: center; isolation: isolate; }
+.school-arrival { position: fixed; inset: 0; z-index: 100; overflow: hidden; background: #071b2c; color: #fff9e9; text-align: center; isolation: isolate; }
 .school-arrival[data-phase="loading"] { background: var(--site-paper); color: var(--site-ink); }
 .school-arrival[data-phase="loading"] .arrival-map { opacity: 0; }
 .school-arrival[data-phase="loading"] .arrival-heading,
@@ -401,8 +401,6 @@
 .arrival-controls > p { font-size: 14px; margin: 0 0 16px; }
 .school-arrival .arrival-controls .gp-button { pointer-events: auto; background: #fff9e9; color: #183b2f !important; min-height: 44px; }
 .arrival-controls .gp-button:focus-visible { outline: 2px solid #f4cb6a; outline-offset: 5px; }
-.arrival-school-pin { display: block; width: 8px; height: 8px; border-radius: 50%; border: 1px solid #fff9e9; background: #d4b35b; box-shadow: 0 0 0 4px #d4b35b33; }
-.arrival-school-pin.is-destination { width: 13px; height: 13px; box-shadow: 0 0 0 7px #d4b35b33; }
 @media (max-height: 500px) { .arrival-heading { padding: 12px; } .arrival-heading > p { display: none; } .school-arrival h1 { font-size: 23px; } .arrival-controls { padding: 10px; bottom: 20px; } .arrival-controls > p { display: none; } }
 
 @media (max-width: 1150px) {

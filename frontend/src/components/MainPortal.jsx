@@ -1,5 +1,6 @@
 import SessionMetrics from '@/components/SessionMetrics.jsx'
 import RequireAdminEmailButton from '@/components/RequireAdminEmailButton.jsx'
+import DisabledAccounts from '@/components/DisabledAccounts.jsx'
 import React, { useRef, useState } from 'react'
 import AdminSessionExport from '@/components/AdminSessionExport.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
@@ -53,6 +54,7 @@ function MainPortal({ app }) {
   const DashboardContent = app.pageSection === 'dashboard' ? PortalPageContent : DialogContent
   const AdminContent = app.pageSection === 'admin' ? PortalPageContent : DialogContent
   const [showSessionExport, setShowSessionExport] = useState(false)
+  const [showDisabledAccounts, setShowDisabledAccounts] = useState(false)
   const [sessionPanel, setSessionPanel] = useState(null)
   const selectSessionPanel = (panel) => {
     setSessionPanel((current) => current === panel || current === 'all' ? null : panel)
@@ -1602,6 +1604,12 @@ function MainPortal({ app }) {
                   )}
                 </Button>
               )}
+              {['admin', 'superadmin'].includes(user.role) && (
+                <Button onClick={() => setShowDisabledAccounts(true)} variant="outline">
+                  <Ban className="h-4 w-4 mr-2" />
+                  Disabled Accounts
+                </Button>
+              )}
             </div>
 
             {user.role === 'superadmin' && showAdminPanel && <HouseScoreSettings app={app} />}
@@ -1610,7 +1618,7 @@ function MainPortal({ app }) {
             <div>
               <h3 className="text-lg font-semibold mb-3">Users</h3>
               <div className="space-y-2">
-                {adminUsers.map((adminUser) => (
+                {adminUsers.filter((account) => account.status !== 'disabled' || ['superadmin', 'inter_school'].includes(account.role)).map((adminUser) => (
                   <div key={adminUser.username} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0">
                     <div>
                       <div className="font-medium">{adminUser.name}</div>
@@ -1686,6 +1694,21 @@ function MainPortal({ app }) {
 
       <AdminSessionExport open={showSessionExport} onOpenChange={setShowSessionExport} accountKey={user?.id} />
 
+      <Dialog open={showDisabledAccounts} onOpenChange={setShowDisabledAccounts}>
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl" dismissOnOverlayClick={false}>
+          <DialogHeader>
+            <DialogTitle>Disabled Accounts</DialogTitle>
+            <DialogDescription>
+              These accounts cannot sign in. Recovering one restarts its inactivity clock. Ordinary members are deleted after 30 days here; admins require an explicit deletion decision.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto p-1">
+            {showDisabledAccounts && <DisabledAccounts app={app} />}
+          </div>
+          <Button onClick={() => setShowDisabledAccounts(false)} className="w-full shrink-0">Close</Button>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showAccountManagement} onOpenChange={setShowAccountManagement}>
         <DialogContent className="flex max-h-[85dvh] flex-col overflow-y-hidden sm:max-w-2xl" dismissOnOverlayClick={false}>
           <DialogHeader>
@@ -1695,7 +1718,7 @@ function MainPortal({ app }) {
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-1">
-            {allUsers.map((userAccount) => (
+            {allUsers.filter((account) => account.status !== 'disabled' || ['superadmin', 'inter_school'].includes(account.role)).map((userAccount) => (
               <div key={userAccount.username} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between [&>div]:min-w-0 [&>div]:max-w-full [&>div:first-child]:flex-1 [&>div:last-child]:shrink-0">
                 <div>
                   <div className="font-medium">{userAccount.name}</div>

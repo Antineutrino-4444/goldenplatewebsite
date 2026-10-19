@@ -62,9 +62,9 @@ export default function SchoolArrival({ user, onComplete }) {
       document.body.style.overflow = previousOverflow
     }
   }, [schoolId, finish])
-  const progress = useCallback((opacity, nextPhase) => {
+  const progress = useCallback((reveal, nextPhase) => {
     deadline.current?.ready()
-    if (overlay.current) overlay.current.style.opacity = opacity
+    if (overlay.current) overlay.current.style.opacity = 1 - reveal
     if (nextPhase) setPhase(nextPhase)
   }, [])
   const keepFocus = (event) => {

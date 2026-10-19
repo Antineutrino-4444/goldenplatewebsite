@@ -12,6 +12,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   plugins: [react(),tailwindcss(),rootMapboxEnv(path.resolve(__dirname, '..')),prebuiltMapbox()],
   worker: { format: 'es' },
+  // Preserve Mapbox's module-relative worker URLs in development. Prebundling
+  // moves the entry into .vite/deps without its sibling worker modules.
+  optimizeDeps: { exclude: ['mapbox-gl/esm'] },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

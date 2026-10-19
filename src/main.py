@@ -21,6 +21,7 @@ from src.routes.golden_plate_recorder_db import recorder_bp
 from src.routes.golden_plate_recorder_db.db import db_session
 from src.routes.golden_plate_recorder_db.map_db import map_db_session
 from src.services.startup_notifications import start_startup_notification
+from src.services.account_lifecycle import start_account_lifecycle
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -62,6 +63,7 @@ reloader_parent = (
     and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
 )
 start_startup_notification(app, reloader_parent=reloader_parent)
+start_account_lifecycle(app, reloader_parent=reloader_parent)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', '59237')), debug=True)

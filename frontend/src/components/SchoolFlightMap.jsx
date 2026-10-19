@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { Map as VectorMap, Marker } from 'mapbox-gl/esm'
+import { Map as VectorMap } from 'mapbox-gl/esm'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { hasGeographicCoordinates } from '@/lib/mapCoordinates.js'
 import { isPublicMapboxToken, MAP_LANGUAGE, MAP_WORLDVIEW, mapStyleFor } from '@/lib/mapLayers.js'
-import { createSchoolFlight, fullGlobeZoom } from '@/lib/school-flight.js'
+import { createSchoolFlight, FLIGHT_TARGET_ZOOM, fullGlobeZoom, schoolFlightReadiness } from '@/lib/school-flight.js'
 
 const token = (import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '').trim()
 
@@ -15,10 +15,10 @@ export default function SchoolFlightMap({ schools, destination, onProgress, onCo
     if (!isPublicMapboxToken(token)) { callbacks.current.onComplete(); return }
     let map, frame, resize, started, lastPhase
     let finished = false
-    const markers = []
     const finish = () => {
       if (finished) return
       finished = true
+      readiness.dispose()
       cancelAnimationFrame(frame)
       callbacks.current.onComplete()
     }
@@ -29,11 +29,14 @@ export default function SchoolFlightMap({ schools, destination, onProgress, onCo
       const bounds = container.current.getBoundingClientRect()
       const position = camera(now - started, fullGlobeZoom(bounds.width, bounds.height))
       map.jumpTo({ center: position.center, zoom: position.zoom, bearing: 0, pitch: 0 })
-      callbacks.current.onProgress(position.opacity, position.phase !== lastPhase ? position.phase : null)
+      callbacks.current.onProgress(position.reveal, position.phase !== lastPhase ? position.phase : null)
       lastPhase = position.phase
       if (position.complete) finish()
       else frame = requestAnimationFrame(animate)
     }
+    const readiness = schoolFlightReadiness(() => {
+      frame = requestAnimationFrame(animate)
+    })
     try {
       const bounds = container.current.getBoundingClientRect()
       const initial = camera(0, fullGlobeZoom(bounds.width, bounds.height))
@@ -43,7 +46,7 @@ export default function SchoolFlightMap({ schools, destination, onProgress, onCo
         style: mapStyleFor('hybrid'),
         worldview: MAP_WORLDVIEW, language: MAP_LANGUAGE,
         center: initial.center, zoom: initial.zoom,
-        minZoom: -2.5, maxZoom: 14, maxPitch: 0, interactive: false,
+        minZoom: -2.5, maxZoom: FLIGHT_TARGET_ZOOM, maxPitch: 0, interactive: false,
         antialias: true, attributionControl: { compact: true },
       })
       map.on('style.load', () => {
@@ -51,18 +54,26 @@ export default function SchoolFlightMap({ schools, destination, onProgress, onCo
         map.setLanguage(MAP_LANGUAGE)
         map.setProjection('globe')
         map.setFog({ color: '#b5e0ed', 'high-color': '#183951', 'space-color': '#071b2c', 'star-intensity': 0.15 })
+        // Render dots in the same map frame as the imagery. DOM markers round
+        // projected positions and update separately during projection changes.
+        map.addSource('arrival-schools', { type: 'geojson', data: {
+          type: 'FeatureCollection', features: schools.filter(hasGeographicCoordinates).map((school) => ({
+            type: 'Feature', properties: { destination: school.school_id === destination.school_id },
+            geometry: { type: 'Point', coordinates: [school.longitude, school.latitude] },
+          })),
+        } })
+        map.addLayer({ id: 'arrival-school-halos', type: 'circle', source: 'arrival-schools', paint: {
+          'circle-radius': ['case', ['get', 'destination'], 13.5, 8],
+          'circle-color': '#d4b35b', 'circle-opacity': 0.2, 'circle-emissive-strength': 1,
+        } })
+        map.addLayer({ id: 'arrival-school-points', type: 'circle', source: 'arrival-schools', paint: {
+          'circle-radius': ['case', ['get', 'destination'], 6.5, 4],
+          'circle-color': '#d4b35b', 'circle-stroke-color': '#fff9e9', 'circle-stroke-width': 1,
+          'circle-emissive-strength': 1,
+        } })
+        map.once('render', readiness.rendered)
       })
-      map.once('load', () => {
-        if (finished) return
-        for (const school of schools.filter(hasGeographicCoordinates)) {
-          const element = document.createElement('span')
-          element.className = `arrival-school-pin${school.school_id === destination.school_id ? ' is-destination' : ''}`
-          element.title = school.name
-          element.setAttribute('aria-label', school.name)
-          markers.push(new Marker({ element }).setLngLat([school.longitude, school.latitude]).addTo(map))
-        }
-        frame = requestAnimationFrame(animate)
-      })
+      map.once('load', readiness.loaded)
       map.on('webglcontextlost', finish)
       resize = new ResizeObserver(() => map.resize())
       resize.observe(container.current)
@@ -72,9 +83,9 @@ export default function SchoolFlightMap({ schools, destination, onProgress, onCo
     }
     return () => {
       finished = true
+      readiness.dispose()
       cancelAnimationFrame(frame)
       resize?.disconnect()
-      markers.forEach((marker) => marker.remove())
       map?.remove()
     }
   }, [schools, destination])

@@ -113,6 +113,8 @@ def serialize_user_model(user):
                                              and account_requires_email(user)),
         'allowed_email_domains': school_email_policy(school)['allowed_domains'],
         'email_policy_enabled': school_email_policy(school)['enabled'],
+        'inactivity_disabled_at': user.inactivity_disabled_at.isoformat() if user.inactivity_disabled_at else None,
+        'inactivity_delete_at': user.inactivity_delete_at.isoformat() if user.inactivity_delete_at else None,
     }
     if user.role == 'superadmin':
         data['school_contact_email'] = (school.contact_email or '') if school else ''
@@ -132,7 +134,7 @@ def get_user_by_username(username, *, school_id=None):
 
 
 def list_all_users(*, school_id=None):
-    query = db_session.query(User).options(joinedload(User.school)).order_by(User.username.asc())
+    query = db_session.query(User).filter(User.is_record_actor == 0).options(joinedload(User.school)).order_by(User.username.asc())
     if school_id:
         query = query.filter(User.school_id == school_id)
     users = query.all()
@@ -142,9 +144,10 @@ def list_all_users(*, school_id=None):
 def user_labels_for_school(school_id):
     """Resolve account references in display data without changing stored IDs."""
     labels = {}
-    for user_id, username in db_session.query(User.id, User.username).filter(User.school_id == school_id).all():
-        labels[user_id] = username
-        labels[username] = username
+    for user in db_session.query(User).filter(User.school_id == school_id).all():
+        label = user.display_name if user.is_record_actor else user.username
+        labels[user.id] = label
+        labels[user.username] = label
     return labels
 
 

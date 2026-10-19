@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
 import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
 import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
+import { beginOwnAccountDeletion } from '@/lib/account-deletion.js'
 
 function AccountEmailForm({ app, required = false, onSaved }) {
   const [email, setEmail] = useState(app.user.email || '')
@@ -96,6 +97,7 @@ export function AccountEmailRequired({ app }) {
       {' '}Verify an email below, or log out if you do not want to provide one.
     </p>
     <AccountEmailForm key={app.user.id} app={app} required />
+    {['user', 'admin'].includes(app.user.role) && <Button variant="link" className="mt-4 px-0" onClick={() => beginOwnAccountDeletion(app)}>Delete my account instead</Button>}
   </main>
 }
 
