@@ -1,5 +1,8 @@
 # reCAPTCHA v3 setup
 
+Historical setup guide. The application has since migrated to Cloudflare
+Turnstile; use [the current setup guide](turnstile-setup.md).
+
 The local implementation uses score-based reCAPTCHA v3 for the actions previously
 protected by v2, account-email codes (`account_email_code`), and password recovery
 requests (`password_recovery`). It does not add CAPTCHA to ordinary password login
@@ -65,7 +68,9 @@ no Google script. Do not run the live website with `APP_ENV=development`.
 | `/api/map/submissions` | `map_submit` |
 
 One shared browser loader loads Google's `api.js?render=...`. Forms show the
-required Google privacy/terms attribution instead of a checkbox or image grid.
+short “This site is protected by reCAPTCHA.” notice instead of a checkbox or image
+grid. The floating corner badge is hidden with `visibility: hidden`, following
+[Google's badge guidance](https://developers.google.com/recaptcha/docs/faq).
 Each protected request executes its own fresh token after local validation.
 Duplicate clicks are blocked while verification or the protected request runs.
 Signup uses the ordinary modal again, since v3 does not open an external image

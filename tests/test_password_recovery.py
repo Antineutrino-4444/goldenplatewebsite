@@ -158,9 +158,9 @@ def test_delivery_failure_does_not_change_password(client, email_outbox, monkeyp
     assert verify_password(get_user_by_id(user_id).password_hash, OLD)
 
 
-def test_request_checks_recaptcha_before_sending(client, email_outbox, monkeypatch):
+def test_request_checks_captcha_before_sending(client, email_outbox, monkeypatch):
     user = account()
-    monkeypatch.setenv('RECAPTCHA_SECRET_KEY', 'configured-test-secret')
+    monkeypatch.setenv('TURNSTILE_SECRET_KEY', 'configured-test-secret')
     assert client.post(REQUEST, json={'identifier': user.username, 'confirmed': True}).status_code == 400
     assert email_outbox == []
 

@@ -99,7 +99,7 @@ def test_map_recipient_editor_reports_environment_or_no_recipients(client, login
 
 def _school_request(client, monkeypatch):
     monkeypatch.setattr(interschool_routes, 'is_email_verified', lambda *args, **kwargs: True)
-    monkeypatch.setenv('RECAPTCHA_SECRET_KEY', '')
+    monkeypatch.setenv('TURNSTILE_SECRET_KEY', '')
     monkeypatch.setenv('WEBSITE_UPDATE_NOTIFY_EMAILS', RECIPIENT)
     suffix = uuid.uuid4().hex[:8]
     payload = {

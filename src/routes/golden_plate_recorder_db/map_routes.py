@@ -18,7 +18,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from . import recorder_bp
-from .recaptcha import recaptcha_failure
+from .captcha import captcha_failure
 from .db import DEFAULT_SCHOOL_ID
 from .email_service import VERIFICATION_CODE_EXPIRY_MINUTES, send_email_via_brevo
 from src.services.website_notifications import get_website_update_recipients
@@ -1290,9 +1290,9 @@ def get_map_submission_extra_image(submission_id, image_id):
 def send_map_verification_code():
     data = request.get_json(silent=True) or {}
     email = _normalize_email(data.get('email'))
-    recaptcha_token = data.get('recaptcha_token')
+    captcha_token = data.get('captcha_token')
 
-    failure = recaptcha_failure(recaptcha_token, 'map_email_code')
+    failure = captcha_failure(captcha_token, 'map_email_code')
     if failure:
         return _map_error(f'MAP_{failure.code}', failure.message, failure.status)
 
@@ -1395,8 +1395,8 @@ def get_map_submitter_account_status():
 
 @recorder_bp.route('/map/submissions', methods=['POST'])
 def create_map_submission():
-    recaptcha_token = (request.form.get('recaptcha_token') or '').strip()
-    failure = recaptcha_failure(recaptcha_token, 'map_submit')
+    captcha_token = (request.form.get('captcha_token') or '').strip()
+    failure = captcha_failure(captcha_token, 'map_submit')
     if failure:
         return _map_error(f'MAP_{failure.code}', failure.message, failure.status)
 

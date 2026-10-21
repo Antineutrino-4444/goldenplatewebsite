@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "test:map": "node --test tests/map-coordinates.test.js tests/map-view.test.js tests/map-layers.test.js",
-    "test:recaptcha": "node --test tests/recaptcha-client.test.js",
+    "test:captcha": "node --test tests/captcha-client.test.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

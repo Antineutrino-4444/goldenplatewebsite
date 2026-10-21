@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
-import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
-import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
+import CaptchaVerification from '@/components/CaptchaVerification.jsx'
+import { getCaptchaToken, captchaErrorMessage } from '@/lib/captcha.js'
 
 function RecoveryForm({ identifier, onClose }) {
   const [account, setAccount] = useState(identifier || '')
@@ -17,15 +17,15 @@ function RecoveryForm({ identifier, onClose }) {
     if (busy || !confirmed) return
     setBusy(true); setError('')
     try {
-      const recaptchaToken = await getRecaptchaToken('password_recovery')
+      const captchaToken = await getCaptchaToken('password_recovery')
       const response = await fetch('/api/auth/password-recovery/request', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: account.trim(), confirmed: true, recaptcha_token: recaptchaToken }),
+        body: JSON.stringify({ identifier: account.trim(), confirmed: true, captcha_token: captchaToken }),
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Unable to request recovery.')
       setMessage(result.message)
-    } catch (failure) { setError(recaptchaErrorMessage(failure, failure.message || 'Unable to connect. Try again.')) }
+    } catch (failure) { setError(captchaErrorMessage(failure, failure.message || 'Unable to connect. Try again.')) }
     finally { setBusy(false) }
   }
   if (message) return <div className="space-y-4"><p role="status" className="text-sm">{message}</p><Button onClick={onClose} className="w-full">Back to login</Button></div>
@@ -38,7 +38,7 @@ function RecoveryForm({ identifier, onClose }) {
     <label className="flex items-start gap-3 text-sm"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} required />
       <span>I want to send a password recovery email now.</span></label>
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
-    <RecaptchaNotice />
+    <CaptchaVerification actions="password_recovery" />
     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={onClose}>Ask a superadmin instead</Button>
       <Button type="submit" disabled={busy || !confirmed || !account.trim()}>{busy ? 'Sending…' : 'Send recovery email'}</Button></div>
   </form>

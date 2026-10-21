@@ -10,8 +10,8 @@ function Dialog({
   allowExternalInteraction = false,
   ...props
 }) {
-  // reCAPTCHA mounts its challenge iframe under document.body, outside Content.
-  // A modal Radix dialog blocks its pointer events and pulls focus back to inputs.
+  // Opt in only for widgets that mount outside Content: a modal Radix dialog
+  // otherwise blocks their pointer events and pulls focus back to its inputs.
   return (
     <ExternalInteractionContext.Provider value={allowExternalInteraction}>
       <DialogPrimitive.Root

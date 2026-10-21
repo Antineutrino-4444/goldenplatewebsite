@@ -16,14 +16,14 @@ async function compileEnvironment(files, exportedToken) {
     else process.env[tokenName] = exportedToken
     const frontend = path.join(directory, 'frontend')
     await mkdir(frontend)
-    await writeFile(path.join(frontend, '.env'), 'VITE_MAPBOX_ACCESS_TOKEN=pk.frontend.signature\nVITE_RECAPTCHA_SITE_KEY=frontend-captcha\n')
+    await writeFile(path.join(frontend, '.env'), 'VITE_MAPBOX_ACCESS_TOKEN=pk.frontend.signature\nVITE_TURNSTILE_SITE_KEY=frontend-captcha\n')
     for (const [filename, content] of Object.entries(files)) {
       await writeFile(path.join(directory, filename), content)
     }
     await writeFile(path.join(frontend, 'index.html'), '<script type="module" src="/main.js"></script>')
     await writeFile(path.join(frontend, 'main.js'), `document.body.textContent = JSON.stringify({
       mapbox: import.meta.env.VITE_MAPBOX_ACCESS_TOKEN,
-      recaptcha: import.meta.env.VITE_RECAPTCHA_SITE_KEY,
+      captcha: import.meta.env.VITE_TURNSTILE_SITE_KEY,
       secret: import.meta.env.SECRET_KEY,
       environment: import.meta.env,
     })`)
@@ -40,13 +40,13 @@ async function compileEnvironment(files, exportedToken) {
   }
 }
 
-test('root public Mapbox token reaches the bundle without backend secrets or changes to frontend reCAPTCHA', async () => {
+test('root public Mapbox token reaches the bundle without backend secrets or changes to frontend Turnstile', async () => {
   const code = await compileEnvironment({
-    '.env': 'VITE_MAPBOX_ACCESS_TOKEN=pk.root.signature\nSECRET_KEY=backend-secret-fixture\nBREVO_API_KEY=brevo-secret-fixture\nRECAPTCHA_SECRET_KEY=captcha-secret-fixture\nVITE_RECAPTCHA_SITE_KEY=root-captcha\n',
+    '.env': 'VITE_MAPBOX_ACCESS_TOKEN=pk.root.signature\nSECRET_KEY=backend-secret-fixture\nBREVO_API_KEY=brevo-secret-fixture\nTURNSTILE_SECRET_KEY=captcha-secret-fixture\nVITE_TURNSTILE_SITE_KEY=root-captcha\n',
   })
   assert.ok(code.includes('mapbox: "pk.root.signature"'))
   assert.ok(!code.includes('pk.frontend.signature'))
-  assert.ok(code.includes('recaptcha: "frontend-captcha"'))
+  assert.ok(code.includes('captcha: "frontend-captcha"'))
   for (const value of ['backend-secret-fixture', 'brevo-secret-fixture', 'captcha-secret-fixture', 'root-captcha']) {
     assert.ok(!code.includes(value), `${value} must not reach the browser`)
   }

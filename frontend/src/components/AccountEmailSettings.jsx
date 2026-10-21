@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
-import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
-import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
+import { getCaptchaToken, captchaErrorMessage } from '@/lib/captcha.js'
+import CaptchaVerification from '@/components/CaptchaVerification.jsx'
 import { beginOwnAccountDeletion } from '@/lib/account-deletion.js'
 
 function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
@@ -22,10 +22,10 @@ function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
     setError('')
     setMessage('')
     try {
-      const token = await getRecaptchaToken('account_email_code')
+      const token = await getCaptchaToken('account_email_code')
       const response = await fetch('/api/auth/account-email/send-verification-code', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), recaptcha_token: token }),
+        body: JSON.stringify({ email: email.trim(), captcha_token: token }),
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Unable to send the verification email.')
@@ -34,7 +34,7 @@ function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
       setExpiry(result.expiry_minutes || 5)
       setMessage('Verification code sent.')
     } catch (failure) {
-      setError(recaptchaErrorMessage(failure, failure.message || 'Unable to send the verification email.'))
+      setError(captchaErrorMessage(failure, failure.message || 'Unable to send the verification email.'))
     } finally { setBusy('') }
   }
 
@@ -80,7 +80,7 @@ function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
     </div>}
     {message && <p role="status" className="text-sm">{message}</p>}
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
-    <RecaptchaNotice />
+    <CaptchaVerification actions="account_email_code" />
     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
       {onDismiss && <Button type="button" variant="outline" onClick={onDismiss}>Not now</Button>}
       {required && <Button type="button" variant="outline" onClick={app.logout} disabled={!!busy}>Log out</Button>}

@@ -99,7 +99,7 @@ root mode-specific and local environment files follow Vite's normal precedence.
 If the root files omit this variable, existing `frontend/.env*` settings remain
 the fallback. An explicitly empty root value disables the map. Restart Vite
 after changing it; rebuild the frontend for the Python server or production
-deployment. Other frontend settings, including reCAPTCHA's public site key, keep
+deployment. Other frontend settings, including Turnstile's public site key, keep
 using their existing frontend files; backend secrets stay on the server.
 Without a token, the map shows a setup message while school search, lists and
 details remain public. Never use a secret (`sk.`) token in the frontend.
@@ -287,28 +287,26 @@ included. Invalid or duplicate requests send no alert, and delivery failure does
 not undo a saved request or account. An empty website-wide recipient list does not
 disable signup notifications to an existing school contact.
 
-## reCAPTCHA
+## Cloudflare Turnstile
 
-The frontend now uses score-based reCAPTCHA v3 for account signup, school
-registration/email-code sending, account email verification, password recovery
-requests, and map submission/email-code sending. Each
-request obtains a fresh token. The server verifies its action, hostname, score,
-expiry, and Google error codes; ordinary login is unchanged.
+The frontend uses Cloudflare Turnstile for account signup, school registration
+and email-code sending, account email verification, password recovery requests,
+and archived map submissions/email-code sending. Managed challenges run inside
+the active form and appear only when interaction is needed. Each protected
+request gets a fresh token; the server checks its action, hostname and provider
+result. Ordinary login, email verification and administrator approvals retain
+their existing behavior.
 
-The supplied public site key is stored in `frontend/.env.production` and is
-included by the production frontend build. Save its matching v3 **legacy secret
-key** as `RECAPTCHA_SECRET_KEY` in the server's root `.env` or hosting environment.
-Keep that secret out of frontend files. Set `APP_ENV=production`, configure
-`RECAPTCHA_ALLOWED_HOSTNAMES`, and optionally adjust `RECAPTCHA_MIN_SCORE`
-(default 0.5). A missing secret blocks protected requests in production.
+The owner's public key is stored in `frontend/.env.production` as
+`VITE_TURNSTILE_SITE_KEY`. Save its matching secret as `TURNSTILE_SECRET_KEY` in
+the server's root `.env` or hosting environment. Set `APP_ENV=production` and
+`TURNSTILE_ALLOWED_HOSTNAMES`. Missing production secrets block protected
+requests. Backend secrets never belong in frontend files or `VITE_` variables.
 
-Deploy the new frontend build and server together with the matching v3 key pair.
-Existing v2 keys are incompatible with the new code. See the
-[v3 setup guide](docs/recaptcha-v3-setup.md) for exact configuration, deployment,
-score handling, upload retries, and rollback. The earlier
-[migration investigation](docs/recaptcha-v3-migration.md) is retained as historical
-background. Production key verification still requires the matching secret and
-a deployment on the configured domains.
+Deploy the updated server and frontend together. See the
+[Turnstile setup guide](docs/turnstile-setup.md) for exact configuration, endpoint
+coverage, tests, retries and rollback. Actual production verification requires
+the matching secret and a deployment on the widget's configured hostnames.
 
 ## Passwords and Environment Mode
 Users may sign in with their username or a uniquely matching verified email and

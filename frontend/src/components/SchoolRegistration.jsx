@@ -1,5 +1,5 @@
 import React from 'react'
-import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
+import CaptchaVerification from '@/components/CaptchaVerification.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -297,7 +297,7 @@ function SchoolRegistration({ app }) {
             </>
           )}
 
-          <RecaptchaNotice />
+          <CaptchaVerification actions="school_email_code school_register" />
 
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
             <Button variant="ghost" onClick={handleBackToLogin} className="sm:w-auto w-full">

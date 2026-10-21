@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
-import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
+import CaptchaVerification from '@/components/CaptchaVerification.jsx'
+import { getCaptchaToken, captchaErrorMessage } from '@/lib/captcha.js'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -2178,13 +2178,13 @@ function MapPortal({ app }) {
     protectedRequestBusy.current = true
     setVerificationLoading(true)
     try {
-      const recaptchaToken = await getRecaptchaToken('map_email_code')
+      const captchaToken = await getCaptchaToken('map_email_code')
       const response = await fetch(`${API_BASE}/map/send-verification-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: trimmedEmail,
-          recaptcha_token: recaptchaToken
+          captcha_token: captchaToken
         })
       })
       const result = await readApiResponse(response)
@@ -2195,7 +2195,7 @@ function MapPortal({ app }) {
         showMessage(buildApiErrorMessage(result, 'MAP_VERIFICATION_SEND_FAILED', 'Failed to send verification code'), 'error')
       }
     } catch (error) {
-      showMessage(recaptchaErrorMessage(error, buildNetworkErrorMessage('MAP_VERIFICATION_SEND_NETWORK', 'Failed to send verification code', error)), 'error')
+      showMessage(captchaErrorMessage(error, buildNetworkErrorMessage('MAP_VERIFICATION_SEND_NETWORK', 'Failed to send verification code', error)), 'error')
     } finally {
       protectedRequestBusy.current = false
       setVerificationLoading(false)
@@ -2457,8 +2457,8 @@ function MapPortal({ app }) {
       }
 
       // Acquire after pin creation and image processing, immediately before upload.
-      const recaptchaToken = await getRecaptchaToken('map_submit')
-      formData.append('recaptcha_token', recaptchaToken || '')
+      const captchaToken = await getCaptchaToken('map_submit')
+      formData.append('captcha_token', captchaToken || '')
       const response = await fetch(`${API_BASE}/map/submissions`, {
         method: 'POST',
         body: formData
@@ -2481,7 +2481,7 @@ function MapPortal({ app }) {
         console.error('Map submission failed:', { status: result.status, data: result.data, raw: result.raw })
       }
     } catch (error) {
-      showMessage(recaptchaErrorMessage(error, buildNetworkErrorMessage('MAP_SUBMIT_NETWORK', 'Failed to submit map entry', error)), 'error')
+      showMessage(captchaErrorMessage(error, buildNetworkErrorMessage('MAP_SUBMIT_NETWORK', 'Failed to submit map entry', error)), 'error')
       console.error('Map submission network/parse failure:', error)
     } finally {
       protectedRequestBusy.current = false
@@ -3205,7 +3205,7 @@ function MapPortal({ app }) {
                   )}
                 </div>
 
-                <RecaptchaNotice />
+                <CaptchaVerification actions="map_email_code map_submit" />
 
                 <Button onClick={submitMapEntry} disabled={submitting} className="w-full bg-teal-700 hover:bg-teal-800">
                   <Send className="mr-2 h-4 w-4" />

@@ -200,9 +200,9 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def recaptcha_disabled_for_tests(monkeypatch):
-    """Do not contact Google from ordinary tests, even with a configured host env."""
-    monkeypatch.setenv('RECAPTCHA_SECRET_KEY', '')
+def captcha_disabled_for_tests(monkeypatch):
+    """Do not contact Cloudflare from ordinary tests, even with a configured host env."""
+    monkeypatch.setenv('TURNSTILE_SECRET_KEY', '')
     monkeypatch.setenv('APP_ENV', 'development')
 
 

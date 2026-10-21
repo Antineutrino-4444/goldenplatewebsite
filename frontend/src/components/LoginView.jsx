@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import PasswordRecoveryDialog from '@/components/PasswordRecoveryDialog.jsx'
-import RecaptchaNotice from '@/components/RecaptchaNotice.jsx'
+import CaptchaVerification from '@/components/CaptchaVerification.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
@@ -343,7 +343,7 @@ function LoginView({ app }) {
                 onChange={(e) => setSignupPassword(e.target.value)}
               />
             </div>
-            <RecaptchaNotice />
+            <CaptchaVerification actions="account_email_code account_signup" />
             <div className="flex gap-2">
               <Button onClick={() => handleSignupDialogChange(false)} variant="outline" className="flex-1">
                 Cancel

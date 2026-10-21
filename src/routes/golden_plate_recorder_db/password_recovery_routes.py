@@ -13,7 +13,7 @@ from src.services.email_delivery import send_email_via_brevo
 from . import recorder_bp
 from .db import PasswordRecovery, User, _now_utc, db_session
 from .passwords import hash_password, verify_password
-from .recaptcha import recaptcha_failure
+from .captcha import captcha_failure
 from .security import password_session_token
 from .users import get_user_by_login
 
@@ -51,7 +51,7 @@ def request_password_recovery():
     identifier = data.get('identifier')
     if not isinstance(identifier, str) or not identifier.strip() or len(identifier) > 320:
         return _response({'error': 'Enter your username or verified email.'}, 400)
-    failure = recaptcha_failure(data.get('recaptcha_token'), 'password_recovery')
+    failure = captcha_failure(data.get('captcha_token'), 'password_recovery')
     if failure:
         return _response({'error': failure.message, 'code': failure.code}, failure.status)
     generic = {'message': GENERIC_MESSAGE}

@@ -8,7 +8,7 @@ from sqlalchemy import func
 from src.services.website_notifications import notify_website_update
 
 from . import recorder_bp
-from .recaptcha import recaptcha_failure
+from .captcha import captcha_failure
 from .db import (
     DEFAULT_SCHOOL_ID,
     INTERSCHOOL_SCHOOL_ID,
@@ -116,10 +116,10 @@ def send_verification_code():
     """Send a verification code to the provided email address."""
     data = request.get_json(silent=True) or {}
     email = (data.get('email') or '').strip().lower()
-    recaptcha_token = data.get('recaptcha_token')
+    captcha_token = data.get('captcha_token')
 
-    # Verify this endpoint's reCAPTCHA v3 action.
-    failure = recaptcha_failure(recaptcha_token, 'school_email_code')
+    # Verify this endpoint's Turnstile action.
+    failure = captcha_failure(captcha_token, 'school_email_code')
     if failure:
         return jsonify({'error': failure.message, 'code': failure.code}), failure.status
 
@@ -248,10 +248,10 @@ def register_school():
     admin_username = (data.get('admin_username') or '').strip()
     admin_password = (data.get('admin_password') or '').strip()
     admin_display_name = (data.get('admin_display_name') or '').strip()
-    recaptcha_token = data.get('recaptcha_token')
+    captcha_token = data.get('captcha_token')
 
-    # Verify this endpoint's reCAPTCHA v3 action.
-    failure = recaptcha_failure(recaptcha_token, 'school_register')
+    # Verify this endpoint's Turnstile action.
+    failure = captcha_failure(captcha_token, 'school_register')
     if failure:
         return jsonify({'error': failure.message, 'code': failure.code}), failure.status
 

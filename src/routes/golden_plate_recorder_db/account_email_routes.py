@@ -11,7 +11,7 @@ from .auth_routes import _consume_signup_verification, _signup_email_verificatio
 from .db import EmailVerification, School, User, _now_utc, db_session
 from .email_policy import email_allowed, normalize_email, school_email_policy, validate_policy
 from .email_service import VERIFICATION_CODE_EXPIRY_MINUTES, create_verification_code, send_verification_email
-from .recaptcha import recaptcha_failure
+from .captcha import captcha_failure
 from .security import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def send_account_email_code():
     if error:
         return error
     data = request.get_json()
-    failure = recaptcha_failure(data.get('recaptcha_token'), 'account_email_code')
+    failure = captcha_failure(data.get('captcha_token'), 'account_email_code')
     if failure:
         return jsonify({'error': failure.message, 'code': failure.code}), failure.status
     recent = db_session.query(EmailVerification).filter(

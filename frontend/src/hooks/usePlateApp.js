@@ -1,7 +1,7 @@
 import { dashboardMetrics } from '@/lib/session-metrics.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { makeStudentKey, normalizeName, sanitizeSelection } from '@/lib/names.js'
-import { getRecaptchaToken, recaptchaErrorMessage } from '@/lib/recaptcha.js'
+import { getCaptchaToken, captchaErrorMessage } from '@/lib/captcha.js'
 import { recordSuccessMessage, submitRecordRequest } from '@/lib/record-submission.js'
 import { guestSession } from '@/lib/guest-session.js'
 
@@ -396,13 +396,13 @@ export function usePlateApp() {
     protectedRequestBusy.current = true
     setVerificationLoading(true)
     try {
-      const recaptchaToken = await getRecaptchaToken('school_email_code')
+      const captchaToken = await getCaptchaToken('school_email_code')
       const response = await fetch(`${API_BASE}/auth/send-verification-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: trimmedEmail,
-          recaptcha_token: recaptchaToken,
+          captcha_token: captchaToken,
         }),
       })
 
@@ -425,7 +425,7 @@ export function usePlateApp() {
         return false
       }
     } catch (error) {
-      showMessage(recaptchaErrorMessage(error, 'Failed to send verification code. Please try again.'), 'error')
+      showMessage(captchaErrorMessage(error, 'Failed to send verification code. Please try again.'), 'error')
       return false
     } finally {
       protectedRequestBusy.current = false
@@ -682,11 +682,11 @@ export function usePlateApp() {
     protectedRequestBusy.current = true
     setSignupCodeLoading(true)
     try {
-      const recaptchaToken = await getRecaptchaToken('account_email_code')
+      const captchaToken = await getCaptchaToken('account_email_code')
       const response = await fetch(`${API_BASE}/auth/signup/send-verification-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, ...schoolDetails, recaptcha_token: recaptchaToken }),
+        body: JSON.stringify({ email, ...schoolDetails, captcha_token: captchaToken }),
       })
       const data = await response.json()
       if (response.ok) {
@@ -698,7 +698,7 @@ export function usePlateApp() {
         showMessage(data.error || 'Unable to send the verification email. Please try again.', 'error')
       }
     } catch (error) {
-      showMessage(recaptchaErrorMessage(error, 'Unable to send the verification email. Please try again.'), 'error')
+      showMessage(captchaErrorMessage(error, 'Unable to send the verification email. Please try again.'), 'error')
     } finally {
       protectedRequestBusy.current = false
       setSignupCodeLoading(false)
@@ -757,7 +757,7 @@ export function usePlateApp() {
     protectedRequestBusy.current = true
     setIsLoading(true)
     try {
-      const recaptchaToken = await getRecaptchaToken('account_signup')
+      const captchaToken = await getCaptchaToken('account_signup')
       const payload = {
         username: signupUsername.trim(),
         password: signupPassword.trim(),
@@ -772,8 +772,8 @@ export function usePlateApp() {
         payload.school_code = signupSchoolCode.trim()
       }
 
-      if (recaptchaToken) {
-        payload.recaptcha_token = recaptchaToken
+      if (captchaToken) {
+        payload.captcha_token = captchaToken
       }
 
       const response = await fetch(`${API_BASE}/auth/signup`, {
@@ -800,7 +800,7 @@ export function usePlateApp() {
         showMessage(data.error || 'Signup failed', 'error', data.code === 'already_authenticated' ? 'large' : 'small')
       }
     } catch (error) {
-      showMessage(recaptchaErrorMessage(error, 'Signup failed. Please try again.'), 'error')
+      showMessage(captchaErrorMessage(error, 'Signup failed. Please try again.'), 'error')
     } finally {
       protectedRequestBusy.current = false
       setIsLoading(false)
@@ -856,7 +856,7 @@ export function usePlateApp() {
     protectedRequestBusy.current = true
     setIsLoading(true)
     try {
-      const recaptchaToken = await getRecaptchaToken('school_register')
+      const captchaToken = await getCaptchaToken('school_register')
       const payload = {
         school_name: trimmedSchoolName,
         admin_username: trimmedAdminUsername,
@@ -878,8 +878,8 @@ export function usePlateApp() {
         payload.school_slug = trimmedCode
       }
 
-      if (recaptchaToken) {
-        payload.recaptcha_token = recaptchaToken
+      if (captchaToken) {
+        payload.captcha_token = captchaToken
       }
 
       const response = await fetch(`${API_BASE}/auth/register-school`, {
@@ -898,7 +898,7 @@ export function usePlateApp() {
         showMessage(data.error || 'Failed to submit registration request', 'error', data.code === 'already_authenticated' ? 'large' : 'small')
       }
     } catch (error) {
-      showMessage(recaptchaErrorMessage(error, 'Failed to submit registration request. Please try again.'), 'error')
+      showMessage(captchaErrorMessage(error, 'Failed to submit registration request. Please try again.'), 'error')
     } finally {
       protectedRequestBusy.current = false
       setIsLoading(false)

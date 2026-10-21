@@ -9,7 +9,7 @@ from src.services.signup_notifications import notify_school_signup
 from flask import jsonify, request, session
 
 from . import recorder_bp
-from .recaptcha import recaptcha_failure
+from .captcha import captcha_failure
 from .app_config import default_admin_credentials_enabled
 from .db import DEFAULT_SCHOOL_ID, AccountCreationRequest, EmailVerification, User, _now_utc, db_session
 from .email_service import (
@@ -209,7 +209,7 @@ def send_signup_verification_code():
     if require_auth() or is_guest():
         return jsonify({'error': 'Please log out before signing up.', 'code': 'already_authenticated'}), 409
     data = request.get_json(silent=True) or {}
-    failure = recaptcha_failure(data.get('recaptcha_token'), 'account_email_code')
+    failure = captcha_failure(data.get('captcha_token'), 'account_email_code')
     if failure:
         return jsonify({'error': failure.message, 'code': failure.code}), failure.status
     email = data.get('email')
@@ -296,10 +296,10 @@ def signup():
     school_code = data.get('school_code', '').strip()
     invite_code = data.get('invite_code', '').strip()
     email = data.get('email')
-    recaptcha_token = data.get('recaptcha_token', '')
+    captcha_token = data.get('captcha_token', '')
 
-    # Verify this endpoint's reCAPTCHA v3 action.
-    failure = recaptcha_failure(recaptcha_token, 'account_signup')
+    # Verify this endpoint's Turnstile action.
+    failure = captcha_failure(captcha_token, 'account_signup')
     if failure:
         return jsonify({'error': failure.message, 'code': failure.code}), failure.status
 
