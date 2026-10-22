@@ -20,15 +20,15 @@ class CaptchaFailure:
     status: int = 400
 
 
-def captcha_failure(token, expected_action):
-    """Allow verified tokens, or explicitly unconfigured local development only."""
+def captcha_failure(token, expected_action, *, required=False):
+    """Verify tokens; required=True also forbids development bypass/test secrets."""
     development = is_development_environment()
     secret = os.environ.get('TURNSTILE_SECRET_KEY', '').strip()
     if not secret:
-        if development:
+        if development and not required:
             return None
         return CaptchaFailure('CAPTCHA_UNAVAILABLE', 'Verification is temporarily unavailable. Please contact an administrator.', 503)
-    if not development and secret in TEST_SECRETS:
+    if (not development or required) and secret in TEST_SECRETS:
         return CaptchaFailure('CAPTCHA_UNAVAILABLE', 'Verification is temporarily unavailable. Please contact an administrator.', 503)
     if not isinstance(token, str) or not token.strip():
         return CaptchaFailure('CAPTCHA_REQUIRED', 'Verification is required. Please try submitting again.')

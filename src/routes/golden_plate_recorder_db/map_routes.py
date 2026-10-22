@@ -744,16 +744,6 @@ def _notify_pending_map_submission(submission, base_url=None):
         if not recipients:
             return
 
-        title = (submission.title or '').strip() or '(no title)'
-        submitter_email = submission.email or ''
-        submitter_name = (
-            submission.submission_display_name
-            or submission.submitted_display_name
-            or submission.submitted_username
-            or 'Anonymous'
-        )
-        text_full = (submission.text_content or '').strip()
-
         # Pin (if any).
         pin_label = '(no pin / "Others")'
         if submission.pin_id:
@@ -770,102 +760,13 @@ def _notify_pending_map_submission(submission, base_url=None):
             except Exception:
                 logger.exception('Failed to look up pin %s for notification', submission.pin_id)
 
-        submitted_at_str = ''
-        if submission.submitted_at:
-            try:
-                submitted_at_str = submission.submitted_at.strftime('%B %d, %Y at %I:%M %p UTC')
-            except Exception:
-                submitted_at_str = str(submission.submitted_at)
-
-        # Quick-approve link.
+        attachments, image_descriptions = _collect_submission_image_attachments(submission)
         public_base = (
             os.environ.get('MAP_PUBLIC_BASE_URL', '').strip().rstrip('/')
             or (base_url or '').strip().rstrip('/')
         )
-        approval_url = None
-        if submission.approval_token and public_base:
-            approval_url = (
-                f'{public_base}/api/map/submissions/{submission.id}'
-                f'/quick-approve?token={submission.approval_token}'
-            )
-
-        # Collect images as Brevo attachments (base64).
-        attachments, image_descriptions = _collect_submission_image_attachments(submission)
-
-        # Build HTML.
-        safe_title = _html_lib.escape(title)
-        safe_name = _html_lib.escape(submitter_name)
-        safe_email = _html_lib.escape(submitter_email)
-        safe_text = (_html_lib.escape(text_full).replace('\n', '<br>')
-                     if text_full else '<em>(no description)</em>')
-        safe_pin = _html_lib.escape(pin_label)
-        safe_submission_id = _html_lib.escape(submission.id or '')
-        safe_submitted_at = _html_lib.escape(submitted_at_str)
-        safe_school_id = _html_lib.escape(submission.school_id or '')
-        safe_status = _html_lib.escape(submission.status or '')
-        safe_submitted_by_role = _html_lib.escape(submission.submitted_role or '')
-        safe_submitted_by_username = _html_lib.escape(submission.submitted_username or '(guest)')
-
-        if image_descriptions:
-            images_html = _render_image_descriptions_html(image_descriptions)
-        else:
-            images_html = '<em style="color:#64748b;">No images.</em>'
-
-        if approval_url:
-            safe_url = _html_lib.escape(approval_url, quote=True)
-            quick_approve_html = f'''
-              <div style="margin-top: 24px; padding: 16px; border:1px solid #fcd34d; background:#fffbeb; border-radius:8px;">
-                <div style="font-weight:700; color:#78350f; margin-bottom:8px;">⚡ Speed approval link (single use)</div>
-                <p style="margin:0 0 12px; font-size:13px; color:#78350f;">
-                  Clicking this approves the submission immediately. No login required.
-                  The link works <strong>once</strong> and is invalidated as soon as it is used
-                  (or as soon as anyone reviews the submission).
-                </p>
-                <a href="{safe_url}" style="display:inline-block; background:#16a34a; color:#ffffff; text-decoration:none; padding:10px 18px; border-radius:6px; font-weight:600;">
-                  Approve submission
-                </a>
-                <div style="margin-top:10px; font-size:11px; color:#92400e; word-break:break-all;">
-                  {safe_url}
-                </div>
-              </div>
-            '''
-        else:
-            quick_approve_html = (
-                '<p style="margin-top:16px; font-size:13px; color:#64748b;">'
-                '(Quick approval link unavailable — server could not determine its public URL.)'
-                '</p>'
-            )
-
-        subject = f'[Golden Plate Map] New submission pending approval: {title}'
-        html = f"""
-        <div style="font-family: Arial, sans-serif; color: #0f172a; max-width: 680px;">
-          <h2 style="color:#0f766e; margin-bottom:8px;">New Ecological Map submission awaiting approval</h2>
-          <p style="margin:0 0 16px;">A new submission has been received and is pending review.</p>
-
-          <table style="border-collapse: collapse; font-size: 14px; width:100%;">
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Title</strong></td><td style="padding:4px 0;">{safe_title}</td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submitted by</strong></td><td style="padding:4px 0;">{safe_name} &lt;{safe_email}&gt;</td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Account</strong></td><td style="padding:4px 0;">@{safe_submitted_by_username} ({safe_submitted_by_role or 'guest'})</td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Pin</strong></td><td style="padding:4px 0;">{safe_pin}</td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submitted at</strong></td><td style="padding:4px 0;">{safe_submitted_at or '—'}</td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Status</strong></td><td style="padding:4px 0;">{safe_status}</td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submission ID</strong></td><td style="padding:4px 0;"><code>{safe_submission_id}</code></td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>School ID</strong></td><td style="padding:4px 0;"><code>{safe_school_id}</code></td></tr>
-          </table>
-
-          <h3 style="margin-top:20px; margin-bottom:6px; font-size:14px; color:#475569;">Description</h3>
-          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px; font-size:14px; line-height:1.5; white-space:pre-wrap;">{safe_text}</div>
-
-          <h3 style="margin-top:20px; margin-bottom:6px; font-size:14px; color:#475569;">Images attached to this email</h3>
-          {images_html}
-
-          {quick_approve_html}
-
-          <p style="margin-top:24px; font-size:12px; color:#94a3b8;">
-            You can also open the Ecological Map admin view in your browser to review/reject this submission.
-          </p>
-        </div>
-        """.strip()
+        subject, html = render_pending_map_email(submission, pin_label=pin_label,
+            public_base=public_base, image_descriptions=image_descriptions)
 
         for recipient in recipients:
             try:
@@ -917,7 +818,7 @@ def _create_map_verification_code(email):
     return verification
 
 
-def _send_map_verification_email(email, code):
+def render_map_verification_email(code):
     html_content = f'''
     <!DOCTYPE html>
     <html>
@@ -990,7 +891,12 @@ def _send_map_verification_email(email, code):
     </body>
     </html>
     '''
-    return send_email_via_brevo(email, 'Golden Plate Map - Email Verification Code', html_content)
+    return 'Golden Plate Map - Email Verification Code', html_content
+
+
+def _send_map_verification_email(email, code):
+    subject, html_content = render_map_verification_email(code)
+    return send_email_via_brevo(email, subject, html_content)
 
 
 def _verify_map_email_code(email, code):
@@ -1972,12 +1878,8 @@ def reject_map_submission(submission_id):
     return jsonify(response_payload), 200
 
 
-def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_display_name: str) -> dict:
-    """Send a formatted deletion email to the submitter via Brevo.
-
-    Includes the full submission text and every attached image so the user
-    has a complete record of what was removed.
-    """
+def render_map_deletion_email(*, submission, reason: str, reviewer_display_name: str, image_descriptions=()):
+    """Render a deletion email from supplied metadata, without reading images."""
     title = (submission.title or '').strip() or 'your submission'
     safe_title = _html_lib.escape(title)
     safe_reason = _html_lib.escape(reason).replace('\n', '<br/>')
@@ -1992,7 +1894,6 @@ def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_dis
     full_text = (submission.text_content or '').strip()
     safe_full_text = _html_lib.escape(full_text).replace('\n', '<br/>')
 
-    attachments, image_descriptions = _collect_submission_image_attachments(submission)
     images_html = _render_image_descriptions_html(image_descriptions)
 
     body_html = (
@@ -2051,15 +1952,27 @@ def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_dis
   </body>
 </html>
 """
+    return subject, html_content
+
+
+def _send_deletion_email(*, to_email: str, submission, reason: str, reviewer_display_name: str) -> dict:
+    attachments, image_descriptions = _collect_submission_image_attachments(submission)
+    subject, html_content = render_map_deletion_email(
+        submission=submission, reason=reason, reviewer_display_name=reviewer_display_name,
+        image_descriptions=image_descriptions)
     return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None, notification_type='map_status')
 
 
 def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_display_name: str) -> dict:
-    """Send a formatted rejection email to the submitter via Brevo.
+    attachments, image_descriptions = _collect_submission_image_attachments(submission)
+    subject, html_content = render_map_rejection_email(
+        submission=submission, reason=reason, reviewer_display_name=reviewer_display_name,
+        image_descriptions=image_descriptions)
+    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None, notification_type='map_status')
 
-    Includes the full submission text and every attached image so the user
-    has a complete record of what was reviewed.
-    """
+
+def render_map_rejection_email(*, submission, reason: str, reviewer_display_name: str, image_descriptions=()):
+    """Render a rejection email from supplied metadata, without reading images."""
     title = (submission.title or '').strip() or 'your submission'
     safe_title = _html_lib.escape(title)
     safe_reason = _html_lib.escape(reason).replace('\n', '<br/>')
@@ -2074,7 +1987,6 @@ def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_di
     full_text = (submission.text_content or '').strip()
     safe_full_text = _html_lib.escape(full_text).replace('\n', '<br/>')
 
-    attachments, image_descriptions = _collect_submission_image_attachments(submission)
     images_html = _render_image_descriptions_html(image_descriptions)
 
     body_html = (
@@ -2133,7 +2045,7 @@ def _send_rejection_email(*, to_email: str, submission, reason: str, reviewer_di
   </body>
 </html>
 """
-    return send_email_via_brevo(to_email, subject, html_content, attachments=attachments or None, notification_type='map_status')
+    return subject, html_content
 
 
 def _serialize_pin(pin):
@@ -2742,3 +2654,108 @@ def upload_map_background():
 
 
 __all__ = []
+
+
+def render_pending_map_email(submission, *, pin_label, public_base, image_descriptions):
+    """Render a reviewer email without selecting recipients, querying pins or reading images."""
+    title = (submission.title or '').strip() or '(no title)'
+    submitter_email = submission.email or ''
+    submitter_name = (
+        submission.submission_display_name
+        or submission.submitted_display_name
+        or submission.submitted_username
+        or 'Anonymous'
+    )
+    text_full = (submission.text_content or '').strip()
+
+    submitted_at_str = ''
+    if submission.submitted_at:
+        try:
+            submitted_at_str = submission.submitted_at.strftime('%B %d, %Y at %I:%M %p UTC')
+        except Exception:
+            submitted_at_str = str(submission.submitted_at)
+
+    # Quick-approve link.
+    approval_url = None
+    if submission.approval_token and public_base:
+        approval_url = (
+            f'{public_base}/api/map/submissions/{submission.id}'
+            f'/quick-approve?token={submission.approval_token}'
+        )
+
+    # Build HTML from supplied metadata.
+    safe_title = _html_lib.escape(title)
+    safe_name = _html_lib.escape(submitter_name)
+    safe_email = _html_lib.escape(submitter_email)
+    safe_text = (_html_lib.escape(text_full).replace('\n', '<br>')
+                 if text_full else '<em>(no description)</em>')
+    safe_pin = _html_lib.escape(pin_label)
+    safe_submission_id = _html_lib.escape(submission.id or '')
+    safe_submitted_at = _html_lib.escape(submitted_at_str)
+    safe_school_id = _html_lib.escape(submission.school_id or '')
+    safe_status = _html_lib.escape(submission.status or '')
+    safe_submitted_by_role = _html_lib.escape(submission.submitted_role or '')
+    safe_submitted_by_username = _html_lib.escape(submission.submitted_username or '(guest)')
+
+    if image_descriptions:
+        images_html = _render_image_descriptions_html(image_descriptions)
+    else:
+        images_html = '<em style="color:#64748b;">No images.</em>'
+
+    if approval_url:
+        safe_url = _html_lib.escape(approval_url, quote=True)
+        quick_approve_html = f'''
+          <div style="margin-top: 24px; padding: 16px; border:1px solid #fcd34d; background:#fffbeb; border-radius:8px;">
+            <div style="font-weight:700; color:#78350f; margin-bottom:8px;">⚡ Speed approval link (single use)</div>
+            <p style="margin:0 0 12px; font-size:13px; color:#78350f;">
+              Clicking this approves the submission immediately. No login required.
+              The link works <strong>once</strong> and is invalidated as soon as it is used
+              (or as soon as anyone reviews the submission).
+            </p>
+            <a href="{safe_url}" style="display:inline-block; background:#16a34a; color:#ffffff; text-decoration:none; padding:10px 18px; border-radius:6px; font-weight:600;">
+              Approve submission
+            </a>
+            <div style="margin-top:10px; font-size:11px; color:#92400e; word-break:break-all;">
+              {safe_url}
+            </div>
+          </div>
+        '''
+    else:
+        quick_approve_html = (
+            '<p style="margin-top:16px; font-size:13px; color:#64748b;">'
+            '(Quick approval link unavailable — server could not determine its public URL.)'
+            '</p>'
+        )
+
+    subject = f'[Golden Plate Map] New submission pending approval: {title}'
+    html = f"""
+    <div style="font-family: Arial, sans-serif; color: #0f172a; max-width: 680px;">
+      <h2 style="color:#0f766e; margin-bottom:8px;">New Ecological Map submission awaiting approval</h2>
+      <p style="margin:0 0 16px;">A new submission has been received and is pending review.</p>
+
+      <table style="border-collapse: collapse; font-size: 14px; width:100%;">
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Title</strong></td><td style="padding:4px 0;">{safe_title}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submitted by</strong></td><td style="padding:4px 0;">{safe_name} &lt;{safe_email}&gt;</td></tr>
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Account</strong></td><td style="padding:4px 0;">@{safe_submitted_by_username} ({safe_submitted_by_role or 'guest'})</td></tr>
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Pin</strong></td><td style="padding:4px 0;">{safe_pin}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submitted at</strong></td><td style="padding:4px 0;">{safe_submitted_at or '—'}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Status</strong></td><td style="padding:4px 0;">{safe_status}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>Submission ID</strong></td><td style="padding:4px 0;"><code>{safe_submission_id}</code></td></tr>
+        <tr><td style="padding:4px 12px 4px 0; color:#475569; vertical-align:top;"><strong>School ID</strong></td><td style="padding:4px 0;"><code>{safe_school_id}</code></td></tr>
+      </table>
+
+      <h3 style="margin-top:20px; margin-bottom:6px; font-size:14px; color:#475569;">Description</h3>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:12px; font-size:14px; line-height:1.5; white-space:pre-wrap;">{safe_text}</div>
+
+      <h3 style="margin-top:20px; margin-bottom:6px; font-size:14px; color:#475569;">Images attached to this email</h3>
+      {images_html}
+
+      {quick_approve_html}
+
+      <p style="margin-top:24px; font-size:12px; color:#94a3b8;">
+        You can also open the Ecological Map admin view in your browser to review/reject this submission.
+      </p>
+    </div>
+    """.strip()
+
+    return subject, html

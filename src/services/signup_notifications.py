@@ -7,6 +7,13 @@ def notify_school_signup(school, account, *, invited=False):
     recipients = get_website_update_recipients()
     if school.contact_email:
         recipients.append(school.contact_email)
+    title, summary, details = school_signup_content(school, account, invited=invited)
+    return send_notification(title, summary, details, recipients=recipients,
+                             notification_type='invite_signup' if invited else 'account_signup')
+
+
+def school_signup_content(school, account, *, invited=False):
+    """Shared content for real signups and sample email previews."""
     if invited:
         title = 'New account created using an invite'
         summary = ('Someone signed up for your school using an invite code. '
@@ -17,8 +24,8 @@ def notify_school_signup(school, account, *, invited=False):
         summary = ('Someone requested an account at your school. '
                    'Sign in to the website and open Account requests to review '
                    'and approve or reject the request.')
-    return send_notification(title, summary, [
+    return title, summary, [
         ('School', school.name), ('Name', account.display_name),
         ('Username', account.username),
         ('Status', 'Active (invite signup)' if invited else 'Awaiting approval'),
-    ], recipients=recipients, notification_type='invite_signup' if invited else 'account_signup')
+    ]

@@ -91,12 +91,7 @@ def request_password_recovery():
         return _response({'error': 'Unable to prepare recovery. Please try again or ask a superadmin.'}, 503)
     try:
         result = send_email_via_brevo(values['email'], 'Golden Plate - Reset your password',
-            '<h1>Reset your Golden Plate password</h1>'
-            '<p>You requested a password reset. Choose a new password using the link below.</p>'
-            f'<p><a href="{escape(link, quote=True)}">Choose a new password</a></p>'
-            f'<p>This link expires in {RECOVERY_MINUTES} minutes and can be used once. '
-            'You must sign in with your password afterward; this link does not sign you in.</p>'
-            '<p>If you did not request this, ignore this email. Your password has not changed.</p>')
+            render_password_recovery_email(link))
         delivered = result.get('success') and not result.get('skipped')
     except Exception:
         logger.exception('Password recovery delivery failed')
@@ -166,3 +161,15 @@ def complete_password_recovery():
     if session.get('user_uuid') == user.id:
         session.clear()
     return _response({'message': 'Password changed. Sign in with your username or verified email and your new password.'})
+
+
+def render_password_recovery_email(link):
+    """Render recovery content without issuing a working reset token."""
+    return (
+        '<h1>Reset your Golden Plate password</h1>'
+        '<p>You requested a password reset. Choose a new password using the link below.</p>'
+        f'<p><a href="{escape(link, quote=True)}">Choose a new password</a></p>'
+        f'<p>This link expires in {RECOVERY_MINUTES} minutes and can be used once. '
+        'You must sign in with your password afterward; this link does not sign you in.</p>'
+        '<p>If you did not request this, ignore this email. Your password has not changed.</p>'
+    )

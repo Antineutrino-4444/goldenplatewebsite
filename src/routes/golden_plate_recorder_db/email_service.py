@@ -69,8 +69,8 @@ def create_verification_code(email: str, purpose: str = 'school_registration', *
     return verification
 
 
-def send_verification_email(email: str, code: str, *, purpose: str = 'school_registration') -> dict:
-    """Send a verification code email to the specified address."""
+def render_verification_email(code: str, *, purpose: str = 'school_registration') -> tuple[str, str]:
+    """Render a verification email without creating a challenge or sending mail."""
     subject = 'Golden Plate - Email Verification Code'
     heading = 'Account Email Verification' if purpose in {'account_signup', 'account_email'} else 'School Registration Verification'
     if purpose == 'account_email':
@@ -162,6 +162,12 @@ def send_verification_email(email: str, code: str, *, purpose: str = 'school_reg
     </html>
     '''
 
+    return subject, html_content
+
+
+def send_verification_email(email: str, code: str, *, purpose: str = 'school_registration') -> dict:
+    """Send a verification code email to the specified address."""
+    subject, html_content = render_verification_email(code, purpose=purpose)
     return send_email_via_brevo(email, subject, html_content)
 
 

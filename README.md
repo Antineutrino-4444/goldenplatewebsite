@@ -60,6 +60,13 @@ the memory cost of bundling Mapbox again on small deployment servers. Run
 to verify a production build with a 384 MB JavaScript heap limit.
 
 ## Development
+
+To test every current email type against one entered recipient, run
+`venv/bin/python scripts/test_emails.py` on the server. The tool provides a
+CAPTCHA-protected browser form and records each send attempt and UTC acceptance
+time. See [Email test tool](docs/email-test-tool.md) for configuration, browser
+access, and saved history.
+
 ```bash
 # Run backend
 python src/main.py

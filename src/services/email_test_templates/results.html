@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h1>Email test results</h1>
+  <p>Recipient: <strong>{{ run.recipient }}</strong><br>Started (UTC): <time datetime="{{ run.started_at }}">{{ run.started_at | display_time }}</time></p>
+  <p id="progress" aria-live="polite">{{ run.status.replace('_', ' ') }}</p>
+  <p class="intro">“Accepted” means the email provider accepted the send request. Check the recipient’s inbox and spam folder to confirm arrival. All timestamps below are UTC.</p>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Email send log">
+    <table>
+      <thead><tr><th scope="col">Email type</th><th scope="col">Result</th><th scope="col">Attempted (UTC)</th><th scope="col">Accepted / sent (UTC)</th></tr></thead>
+      <tbody id="messages">
+        {% for item in run.messages %}
+        <tr><td>{{ item.label }}</td><td class="{{ item.status }}">{{ item.status }}{% if item.error %}<span class="detail">{{ item.error }}</span>{% endif %}{% if item.message_id %}<code class="detail">{{ item.message_id }}</code>{% endif %}</td><td data-label="Attempted (UTC)"><time datetime="{{ item.attempted_at or '' }}">{{ item.attempted_at | display_time }}</time></td><td data-label="Accepted / sent (UTC)"><time datetime="{{ item.sent_at or '' }}">{{ item.sent_at | display_time }}</time></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><a href="{{ url_for('index') }}">Start another test</a></p>
+  <footer>Results are saved on the server, including provider message IDs. Restarting the script does not resend interrupted messages.</footer>
+  <script>
+    let running = {{ (run.status == 'running') | tojson }};
+    async function refresh() {
+      if (!running) return;
+      try {
+        const response = await fetch({{ url_for('status', run_id=run.id) | tojson }}, { cache: 'no-store' });
+        if (!response.ok) throw new Error();
+        const run = await response.json();
+        document.getElementById('progress').textContent = run.status.replaceAll('_', ' ');
+        const rows = run.messages.map(item => {
+          const row = document.createElement('tr');
+          const timestamp = value => value ? new Date(value).toISOString().replace('T', ' ').slice(0, 19) : '—';
+          for (const value of [item.label, item.status, timestamp(item.attempted_at), timestamp(item.sent_at)]) {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          row.children[1].className = item.status;
+          row.children[2].dataset.label = 'Attempted (UTC)';
+          row.children[3].dataset.label = 'Accepted / sent (UTC)';
+          for (const value of [item.error, item.message_id]) {
+            if (!value) continue;
+            const detail = document.createElement('span');
+            detail.className = 'detail';
+            detail.textContent = value;
+            row.children[1].appendChild(detail);
+          }
+          return row;
+        });
+        document.getElementById('messages').replaceChildren(...rows);
+        running = run.status === 'running';
+      } catch {
+        document.getElementById('progress').textContent = 'Connection interrupted. Retrying the results check…';
+      }
+      if (running) setTimeout(refresh, 2000);
+    }
+    if (running) setTimeout(refresh, 2000);
+  </script>
+{% endblock %}

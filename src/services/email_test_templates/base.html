@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Email test · Golden Plate</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #19392e; background: #fafbf9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { border-bottom: 3px solid #b18a31; padding: 20px max(20px, calc((100vw - 1100px) / 2)); background: #164b39; color: white; font-weight: 650; }
+    main { max-width: 1100px; margin: 48px auto; padding: 0 24px; }
+    h1 { font-size: clamp(26px, 5vw, 36px); line-height: 1.2; margin: 0 0 16px; font-weight: 650; }
+    h2 { font-size: 20px; margin-top: 32px; }
+    p, li { line-height: 1.6; max-width: 68ch; }
+    a { color: #165c40; text-underline-offset: 3px; }
+    .intro { color: #4c6057; }
+    .form { max-width: 540px; margin-top: 28px; }
+    label { display: block; font-weight: 600; margin: 22px 0 8px; }
+    input { display: block; width: 100%; padding: 12px; font: inherit; border: 1px solid #788f82; border-radius: 3px; background: white; }
+    input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #b18a31; outline-offset: 3px; }
+    button { min-height: 48px; padding: 12px 20px; margin-top: 20px; border: 0; border-radius: 3px; background: #164b39; color: white; font: inherit; font-weight: 650; cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; }
+    .notice { border-left: 4px solid #a67f27; padding: 12px 16px; background: #fff5d9; color: #513d00; }
+    .error { border-color: #9d2828; background: #fff0ed; color: #7a2020; }
+    .captcha { margin-top: 24px; min-height: 70px; }
+    .table-scroll { overflow-x: auto; margin-top: 24px; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+    th, td { padding: 14px 10px; border-bottom: 1px solid #d0d9d2; vertical-align: top; }
+    th { color: #4c6057; font-weight: 600; }
+    time, code { font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    .failed, .unknown, .interrupted { color: #9d2828; }
+    .accepted { color: #166143; }
+    .detail { display: block; margin-top: 6px; color: #625231; max-width: 26ch; overflow-wrap: anywhere; }
+    footer { margin: 40px 0; border-top: 1px solid #d0d9d2; padding-top: 18px; color: #4c6057; font-size: 14px; }
+    @media (max-width: 600px) {
+      main { margin: 28px auto; padding: 0 20px; }
+      button { width: 100%; }
+      .table-scroll { overflow: visible; }
+      table, tbody { display: block; }
+      thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      tr { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; border-bottom: 1px solid #d0d9d2; padding: 20px 0; }
+      td { border: 0; padding: 0; min-width: 0; }
+      td:first-child, td:nth-child(2) { grid-column: 1 / -1; }
+      td:first-child { font-weight: 650; }
+      td:nth-child(n+3)::before { content: attr(data-label); display: block; color: #4c6057; font: 12px system-ui, sans-serif; margin-bottom: 4px; }
+      .detail { max-width: none; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header>Golden Plate / Email testing</header>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

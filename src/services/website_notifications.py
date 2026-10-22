@@ -41,17 +41,7 @@ def send_notification(title, summary, details=(), *, url=None, recipients=(), no
     recipients = list(unique.values())
     if not recipients:
         return {'success': True, 'skipped': True, 'deliveries': {}}
-    website_url = url or os.environ.get('WEBSITE_PUBLIC_URL', 'https://goldenplate.ca')
-    rows = ''.join(
-        f'<tr><th align="left">{escape(str(label))}</th>'
-        f'<td>{escape(str(value))}</td></tr>'
-        for label, value in details
-    )
-    html = (
-        f'<h1>{escape(title)}</h1><p>{escape(summary)}</p><table>{rows}</table>'
-        f'<p>Notification time: {datetime.now(timezone.utc).isoformat()}</p>'
-        f'<p><a href="{escape(website_url, quote=True)}">Open Golden Plate</a></p>'
-    )
+    html = render_notification(title, summary, details, url=url)
     results = {}
     for recipient in recipients:
         try:
@@ -63,3 +53,19 @@ def send_notification(title, summary, details=(), *, url=None, recipients=(), no
         if not result.get('success'):
             logger.warning('Website update email to %s failed: %s', recipient, result.get('error'))
     return {'success': all(result.get('success') for result in results.values()), 'deliveries': results}
+
+
+def render_notification(title, summary, details=(), *, url=None):
+    """Render notification metadata without resolving recipients or sending mail."""
+    website_url = url or os.environ.get('WEBSITE_PUBLIC_URL', 'https://goldenplate.ca')
+    rows = ''.join(
+        f'<tr><th align="left">{escape(str(label))}</th>'
+        f'<td>{escape(str(value))}</td></tr>'
+        for label, value in details
+    )
+    html = (
+        f'<h1>{escape(title)}</h1><p>{escape(summary)}</p><table>{rows}</table>'
+        f'<p>Notification time: {datetime.now(timezone.utc).isoformat()}</p>'
+        f'<p><a href="{escape(website_url, quote=True)}">Open Golden Plate</a></p>'
+    )
+    return html
