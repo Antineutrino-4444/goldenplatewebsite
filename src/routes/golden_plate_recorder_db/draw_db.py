@@ -3,7 +3,7 @@ import random
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from .users import readable_user_label, user_labels_for_school
 
 from .db import (
@@ -61,11 +61,15 @@ def get_or_create_session_draw(session_id: str) -> SessionModel:
 
 
 def calculate_ticket_balances() -> Dict[str, float]:
-    """Return current ticket balances for all students with positive tickets."""
+    """Return stored cumulative ticket balances for all students.
+
+    This is the roster ledger.  Manual entries are replayed from their
+    session's records instead; see :func:`get_draw_ticket_totals`.
+    """
     pool_entries = (
         db_session.query(DraftPool.student_id, DraftPool.ticket_number)
         .join(Student, DraftPool.student_id == Student.id)
-        .filter(DraftPool.ticket_number > 0, Student.is_active == 1)
+        .filter(DraftPool.ticket_number > 0)
         .all()
     )
 
@@ -114,32 +118,124 @@ def get_clean_student_ids_for_session(session_id: str) -> Set[str]:
     return {student_id for (student_id,) in rows if student_id}
 
 
+def get_draw_eligible_student_ids(session_id: str) -> Set[str]:
+    """Return student IDs eligible for this session's draw.
+
+    A current-session clean plate is required.  Active roster students qualify
+    as before.  A student recorded through a manual entry also qualifies even
+    though manual entries stay outside the current roster.
+    """
+    session_ids = get_session_ids_for_draw(session_id)
+    rows = (
+        db_session.query(SessionRecord.student_id)
+        .join(Student, SessionRecord.student_id == Student.id)
+        .filter(
+            SessionRecord.session_id.in_(session_ids),
+            SessionRecord.category == 'clean',
+            SessionRecord.is_excluded == 0,
+            SessionRecord.student_id.isnot(None),
+            or_(Student.is_active == 1, SessionRecord.is_manual_entry == 1),
+        )
+        .distinct()
+        .all()
+    )
+    return {student_id for (student_id,) in rows if student_id}
+
+
+def is_manual_draw_participant(session_id: str, student_id: Optional[str]) -> bool:
+    """Return whether a student earned draw eligibility through a manual plate."""
+    if not student_id:
+        return False
+    session_ids = get_session_ids_for_draw(session_id)
+    return db_session.query(SessionRecord.id).filter(
+        SessionRecord.session_id.in_(session_ids),
+        SessionRecord.student_id == student_id,
+        SessionRecord.category == 'clean',
+        SessionRecord.is_excluded == 0,
+        SessionRecord.is_manual_entry == 1,
+    ).first() is not None
+
+
+def get_manual_student_ids_for_draw(session_id: str) -> Set[str]:
+    """Return students whose draw tickets are local to this session.
+
+    Manual entries are intentionally temporary.  Their tickets are replayed
+    from this session's records instead of the cumulative roster ticket pool,
+    so a new session always starts them at zero.
+    """
+    session_ids = get_session_ids_for_draw(session_id)
+    rows = (
+        db_session.query(SessionRecord.student_id)
+        .filter(
+            SessionRecord.session_id.in_(session_ids),
+            SessionRecord.category.in_(['clean', 'red']),
+            SessionRecord.is_excluded == 0,
+            SessionRecord.is_manual_entry == 1,
+            SessionRecord.student_id.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    return {student_id for (student_id,) in rows if student_id}
+
+
+def get_manual_session_ticket_total(session_id: str, student_id: str) -> float:
+    """Replay one manual participant's clean/red records in this draw scope."""
+    session_ids = get_session_ids_for_draw(session_id)
+    # A finalization remains historical even if the draw is later reset or
+    # overridden. Plate records from that finalization are already consumed.
+    finalized_at = db_session.query(func.max(SessionDrawEvent.created_at)).filter(
+        SessionDrawEvent.session_id == session_id,
+        SessionDrawEvent.event_type == 'finalize',
+        SessionDrawEvent.selected_student_id == student_id,
+    ).scalar()
+    query = db_session.query(SessionRecord.category).filter(
+        SessionRecord.session_id.in_(session_ids),
+        SessionRecord.student_id == student_id,
+        SessionRecord.is_excluded == 0,
+        SessionRecord.category.in_(['clean', 'red']),
+    )
+    if finalized_at is not None:
+        query = query.filter(SessionRecord.recorded_at > finalized_at)
+    rows = query.order_by(SessionRecord.recorded_at, SessionRecord.id).all()
+    balance = 0
+    for (category,) in rows:
+        balance = balance + 1 if category == 'clean' else 0
+    return float(balance)
+
+
+def get_draw_ticket_totals(session_id: str) -> Dict[str, float]:
+    """Return ticket totals, using session-local tickets for manual entries."""
+    totals = calculate_ticket_balances()
+    for student_id in get_manual_student_ids_for_draw(session_id):
+        totals[student_id] = get_manual_session_ticket_total(session_id, student_id)
+    return totals
+
+
 def get_eligible_students_with_tickets(
     session_id: str
 ) -> List[Tuple[Student, float]]:
     """
     Get list of (student, ticket_count) for students eligible for draw.
     """
-    ticket_balances = calculate_ticket_balances()
+    ticket_balances = get_draw_ticket_totals(session_id)
     
     if not ticket_balances:
         return []
 
-    clean_student_ids = get_clean_student_ids_for_session(session_id)
-    if not clean_student_ids:
-        return []
-
     eligible_student_ids = [
-        student_id for student_id in ticket_balances.keys() if student_id in clean_student_ids
+        student_id for student_id in get_draw_eligible_student_ids(session_id)
+        if student_id in ticket_balances
     ]
 
     if not eligible_student_ids:
         return []
     
-    # Get student records
+    # Get student records. Inactive manual participants are included here;
+    # eligibility was already scoped by the qualifying record above.
     students = (
         db_session.query(Student)
-        .filter(Student.id.in_(eligible_student_ids), Student.is_active == 1,
+        .filter(Student.id.in_(eligible_student_ids),
                 Student.school_id == _resolve_school_id(session_id=session_id))
         .all()
     )
@@ -470,11 +566,16 @@ __all__ = [
     'calculate_ticket_balances',
     'finalize_draw',
     'get_clean_student_ids_for_session',
+    'get_draw_eligible_student_ids',
     'get_draw_history',
+    'get_draw_ticket_totals',
     'get_eligible_students_with_tickets',
+    'get_manual_session_ticket_total',
+    'get_manual_student_ids_for_draw',
     'get_or_create_session_draw',
     'get_session_ids_for_draw',
     'get_student_ticket_balance',
+    'is_manual_draw_participant',
     'perform_weighted_draw',
     'record_draw_event',
     'record_ticket_event',

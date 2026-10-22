@@ -1257,6 +1257,9 @@ def _bootstrap_database() -> None:
     _ensure_seed_schools()
     _ensure_user_school_assignments()
     _normalize_stored_house_names()
+    if 'session_records' in set(inspect(engine).get_table_names()):
+        from .manual_draw import backfill_manual_draw_participants
+        backfill_manual_draw_participants(engine)
     if needs_contact_backfill:
         _backfill_school_contact_emails()
 

@@ -53,6 +53,7 @@ from .utils import (
     plate_count_label,
     split_student_key,
 )
+from .manual_draw import MANUAL_STUDENT_PREFIX, manual_student_identifier
 
 
 def _get_request_actor():
@@ -1285,6 +1286,8 @@ def _record_student(category):
             .filter(Student.school_id == school_id)
             .filter(func.lower(Student.preferred_name) == candidate_preferred.lower())
             .filter(func.lower(Student.last_name) == candidate_last.lower())
+            # Synthetic manual identities never stand in for a roster match.
+            .filter(~func.lower(Student.student_identifier).like(f'{MANUAL_STUDENT_PREFIX}%'))
             .all()
         )
         if len(name_matches) == 1:
@@ -1394,9 +1397,15 @@ def _record_student(category):
     }
 
     # Save to database
-    # Look up or create student in database
+    # Look up or create student in database. Name-only manual entries receive a
+    # stable internal identity so their tickets can participate in the draw
+    # without adding them to the current roster.
     db_student = None
     lookup_refresh_needed = False
+    manual_identifier = (
+        manual_student_identifier(preferred_name, last_name)
+        if is_manual_entry and not student_id else ''
+    )
     if student_id:
         db_student = (
             db_session.query(Student)
@@ -1419,6 +1428,27 @@ def _record_student(category):
             db_session.add(db_student)
             db_session.flush()  # Get the ID
             lookup_refresh_needed = True
+    elif manual_identifier:
+        db_student = (
+            db_session.query(Student)
+            .filter(Student.school_id == school_id,
+                    func.lower(Student.student_identifier) == manual_identifier.lower())
+            .first()
+        )
+        if not db_student:
+            db_student = Student(
+                school_id=school_id,
+                student_identifier=manual_identifier,
+                preferred_name=preferred_name,
+                last_name=last_name,
+                grade=grade,
+                advisor=advisor,
+                house=house,
+                clan=clan,
+                is_active=0,
+            )
+            db_session.add(db_student)
+            db_session.flush()  # Get the ID
     
     # Create dedupe key from student info
     dedupe_key = student_key or f"{preferred_name.lower()}_{last_name.lower()}_{grade}_{house}"
@@ -1472,8 +1502,10 @@ def _record_student(category):
             db_sess.total_records = (db_sess.total_records or 0) + 1
         db_sess.updated_at = datetime.now()
     
-    # Handle ticket events and draft_pool updates
-    if db_student and db_student.id:
+    # Roster students keep a cumulative ticket ledger. Manual entries are
+    # temporary to this session, so their tickets are replayed from the
+    # session's records at draw time instead of growing a global balance.
+    if db_student and db_student.id and not is_manual_entry:
         from .draw_db import update_tickets_for_record
         update_tickets_for_record(
             session_id=session_id,

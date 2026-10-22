@@ -5,18 +5,44 @@ from flask import jsonify, request, session
 from . import recorder_bp
 from .db import Session as SessionModel, SessionRecord, Student, _now_utc, db_session
 from .draw_db import (
-    calculate_ticket_balances,
     finalize_draw as finalize_draw_db,
     get_draw_history,
+    get_draw_ticket_totals,
     get_eligible_students_with_tickets,
     get_or_create_session_draw,
     get_session_ids_for_draw,
+    is_manual_draw_participant,
     perform_weighted_draw,
     record_draw_event,
     reset_draw as reset_draw_db,
 )
+from .manual_draw import public_student_identifier
 from .utils import extract_student_id_from_key, format_display_name, make_student_key, normalize_house, normalize_name
 from .security import get_current_user, is_guest, require_admin, require_auth_or_guest, require_superadmin
+
+
+def _student_draw_identity(student):
+    """Return the public identifier and candidate key for a draw participant."""
+    identifier = public_student_identifier(student.student_identifier)
+    return identifier, make_student_key(student.preferred_name, student.last_name, identifier)
+
+
+def _student_draw_payload(student, tickets=None, probability=None):
+    identifier, key = _student_draw_identity(student)
+    return {
+        'student_id': student.id,
+        'student_identifier': identifier,
+        'key': key,
+        'preferred_name': student.preferred_name,
+        'last_name': student.last_name,
+        'display_name': f"{student.preferred_name} {student.last_name}",
+        'grade': student.grade,
+        'advisor': student.advisor,
+        'house': normalize_house(student.house),
+        'clan': student.clan,
+        'tickets': tickets,
+        'probability': probability,
+    }
 
 
 @recorder_bp.route('/session/<session_id>/draw/summary', methods=['GET'])
@@ -42,19 +68,7 @@ def get_draw_summary(session_id):
     candidates = []
     for student, tickets in eligible:
         probability = (tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
-        candidates.append({
-            'student_id': student.id,
-            'student_identifier': student.student_identifier,
-            'preferred_name': student.preferred_name,
-            'last_name': student.last_name,
-            'display_name': f"{student.preferred_name} {student.last_name}",
-            'grade': student.grade,
-            'advisor': student.advisor,
-            'house': normalize_house(student.house),
-            'clan': student.clan,
-            'tickets': tickets,
-            'probability': probability,
-        })
+        candidates.append(_student_draw_payload(student, tickets, probability))
     
     # Get draw info
     draw = db_session.query(SessionModel.__table__.c.id).filter_by(id=session_id).first()
@@ -81,20 +95,11 @@ def get_draw_summary(session_id):
     
     if draw_record.winner_student_id:
         winner = db_session.query(Student).filter_by(id=draw_record.winner_student_id).first()
-        if winner and winner.is_active:
-            draw_info['winner'] = {
-                'student_id': winner.id,
-                'student_identifier': winner.student_identifier,
-                'preferred_name': winner.preferred_name,
-                'last_name': winner.last_name,
-                'display_name': f"{winner.preferred_name} {winner.last_name}",
-                'grade': winner.grade,
-                'advisor': winner.advisor,
-                'house': normalize_house(winner.house),
-                'clan': winner.clan,
-                'tickets': draw_record.tickets_at_selection,
-                'probability': probability_at_selection,
-            }
+        winner_is_manual = winner and is_manual_draw_participant(session_id, winner.id)
+        if winner and (winner.is_active or winner_is_manual):
+            draw_info['winner'] = _student_draw_payload(
+                winner, draw_record.tickets_at_selection, probability_at_selection,
+            )
         elif not draw_record.finalized:
             draw_info['has_winner'] = False
     
@@ -201,19 +206,7 @@ def start_draw(session_id):
 
     db_session.commit()
 
-    winner_data = {
-        'student_id': winner.id,
-        'student_identifier': winner.student_identifier,
-        'preferred_name': winner.preferred_name,
-        'last_name': winner.last_name,
-        'display_name': f"{winner.preferred_name} {winner.last_name}",
-        'grade': winner.grade,
-        'advisor': winner.advisor,
-        'house': normalize_house(winner.house),
-        'clan': winner.clan,
-        'tickets': winner_tickets,
-        'probability': probability,
-    }
+    winner_data = _student_draw_payload(winner, winner_tickets, probability)
 
     return jsonify({
         'status': 'success',
@@ -246,9 +239,9 @@ def finalize_draw_route(session_id):
     if draw.finalized:
         return jsonify({'error': 'Draw already finalized'}), 400
 
-    winner = db_session.query(Student).filter_by(id=draw.winner_student_id, is_active=1).first()
-    if not winner:
-        return jsonify({'error': 'Winner is no longer in the current student roster. Draw again.'}), 400
+    winner = db_session.query(Student).filter_by(id=draw.winner_student_id).first()
+    if not winner or not (winner.is_active or is_manual_draw_participant(session_id, winner.id)):
+        return jsonify({'error': 'Winner is no longer eligible for this draw. Draw again.'}), 400
 
     # Finalize the draw
     finalize_draw_db(draw, session.get('user_id'), comment)
@@ -260,7 +253,9 @@ def finalize_draw_route(session_id):
         'finalized': True,
         'winner': {
             'student_id': winner.id,
-            'student_identifier': winner.student_identifier,
+            'student_identifier': public_student_identifier(winner.student_identifier),
+            'key': make_student_key(winner.preferred_name, winner.last_name,
+                                    public_student_identifier(winner.student_identifier)),
             'preferred_name': winner.preferred_name,
             'last_name': winner.last_name,
             'display_name': f"{winner.preferred_name} {winner.last_name}",
@@ -346,7 +341,7 @@ def override_draw(session_id):
     if not record_rows:
         return jsonify({'error': 'No student records available for this session'}), 400
 
-    ticket_balances = calculate_ticket_balances()
+    ticket_balances = get_draw_ticket_totals(session_id)
     eligible = get_eligible_students_with_tickets(session_id)
     total_tickets = sum(tickets for _, tickets in eligible)
 
@@ -367,11 +362,13 @@ def override_draw(session_id):
         profiles[key] = merged
 
     for session_record, student in record_rows:
-        if student and not student.is_active:
+        if student and not student.is_active and not session_record.is_manual_entry:
             continue
         preferred = normalize_name(student.preferred_name if student else session_record.preferred_name)
         last = normalize_name(student.last_name if student else session_record.last_name)
-        student_identifier = normalize_name(student.student_identifier if student else '')
+        student_identifier = public_student_identifier(
+            student.student_identifier if student else ''
+        )
         if not student_identifier:
             student_identifier = extract_student_id_from_key(session_record.dedupe_key)
         key = make_student_key(preferred, last, student_identifier)
@@ -385,6 +382,7 @@ def override_draw(session_id):
             'clan': normalize_name(student.clan if student else ''),
             'student_id': student.id if student else None,
             'student_identifier': student_identifier,
+            'is_manual_entry': bool(session_record.is_manual_entry),
         }
         profile['display_name'] = format_display_name(profile)
         if profile.get('student_id'):
@@ -466,11 +464,10 @@ def override_draw(session_id):
                 advisor=profile.get('advisor'),
                 house=profile.get('house'),
                 clan=profile.get('clan'),
+                is_active=0 if profile.get('is_manual_entry') else 1,
             )
             db_session.add(student)
             db_session.flush()
-        elif not student.is_active:
-            return jsonify({'error': 'Student is no longer in the current roster'}), 400
         profile['student_id'] = student.id
 
     winner_tickets = ticket_balances.get(profile['student_id'], 0.0)
@@ -506,6 +503,7 @@ def override_draw(session_id):
     winner_data = {
         'student_id': profile.get('student_id'),
         'student_identifier': profile.get('student_identifier'),
+        'key': profile.get('key'),
         'preferred_name': profile.get('preferred_name', ''),
         'last_name': profile.get('last_name', ''),
         'display_name': profile.get('display_name', ''),
