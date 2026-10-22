@@ -50,7 +50,7 @@ def run_terminal(database, email=None):
         recover_interrupted_runs(database)
         run_id = reserve_run(database, recipient, samples)
         if run_id is None:
-            print('A batch was started in the last five minutes. Please try again later.', file=sys.stderr)
+            print('An email test is already running. Wait for it to finish before starting another.', file=sys.stderr)
             return 1
         print(f'Batch: {run_id}\nPersistent send log: {database}', flush=True)
 

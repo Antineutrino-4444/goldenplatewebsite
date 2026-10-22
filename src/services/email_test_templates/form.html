@@ -19,7 +19,7 @@
     <button type="submit" {% if not site_key %}disabled{% endif %}>Send all test emails</button>
     <p class="intro" id="sending" role="status" aria-live="polite"></p>
   </form>
-  <footer>One batch every five minutes. Notification preferences are respected; disabled types are recorded as skipped.</footer>
+  <footer>Notification preferences are respected; disabled types are recorded as skipped.</footer>
   <script>
     document.getElementById('email-test-form').addEventListener('submit', function () {
       this.querySelector('button').disabled = true;

@@ -32,7 +32,7 @@ server access plus explicit confirmation. This confirmation is not CAPTCHA;
 Cloudflare Turnstile requires a browser and is used only in optional web mode.
 
 Terminal exit codes are `0` for completion (including preference skips), `1` for
-delivery failures, a cooldown, cancellation, or another run error, `2` for invalid
+delivery failures, an active batch, cancellation, or another run error, `2` for invalid
 arguments or recipient input, and `130` for interruption during sending. Failures
 do not erase successful sends. Pressing Ctrl+C stops subsequent emails and records
 an interrupted in-flight send as unknown, without automatically retrying it.
@@ -42,9 +42,10 @@ an interrupted in-flight send as unknown, without automatically retrying it.
 The script loads the root `.env` without replacing hosting environment values.
 It uses the same `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` as the website.
 
-Only one batch may run at a time, with a five-minute minimum between starts
-across recipients and restarts. Terminal and web mode share the same log and
-cooldown. A second process using the same audit database is refused.
+Only one batch may run at a time. You can start another immediately after the
+previous batch finishes, including after failures or an interruption. Terminal
+and web mode share the same log. A second process using the same audit database
+is refused.
 
 ## Optional browser mode
 
@@ -161,8 +162,8 @@ logs before running another batch. The tool never retries automatically.
 
 Automated tests mock Brevo delivery and browser CAPTCHA responses. They cover
 terminal prompts, explicit confirmation, recipient arguments, terminal progress,
-exit codes, interrupted sends, cooldowns, preference skips, and saved history.
+exit codes, interrupted sends, immediate repeat runs, preference skips, and saved history.
 Browser mode tests cover mandatory CAPTCHA and action/hostname checks, access
 keys and form tokens, and cross-session privacy. Shared tests cover recipient
 isolation, all current categories, timestamp persistence, partial failures, and
-concurrent cooldown reservations. They send no real email.
+concurrent batch reservations. They send no real email.

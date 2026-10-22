@@ -56,7 +56,7 @@ email delivery. The page remains a focused email-operations form.
 
 Targeted automated checks cover the send workflow, recipient isolation, access
 key and form validation, mandatory CAPTCHA, hostname and action validation,
-timestamp persistence, provider failures, preferences, cooldowns, concurrency,
+timestamp persistence, provider failures, preferences, consecutive runs, concurrency,
 restart handling, proxy mounting, history output, and existing mail behavior.
 The browser review checked responsive layout, labels, visible status text and
 timestamps. Form controls have associated labels, keyboard focus styles, and

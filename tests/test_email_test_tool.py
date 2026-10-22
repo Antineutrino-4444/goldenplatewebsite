@@ -162,12 +162,12 @@ def test_respects_disabled_notification_types(email_tool, email_outbox):
     assert db_session.get(EmailNotificationPreference, 'recipient@example.com').disabled_types == '["server_startup"]'
 
 
-def test_cooldown_survives_restart_and_other_recipients(email_tool, email_outbox):
+def test_completed_batch_can_be_repeated_immediately_after_restart(email_tool, email_outbox):
     client, database = email_tool
     assert submit(client).status_code == 303
     other = tool.create_app(database, access_key='server-test-key').test_client()
-    assert submit(other, email='another@example.com').status_code == 429
-    assert len(email_outbox) == 21
+    assert submit(other, email='another@example.com').status_code == 303
+    assert len(email_outbox) == 42
 
 
 def test_other_browser_cannot_read_results(email_tool):
@@ -350,12 +350,22 @@ def test_terminal_failure_preserves_results_and_returns_nonzero(terminal_tool, m
     assert '20 accepted, 0 skipped, 1 failed' in capsys.readouterr().out
 
 
-def test_terminal_cooldown_survives_next_invocation(terminal_tool, monkeypatch, email_outbox):
+def test_terminal_can_run_again_immediately(terminal_tool, monkeypatch, email_outbox):
     script, _ = terminal_tool
-    for expected in (0, 1):
+    for _ in range(2):
         answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
-        assert script.main() == expected
-    assert len(email_outbox) == 21
+        assert script.main() == 0
+    assert len(email_outbox) == 42
+
+
+@pytest.mark.parametrize('status', ['completed', 'completed_with_errors', 'interrupted'])
+def test_finished_batches_never_delay_a_new_reservation(tmp_path, status):
+    database = tmp_path / 'audit.sqlite3'
+    samples = build_email_samples()
+    first = tool.reserve_run(database, 'reader@example.com', samples)
+    with tool.open_audit(database) as store:
+        store.execute('UPDATE runs SET status = ? WHERE id = ?', (status, first))
+    assert tool.reserve_run(database, 'reader@example.com', samples) is not None
 
 
 def test_terminal_interrupt_preserves_accepted_and_unknown_results(terminal_tool, monkeypatch, email_outbox):

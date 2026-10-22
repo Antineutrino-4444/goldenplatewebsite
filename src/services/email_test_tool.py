@@ -15,9 +15,6 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, ses
 from .email_delivery import send_email_via_brevo
 from .email_test_samples import build_email_samples
 
-COOLDOWN_SECONDS = 300
-
-
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -69,13 +66,12 @@ def read_run(path, run_id):
 
 
 def reserve_run(path, recipient, samples):
-    """Commit the cooldown and planned messages before starting any delivery."""
+    """Reserve one active batch and persist planned messages before delivery."""
     with open_audit(path) as store:
         store.execute('BEGIN IMMEDIATE')
-        latest = store.execute('SELECT started_at, status FROM runs ORDER BY started_at DESC LIMIT 1').fetchone()
+        active = store.execute("SELECT 1 FROM runs WHERE status = 'running' LIMIT 1").fetchone()
         now = datetime.now(timezone.utc)
-        if latest and (latest['status'] == 'running' or
-                       (now - datetime.fromisoformat(latest['started_at'])).total_seconds() < COOLDOWN_SECONDS):
+        if active:
             return None
         run_id = secrets.token_urlsafe(24)
         store.execute('INSERT INTO runs VALUES (?, ?, ?, NULL, ?)',
@@ -218,7 +214,7 @@ def create_app(database, *, access_key):
             app.logger.exception('Unable to prepare the email test audit')
             return form('Could not prepare the send log. No test emails were sent.', 503)
         if run_id is None:
-            return form('A test is running or was started in the last five minutes. Please try again later.', 429)
+            return form('An email test is already running. Wait for it to finish before starting another.', 409)
         session['run_ids'] = (session.get('run_ids', []) + [run_id])[-20:]
         worker = threading.Thread(target=send_batch, args=(database, run_id, samples), daemon=True)
         try:
