@@ -104,7 +104,7 @@ Use `--port` together with `--web` to change the local browser port.
 
 ## Email coverage
 
-The current batch has 21 samples:
+The current batch exercises 21 email scenarios:
 
 - School registration, account signup, account email, and map verification.
 - Password recovery.
@@ -115,21 +115,34 @@ The current batch has 21 samples:
   warnings at 7 and 1 days, and completed deletion.
 - Manual disabling and the two admin deletion-review reminders.
 
-These use the website's shared renderers. Subjects start with `[TEST]` and each
-body has a test banner. Names and records are explicitly sample data. Verification
-templates contain `SAMPLE`, not a valid code. Action links use `example.invalid`;
-they cannot reset passwords, approve maps, or delete accounts. Samples do not
-include attachments, uploaded images, real account data, secrets, or file contents.
-This tests template rendering and email delivery; it does not exercise the real
-registration and account workflows or attachment delivery.
+Each scenario calls the same email-sending function used by the corresponding
+website event. The script leaves the subject, HTML body, formatting, and normal
+preferences footer unchanged. It adds no subject prefix, banner, or timing text
+to the email. Timing and delivery results stay in the terminal and audit log.
+
+The four verification scenarios call the normal code-creation services and then
+pass the generated codes into the normal email senders. Codes are saved in the
+website/map verification tables with the usual expiry and attempt rules. The
+normal service replaces older matching pending challenges when another code is
+created. No fixed verification text is used. These email-level calls do not
+create a browser signup or account-email session.
+
+Other events use fictional school/account/submission inputs with the production
+send functions. They do not create a school request, change an account's status,
+or approve/delete a submission. URLs use the configured website address and the
+normal URL format. Recovery, deletion and map-approval tokens in these scenarios
+are unissued; they do not authorize changes to a live account or submission.
+Map scenarios use the normal attachment collection path for an unsaved submission
+with no images. No uploaded files or file contents are emailed.
 
 Delivery goes only to the entered recipient. The tool does not change or send
 to `WEBSITE_UPDATE_NOTIFY_EMAILS`, map reviewers, or school contact addresses.
 Existing notification preferences remain in effect: opted-out types appear as
 **skipped**. Re-enable the desired types using the recipient's existing
-notification-preferences link if you want those samples delivered. Shared email
+notification-preferences link if you want those types delivered. Shared email
 delivery may create/update that recipient's preference record and appends the
-normal preferences link. No accounts, requests or submissions are created.
+normal preferences link. Verification records are created; accounts, school
+requests and map submissions are not.
 
 ## Saved send times and outcomes
 
@@ -152,7 +165,7 @@ Print the latest 50 saved batches and their individual results without sending:
 ```
 
 Use the same `--database` option when inspecting a custom log path. Individual
-failures do not stop the remaining samples. No mail is sent unless the audit
+failures do not stop the remaining scenarios. No mail is sent unless the audit
 entry can be saved first. If a process stops during delivery, restarting marks
 the in-flight message **unknown** and remaining queued messages **cancelled**.
 An unknown result may already have been accepted by Brevo; inspect the provider
@@ -167,3 +180,9 @@ Browser mode tests cover mandatory CAPTCHA and action/hostname checks, access
 keys and form tokens, and cross-session privacy. Shared tests cover recipient
 isolation, all current categories, timestamp persistence, partial failures, and
 concurrent batch reservations. They send no real email.
+
+For every scenario, tests also check that the production sender is called and
+that its complete outgoing payload matches a direct call with the same inputs.
+Verification tests check calls to the real generators and confirm the emailed
+codes match the saved verification records. Only the external mail transport is
+mocked for these checks.

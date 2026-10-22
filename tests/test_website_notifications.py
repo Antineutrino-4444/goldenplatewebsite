@@ -145,7 +145,7 @@ def test_email_timeout_does_not_discard_school_request(client, monkeypatch):
 def test_unexpected_notification_error_does_not_discard_school_request(client, monkeypatch):
     def failure(*args, **kwargs):
         raise RuntimeError('Notification failed unexpectedly')
-    monkeypatch.setattr(interschool_routes, 'notify_website_update', failure)
+    monkeypatch.setattr(interschool_routes, 'notify_school_registration', failure)
     response, payload = _school_request(client, monkeypatch)
     assert response.status_code == 201
     assert db_session.query(SchoolRegistrationRequest).filter_by(email=payload['email']).one().status == 'pending'

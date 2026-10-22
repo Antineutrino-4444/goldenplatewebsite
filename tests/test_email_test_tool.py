@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.services import email_test_tool as tool
+from src.services import email_test_tool as tool, email_delivery
 from src.services.email_test_samples import build_email_samples
 from src.services.notification_preferences import NOTIFICATION_TYPES
 from src.routes.golden_plate_recorder_db import captcha
@@ -53,16 +53,80 @@ def latest(database):
     return tool.read_run(database, row['id']) if row else None
 
 
-def test_all_current_email_categories_use_samples_without_live_actions(monkeypatch):
-    from src.routes.golden_plate_recorder_db import map_routes
-    monkeypatch.setattr(map_routes, '_collect_submission_image_attachments', lambda *args: pytest.fail('Read live submission data'))
-    samples = build_email_samples()
-    assert len(samples) == 21
-    assert len({sample.key for sample in samples}) == 21
-    assert {sample.notification_type for sample in samples} == set(NOTIFICATION_TYPES) | {None}
-    assert sum('SAMPLE' in sample.html for sample in samples) >= 4
-    assert all('example.invalid' in sample.html for sample in samples if sample.key in {
-        'password_recovery', 'map_submission', 'lifecycle_deleted'})
+def test_all_current_categories_have_production_send_calls(email_outbox):
+    scenarios = build_email_samples()
+    assert len(scenarios) == 21
+    assert len({scenario.key for scenario in scenarios}) == 21
+    assert {scenario.notification_type for scenario in scenarios} == set(NOTIFICATION_TYPES) | {None}
+    assert all(callable(scenario.send) for scenario in scenarios)
+    assert not email_outbox
+
+
+def test_verification_scenarios_generate_store_and_email_normal_codes(monkeypatch, email_outbox):
+    from unittest.mock import Mock
+    from src.routes.golden_plate_recorder_db import email_service, map_routes
+    from src.routes.golden_plate_recorder_db.db import EmailVerification
+    from src.routes.golden_plate_recorder_db.map_db import MapEmailVerification, map_db_session
+
+    account_generator = Mock(wraps=email_service.generate_verification_code)
+    map_generator = Mock(wraps=map_routes._generate_verification_code)
+    monkeypatch.setattr(email_service, 'generate_verification_code', account_generator)
+    monkeypatch.setattr(map_routes, '_generate_verification_code', map_generator)
+    scenarios = {scenario.key: scenario for scenario in build_email_samples()}
+    recipient = 'codes@example.com'
+    for index, purpose in enumerate(('school_registration', 'account_signup', 'account_email')):
+        assert scenarios[purpose + '_verification'].send(recipient)['success']
+        record = db_session.query(EmailVerification).filter_by(email=recipient, purpose=purpose).one()
+        assert len(record.code) == 6 and record.code.isdigit()
+        assert record.code in email_outbox[index]['htmlContent']
+        assert record.verified_at is None and record.attempts == 0
+    assert scenarios['map_verification'].send(recipient)['success']
+    record = map_db_session.query(MapEmailVerification).filter_by(email=recipient).one()
+    assert len(record.code) == 6 and record.code.isdigit()
+    assert record.code in email_outbox[-1]['htmlContent']
+    assert account_generator.call_count == 3 and map_generator.call_count == 1
+
+
+PRODUCTION_SENDERS = [
+    ('school_registration_verification', 'email_service', 'send_verification_email'),
+    ('account_signup_verification', 'email_service', 'send_verification_email'),
+    ('account_email_verification', 'email_service', 'send_verification_email'),
+    ('map_verification', 'map_routes', '_send_map_verification_email'),
+    ('password_recovery', 'password_recovery_routes', 'send_password_recovery_email'),
+    ('server_startup', 'startup_notifications', 'send_startup_notification'),
+    ('school_registration', 'website_notifications', 'notify_school_registration'),
+    ('account_signup', 'signup_notifications', 'notify_school_signup'),
+    ('invite_signup', 'signup_notifications', 'notify_school_signup'),
+    ('map_submission', 'map_routes', '_notify_pending_map_submission'),
+    ('map_rejection', 'map_routes', '_send_rejection_email'),
+    ('map_deletion', 'map_routes', '_send_deletion_email'),
+] + [('lifecycle_' + event, 'account_lifecycle', 'send_account_lifecycle_email') for event in (
+    'disable_14', 'disable_3', 'disabled', 'delete_7', 'delete_1', 'deleted',
+    'manual_disabled', 'admin_delete_7', 'admin_delete_1')]
+
+
+@pytest.mark.parametrize('key,module_name,function_name', PRODUCTION_SENDERS)
+def test_scenarios_call_production_sender_and_match_its_exact_payload(key, module_name, function_name, monkeypatch, email_outbox):
+    import importlib
+    from unittest.mock import Mock
+    from src.services import website_notifications
+
+    # Notification content includes a clock value; hold it fixed for exact comparison.
+    fixed_now = datetime.now(timezone.utc)
+    monkeypatch.setattr(website_notifications, 'datetime', SimpleNamespace(now=lambda zone: fixed_now))
+    package = 'src.routes.golden_plate_recorder_db' if module_name in {
+        'email_service', 'map_routes', 'password_recovery_routes'} else 'src.services'
+    module = importlib.import_module(package + '.' + module_name)
+    original = getattr(module, function_name)
+    spy = Mock(wraps=original)
+    monkeypatch.setattr(module, function_name, spy)
+    scenario = next(item for item in build_email_samples() if item.key == key)
+    scenario.send('parity@example.com')
+    spy.assert_called_once()
+    assert len(email_outbox) == 1
+    original(*spy.call_args.args, **spy.call_args.kwargs)
+    assert len(email_outbox) == 2
+    assert email_outbox[0] == email_outbox[1]
 
 
 def test_sends_only_to_entered_recipient_and_persists_each_timestamp(email_tool, monkeypatch, email_outbox):
@@ -73,8 +137,10 @@ def test_sends_only_to_entered_recipient_and_persists_each_timestamp(email_tool,
     assert response.status_code == 303
     assert len(email_outbox) == 21
     assert all(message['to'] == [{'email': 'recipient@example.com'}] for message in email_outbox)
-    assert all(message['subject'].startswith('[TEST] ') for message in email_outbox)
-    assert all('EMAIL TEST' in message['htmlContent'] for message in email_outbox)
+    assert all(not message['subject'].startswith('[TEST]') for message in email_outbox)
+    assert all('EMAIL TEST' not in message['htmlContent'] for message in email_outbox)
+    assert all('Send attempt (UTC)' not in message['htmlContent'] for message in email_outbox)
+    assert all('example.invalid' not in message['htmlContent'] for message in email_outbox)
     run = latest(database)
     assert run['status'] == 'completed'
     assert len(run['messages']) == 21
@@ -127,19 +193,19 @@ def test_rejects_wrong_captcha_action_or_hostname(email_tool, monkeypatch, email
 
 def test_delivery_failures_are_recorded_and_remaining_emails_continue(email_tool, monkeypatch, email_outbox):
     client, database = email_tool
-    real_sender = tool.send_email_via_brevo
+    real_sender = email_delivery.http_requests.post
     calls = 0
 
     def send(*args, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 2:
-            return {'success': False, 'error': 'Brevo API error: 429', 'detail': {'secret': 'never-store-this'}}
+            return SimpleNamespace(status_code=429, content=True, json=lambda: {'secret': 'never-store-this'})
         if calls == 3:
             raise RuntimeError('never-store-this-either')
         return real_sender(*args, **kwargs)
 
-    monkeypatch.setattr(tool, 'send_email_via_brevo', send)
+    monkeypatch.setattr(email_delivery.http_requests, 'post', send)
     assert submit(client).status_code == 303
     run = latest(database)
     assert calls == 21 and len(email_outbox) == 19
@@ -330,17 +396,17 @@ def test_terminal_rejects_invalid_recipient_before_any_send(terminal_tool, monke
 
 def test_terminal_failure_preserves_results_and_returns_nonzero(terminal_tool, monkeypatch, capsys, email_outbox):
     script, database = terminal_tool
-    real_send = tool.send_email_via_brevo
+    real_send = email_delivery.http_requests.post
     attempts = 0
 
     def send(*args, **kwargs):
         nonlocal attempts
         attempts += 1
         if attempts == 2:
-            return {'success': False, 'error': 'Brevo API error: 503'}
+            return SimpleNamespace(status_code=503, content=True, json=lambda: {})
         return real_send(*args, **kwargs)
 
-    monkeypatch.setattr(tool, 'send_email_via_brevo', send)
+    monkeypatch.setattr(email_delivery.http_requests, 'post', send)
     answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
     assert script.main() == 1
     assert attempts == 21 and len(email_outbox) == 20
@@ -370,7 +436,7 @@ def test_finished_batches_never_delay_a_new_reservation(tmp_path, status):
 
 def test_terminal_interrupt_preserves_accepted_and_unknown_results(terminal_tool, monkeypatch, email_outbox):
     script, database = terminal_tool
-    real_send = tool.send_email_via_brevo
+    real_send = email_delivery.http_requests.post
     attempts = 0
 
     def send(*args, **kwargs):
@@ -380,7 +446,7 @@ def test_terminal_interrupt_preserves_accepted_and_unknown_results(terminal_tool
             raise KeyboardInterrupt
         return real_send(*args, **kwargs)
 
-    monkeypatch.setattr(tool, 'send_email_via_brevo', send)
+    monkeypatch.setattr(email_delivery.http_requests, 'post', send)
     answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
     assert script.main() == 130
     run = latest(database)

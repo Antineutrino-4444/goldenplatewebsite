@@ -5,7 +5,7 @@ import uuid
 from flask import jsonify, request
 from sqlalchemy import func
 
-from src.services.website_notifications import notify_website_update
+from src.services.website_notifications import notify_school_registration
 
 from . import recorder_bp
 from .captcha import captcha_failure
@@ -398,19 +398,7 @@ def register_school():
         return jsonify({'error': 'Could not submit registration request'}), 500
 
     try:
-        notify_website_update(
-            'New school registration request',
-            'A school has requested registration and is awaiting administrator approval. '
-            'Sign in to the inter-school administrator dashboard to review it.',
-            [
-                ('School', registration_request.school_name),
-                ('Applicant email', registration_request.email),
-                ('Requested school code', registration_request.school_slug or 'Automatic from school name'),
-                ('Administrator name', registration_request.admin_display_name),
-                ('Administrator username', registration_request.admin_username),
-                ('Request ID', registration_request.id),
-            ], notification_type='school_registration',
-        )
+        notify_school_registration(registration_request)
     except Exception:
         logger.exception('Unable to notify reviewers of the saved school registration request')
 

@@ -725,7 +725,7 @@ def _render_image_descriptions_html(image_infos):
     return ''.join(cards)
 
 
-def _notify_pending_map_submission(submission, base_url=None):
+def _notify_pending_map_submission(submission, base_url=None, *, recipients=None):
     """Send a notification email to the configured reviewers about a new
     pending map submission.
 
@@ -740,9 +740,10 @@ def _notify_pending_map_submission(submission, base_url=None):
     submission flow.
     """
     try:
-        recipients = _get_map_approval_notify_recipients()
+        if recipients is None:
+            recipients = _get_map_approval_notify_recipients()
         if not recipients:
-            return
+            return {'success': True, 'skipped': True, 'deliveries': {}}
 
         # Pin (if any).
         pin_label = '(no pin / "Others")'
@@ -768,6 +769,7 @@ def _notify_pending_map_submission(submission, base_url=None):
         subject, html = render_pending_map_email(submission, pin_label=pin_label,
             public_base=public_base, image_descriptions=image_descriptions)
 
+        results = {}
         for recipient in recipients:
             try:
                 result = send_email_via_brevo(
@@ -776,6 +778,7 @@ def _notify_pending_map_submission(submission, base_url=None):
                     html,
                     attachments=attachments or None, notification_type='map_submission',
                 )
+                results[recipient] = result
                 if not result.get('success'):
                     logger.warning(
                         'Map approval notification failed for %s: %s',
@@ -784,8 +787,11 @@ def _notify_pending_map_submission(submission, base_url=None):
                     )
             except Exception:
                 logger.exception('Unexpected error sending map approval notification to %s', recipient)
+                results[recipient] = {'success': False, 'error': 'Email delivery failed'}
+        return {'success': all(result.get('success') for result in results.values()), 'deliveries': results}
     except Exception:
         logger.exception('Failed to dispatch map approval notifications')
+        return {'success': False, 'error': 'Unable to prepare map approval notification'}
 
 
 def _generate_verification_code():

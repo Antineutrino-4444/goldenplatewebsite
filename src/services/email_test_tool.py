@@ -2,7 +2,6 @@
 
 from datetime import datetime, timezone
 from contextlib import contextmanager
-from html import escape
 from pathlib import Path
 import os
 import re
@@ -12,7 +11,6 @@ import threading
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
 
-from .email_delivery import send_email_via_brevo
 from .email_test_samples import build_email_samples
 
 def utc_now():
@@ -114,20 +112,11 @@ def send_batch(path, run_id, samples, *, on_result=None):
             with open_audit(path) as store:
                 store.execute('UPDATE messages SET status = ?, attempted_at = ? WHERE run_id = ? AND position = ?',
                               ('sending', attempted_at, run_id, index))
-            banner = (
-                '<p style="padding:16px;background:#fff3cd;color:#513d00;font:16px Arial,sans-serif">'
-                '<strong>EMAIL TEST — sample data only.</strong> No account, school or map action occurred. '
-                'Verification text and action links are inactive.<br>'
-                f'Test: {escape(sample.label)}<br>Send attempt (UTC): {attempted_at}</p>'
-            )
-            html = sample.html
-            if re.search(r'<body\b[^>]*>', html, re.IGNORECASE):
-                html = re.sub(r'(<body\b[^>]*>)', lambda match: match[0] + banner, html, count=1, flags=re.IGNORECASE)
-            else:
-                html = banner + html
             try:
-                result = send_email_via_brevo(run['recipient'], '[TEST] ' + sample.subject, html,
-                                              notification_type=sample.notification_type)
+                result = sample.send(run['recipient'])
+                if 'deliveries' in result:
+                    result = result['deliveries'].get(run['recipient'], {
+                        'success': False, 'error': 'No delivery was attempted for this recipient'})
                 status = 'skipped' if result.get('skipped') else 'accepted' if result.get('success') else 'failed'
                 error = 'Recipient disabled this notification type.' if status == 'skipped' else delivery_error(result) if status == 'failed' else None
                 message_id = str(result.get('message_id') or '')[:1024] or None

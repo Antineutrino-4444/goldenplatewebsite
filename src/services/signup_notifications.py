@@ -3,10 +3,11 @@
 from .website_notifications import get_website_update_recipients, send_notification
 
 
-def notify_school_signup(school, account, *, invited=False):
-    recipients = get_website_update_recipients()
-    if school.contact_email:
-        recipients.append(school.contact_email)
+def notify_school_signup(school, account, *, invited=False, recipients=None):
+    if recipients is None:
+        recipients = get_website_update_recipients()
+        if school.contact_email:
+            recipients.append(school.contact_email)
     title, summary, details = school_signup_content(school, account, invited=invited)
     return send_notification(title, summary, details, recipients=recipients,
                              notification_type='invite_signup' if invited else 'account_signup')

@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime, timezone
 from html import escape
+from functools import partial
 
 from .email_delivery import send_email_via_brevo
 
@@ -25,6 +26,24 @@ def get_website_update_recipients():
 def notify_website_update(title, summary, details=(), *, url=None, notification_type='server_startup'):
     return send_notification(title, summary, details, url=url,
                              recipients=get_website_update_recipients(), notification_type=notification_type)
+
+
+def notify_school_registration(registration_request, *, recipients=None):
+    """Send the standard new-school request email using the saved request fields."""
+    sender = notify_website_update if recipients is None else partial(send_notification, recipients=recipients)
+    return sender(
+        'New school registration request',
+        'A school has requested registration and is awaiting administrator approval. '
+        'Sign in to the inter-school administrator dashboard to review it.',
+        [
+            ('School', registration_request.school_name),
+            ('Applicant email', registration_request.email),
+            ('Requested school code', registration_request.school_slug or 'Automatic from school name'),
+            ('Administrator name', registration_request.admin_display_name),
+            ('Administrator username', registration_request.admin_username),
+            ('Request ID', registration_request.id),
+        ], notification_type='school_registration',
+    )
 
 
 def send_notification(title, summary, details=(), *, url=None, recipients=(), notification_type='server_startup'):

@@ -241,6 +241,11 @@ def _notice_html(event, details, link):
     return title, html
 
 
+def send_account_lifecycle_email(recipient, event, details, link):
+    title, html = _notice_html(event, details, link)
+    return send_email_via_brevo(recipient, f'Golden Plate — {title}', html, notification_type='account_lifecycle')
+
+
 def deliver_pending_notices(secret, now=None):
     now = now or _now_utc()
     with SessionFactory() as store:
@@ -281,9 +286,8 @@ def deliver_pending_notices(secret, now=None):
                 continue
         base = os.environ.get('WEBSITE_PUBLIC_URL', 'https://goldenplate.ca').rstrip('/')
         link = f'{base}/account-deletion#token={grant_token(grant_id, secret)}'
-        title, html = _notice_html(event, details, link)
         try:
-            result = send_email_via_brevo(recipient, f'Golden Plate — {title}', html, notification_type='account_lifecycle')
+            result = send_account_lifecycle_email(recipient, event, details, link)
         except Exception:
             logger.exception('Account lifecycle email delivery failed')
             result = {'success': False, 'error': 'Email delivery failed'}

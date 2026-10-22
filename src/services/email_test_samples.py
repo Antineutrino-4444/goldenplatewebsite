@@ -1,98 +1,125 @@
-"""Side-effect-free samples of the website's current email templates."""
+"""Email scenarios that invoke the same send functions as application events."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from types import SimpleNamespace
+from typing import Callable
+import os
+import secrets
+import uuid
 
 
 @dataclass(frozen=True)
-class EmailSample:
+class EmailScenario:
     key: str
     label: str
-    subject: str
-    html: str
+    send: Callable[[str], dict]
     notification_type: str | None = None
 
 
+def send_verification_scenario(email, *, purpose):
+    from src.routes.golden_plate_recorder_db.email_service import create_verification_code, send_verification_email
+
+    verification = create_verification_code(email, purpose=purpose)
+    return send_verification_email(email, verification.code, purpose=purpose)
+
+
+def send_map_verification_scenario(email):
+    from src.routes.golden_plate_recorder_db.map_routes import _create_map_verification_code, _send_map_verification_email
+
+    verification = _create_map_verification_code(email)
+    return _send_map_verification_email(email, verification.code)
+
+
 def build_email_samples():
-    # Import only when the operator starts a batch, after loading the server env.
-    from src.routes.golden_plate_recorder_db.email_service import render_verification_email
-    from src.routes.golden_plate_recorder_db.map_routes import (
-        render_map_verification_email, render_map_deletion_email,
-        render_map_rejection_email, render_pending_map_email,
-    )
-    from src.routes.golden_plate_recorder_db.password_recovery_routes import render_password_recovery_email
-    from .account_lifecycle import _notice_html
-    from .signup_notifications import school_signup_content
-    from .website_notifications import render_notification
+    # Resolve the same functions the website calls, after loading the server env.
+    from src.routes.golden_plate_recorder_db import map_routes, password_recovery_routes
+    from . import account_lifecycle, signup_notifications, startup_notifications, website_notifications
 
-    samples = []
+    scenarios = []
 
-    def add(key, label, content, notification_type=None):
-        samples.append(EmailSample(key, label, *content, notification_type))
+    def add(key, label, send, notification_type=None):
+        scenarios.append(EmailScenario(key, label, send, notification_type))
 
     for purpose, label in (
         ('school_registration', 'School registration verification'),
         ('account_signup', 'Account signup verification'),
         ('account_email', 'Account email verification'),
     ):
-        # SAMPLE is not a verification code and has no stored challenge.
-        add(purpose + '_verification', label, render_verification_email('SAMPLE', purpose=purpose))
-    add('map_verification', 'Map submission verification', render_map_verification_email('SAMPLE'))
-    inactive_link = 'https://example.invalid/email-test'
-    add('password_recovery', 'Password recovery', (
-        'Golden Plate - Reset your password', render_password_recovery_email(inactive_link)))
-    for key, title, summary in (
-        ('server_startup', 'Website server started',
-         'Sample application initialization announcement. Public website availability has not been checked.'),
-        ('school_registration', 'New school registration request',
-         'A sample school has requested registration and is awaiting administrator approval.'),
-    ):
-        add(key, title, ('Golden Plate — ' + title, render_notification(
-            title, summary, [('School', 'Sample school (email test)')], url=inactive_link)), key)
-    school = SimpleNamespace(name='Sample school (email test)')
-    account = SimpleNamespace(display_name='Sample person', username='email-test-sample')
-    for invited in (False, True):
-        title, summary, details = school_signup_content(school, account, invited=invited)
-        key = 'invite_signup' if invited else 'account_signup'
-        add(key, title, ('Golden Plate — ' + title, render_notification(
-            title, summary, details, url=inactive_link)), key)
+        add(purpose + '_verification', label, partial(send_verification_scenario, purpose=purpose))
+    add('map_verification', 'Map submission verification', send_map_verification_scenario)
 
-    now = datetime.now(timezone.utc)
-    submission = SimpleNamespace(
-        id='email-test-sample', title='Sample ecological map submission',
-        email='sample@example.invalid', submission_display_name='Sample person',
-        submitted_display_name='Sample person', submitted_username='email-test-sample',
-        submitted_role='user', school_id='sample-school', status='pending',
-        text_content='Sample description for email testing.', submitted_at=now,
-        approval_token='SAMPLE-INACTIVE',
+    base_url = os.environ.get('WEBSITE_PUBLIC_URL', 'https://goldenplate.ca').rstrip('/')
+    add('password_recovery', 'Password recovery', lambda email:
+        password_recovery_routes.send_password_recovery_email(
+            email, password_recovery_routes._recovery_link(secrets.token_urlsafe(32))))
+    add('server_startup', 'Website server started', lambda email:
+        startup_notifications.send_startup_notification(recipients=[email]), 'server_startup')
+
+    school = SimpleNamespace(name='Example School', contact_email=None)
+    account = SimpleNamespace(display_name='Alex Morgan', username='alex.morgan')
+    registration = SimpleNamespace(
+        id=str(uuid.uuid4()), school_name=school.name, school_slug='example-school',
+        admin_display_name=account.display_name, admin_username=account.username,
     )
-    add('map_submission', 'Map submission review request', render_pending_map_email(
-        submission, pin_label='Sample map location', public_base='https://example.invalid',
-        image_descriptions=()), 'map_submission')
-    for kind, render in (('rejection', render_map_rejection_email), ('deletion', render_map_deletion_email)):
-        add('map_' + kind, 'Map submission ' + kind, render(
-            submission=submission, reason='Sample reviewer comment for email testing.',
-            reviewer_display_name='Sample reviewer'), 'map_status')
 
-    details = dict(username=account.username, name=account.display_name, school=school.name,
-                   manual_admin_deletion=False, disabled_reason='inactivity',
-                   disable_at=(now + timedelta(days=14)).isoformat(),
-                   delete_at=(now + timedelta(days=44)).isoformat())
+    def school_registration(email):
+        request = SimpleNamespace(**vars(registration), email=email)
+        return website_notifications.notify_school_registration(request, recipients=[email])
+
+    add('school_registration', 'New school registration request', school_registration, 'school_registration')
+    for invited in (False, True):
+        add('invite_signup' if invited else 'account_signup',
+            'Invite signup' if invited else 'Account signup request',
+            lambda email, invited=invited: signup_notifications.notify_school_signup(
+                school, account, invited=invited, recipients=[email]),
+            'invite_signup' if invited else 'account_signup')
+
+    def submission(email):
+        # An unsaved submission uses the normal sender/attachment collector.
+        # Its fresh ID cannot refer to a real submission or its uploaded files.
+        return SimpleNamespace(
+            id=str(uuid.uuid4()), title='School garden', email=email,
+            submission_display_name=account.display_name,
+            submitted_display_name=account.display_name, submitted_username=account.username,
+            submitted_role='user', school_id=None, pin_id=None, status='pending',
+            text_content='Students planted a garden beside the dining hall.',
+            submitted_at=datetime.now(timezone.utc), approval_token=secrets.token_urlsafe(32),
+            image_data=None,
+        )
+
+    add('map_submission', 'Map submission review request', lambda email:
+        map_routes._notify_pending_map_submission(submission(email), base_url=base_url,
+                                                  recipients=[email]), 'map_submission')
+    for kind, send in (('rejection', map_routes._send_rejection_email), ('deletion', map_routes._send_deletion_email)):
+        add('map_' + kind, 'Map submission ' + kind, lambda email, send=send: send(
+            to_email=email, submission=submission(email),
+            reason='Please provide more information about this initiative.',
+            reviewer_display_name='Jordan Lee'), 'map_status')
+
+    def lifecycle_email(email, *, event, admin=False, reason='inactivity'):
+        now = datetime.now(timezone.utc)
+        remaining = {'disable_14': 14, 'disable_3': 3, 'disabled': 0}.get(event, -23 if event == 'delete_7' else -29)
+        disable_at = now + timedelta(days=remaining)
+        details = dict(username=account.username, name=account.display_name, school=school.name,
+                       manual_admin_deletion=admin, disabled_reason=reason,
+                       disable_at=disable_at.isoformat(), delete_at=(disable_at + timedelta(days=30)).isoformat())
+        # Use the application's URL/token format with an unissued grant ID.
+        token = account_lifecycle.grant_token(str(uuid.uuid4()), os.environ.get('SECRET_KEY') or secrets.token_hex(32))
+        return account_lifecycle.send_account_lifecycle_email(
+            email, event, details, f'{base_url}/account-deletion#token={token}')
+
     for event, label in (
         ('disable_14', 'Inactivity warning: 14 days'), ('disable_3', 'Inactivity warning: 3 days'),
         ('disabled', 'Account disabled for inactivity'), ('delete_7', 'Deletion warning: 7 days'),
         ('delete_1', 'Deletion warning: 1 day'), ('deleted', 'Account permanently deleted'),
     ):
-        title, html = _notice_html(event, details, inactive_link)
-        add('lifecycle_' + event, label,
-            ('Golden Plate — ' + title, html), 'account_lifecycle')
+        add('lifecycle_' + event, label, partial(lifecycle_email, event=event), 'account_lifecycle')
     for key, label, event, overrides in (
-        ('manual_disabled', 'Account disabled by an administrator', 'disabled', {'disabled_reason': 'manual'}),
-        ('admin_delete_7', 'Admin deletion review: 7 days', 'delete_7', {'manual_admin_deletion': True}),
-        ('admin_delete_1', 'Admin deletion review: 1 day', 'delete_1', {'manual_admin_deletion': True}),
+        ('manual_disabled', 'Account disabled by an administrator', 'disabled', {'reason': 'manual'}),
+        ('admin_delete_7', 'Admin deletion review: 7 days', 'delete_7', {'admin': True}),
+        ('admin_delete_1', 'Admin deletion review: 1 day', 'delete_1', {'admin': True}),
     ):
-        title, html = _notice_html(event, {**details, **overrides}, inactive_link)
-        add('lifecycle_' + key, label,
-            ('Golden Plate — ' + title, html), 'account_lifecycle')
-    return samples
+        add('lifecycle_' + key, label, partial(lifecycle_email, event=event, **overrides), 'account_lifecycle')
+    return scenarios

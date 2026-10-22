@@ -3,10 +3,22 @@
 import logging
 import os
 import threading
+from functools import partial
 
-from .website_notifications import notify_website_update
+from .website_notifications import notify_website_update, send_notification
 
 logger = logging.getLogger(__name__)
+
+
+def send_startup_notification(*, recipients=None):
+    """Send the application's standard initialization announcement."""
+    sender = notify_website_update if recipients is None else partial(send_notification, recipients=recipients)
+    return sender(
+        'Website server started',
+        'The website application has initialized after a server start or reload. '
+        'This announcement does not verify public website availability.',
+        [('Environment', os.environ.get('APP_ENV', 'development'))],
+    )
 
 
 def start_startup_notification(app, *, reloader_parent=False):
@@ -25,12 +37,7 @@ def start_startup_notification(app, *, reloader_parent=False):
 
     def send():
         try:
-            notify_website_update(
-                'Website server started',
-                'The website application has initialized after a server start or reload. '
-                'This announcement does not verify public website availability.',
-                [('Environment', os.environ.get('APP_ENV', 'development'))],
-            )
+            send_startup_notification()
         except Exception:
             logger.exception('Unable to send server startup announcement')
 

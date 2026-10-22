@@ -1,4 +1,4 @@
-"""Send the website's sample emails from the server terminal.
+"""Send the website's emails from the server terminal.
 
 Usage: python scripts/test_emails.py [--email recipient@example.com]
 Use --history for saved results or --web for the optional CAPTCHA browser form.
@@ -31,9 +31,9 @@ def run_terminal(database, email=None):
     try:
         samples = build_email_samples()
     except Exception:
-        print('Could not prepare the email samples. Check the server configuration. No test emails were sent.', file=sys.stderr)
+        print('Could not prepare the email scenarios. Check the server configuration. No test emails were sent.', file=sys.stderr)
         return 1
-    print(f'This will send {len(samples)} [TEST] sample emails to {recipient}.')
+    print(f'This will send {len(samples)} emails using the website’s normal send functions to {recipient}.')
     print('Disabled notification types will be skipped. Results and UTC send times are saved.')
     print('Terminal mode uses your server access and this confirmation; it does not use browser CAPTCHA.')
     confirmation = f'SEND {recipient}'

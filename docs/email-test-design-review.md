@@ -1,5 +1,11 @@
 # Email test tool interface review
 
+This visual review records the initial browser interface. The tool now defaults
+to the terminal, calls production email senders without modifying their messages,
+and generates verification codes through the normal services. The earlier
+screenshots show historical copy and should not be used as current behavior
+documentation; see [Email test tool](email-test-tool.md).
+
 ## Direction
 
 This is an operator tool for one recipient, a CAPTCHA check, and a durable log

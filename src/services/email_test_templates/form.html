@@ -4,8 +4,8 @@
 {% endblock %}
 {% block content %}
   <h1>Send the website’s test emails</h1>
-  <p class="intro">Enter one recipient to receive 21 sample emails covering verification, password recovery, school and account signups, server startup, map review, and account inactivity.</p>
-  <p>Each subject starts with [TEST]. Samples use inactive links and sample data. The send log records the time and result for each email in UTC.</p>
+  <p class="intro">Enter one recipient to receive the website’s 21 email scenarios covering verification, password recovery, school and account signups, server startup, map review, and account inactivity.</p>
+  <p>Emails use the website’s normal send functions, subjects and formatting. Verification codes are generated and saved normally. The send log records the time and result for each email in UTC.</p>
   {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
   {% if not site_key %}<p class="notice error" role="alert">CAPTCHA is unavailable. Configure TURNSTILE_SITE_KEY on this server before sending.</p>{% endif %}
   <form class="form" method="post" id="email-test-form">

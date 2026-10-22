@@ -90,8 +90,7 @@ def request_password_recovery():
         logger.exception('Unable to prepare password recovery')
         return _response({'error': 'Unable to prepare recovery. Please try again or ask a superadmin.'}, 503)
     try:
-        result = send_email_via_brevo(values['email'], 'Golden Plate - Reset your password',
-            render_password_recovery_email(link))
+        result = send_password_recovery_email(values['email'], link)
         delivered = result.get('success') and not result.get('skipped')
     except Exception:
         logger.exception('Password recovery delivery failed')
@@ -161,6 +160,11 @@ def complete_password_recovery():
     if session.get('user_uuid') == user.id:
         session.clear()
     return _response({'message': 'Password changed. Sign in with your username or verified email and your new password.'})
+
+
+def send_password_recovery_email(email, link):
+    return send_email_via_brevo(email, 'Golden Plate - Reset your password',
+                              render_password_recovery_email(link))
 
 
 def render_password_recovery_email(link):
