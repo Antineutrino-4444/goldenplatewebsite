@@ -221,7 +221,7 @@ def test_script_mounts_under_https_proxy_without_starting_the_website(tmp_path, 
     monkeypatch.setattr(dotenv, 'load_dotenv', lambda *args: None)
     monkeypatch.setattr(tool, 'create_app', lambda *args, **kwargs: app)
     monkeypatch.setattr(app, 'run', lambda **kwargs: calls.append(kwargs))
-    monkeypatch.setattr(sys, 'argv', ['test_emails.py', '--database', str(database),
+    monkeypatch.setattr(sys, 'argv', ['test_emails.py', '--web', '--database', str(database),
                                      '--url-prefix', '/email-test', '--secure-cookie'])
     assert test_emails.main() == 0
     assert calls == [dict(host='127.0.0.1', port=59238, debug=False, use_reloader=False)]
@@ -266,3 +266,135 @@ def test_real_map_decision_emails_preserve_attachment_delivery(kind, monkeypatch
     assert email_outbox[-1]['to'] == [{'email': 'submitter@example.com'}]
     assert '&lt;Sample reason&gt;' in email_outbox[-1]['htmlContent']
     assert '&lt;Sample description&gt;' in email_outbox[-1]['htmlContent']
+
+
+@pytest.fixture
+def terminal_tool(tmp_path, monkeypatch):
+    import dotenv
+    import sys
+    from scripts import test_emails
+
+    database = tmp_path / 'audit.sqlite3'
+    monkeypatch.setattr(dotenv, 'load_dotenv', lambda *args: None)
+    monkeypatch.setattr(sys, 'argv', ['test_emails.py', '--database', str(database)])
+    monkeypatch.setattr(tool, 'create_app', lambda *args, **kwargs: pytest.fail('Terminal mode started a web server'))
+    monkeypatch.setattr(captcha, 'captcha_failure', lambda *args, **kwargs: pytest.fail('Terminal mode requires browser CAPTCHA'))
+    return test_emails, database
+
+
+def answer_prompts(monkeypatch, *answers):
+    responses = iter(answers)
+    monkeypatch.setattr('builtins.input', lambda prompt: next(responses))
+
+
+def test_default_terminal_mode_sends_to_prompted_recipient_without_browser(terminal_tool, monkeypatch, capsys, email_outbox):
+    script, database = terminal_tool
+    answer_prompts(monkeypatch, 'Reader@Example.com', 'SEND reader@example.com')
+    assert script.main() == 0
+    assert len(email_outbox) == 21
+    assert all(message['to'] == [{'email': 'reader@example.com'}] for message in email_outbox)
+    run = latest(database)
+    assert run['status'] == 'completed'
+    assert all(message['sent_at'] for message in run['messages'])
+    output = capsys.readouterr().out
+    assert '[1/21]' in output and '[21/21]' in output
+    assert '21 accepted, 0 skipped, 0 failed' in output
+    assert run['messages'][0]['sent_at'] in output
+
+
+def test_terminal_email_argument_still_requires_confirmation(terminal_tool, monkeypatch, email_outbox):
+    import sys
+    script, database = terminal_tool
+    monkeypatch.setattr(sys, 'argv', ['test_emails.py', '--database', str(database), '--email', 'reader@example.com'])
+    answer_prompts(monkeypatch, 'no')
+    assert script.main() == 1
+    assert not email_outbox and latest(database) is None
+
+
+def test_terminal_email_argument_sends_after_confirmation(terminal_tool, monkeypatch, email_outbox):
+    import sys
+    script, database = terminal_tool
+    monkeypatch.setattr(sys, 'argv', ['test_emails.py', '--database', str(database), '--email', 'reader@example.com'])
+    answer_prompts(monkeypatch, 'SEND reader@example.com')
+    assert script.main() == 0
+    assert len(email_outbox) == 21
+
+
+@pytest.mark.parametrize('recipient', ['one@example.com,two@example.com', 'invalid', 'reader@example.com\nBcc: other@example.com'])
+def test_terminal_rejects_invalid_recipient_before_any_send(terminal_tool, monkeypatch, email_outbox, recipient):
+    script, database = terminal_tool
+    answer_prompts(monkeypatch, recipient)
+    assert script.main() == 2
+    assert not email_outbox and latest(database) is None
+
+
+def test_terminal_failure_preserves_results_and_returns_nonzero(terminal_tool, monkeypatch, capsys, email_outbox):
+    script, database = terminal_tool
+    real_send = tool.send_email_via_brevo
+    attempts = 0
+
+    def send(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            return {'success': False, 'error': 'Brevo API error: 503'}
+        return real_send(*args, **kwargs)
+
+    monkeypatch.setattr(tool, 'send_email_via_brevo', send)
+    answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
+    assert script.main() == 1
+    assert attempts == 21 and len(email_outbox) == 20
+    run = latest(database)
+    assert run['status'] == 'completed_with_errors'
+    assert run['messages'][1]['status'] == 'failed' and run['messages'][1]['sent_at'] is None
+    assert '20 accepted, 0 skipped, 1 failed' in capsys.readouterr().out
+
+
+def test_terminal_cooldown_survives_next_invocation(terminal_tool, monkeypatch, email_outbox):
+    script, _ = terminal_tool
+    for expected in (0, 1):
+        answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
+        assert script.main() == expected
+    assert len(email_outbox) == 21
+
+
+def test_terminal_interrupt_preserves_accepted_and_unknown_results(terminal_tool, monkeypatch, email_outbox):
+    script, database = terminal_tool
+    real_send = tool.send_email_via_brevo
+    attempts = 0
+
+    def send(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            raise KeyboardInterrupt
+        return real_send(*args, **kwargs)
+
+    monkeypatch.setattr(tool, 'send_email_via_brevo', send)
+    answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
+    assert script.main() == 130
+    run = latest(database)
+    assert len(email_outbox) == 1
+    assert run['status'] == 'interrupted'
+    assert run['messages'][0]['status'] == 'accepted' and run['messages'][0]['sent_at']
+    assert run['messages'][1]['status'] == 'unknown' and run['messages'][1]['sent_at'] is None
+    assert all(row['status'] == 'cancelled' for row in run['messages'][2:])
+
+
+@pytest.mark.parametrize('interruption', [EOFError, KeyboardInterrupt])
+def test_terminal_closed_input_cancels_without_send(terminal_tool, monkeypatch, email_outbox, interruption):
+    script, database = terminal_tool
+    monkeypatch.setattr('builtins.input', lambda prompt: (_ for _ in ()).throw(interruption()))
+    assert script.main() == 1
+    assert not email_outbox and latest(database) is None
+
+
+def test_terminal_respects_notification_preferences(terminal_tool, monkeypatch, email_outbox):
+    script, database = terminal_tool
+    db_session.add(EmailNotificationPreference(email='reader@example.com', disabled_types='["server_startup"]'))
+    db_session.commit()
+    answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
+    assert script.main() == 0
+    assert len(email_outbox) == 20
+    skipped = next(row for row in latest(database)['messages'] if row['kind'] == 'server_startup')
+    assert skipped['status'] == 'skipped' and skipped['sent_at'] is None

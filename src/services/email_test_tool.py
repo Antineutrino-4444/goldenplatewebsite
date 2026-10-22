@@ -22,6 +22,13 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def normalize_recipient(value):
+    recipient = value.strip().lower()
+    if len(recipient) > 254 or not re.fullmatch(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+", recipient):
+        raise ValueError('Enter one valid recipient email address.')
+    return recipient
+
+
 @contextmanager
 def open_audit(path):
     path = Path(path)
@@ -90,7 +97,19 @@ def delivery_error(result):
     return 'Email delivery failed. Check the server email configuration and provider logs.'
 
 
-def send_batch(path, run_id, samples):
+def recover_interrupted_runs(path, run_id=None):
+    """Caller must own the process lock before recovering abandoned work."""
+    condition, parameters = (' AND run_id = ?', (run_id,)) if run_id else ('', ())
+    with open_audit(path) as store:
+        store.execute("UPDATE messages SET status = 'unknown', error = 'Process interrupted; provider acceptance is unknown.' WHERE status = 'sending'" + condition, parameters)
+        store.execute("UPDATE messages SET status = 'cancelled', error = 'Process interrupted before sending.' WHERE status = 'queued'" + condition, parameters)
+        if run_id:
+            store.execute("UPDATE runs SET status = 'interrupted', finished_at = ? WHERE id = ?", (utc_now(), run_id))
+        else:
+            store.execute("UPDATE runs SET status = 'interrupted', finished_at = ? WHERE status = 'running'", (utc_now(),))
+
+
+def send_batch(path, run_id, samples, *, on_result=None):
     """Never retry an ambiguous send automatically; keep each result independent."""
     try:
         run = read_run(path, run_id)
@@ -124,17 +143,21 @@ def send_batch(path, run_id, samples):
                                  message_id = ?, error = ? WHERE run_id = ? AND position = ?''',
                               (status, finished_at if status == 'accepted' else None, finished_at,
                                message_id, error, run_id, index))
+            if on_result:
+                on_result(dict(position=index, label=sample.label, status=status,
+                               attempted_at=attempted_at, finished_at=finished_at,
+                               sent_at=finished_at if status == 'accepted' else None,
+                               message_id=message_id, error=error))
         with open_audit(path) as store:
             failed = store.execute("SELECT COUNT(*) FROM messages WHERE run_id = ? AND status = 'failed'", (run_id,)).fetchone()[0]
             store.execute('UPDATE runs SET status = ?, finished_at = ? WHERE id = ?',
                           ('completed_with_errors' if failed else 'completed', utc_now(), run_id))
     except Exception:
         # A database failure must stop subsequent sends: never send unrecorded mail.
-        # The next launch marks any in-flight row unknown instead of claiming it failed.
+        # An in-flight row is unknown, rather than falsely reported as failed.
         import logging
         logging.getLogger(__name__).exception('Email test stopped; inspect the audit log before retrying')
-        with open_audit(path) as store:
-            store.execute("UPDATE runs SET status = 'interrupted', finished_at = ? WHERE id = ?", (utc_now(), run_id))
+        recover_interrupted_runs(path, run_id)
     finally:
         from src.routes.golden_plate_recorder_db.db import db_session
         from src.routes.golden_plate_recorder_db.map_db import map_db_session
@@ -156,10 +179,7 @@ def create_app(database, *, access_key):
         return datetime.fromisoformat(value).astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S') if value else '—'
 
     # This tool is a single process. Do not resend work interrupted by a restart.
-    with open_audit(database) as store:
-        store.execute("UPDATE messages SET status = 'unknown', error = 'Process interrupted; provider acceptance is unknown.' WHERE status = 'sending'")
-        store.execute("UPDATE messages SET status = 'cancelled', error = 'Process interrupted before sending.' WHERE status = 'queued'")
-        store.execute("UPDATE runs SET status = 'interrupted', finished_at = ? WHERE status = 'running'", (utc_now(),))
+    recover_interrupted_runs(database)
 
     @app.after_request
     def private_response(response):
@@ -183,9 +203,10 @@ def create_app(database, *, access_key):
             return form('The form expired. Please try again.', 400)
         if not secrets.compare_digest(request.form.get('access_key', '').encode(), access_key.encode()):
             return form('The server access key is incorrect.', 403)
-        recipient = request.form.get('email', '').strip().lower()
-        if len(recipient) > 254 or not re.fullmatch(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+", recipient):
-            return form('Enter one valid recipient email address.', 400)
+        try:
+            recipient = normalize_recipient(request.form.get('email', ''))
+        except ValueError as error:
+            return form(str(error), 400)
         from src.routes.golden_plate_recorder_db.captcha import captcha_failure
         failure = captcha_failure(request.form.get('cf-turnstile-response'), 'email_test', required=True)
         if failure:

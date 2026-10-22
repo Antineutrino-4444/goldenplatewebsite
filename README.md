@@ -62,10 +62,10 @@ to verify a production build with a 384 MB JavaScript heap limit.
 ## Development
 
 To test every current email type against one entered recipient, run
-`venv/bin/python scripts/test_emails.py` on the server. The tool provides a
-CAPTCHA-protected browser form and records each send attempt and UTC acceptance
-time. See [Email test tool](docs/email-test-tool.md) for configuration, browser
-access, and saved history.
+`./scripts/test_emails.sh` on the server. It prompts for the recipient and a send
+confirmation in the terminal, then prints and saves each result and UTC send
+time. A browser form with CAPTCHA is available with `--web`. See
+[Email test tool](docs/email-test-tool.md) for configuration and saved history.
 
 ```bash
 # Run backend
