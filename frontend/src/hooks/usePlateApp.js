@@ -320,8 +320,8 @@ export function usePlateApp() {
     }
   }
 
-  const loadInterschoolOverview = async ({ silent = false } = {}) => {
-    if (user?.role !== 'inter_school') {
+  const loadInterschoolOverview = async ({ silent = false, authenticatedUser = user } = {}) => {
+    if (authenticatedUser?.role !== 'inter_school') {
       setInterschoolSchools([])
       setInterschoolInvites([])
       setInterschoolRegistrationRequests([])
@@ -495,7 +495,7 @@ export function usePlateApp() {
     }
   }
 
-  const initializeInterschoolPortal = async () => {
+  const initializeInterschoolPortal = async (authenticatedUser = user) => {
     setSessionId(null)
     setSessionName('')
     setSessionOwner('')
@@ -552,7 +552,8 @@ export function usePlateApp() {
     setInterschoolOverviewLoading(false)
     setShowGuestSchoolDialog(false)
     setGuestSchoolCode('')
-    await loadInterschoolOverview({ silent: true })
+    // React has not committed setUser yet when login/session restoration gets here.
+    await loadInterschoolOverview({ authenticatedUser })
   }
 
   const handlePostAuth = async (userPayload) => {
@@ -560,7 +561,7 @@ export function usePlateApp() {
       return
     }
     if (userPayload.role === 'inter_school') {
-      await initializeInterschoolPortal()
+      await initializeInterschoolPortal(userPayload)
     } else {
       await initializeSession()
       await loadRosterStatus()

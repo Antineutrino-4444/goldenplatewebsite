@@ -64,6 +64,10 @@ function InterschoolPortal({ app }) {
   }
 
   const pendingRegistrationRequests = interschoolRegistrationRequests.filter(r => r.status === 'pending')
+  const requestStatusOrder = { pending: 0, rejected: 1, approved: 2 }
+  const sortedRegistrationRequests = [...interschoolRegistrationRequests].sort((a, b) =>
+    (requestStatusOrder[a.status] ?? 1) - (requestStatusOrder[b.status] ?? 1)
+  )
 
   const toTitle = (value) => {
     if (!value) return ''
@@ -134,11 +138,11 @@ function InterschoolPortal({ app }) {
           <CardContent>
             {interschoolRegistrationRequests.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No school registration requests yet.
+                {interschoolOverviewLoading ? 'Loading school registration requests…' : 'No school registration requests yet.'}
               </p>
             ) : (
               <div className="space-y-3">
-                {interschoolRegistrationRequests.map((request) => {
+                {sortedRegistrationRequests.map((request) => {
                   const requestedLabel = formatDateTime(request.requested_at)
                   const reviewedLabel = formatDateTime(request.reviewed_at)
                   const statusClasses = getRequestStatusClasses(request.status)
@@ -314,7 +318,7 @@ function InterschoolPortal({ app }) {
           <CardContent>
             {interschoolSchools.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No partner schools registered yet.
+                {interschoolOverviewLoading ? 'Loading schools…' : 'No partner schools registered yet.'}
               </p>
             ) : (
               <div className="space-y-3">
@@ -381,7 +385,7 @@ function InterschoolPortal({ app }) {
           <CardContent>
             {interschoolInvites.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No school invites have been issued yet.
+                {interschoolOverviewLoading ? 'Loading school invites…' : 'No school invites have been issued yet.'}
               </p>
             ) : (
               <div className="space-y-3">
