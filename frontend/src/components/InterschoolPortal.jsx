@@ -3,8 +3,27 @@ import PortalHeader from '@/components/PortalHeader.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { CheckCircle, Copy, KeyRound, ListOrdered, RefreshCcw, School, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react'
+import { CardContent } from '@/components/ui/card.jsx'
+import { CheckCircle, ChevronDown, Copy, KeyRound, ListOrdered, RefreshCcw, School, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react'
+
+function PortalSection({ id, title, description, icon: Icon, count, children }) {
+  return (
+    <details id={id} className="group min-w-0 rounded-xl border bg-card text-card-foreground shadow-sm">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-4 rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 sm:p-6 [&::-webkit-details-marker]:hidden">
+        <div className="min-w-0 space-y-1.5">
+          <h2 className="flex flex-wrap items-center gap-2 font-semibold">
+            <Icon className="h-5 w-5 text-amber-600" aria-hidden="true" />
+            {title}
+            {count !== undefined && <Badge variant="outline">{count}</Badge>}
+          </h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        <ChevronDown className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="pb-6">{children}</div>
+    </details>
+  )
+}
 
 function InterschoolPortal({ app }) {
   const {
@@ -64,10 +83,8 @@ function InterschoolPortal({ app }) {
   }
 
   const pendingRegistrationRequests = interschoolRegistrationRequests.filter(r => r.status === 'pending')
-  const requestStatusOrder = { pending: 0, rejected: 1, approved: 2 }
-  const sortedRegistrationRequests = [...interschoolRegistrationRequests].sort((a, b) =>
-    (requestStatusOrder[a.status] ?? 1) - (requestStatusOrder[b.status] ?? 1)
-  )
+  const rejectedRegistrationRequests = interschoolRegistrationRequests.filter(r => r.status === 'rejected')
+  const approvedRegistrationRequests = interschoolRegistrationRequests.filter(r => r.status === 'approved')
 
   const toTitle = (value) => {
     if (!value) return ''
@@ -78,22 +95,95 @@ function InterschoolPortal({ app }) {
       .join(' ')
   }
 
+  const renderRegistrationRequests = (requests, emptyMessage) => (
+    requests.length === 0 ? (
+      <p className="text-sm text-gray-500">
+        {interschoolOverviewLoading ? 'Loading school registration requests…' : emptyMessage}
+      </p>
+    ) : (
+      <div className="space-y-3">
+        {requests.map((request) => {
+          const requestedLabel = formatDateTime(request.requested_at)
+          const reviewedLabel = formatDateTime(request.reviewed_at)
+          const statusClasses = getRequestStatusClasses(request.status)
+          return (
+            <div
+              key={request.id}
+              className="flex min-w-0 flex-wrap items-start justify-between gap-3 [&>div]:min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+            >
+              <div className="space-y-1">
+                <div className="font-semibold text-gray-900">{request.school_name}</div>
+                <div className="text-sm text-gray-600">
+                  Contact: {request.email}
+                </div>
+                <div className="text-sm text-gray-600">
+                  Admin: {request.admin_display_name} (@{request.admin_username})
+                </div>
+                {request.school_slug && (
+                  <div className="text-xs text-gray-500">School Code: {request.school_slug}</div>
+                )}
+                {requestedLabel && (
+                  <div className="text-xs text-gray-400">Requested {requestedLabel}</div>
+                )}
+                {reviewedLabel && (
+                  <div className="text-xs text-gray-400">Reviewed {reviewedLabel}</div>
+                )}
+                {request.rejection_reason && (
+                  <div className="text-xs text-red-600">Reason: {request.rejection_reason}</div>
+                )}
+              </div>
+              <div className="flex flex-col items-start gap-2 sm:items-end">
+                <Badge variant="outline" className={`text-xs uppercase tracking-wide ${statusClasses}`}>
+                  {toTitle(request.status) || 'Unknown'}
+                </Badge>
+                {request.status === 'pending' && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => approveSchoolRegistration(request.id)}
+                      variant="default"
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      Approve
+                    </Button>
+                    <Button
+                      onClick={() => handleRejectRegistration(request.id)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <XCircle className="h-4 w-4 mr-1" />
+                      Reject
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  )
 
   return (
     <div className="min-h-screen min-w-0 bg-gray-50 [overflow-wrap:anywhere]">
       <PortalHeader app={app} interschool />
 
       <main className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-amber-600" />
-              Inter-School Overview
-            </CardTitle>
-            <CardDescription>
-              Review school registrations, issue invites, and manage partner schools.
-            </CardDescription>
-          </CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold text-gray-900">Inter-School Administration</h1>
+          <Button onClick={refreshInterschoolOverview} variant="outline" size="sm" disabled={interschoolOverviewLoading}>
+            <RefreshCcw className={`mr-2 h-4 w-4 ${interschoolOverviewLoading ? 'animate-spin' : ''}`} />
+            {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+        <PortalSection id="pending-registrations" title="Pending School Registration Requests" description="Review schools awaiting approval." icon={UserPlus} count={pendingRegistrationRequests.length}>
+          <CardContent>
+            {renderRegistrationRequests(pendingRegistrationRequests, 'No pending school registration requests.')}
+          </CardContent>
+        </PortalSection>
+
+        <PortalSection id="overview" title="Inter-School Overview" description="Review school registrations, issue invites, and manage partner schools." icon={ShieldCheck}>
           <CardContent>
             <div className="space-y-2 text-sm text-gray-600">
               <p>
@@ -106,116 +196,9 @@ function InterschoolPortal({ app }) {
               </ul>
             </div>
           </CardContent>
-        </Card>
+        </PortalSection>
 
-        <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="flex flex-wrap items-center gap-2">
-                <UserPlus className="h-5 w-5 text-amber-600" />
-                School Registration Requests
-                {pendingRegistrationRequests.length > 0 && (
-                  <Badge className="bg-amber-500 text-white">
-                    {pendingRegistrationRequests.length}
-                  </Badge>
-                )}
-              </CardTitle>
-              <CardDescription>
-                Review school registration requests.
-              </CardDescription>
-            </div>
-            <Button
-              onClick={refreshInterschoolOverview}
-              variant="outline"
-              size="sm"
-              disabled={interschoolOverviewLoading}
-              className="flex flex-wrap items-center gap-2"
-            >
-              <RefreshCcw className={`h-4 w-4 ${interschoolOverviewLoading ? 'animate-spin' : ''}`} />
-              {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {interschoolRegistrationRequests.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                {interschoolOverviewLoading ? 'Loading school registration requests…' : 'No school registration requests yet.'}
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {sortedRegistrationRequests.map((request) => {
-                  const requestedLabel = formatDateTime(request.requested_at)
-                  const reviewedLabel = formatDateTime(request.reviewed_at)
-                  const statusClasses = getRequestStatusClasses(request.status)
-                  return (
-                    <div
-                      key={request.id}
-                      className="flex min-w-0 flex-wrap items-start justify-between gap-3 [&>div]:min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
-                    >
-                      <div className="space-y-1">
-                        <div className="font-semibold text-gray-900">{request.school_name}</div>
-                        <div className="text-sm text-gray-600">
-                          Contact: {request.email}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          Admin: {request.admin_display_name} (@{request.admin_username})
-                        </div>
-                        {request.school_slug && (
-                          <div className="text-xs text-gray-500">School Code: {request.school_slug}</div>
-                        )}
-                        {requestedLabel && (
-                          <div className="text-xs text-gray-400">Requested {requestedLabel}</div>
-                        )}
-                        {reviewedLabel && (
-                          <div className="text-xs text-gray-400">Reviewed {reviewedLabel}</div>
-                        )}
-                        {request.rejection_reason && (
-                          <div className="text-xs text-red-600">Reason: {request.rejection_reason}</div>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-start gap-2 sm:items-end">
-                        <Badge variant="outline" className={`text-xs uppercase tracking-wide ${statusClasses}`}>
-                          {toTitle(request.status) || 'Unknown'}
-                        </Badge>
-                        {request.status === 'pending' && (
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              onClick={() => approveSchoolRegistration(request.id)}
-                              variant="default"
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                              Approve
-                            </Button>
-                            <Button
-                              onClick={() => handleRejectRegistration(request.id)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <XCircle className="h-4 w-4 mr-1" />
-                              Reject
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              <UserPlus className="h-5 w-5 text-amber-600" />
-              Generate School Invite
-            </CardTitle>
-            <CardDescription>
-              Create a one-time invite for a new school and its lead administrator.
-            </CardDescription>
-          </CardHeader>
+        <PortalSection id="generate-invite" title="Generate School Invite" description="Create a one-time invite for a new school and its lead administrator." icon={UserPlus}>
           <CardContent>
             <Alert className="mb-4 border-amber-200 bg-amber-50 text-amber-800">
               <ShieldCheck className="h-4 w-4" />
@@ -284,37 +267,9 @@ function InterschoolPortal({ app }) {
               )}
             </div>
           </CardContent>
-        </Card>
+        </PortalSection>
 
-        <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="flex flex-wrap items-center gap-2">
-                <School className="h-5 w-5 text-amber-600" />
-                School Directory
-              </CardTitle>
-              <CardDescription>
-                View registered schools and their accounts.
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {interschoolSchools.length > 0 && (
-                <Badge variant="outline" className="text-xs uppercase tracking-wide">
-                  {interschoolSchools.length} total
-                </Badge>
-              )}
-              <Button
-                onClick={refreshInterschoolOverview}
-                variant="outline"
-                size="sm"
-                disabled={interschoolOverviewLoading}
-                className="flex flex-wrap items-center gap-2"
-              >
-                <RefreshCcw className={`h-4 w-4 ${interschoolOverviewLoading ? 'animate-spin' : ''}`} />
-                {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
-              </Button>
-            </div>
-          </CardHeader>
+        <PortalSection id="school-directory" title="School Directory" description="View registered schools and their accounts." icon={School} count={interschoolSchools.length}>
           <CardContent>
             {interschoolSchools.length === 0 ? (
               <p className="text-sm text-gray-500">
@@ -370,18 +325,9 @@ function InterschoolPortal({ app }) {
               </div>
             )}
           </CardContent>
-        </Card>
+        </PortalSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              <KeyRound className="h-5 w-5 text-amber-600" />
-              Invite Codes Ledger
-            </CardTitle>
-            <CardDescription>
-              Track issued school invites and their redemption status.
-            </CardDescription>
-          </CardHeader>
+        <PortalSection id="invite-ledger" title="Invite Codes Ledger" description="Track issued school invites and their redemption status." icon={KeyRound} count={interschoolInvites.length}>
           <CardContent>
             {interschoolInvites.length === 0 ? (
               <p className="text-sm text-gray-500">
@@ -453,18 +399,9 @@ function InterschoolPortal({ app }) {
               </div>
             )}
           </CardContent>
-        </Card>
+        </PortalSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              <ListOrdered className="h-5 w-5 text-amber-600" />
-              Onboarding Checklist
-            </CardTitle>
-            <CardDescription>
-              Share these steps with the school's onboarding lead.
-            </CardDescription>
-          </CardHeader>
+        <PortalSection id="onboarding-checklist" title="Onboarding Checklist" description="Share these steps with the school's onboarding lead." icon={ListOrdered}>
           <CardContent>
             <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
               <li>Generate a new invite and copy the code.</li>
@@ -472,7 +409,18 @@ function InterschoolPortal({ app }) {
               <li>The administrator completes the registration workflow using the invite.</li>
             </ol>
           </CardContent>
-        </Card>
+        </PortalSection>
+        <PortalSection id="rejected-registrations" title="Rejected School Registration Requests" description="Review previously rejected requests." icon={XCircle} count={rejectedRegistrationRequests.length}>
+          <CardContent>
+            {renderRegistrationRequests(rejectedRegistrationRequests, 'No rejected school registration requests.')}
+          </CardContent>
+        </PortalSection>
+
+        <PortalSection id="approved-registrations" title="Approved School Registration Requests" description="Review previously approved requests." icon={CheckCircle} count={approvedRegistrationRequests.length}>
+          <CardContent>
+            {renderRegistrationRequests(approvedRegistrationRequests, 'No approved school registration requests.')}
+          </CardContent>
+        </PortalSection>
       </main>
     </div>
   )

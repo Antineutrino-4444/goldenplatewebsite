@@ -85,7 +85,7 @@ function portalMarkup(overrides = {}) {
   }
 }
 
-test('pending requests precede rejected and approved requests, preserving newest-first within each group', () => {
+test('all sections start collapsed, with pending requests first and approved requests at the bottom of the page', () => {
   const requests = [
     { id: 'a1', school_name: 'Approved newest', status: 'approved' },
     { id: 'r1', school_name: 'Rejected school', status: 'rejected' },
@@ -99,6 +99,20 @@ test('pending requests precede rejected and approved requests, preserving newest
   assert.ok(positions.every(position => position >= 0))
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b))
   assert.equal(requests[0].id, 'a1', 'rendering must not mutate shared data')
+
+  const sections = [...html.matchAll(/<details\b([^>]*)>([\s\S]*?)<\/details>/g)]
+  assert.equal(sections.length, 8)
+  for (const [, attributes, content] of sections) {
+    assert.doesNotMatch(attributes, /\bopen(?:\s|=|$)/, 'every section starts closed')
+    assert.match(content, /^<summary\b/, 'every section has a native keyboard-accessible toggle')
+  }
+  assert.match(sections[0][1], /id="pending-registrations"/)
+  assert.match(sections.at(-1)[1], /id="approved-registrations"/)
+  assert.match(sections[0][2], /Pending newest/)
+  assert.doesNotMatch(sections[0][2], /Approved newest|Rejected school/)
+  assert.match(sections.at(-1)[2], /Approved newest/)
+  assert.doesNotMatch(sections.at(-1)[2], /Pending newest|Rejected school|>Approve<|>Reject</)
+  assert.ok(html.indexOf('Onboarding Checklist') < html.indexOf('Approved School Registration Requests'))
 })
 
 test('loading the overview does not display misleading empty lists', () => {
