@@ -28,3 +28,4 @@ data/
 # Local tutorial video authoring: timelines, renderer, media, and review artifacts.
 /tools/tutorial-studio/
 /output/tutorial-studio/
+tutorial_vid/
