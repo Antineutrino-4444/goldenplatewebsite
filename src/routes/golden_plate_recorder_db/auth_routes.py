@@ -90,6 +90,10 @@ def login():
     session['school_id'] = user.school_id
     session['password_token'] = password_session_token(user)
     session['authenticated_at'] = _now_utc().isoformat()
+    session['signup_email_confirmation'] = bool(
+        user.last_login_at is None and user.role == 'superadmin'
+        and user.email and user.email_verified_at
+    )
     session.pop('guest_access', None)
     user.last_login_at = _now_utc()
     user.updated_at = _now_utc()
@@ -119,6 +123,7 @@ def logout():
     session.pop('authenticated_at', None)
     session.pop('account_email_challenge', None)
     session.pop('signup_email_challenge', None)
+    session.pop('signup_email_confirmation', None)
     return jsonify({'status': 'success', 'message': 'Logged out successfully'}), 200
 
 

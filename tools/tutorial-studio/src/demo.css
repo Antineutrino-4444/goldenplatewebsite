@@ -1,0 +1,6 @@
+html, body { margin: 0; width: 1800px; min-height: 1600px; overflow: hidden; background: #101a16; }
+*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+input { caret-color: transparent !important; caret-animation: manual !important; }
+body[data-caret="on"] input:focus { caret-color: #edf0e6 !important; }
+.gp-hero-photo img, .gp-field-report, .gp-hero-heading { opacity: 1 !important; transform: none !important; }
+.gp-image-arrived { animation: none !important; }

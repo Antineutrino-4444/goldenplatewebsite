@@ -46,6 +46,18 @@ def notify_school_registration(registration_request, *, recipients=None):
     )
 
 
+def notify_school_approval(school, admin_user):
+    """Send the applicant a transactional confirmation after approval is saved."""
+    return send_notification(
+        'Your school has been approved',
+        f'Your school, {school.name}, has been approved. You can now sign in '
+        'to Golden Plate using the username and password you chose during registration. '
+        'Your signup email is already saved and verified on your account.',
+        [('School', school.name), ('Username', admin_user.username)],
+        recipients=[admin_user.email], notification_type=None,
+    )
+
+
 def send_notification(title, summary, details=(), *, url=None, recipients=(), notification_type='server_startup'):
     """Send escaped metadata only, never passwords, verification codes or secrets.
 

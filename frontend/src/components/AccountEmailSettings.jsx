@@ -103,15 +103,31 @@ export function AccountEmailRequired({ app }) {
 }
 
 export default function AccountEmailSettings({ app, open, onOpenChange, onCloseAutoFocus, reminder = false }) {
-  return <Dialog open={open} onOpenChange={onOpenChange}>
+  const [changingEmail, setChangingEmail] = useState(false)
+  const confirmSignupEmail = reminder && app.user.signup_email_confirmation && !changingEmail
+  const changeOpen = (next) => {
+    if (!next) setChangingEmail(false)
+    onOpenChange(next)
+  }
+  return <Dialog open={open} onOpenChange={changeOpen}>
     <DialogContent dismissOnOverlayClick={false} onCloseAutoFocus={onCloseAutoFocus}>
       <DialogHeader>
-        <DialogTitle>{reminder ? 'Verify your account email' : 'Your account email'}</DialogTitle>
-        <DialogDescription>{reminder
+        <DialogTitle>{confirmSignupEmail ? 'Keep your signup email?' : changingEmail ? 'Change your account email' : reminder ? 'Verify your account email' : 'Your account email'}</DialogTitle>
+        <DialogDescription>{confirmSignupEmail
+          ? 'Your signup email is already saved and verified as your account email. Would you like to change it?'
+          : changingEmail
+          ? 'Enter your new email address and verify the code we send there to save it on your account.'
+          : reminder
           ? 'Add your personal email and verify the code we send you. You can do this later from “Your account email” in the account menu.'
           : 'Add or change your personal account email by verifying a code sent to that address.'}</DialogDescription>
       </DialogHeader>
-      {open && <AccountEmailForm key={app.user.id} app={app} onSaved={() => onOpenChange(false)} onDismiss={reminder ? () => onOpenChange(false) : undefined} />}
+      {open && (confirmSignupEmail ? <div className="space-y-4">
+        <p className="break-all text-sm font-medium">{app.user.email}</p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={() => setChangingEmail(true)}>Change email</Button>
+          <Button type="button" onClick={() => changeOpen(false)}>Keep this email</Button>
+        </div>
+      </div> : <AccountEmailForm key={app.user.id} app={app} onSaved={() => changeOpen(false)} onDismiss={reminder ? () => changeOpen(false) : undefined} />)}
     </DialogContent>
   </Dialog>
 }

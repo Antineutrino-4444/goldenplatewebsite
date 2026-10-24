@@ -8,16 +8,7 @@ import SchoolLocationDialog from '@/components/SchoolLocationDialog.jsx'
 import AccountEmailSettings from '@/components/AccountEmailSettings.jsx'
 import SchoolEmailPolicySettings from '@/components/SchoolEmailPolicySettings.jsx'
 import { beginOwnAccountDeletion } from '@/lib/account-deletion.js'
-
-function emailReminderKey(user) {
-  return `gp:account-email-reminder:${user?.id}:${user?.last_login_at || 'session'}`
-}
-
-function needsEmailReminder(user) {
-  if (user?.role !== 'superadmin' || (user.email && user.email_verified)) return false
-  try { return sessionStorage.getItem(emailReminderKey(user)) !== 'dismissed' }
-  catch { return true }
-}
+import { emailReminderKey, needsEmailReminder } from '@/lib/account-email-reminder.js'
 
 export default function AccountMenu({ app, onSchoolLocationSaved }) {
   const { user, logout } = app

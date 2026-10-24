@@ -43,6 +43,10 @@ def get_current_user():
         return None
     result = serialize_user_model(user)
     result['email_required'] = account_requires_email(user, session.get('authenticated_at', ''))
+    result['signup_email_confirmation'] = bool(
+        user.role == 'superadmin' and user.email and user.email_verified_at
+        and session.get('signup_email_confirmation')
+    )
     return result
 
 

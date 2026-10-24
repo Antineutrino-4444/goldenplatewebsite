@@ -5,7 +5,7 @@ import uuid
 from flask import jsonify, request
 from sqlalchemy import func
 
-from src.services.website_notifications import notify_school_registration
+from src.services.website_notifications import notify_school_approval, notify_school_registration
 
 from . import recorder_bp
 from .captcha import captcha_failure
@@ -561,6 +561,8 @@ def approve_registration_request(request_id):
         id=str(uuid.uuid4()),
         school_id=school_id,
         username=reg_request.admin_username,
+        email=reg_request.email.strip().lower(),
+        email_verified_at=_now_utc(),
         password_hash=admin_password_hash,
         display_name=reg_request.admin_display_name,
         role='superadmin',
@@ -581,9 +583,21 @@ def approve_registration_request(request_id):
         db_session.rollback()
         return jsonify({'error': 'Unable to create school'}), 500
 
+    try:
+        delivery = notify_school_approval(new_school, admin_user)
+    except Exception:
+        logger.exception('Unable to email the applicant after school approval')
+        delivery = {'success': False}
+    email_sent = bool(delivery.get('success'))
+    message = f'School "{new_school.name}" has been approved and created.'
+    if not email_sent:
+        logger.warning('School %s was approved, but its approval email could not be sent', new_school.id)
+        message += ' The approval email could not be sent. Please let the applicant know they can sign in.'
+
     return jsonify({
         'status': 'success',
-        'message': f'School "{new_school.name}" has been approved and created.',
+        'message': message,
+        'approval_email_sent': email_sent,
         'school': {
             'id': new_school.id,
             'name': new_school.name,

@@ -1,40 +1,34 @@
-# Superadmin email reminder
+# Superadmin account email
 
-Purpose: invite superadmins to verify their personal account email without blocking
-school administration. Reuse the existing account-email verification endpoint,
-six-digit code form and account menu. School contact email remains a separate
-address and reminder.
+School registration requires email verification before a request can be submitted.
+When an inter-school administrator approves the request, the school contact email
+and the new superadmin account email both receive that signup address. The account
+address is already verified; no second verification is required.
 
-Considered: opening the verification form directly, showing an explanatory prompt
-before the form, and a persistent banner linking to settings. The direct form is
-chosen: it meets the requested pop-up behavior and avoids an extra step. It keeps
-optional personal verification distinct from the school's contact-address task.
+After the approval transaction commits, the applicant receives an approval email
+with the school name and username, inviting them to sign in using their chosen
+password. The email never includes the password, its hash, or verification codes.
+It is a transactional confirmation sent only to the applicant, independently of
+website update recipients and their notification preferences. Failure leaves the
+school and account active, logs the failure, and reports it in the approval result.
+An already processed request cannot send another approval email.
 
-Use existing dialog typography, green/gold theme, borders, spacing and responsive
-width. One column at narrow widths; actions may sit together on wider screens.
-No new imagery or decorative assets. Native email and numeric code inputs retain
-labels, loading/error/status states, focus management and Escape dismissal.
+On the new superadmin's first login, a pop-up displays the saved account email and
+asks whether to keep or change it. Keeping it closes the pop-up. Changing it opens
+the existing verification form; a new address must be verified before it is saved.
+Closing the pop-up dismisses it for that login in the current browser tab, including
+after reloads and route changes. Later logins do not repeat the signup confirmation.
+The account menu continues to provide manual access to email settings.
 
-Show only for superadmins without a verified account email. Show the existing
-school contact reminder first if needed, then the personal verification reminder.
-Closing it dismisses it for this login in this browser tab; changing routes or
-reloading does not immediately reopen it. A new login may remind again. Verified
-superadmins and other roles do not receive this optional prompt. The account menu
-continues to provide manual access.
+Superadmins without a verified account email still receive the optional existing
+verification reminder. When a school contact email is missing, its separate reminder
+appears first. Other roles do not receive either superadmin reminder. An invite-only
+school registration without a verified signup address does not mark an account
+email verified.
 
-Validation (October 19, 2026): the two changed components pass lint and the
-production frontend build passes. Real browser checks with a synthetic superadmin
-confirmed automatic opening, Not now dismissal, no reopening after reload in the
-same login, manual reopening from the account menu, and successful verification
-using the existing six-digit-code endpoints. Email delivery was mocked; no real
-verification email was sent.
-
-Actual screenshots were reviewed at 390, 768 and 1440 pixels wide. An independent
-reviewer rated each A/B/C/D/E = 0/0/0/0/1, total 1/10 (target <=4). The one point
-reflects the intentionally conventional account-verification form. No clipping or
-layout blockers appeared; mobile actions stack, desktop actions share a row,
-labels and keyboard focus remain visible. Existing colors and dialog conventions
-were retained for continuity; decorative badges, illustrations, marketing copy
-and extra confirmation steps were avoided. The close icon is visually small, but
-the separate Not now button provides a clear dismissal target. Screenshots cannot
-establish measured contrast or every assistive-technology interaction.
+Validation (October 24, 2026): related backend tests cover approval delivery,
+recipient isolation, password secrecy, duplicate approvals, delivery failures,
+verified account email and the first versus subsequent login. Delivery is mocked.
+Frontend reminder tests, component lint and the production build pass. A browser
+preview confirms that the signup address is displayed, Keep this email dismisses
+the pop-up, and Change email opens the verification form.
