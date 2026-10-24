@@ -227,7 +227,7 @@ function MainPortal({ app }) {
                 <div className="text-6xl mb-4">🍽️</div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">No Active Session</h2>
                 <p className="text-gray-600 mb-6">
-                  {user?.role === 'guest' ? 'No public sessions are available for this school.' : 'Create a session to record plates from a lunch.'}
+                  {user?.role === 'guest' ? 'No public sessions are available for this school.' : 'Create a session to record plates.'}
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
@@ -1185,7 +1185,7 @@ function MainPortal({ app }) {
           <DialogHeader>
             <DialogTitle>Create New Session</DialogTitle>
             <DialogDescription>
-              Name this lunch session, or leave blank to use the default name.
+              Name this recording session, or leave blank to use the default name.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

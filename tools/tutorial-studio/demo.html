@@ -1,9 +1,0 @@
-<!doctype html><html lang="en" class="dark"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Golden Plate demonstration</title><script>
-// This renderer never connects to an application backend, even in interactive preview.
-window.__tutorialRequests=[];
-window.fetch=async function(input){const u=new URL(typeof input==='string'?input:input.url,location.href);window.__tutorialRequests.push(u.pathname);const fixtures={'/api/public/counter':{clean_count:0},'/api/map/schools':{schools:[]},'/api/public/sessions/random':{session:null}};if(!Object.hasOwn(fixtures,u.pathname))throw new Error('No demo fixture for: '+u.pathname);return new Response(JSON.stringify(fixtures[u.pathname]),{headers:{'Content-Type':'application/json'}})};
-window.EventSource=class {close(){} addEventListener(){} removeEventListener(){}};
-// Model a closed socket accurately: undefined readyState/OPEN would look open to
-// the development client's periodic ping. No native socket is ever constructed.
-window.WebSocket=class {static CONNECTING=0;static OPEN=1;static CLOSING=2;static CLOSED=3;CONNECTING=0;OPEN=1;CLOSING=2;CLOSED=3;readyState=3;close(){} addEventListener(){} removeEventListener(){} send(){throw new Error('WebSocket delivery is disabled in tutorial mode')}};
-</script></head><body><div id="demo-root"></div><script type="module" src="/src/demo.jsx"></script></body></html>
