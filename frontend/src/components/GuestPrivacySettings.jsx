@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Label } from '@/components/ui/label.jsx'
@@ -62,6 +63,7 @@ export default function GuestPrivacySettings({ app }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <VideoHelp videos={[25]} label="Watch: share guest views safely" />
         <div className="flex items-center justify-between gap-4">
           <Label htmlFor="guest-privacy">Anonymize student details for guests</Label>
           <Switch id="guest-privacy" checked={enabled === true} disabled={enabled === null || busy}

@@ -51,6 +51,7 @@ export default function PortalHeader({ app, interschool = false }) {
             {label}
             {to === '/portal/admin' && <RequestCountBadge count={app.adminNotificationsCount} />}
           </NavLink>)}
+          <Link to="/getting-started#video-library" className="inline-flex items-center px-3 py-2 text-slate-500 hover:bg-slate-50">Video guides</Link>
         </nav>}
       </div>
     </header>

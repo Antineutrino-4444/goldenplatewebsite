@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import SiteLink from '@/components/SiteLink.jsx'
 import { useCallback, useEffect, useState } from 'react'
 import { Maximize, Minimize, Settings2 } from 'lucide-react'
@@ -99,6 +100,7 @@ export default function LiveCounterPage() {
           </Button>}
         </div>}
       </div>
+      <VideoHelp videos={[23]} label="Watch: display the live counter" />
       {error && <p role="alert" className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         {error}{snapshot && ' Showing the last successful update. Retrying automatically.'}
       </p>}

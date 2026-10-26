@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import SessionMetrics from '@/components/SessionMetrics.jsx'
 import RequireAdminEmailButton from '@/components/RequireAdminEmailButton.jsx'
 import DisabledAccounts from '@/components/DisabledAccounts.jsx'
@@ -220,6 +221,7 @@ function MainPortal({ app }) {
       <PortalHeader app={app} />
 
       <div hidden={app.pageSection === 'dashboard' || app.pageSection === 'admin'} className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <VideoHelp key={app.pageSection} videos={user?.role === 'guest' ? [25] : [2, 4, 32]} label="Video help for your school portal" />
         {!sessionId ? (
           <div className="text-center py-16">
             <div className="max-w-md mx-auto">
@@ -333,6 +335,7 @@ function MainPortal({ app }) {
 
             <section id="record-entry" aria-labelledby="record-entry-title" className="mb-6 scroll-mt-4 rounded-xl border bg-white p-4">
               <h2 id="record-entry-title" className="mb-3 text-lg font-semibold">Add a plate record</h2>
+              {app.pageSection === 'recorder' && user?.role !== 'guest' && <VideoHelp videos={[7, 8]} label="Watch: recording plates" />}
               {user?.role === 'guest' && (
                 <Alert className="mb-3 w-full border-blue-200 bg-blue-50">
                   <AlertCircle className="h-4 w-4" />
@@ -398,9 +401,10 @@ function MainPortal({ app }) {
             </div>
             <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${sessionPanel === 'all' && canExportSessionData ? 'lg:grid-cols-2' : ''}`}>
               <div id="session-rankings-panel" hidden={!panelIsOpen('rankings')} className="min-w-0">
-                <HouseRanking app={app} />
+                <HouseRanking app={app} showVideoHelp={app.pageSection === 'recorder' && panelIsOpen('rankings')} />
               </div>
               <div id="session-draw-panel" hidden={!panelIsOpen('draw')} className="min-w-0">
+              {app.pageSection === 'recorder' && panelIsOpen('draw') && <VideoHelp videos={canManageDraw ? [12, 13] : [12]} label="Video help with draws" />}
               {isExtraSession ? (
                 <Card
                   id="draw-center-section"
@@ -872,6 +876,7 @@ function MainPortal({ app }) {
               </div>
               {['admin', 'superadmin'].includes(user?.role) && <section id="session-databases-panel" hidden={!panelIsOpen('databases')} aria-labelledby="session-databases-title" className={`min-w-0 rounded-lg border bg-white p-4 ${sessionPanel === 'all' && canExportSessionData ? 'lg:col-span-2' : ''}`}>
                 <h2 id="session-databases-title" className="py-2 text-lg font-semibold">Student and teacher databases</h2>
+                {app.pageSection === 'recorder' && panelIsOpen('databases') && <VideoHelp videos={[5, 6]} label="Watch: loading your rosters" />}
                 <div className="mt-3 grid min-w-0 gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -973,6 +978,7 @@ function MainPortal({ app }) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  {app.pageSection === 'recorder' && user?.role !== 'guest' && <VideoHelp videos={[9]} label="Watch: check and correct records" />}
                   {scanHistory.length > 0 ? (
                     <div className="space-y-2 max-h-60 overflow-x-hidden overflow-y-auto">
                       {scanHistory.map((record, index) => (
@@ -1408,6 +1414,7 @@ function MainPortal({ app }) {
               Totals for the selected session.
             </DialogDescription>
           </DialogHeader>
+          <VideoHelp videos={canExportSessionData ? [14, 15, 18] : [14]} label="Video help with session results" />
           {!sessionId ? (
             <div className="py-12 text-center text-gray-500">
               No active session selected. Switch to a session to view its totals.
@@ -1527,6 +1534,7 @@ function MainPortal({ app }) {
               Manage your school’s accounts, sessions, and settings.
             </DialogDescription>
           </DialogHeader>
+          <VideoHelp videos={[19, 20, 16, 17, 18]} label="Video guides for school administrators" />
           <div className="space-y-6">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {['admin', 'superadmin'].includes(user.role) && (

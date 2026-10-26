@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import Link from '@/components/SiteLink.jsx'
 import CommunityCounter from '@/components/CommunityCounter.jsx'
@@ -102,7 +103,7 @@ function HowItWorks({ standalone = false }) {
       <li><h2>Recognize participation</h2><div><p>At St. Andrew’s, students with a clean plate can enter a draw for the Golden Plate award. Winners are recognized at assembly, can skip the cafeteria line for a week, and can propose a menu item.</p><p>Each school can agree on an appropriate routine and reward with its student team, staff mentor, and food services. The tradition should reflect the community taking part.</p></div></li>
       <li><h2>Learn from the record</h2><div><p>PLATE supports the initiative with a consistent record of lunch sessions, student participation, and plate categories. Dashboards, house rankings, and live counters help schools share their progress.</p><p>Students can use the results and feedback from their peers to refine the program.</p></div></li>
     </ol>
-    <div className="gp-how-guide"><h2>Ready to use the website?</h2><p>The getting-started guide explains school registration, accounts, roster uploads, sessions, and recording a plate, step by step.</p><Link className="gp-text-link" to="/getting-started">Open the website guide <ArrowRight size={16} /></Link></div>
+    <VideoHelp videos={[3, 7, 32]} label="Watch the school routine" /><div className="gp-how-guide"><h2>Ready to use the website?</h2><p>The getting-started guide explains school registration, accounts, roster uploads, sessions, and recording a plate, step by step.</p><Link className="gp-text-link" to="/getting-started">Open the website guide <ArrowRight size={16} /></Link></div>
   </section>
 }
 
@@ -193,6 +194,7 @@ function Media({ standalone = false }) {
         <div className="gp-podcast-links"><ExternalLink href={PODCAST}>Listen on Spotify</ExternalLink><Link className="gp-text-link" to={PODCAST_TRANSCRIPT}>Read the edited transcript <ArrowRight size={16} /></Link></div>
       </article>
     </div>
+    <VideoHelp videos={[1, 2, 7, 27]} label="Using PLATE? Watch the school video guides" />
     <div className="gp-social-grid">
       <article className="gp-instagram">
         <div className="gp-instagram-header"><h3>The winners chose grilled cheese.</h3><ExternalLink href="https://www.instagram.com/envirocouncil_sac/">@envirocouncil_sac</ExternalLink></div>
@@ -226,7 +228,7 @@ function Join() {
 
 export function PublicFooter() {
   return <footer className="gp-footer"><div className="gp-container">
-    <div className="gp-footer-top"><Link to="/" className="public-brand"><PlateMark /><span>golden plate<span className="brand-caption">Student-led food waste prevention</span></span></Link><nav aria-label="Footer navigation"><Link to="/about">Our story</Link><Link to="/how-it-works">How it works</Link><Link to="/getting-started">Get started</Link><Link to="/stories">Watch & listen</Link><Link to="/map">School map</Link><Link to="/how-it-works#contact">Contact</Link><Link to="/login">School login</Link></nav></div>
+    <div className="gp-footer-top"><Link to="/" className="public-brand"><PlateMark /><span>golden plate<span className="brand-caption">Student-led food waste prevention</span></span></Link><nav aria-label="Footer navigation"><Link to="/about">Our story</Link><Link to="/how-it-works">How it works</Link><Link to="/getting-started">Get started</Link><Link to="/getting-started#video-library">Video guides</Link><Link to="/stories">Watch & listen</Link><Link to="/map">School map</Link><Link to="/how-it-works#contact">Contact</Link><Link to="/login">School login</Link></nav></div>
     <div className="gp-footer-bottom"><span>PLATE — Prevention, Logging & Assessment of Tossed Edibles</span><div><ExternalLink href={CASE_STUDY}>Case study & photo source</ExternalLink><ExternalLink href={REPO}>GitHub</ExternalLink></div></div>
   </div></footer>
 }

@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import React from 'react'
 import PortalHeader from '@/components/PortalHeader.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
@@ -177,6 +178,7 @@ function InterschoolPortal({ app }) {
             {interschoolOverviewLoading ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
+        <VideoHelp videos={[29, 30, 31]} label="Video guides for partner schools" />
         <PortalSection id="pending-registrations" title="Pending School Registration Requests" description="Review schools awaiting approval." icon={UserPlus} count={pendingRegistrationRequests.length}>
           <CardContent>
             {renderRegistrationRequests(pendingRegistrationRequests, 'No pending school registration requests.')}

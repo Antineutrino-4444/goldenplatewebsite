@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, Home, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
@@ -20,7 +21,7 @@ function HouseDataNotes({ children }) {
   </div>
 }
 
-export default function HouseRanking({ app, fillHeight = false }) {
+export default function HouseRanking({ app, fillHeight = false, showVideoHelp = true }) {
   const { sessionId, houseStats, houseStatsLoading, houseSortBy, setHouseSortBy, loadHouseStats } = app
   const settings = houseStats?.score_settings || DEFAULT_HOUSE_SCORE_SETTINGS
   const [reviewRequest, setReviewRequest] = useState(null)
@@ -70,6 +71,7 @@ export default function HouseRanking({ app, fillHeight = false }) {
         </div>
       </CardHeader>
       <CardContent className={fillHeight ? 'flex-1 overflow-x-hidden overflow-y-auto' : undefined}>
+        {showVideoHelp && <VideoHelp videos={[10, 11]} label="Watch: rankings and house estimates" />}
         {!sessionId ? (
           <div className="py-8 text-center text-gray-500">
             No active session selected. Switch to a session to view house data.

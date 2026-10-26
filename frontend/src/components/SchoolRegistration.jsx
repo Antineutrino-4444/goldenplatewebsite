@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import React from 'react'
 import CaptchaVerification from '@/components/CaptchaVerification.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -75,6 +76,7 @@ function SchoolRegistration({ app }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <VideoHelp videos={[1]} label="Watch: register your school" />
           <div className="space-y-2">
             <Label>Registration Method</Label>
             <div className="flex border rounded-lg overflow-hidden">

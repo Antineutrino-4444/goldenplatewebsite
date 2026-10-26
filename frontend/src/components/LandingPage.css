@@ -300,6 +300,7 @@
 .gp-guide-contents li a { display: flex; align-items: baseline; gap: 10px; padding-block: 9px; text-decoration: none; }
 .gp-guide-contents li a span { color: var(--site-muted); }
 .gp-guide-contents a:hover, .gp-guide-contents > a { text-decoration: underline; text-underline-offset: 4px; }
+.gp-guide-contents > a { display: block; padding-block: 8px; }
 .gp-guide-body { min-width: 0; }
 .gp-guide-step { border-top: 1px solid var(--gp-rule); padding-block: 28px 40px; scroll-margin-top: 24px; }
 .golden-public .gp-guide-step h2 { display: flex; align-items: baseline; gap: 16px; font: 400 clamp(27px, 3vw, 36px)/1.2 Georgia, serif; letter-spacing: -.025em; margin-bottom: 23px; }

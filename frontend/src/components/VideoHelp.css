@@ -1,0 +1,35 @@
+.gp-video-help, .gp-video-library { color: var(--site-ink, #193b2f); text-align: left; font-family: 'Avenir Next', Avenir, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; min-width: 0; }
+.gp-video-help { margin-block: 16px; border-block: 1px solid var(--site-rule, #d7ded8); }
+.gp-video-help > summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.gp-video-help-count { display: inline-block; margin-left: 12px; font-weight: 400; color: var(--site-muted, #536459); font-size: 12px; }
+.gp-video-help-body { padding-bottom: 14px; }
+.gp-guide-video-list { list-style: none !important; padding: 0 !important; margin: 0 !important; }
+.gp-guide-video-list > li { margin: 0 !important; border-bottom: 1px solid var(--site-rule, #d7ded8); padding: 0 !important; }
+.gp-guide-video-row { display: flex; align-items: center; gap: 10px; }
+.gp-guide-video-list > li:last-child { border-bottom: 0; }
+.gp-guide-video-list button { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; border: 0; border-radius: 0; padding: 12px 4px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.gp-guide-video-list button:hover, .gp-guide-video-list button[aria-pressed="true"] { background: var(--site-raised, #edf2ed); }
+.gp-guide-video-number { color: var(--site-muted, #536459); font-size: 12px; font-variant-numeric: tabular-nums; }
+.gp-guide-video-duration { flex-shrink: 0; margin-left: auto; color: var(--site-muted, #536459); font-size: 12px; white-space: nowrap; }
+.gp-guide-youtube-link { flex-shrink: 0; padding: 12px 2px; font-size: 12px; }
+.gp-guide-all-videos { display: inline-block; margin-top: 12px; }
+.gp-video-help a, .gp-video-library a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.gp-guide-player { margin-block: 10px 14px; padding: 12px; background: var(--site-raised, #edf2ed); }
+.gp-guide-player-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.gp-guide-player-heading button, .gp-guide-reset { min-height: 44px; background: transparent; border: 0; padding: 6px; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.gp-guide-player iframe { display: block; width: 100%; aspect-ratio: 16/9; border: 0; background: #15261e; }
+.gp-guide-player p { font-size: 12px !important; margin: 10px 0 0 !important; }
+.gp-video-library { scroll-margin-top: 100px; padding-block: 30px; border-top: 1px solid var(--site-rule, #d7ded8); }
+.gp-video-library h2 { margin: 0 0 12px; }
+.gp-video-library-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 22px; }
+.gp-video-library-filters label { display: block; margin-bottom: 5px; font-weight: 600; }
+.gp-video-library-filters input, .gp-video-library-filters select { width: 100%; min-height: 44px; border: 1px solid var(--site-rule, #d7ded8); border-radius: 0; padding: 10px; background: var(--site-paper, #fff); color: inherit; font: inherit; }
+.gp-video-library-count { font-size: 12px !important; color: var(--site-muted, #536459); }
+.gp-video-help :is(button, a, summary):focus-visible, .gp-video-help > summary:focus-visible, .gp-video-library :is(button, a, input, select):focus-visible { outline: 2px solid var(--site-ink, #193b2f); outline-offset: 3px; }
+@media (max-width: 520px) {
+  .gp-video-library-filters { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .gp-guide-video-list button { gap: 8px; }
+  .gp-guide-video-row { gap: 6px; }
+  .gp-guide-youtube-link { font-size: 11px; }
+  .gp-guide-player { padding: 8px; }
+}

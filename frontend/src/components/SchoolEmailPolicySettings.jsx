@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
@@ -55,6 +56,7 @@ export default function SchoolEmailPolicySettings({ app, open, onOpenChange, onC
         <DialogTitle>School email rules</DialogTitle>
         <DialogDescription>Choose which email addresses can join {app.user.school?.name || 'your school'}. Exceptions still need a verification code.</DialogDescription>
       </DialogHeader>
+      <VideoHelp videos={[21]} label="Watch: school email rules" />
       <form onSubmit={save} className="space-y-4">
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" checked={enabled} disabled={!loaded || busy} onChange={(event) => setEnabled(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-amber-600" />

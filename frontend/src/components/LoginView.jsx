@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import React, { useState } from 'react'
 import PasswordRecoveryDialog from '@/components/PasswordRecoveryDialog.jsx'
 import CaptchaVerification from '@/components/CaptchaVerification.jsx'
@@ -73,6 +74,7 @@ function LoginView({ app }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <VideoHelp videos={[2, 22]} label="Video help with your account" />
           <div className="space-y-2">
             <Label htmlFor="username">Username or verified email</Label>
             <Input
@@ -210,6 +212,7 @@ function LoginView({ app }) {
               {signupMode === 'invite' ? 'Create an account with a one-time invite from your school administrator.' : 'Your school superadmin must approve your account before you can sign in.'}
             </DialogDescription>
           </DialogHeader>
+          <VideoHelp videos={[19]} label="Watch: joining your school team" />
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Sign-up method</Label>

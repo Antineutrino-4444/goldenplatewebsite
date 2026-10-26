@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { MapPinned } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
@@ -69,6 +70,7 @@ function SchoolLocationEditor({ app, onSaved, onClose, schoolId, hideHeader = fa
         <DialogTitle>Choose your school’s location</DialogTitle>
         <DialogDescription>Put {schoolName} on the community map, or join the school list without a pin.</DialogDescription>
       </DialogHeader>}
+      <VideoHelp videos={[26]} label="Watch: place your school on the map" />
       {error && <div className="space-y-2"><p role="alert" className="text-sm text-red-700">{error}</p>{!loaded && !loading && <Button variant="outline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button>}</div>}
       {unmapped && <p role="status" className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">Listed in Others without a map pin. You can add a location here.</p>}
       {loading ? <p role="status" className="p-6 text-sm text-slate-600">Loading school location…</p> : loaded && (

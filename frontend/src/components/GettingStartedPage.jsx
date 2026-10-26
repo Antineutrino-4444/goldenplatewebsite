@@ -1,9 +1,12 @@
 import { useEffect } from 'react'
+import VideoHelp, { VideoLibrary } from '@/components/VideoHelp.jsx'
 import { Link as RouterLink, useLocation } from 'react-router-dom'
 import Link from '@/components/SiteLink.jsx'
 import { PublicFooter } from '@/components/LandingPage.jsx'
 import InitiativeContact from '@/components/InitiativeContact.jsx'
 import './LandingPage.css'
+
+const chapterVideos = [[1, 3], [19], [2, 22], [5, 6], [4], [7, 8, 9, 32], [10, 11, 12, 13, 14, 15, 16], [23, 24, 25, 26, 27, 28]]
 
 const chapters = [
   ['register-school', 'Register a school'], ['join-school', 'Join your school'],
@@ -19,7 +22,7 @@ function ChapterLink({ to, children }) {
 
 function GuideStep({ index, children }) {
   const [id, title] = chapters[index]
-  return <section id={id} className="gp-guide-step" aria-labelledby={`${id}-title`}><h2 id={`${id}-title`}><span>{String(index + 1).padStart(2, '0')}</span>{title}</h2>{children}</section>
+  return <section id={id} className="gp-guide-step" aria-labelledby={`${id}-title`}><h2 id={`${id}-title`}><span>{String(index + 1).padStart(2, '0')}</span>{title}</h2>{children}<VideoHelp videos={chapterVideos[index]} label="Watch this step" /></section>
 }
 
 export default function GettingStartedPage() {
@@ -27,7 +30,7 @@ export default function GettingStartedPage() {
   return <div className="golden-public"><main id="main-content">
     <header className="gp-guide-intro gp-container"><p className="gp-section-label">The website guide</p><h1>Getting started with PLATE.</h1><p>From registering a school to recording your first lunch session. Follow the steps for your role. If your school already uses PLATE, start with Join your school.</p><div className="gp-platform-links"><Link className="gp-button" to="/register">Register a school →</Link><Link className="gp-text-link" to="/signup">Request a school account →</Link><Link className="gp-text-link" to="/login">School login →</Link></div><p className="gp-guide-overview-link">For the initiative’s purpose, rewards, and school routine, read <Link to="/how-it-works">How Golden Plate works</Link>.</p></header>
     <div className="gp-guide-layout gp-container">
-      <nav className="gp-guide-contents" aria-label="Guide contents"><h2>In this guide</h2><ol>{chapters.map(([id, title], index) => <li key={id}><ChapterLink to={`#${id}`}><span>{index + 1}.</span>{title}</ChapterLink></li>)}</ol><ChapterLink to="#contact">Questions? Contact the team ↓</ChapterLink></nav>
+      <nav className="gp-guide-contents" aria-label="Guide contents"><h2>In this guide</h2><ol>{chapters.map(([id, title], index) => <li key={id}><ChapterLink to={`#${id}`}><span>{index + 1}.</span>{title}</ChapterLink></li>)}</ol><ChapterLink to="#video-library">Browse all 32 video guides ↓</ChapterLink><ChapterLink to="#contact">Questions? Contact the team ↓</ChapterLink></nav>
       <div className="gp-guide-body">
         <GuideStep index={0}>
           <p>One person should register a new school. If your school already has a PLATE code, go to <ChapterLink to="#join-school">Join your school</ChapterLink> instead.</p>
@@ -71,6 +74,7 @@ export default function GettingStartedPage() {
           <ul><li><strong>School display:</strong> open <Link to="/live-counter">Live counter</Link> from the portal for your school’s display and available time-range settings.</li><li><strong>Initiative-wide display:</strong> the <Link to="/live-counter/community">all-schools counter</Link> shows the combined clean-plate total across PLATE.</li><li><strong>Guest access:</strong> visitors can select a school pin on the <Link to="/map">school map</Link> and open its popup, or use <strong>Continue as Guest</strong> on the login page with a school code. Explore the school’s shared results as a guest. To record again, choose <strong>Account menu → Log out</strong>, then sign in with your regular account.</li><li><strong>School location:</strong> use <strong>Account menu → School location</strong> to review the school’s location. The school superadmin can save a location or choose to remain unmapped. Unmapped schools are listed in Others.</li></ul>
           <p>Guests see sessions made public by the school, with the school’s guest-privacy settings applied. Use the portal’s top-bar links to return to the map or live counter.</p>
         </GuideStep>
+        <VideoLibrary />
         <section className="gp-guide-troubleshooting" aria-labelledby="guide-help"><h2 id="guide-help">If something does not look right</h2><dl><div><dt>Account request still pending?</dt><dd>Ask your school administrator to review it. Registering a school and requesting a member account are separate approvals.</dd></div><div><dt>A student cannot be found?</dt><dd>Ask an admin to check the student database, ID, and Preferred/First name fields. Choose the correct student from the matching results.</dd></div><div><dt>Totals appear in the wrong session?</dt><dd>Check the selected session and Plate Tracking History. Ask a school administrator to review any correction before continuing.</dd></div></dl><p>For initiative or website questions, contact Matthew Jaekel or the SAC office below.</p></section>
       </div>
     </div>

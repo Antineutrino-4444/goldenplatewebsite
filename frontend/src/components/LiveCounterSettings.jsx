@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
@@ -77,6 +78,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
         Custom names are optional. Leave a range blank to omit it.
       </DialogDescription>
     </DialogHeader>
+    <VideoHelp videos={[24]} label="Watch: configure counter displays" />
     <form onSubmit={save} className="space-y-5">
       <fieldset disabled={busy} className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">

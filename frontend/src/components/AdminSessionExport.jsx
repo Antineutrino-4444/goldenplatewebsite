@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useState } from 'react'
 import { Download, RefreshCcw } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
@@ -105,6 +106,7 @@ export default function AdminSessionExport({ open, onOpenChange, accountKey }) {
           <DialogDescription>Export detailed records for the sessions you choose from your school.</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 space-y-5 overflow-y-auto px-1">
+          <VideoHelp videos={[16]} label="Watch: export multiple sessions" />
           {error && <Alert variant="destructive"><AlertDescription role="alert">{error}</AlertDescription></Alert>}
           {message && <p role="status" className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</p>}
           {loading ? <p role="status" className="py-8 text-center text-gray-500">Loading sessions…</p> : <>

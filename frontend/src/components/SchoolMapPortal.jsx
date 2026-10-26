@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import SiteLink from '@/components/SiteLink.jsx'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowUpRight, Building2, MapPin, RefreshCcw, X } from 'lucide-react'
@@ -62,6 +63,7 @@ export default function SchoolMapPortal({ app }) {
           <div><p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">The Golden Plate community</p><h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Explore our schools.</h1><p className="mt-2 text-sm text-slate-500">Search a school code like SAC, explore the globe, or find a school in Others.</p></div>
           <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500"><span className="font-semibold text-teal-800">{schools.length}</span> participating {schools.length === 1 ? 'school' : 'schools'} · Public map</div>
         </div>
+        <VideoHelp videos={[28, 25]} label="Watch: explore schools and guest views" />
         {error && <div role="alert" className="mb-4 flex items-center gap-3 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-800">{error}<button type="button" className="underline" onClick={loadSchools}>Try again</button></div>}
         <div className="grid items-start gap-5 lg:grid-cols-[290px_minmax(0,1fr)]">
           <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import Link from '@/components/SiteLink.jsx'
@@ -17,6 +18,7 @@ export default function GuestSessionPage() {
       <h1>A look at lunch.</h1>
       <p className="gp-guest-intro">View this school’s recorded lunch totals without an account.</p>
       <PublicSessionDashboard result={result} />
+      <VideoHelp videos={[14, 25]} label="Video help with public results" />
       <div className="gp-platform-links"><button className="gp-text-link" onClick={result.retry} disabled={result.status === 'loading'}>Refresh this session</button><Link className="gp-text-link" to="/">Back to the initiative</Link><Link className="gp-text-link" to="/login">School login</Link></div>
     </main>
   </div>

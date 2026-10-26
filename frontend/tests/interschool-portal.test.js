@@ -100,7 +100,7 @@ test('all sections start collapsed, with pending requests first and approved req
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b))
   assert.equal(requests[0].id, 'a1', 'rendering must not mutate shared data')
 
-  const sections = [...html.matchAll(/<details\b([^>]*)>([\s\S]*?)<\/details>/g)]
+  const sections = [...html.matchAll(/<details\b([^>]*)>([\s\S]*?)<\/details>/g)].filter(([, attributes]) => /\bid="/.test(attributes))
   assert.equal(sections.length, 8)
   for (const [, attributes, content] of sections) {
     assert.doesNotMatch(attributes, /\bopen(?:\s|=|$)/, 'every section starts closed')

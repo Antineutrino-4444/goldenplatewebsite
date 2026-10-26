@@ -1,3 +1,4 @@
+import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useId, useState } from 'react'
 import { KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
@@ -217,6 +218,7 @@ export default function PasswordSettings({ user, open: controlledOpen, onOpenCha
               : 'Confirm your current password and choose a new one.'}
           </DialogDescription>
         </DialogHeader>
+        <VideoHelp videos={[22]} label="Watch: keep your account secure" />
         {canReset ? (
           <Tabs value={mode} onValueChange={(value) => { if (!busy) setMode(value) }}>
             <TabsList className="w-full">
