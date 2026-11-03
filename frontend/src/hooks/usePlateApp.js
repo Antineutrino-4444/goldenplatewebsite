@@ -1205,17 +1205,10 @@ export function usePlateApp() {
     }
   }
 
-  const uploadCSV = async (file, { confirmed = false } = {}) => {
-    if (csvData && !confirmed) {
-      setModal({
-        type: 'confirm', title: 'Confirm database replacement', confirmLabel: 'Replace database',
-        message: `Uploading ${file.name} will reset the current student database to this roster. This replacement cannot be undone. Students missing from the new roster will be excluded from ticket draws. Past plate records and draw logs will be kept.`,
-        onConfirm: () => uploadCSV(file, { confirmed: true })
-      })
-      return
-    }
+  const uploadCSV = async (file, mapping, onSuccess) => {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('mapping', JSON.stringify(mapping))
 
     setIsLoading(true)
     try {
@@ -1226,32 +1219,26 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
+        onSuccess()
         setCsvData(data)
         showMessage(`Student roster uploaded. ${data.rows_count} students loaded.`, 'success')
         await loadStudentNames()
         await loadDrawSummary({ silent: true })
         await loadHouseStats({ silent: true })
       } else {
-        showMessage(data.error || 'Failed to upload CSV', 'error')
+        showMessage(data.error || 'Failed to import the student roster', 'error')
       }
     } catch (error) {
-      showMessage('Failed to upload CSV', 'error')
+      showMessage('Failed to import the student roster', 'error')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const uploadTeachers = async (file, { confirmed = false } = {}) => {
-    if (teacherRoster && !confirmed) {
-      setModal({
-        type: 'confirm', title: 'Confirm database replacement', confirmLabel: 'Replace database',
-        message: `Uploading ${file.name} will reset the current teacher database to this roster. This replacement cannot be undone. Teachers missing from the new roster will be removed from name suggestions. Past plate records and draw logs will be kept.`,
-        onConfirm: () => uploadTeachers(file, { confirmed: true })
-      })
-      return
-    }
+  const uploadTeachers = async (file, mapping, onSuccess) => {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('mapping', JSON.stringify(mapping))
 
     setIsLoading(true)
     try {
@@ -1262,6 +1249,7 @@ export function usePlateApp() {
 
       const data = await response.json()
       if (response.ok) {
+        onSuccess()
         showMessage(`Teacher roster uploaded. ${data.count} teachers loaded.`, 'success')
         setTeacherRoster(data)
         setTeacherPreviewData(null)

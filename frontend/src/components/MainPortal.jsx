@@ -885,7 +885,7 @@ function MainPortal({ app }) {
                     Student Database
                   </CardTitle>
                   <CardDescription>
-                    Upload your student roster as a CSV. Include Student ID, Last, and Preferred; use First only if there is no Preferred column. Grade, Advisor, House, and Clan are optional. The new roster sets student eligibility for ticket draws.
+                    Choose a CSV, TSV, Excel, or Numbers file. Review the names and student IDs before importing. Grade, Advisor, House, and Clan are optional. The roster sets student eligibility for ticket draws.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -927,7 +927,7 @@ function MainPortal({ app }) {
                     Teacher Database
                   </CardTitle>
                   <CardDescription>
-                    Upload a faculty CSV or comma-separated TXT file with Last and Preferred; use First only if there is no Preferred column. Add Faculty ID to keep records connected when names change. Use the preview to review the roster or edit a name.
+                    Choose a CSV, TSV, Excel, Numbers, or TXT file and match the faculty name columns. A stable Faculty ID keeps records connected when names change.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -939,7 +939,7 @@ function MainPortal({ app }) {
                       </AlertDescription>
                     </Alert>
                   ) : (
-                    <RosterUpload roster={app.teacherRoster} kind="teacher" accept=".csv,.txt" isLoading={isLoading} upload={uploadTeachers} setModal={app.setModal} />
+                    <RosterUpload roster={app.teacherRoster} kind="teacher" isLoading={isLoading} upload={uploadTeachers} />
                   )}
                   {['admin', 'superadmin'].includes(user?.role) && (
                     <div className="flex flex-wrap gap-2 mb-4">

@@ -6,6 +6,7 @@ from sqlalchemy import func, or_
 from . import recorder_bp, storage
 from .db import School, Teacher, db_session
 from .security import get_current_user, require_admin, require_auth
+from .roster_import import mapped_roster
 from .roster_csv import roster_csv_reader
 from .storage import save_global_teacher_data, sync_teacher_table_from_list
 from .utils import normalize_name
@@ -39,16 +40,18 @@ def upload_teachers():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
-    if not file.filename.lower().endswith(('.csv', '.txt')):
-        return jsonify({'error': 'File must be a CSV or TXT file'}), 400
-
     try:
-        content = file.read().decode('utf-8-sig')
         teachers = []
-        reader = roster_csv_reader(content, columns=('Last', 'Preferred', 'First', 'Faculty ID'))
-        fields = reader.fieldnames or []
-        if 'Last' not in fields or not any(name in fields for name in ('Preferred', 'First')):
-            return jsonify({'error': 'Teacher roster must contain Last and either Preferred or First column headers. CSV and TXT files must use comma-separated columns; column order and header capitalization do not matter.'}), 400
+        if 'mapping' in request.form:
+            reader, fields, _ = mapped_roster(file, 'teacher')
+        else:
+            if not file.filename.lower().endswith(('.csv', '.txt')):
+                return jsonify({'error': 'File must be a CSV or TXT file'}), 400
+            content = file.read().decode('utf-8-sig')
+            reader = roster_csv_reader(content, columns=('Last', 'Preferred', 'First', 'Faculty ID'))
+            fields = reader.fieldnames or []
+            if 'Last' not in fields or not any(name in fields for name in ('Preferred', 'First')):
+                return jsonify({'error': 'Teacher roster must contain Last and either Preferred or First column headers. CSV and TXT files must use comma-separated columns; column order and header capitalization do not matter.'}), 400
         first_column = 'Preferred' if 'Preferred' in fields else 'First'
         for row in reader:
             first = normalize_name(row.get(first_column))

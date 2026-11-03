@@ -6,9 +6,10 @@ from sqlalchemy import func
 from . import recorder_bp, storage
 from .db import School, Student, db_session
 from .security import get_current_user, require_admin, require_auth
+from .roster_import import mapped_roster
 from .roster_csv import roster_csv_reader
 from .storage import save_global_csv_data, sync_students_table_from_csv_rows
-from .utils import make_student_key, normalize_house
+from .utils import make_student_key, normalize_house, normalize_name
 from .users import readable_user_label
 
 
@@ -47,30 +48,46 @@ def upload_csv():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
-    if not file.filename.lower().endswith('.csv'):
-        return jsonify({'error': 'File must be a CSV'}), 400
-
     try:
-        content = file.read().decode('utf-8-sig')
-        csv_reader = roster_csv_reader(content)
+        generated = False
+        if 'mapping' in request.form:
+            rows, columns, generated = mapped_roster(file, 'student')
+        else:
+            if not file.filename.lower().endswith('.csv'):
+                return jsonify({'error': 'File must be a CSV'}), 400
+            content = file.read().decode('utf-8-sig')
+            csv_reader = roster_csv_reader(content)
 
-        rows = list(csv_reader)
-        if not rows:
-            return jsonify({'error': 'CSV file is empty'}), 400
+            rows = list(csv_reader)
+            if not rows:
+                return jsonify({'error': 'CSV file is empty'}), 400
 
-        required_columns = ['Student ID', 'Last']
-        if (not all(col in csv_reader.fieldnames for col in required_columns)
-                or not any(col in csv_reader.fieldnames for col in ('Preferred', 'First'))):
-            return jsonify({'error': 'CSV must contain Student ID, Last, and either Preferred or First. Columns may be in any order and header capitalization does not matter.'}), 400
+            required_columns = ['Student ID', 'Last']
+            if (not all(col in csv_reader.fieldnames for col in required_columns)
+                    or not any(col in csv_reader.fieldnames for col in ('Preferred', 'First'))):
+                return jsonify({'error': 'CSV must contain Student ID, Last, and either Preferred or First. Columns may be in any order and header capitalization does not matter.'}), 400
 
-        # Use Preferred whenever its column exists, even if First is also supplied.
-        # Canonicalize First-only rosters for storage and downstream name lookups.
-        if 'Preferred' not in csv_reader.fieldnames:
-            for row in rows:
-                row['Preferred'] = row.get('First')
+            # Use Preferred whenever its column exists, even if First is also supplied.
+            # Canonicalize First-only rosters for storage and downstream name lookups.
+            if 'Preferred' not in csv_reader.fieldnames:
+                for row in rows:
+                    row['Preferred'] = row.get('First')
+
+            columns = csv_reader.fieldnames
 
         user_id = session['user_id']
         school_id = current_user['school_id']
+        if generated:
+            generated_names = {
+                row['Student ID']: (normalize_name(row['Preferred']).casefold(), normalize_name(row['Last']).casefold())
+                for row in rows
+            }
+            existing_students = db_session.query(Student).filter_by(school_id=school_id)
+            for student in existing_students:
+                incoming = generated_names.get(student.student_identifier)
+                existing = (normalize_name(student.preferred_name).casefold(), normalize_name(student.last_name).casefold())
+                if incoming is not None and incoming != existing:
+                    return jsonify({'error': 'Generated IDs would reassign an existing student ID. Use a column with stable IDs for this roster.'}), 400
         try:
             filename = file.filename.replace('\\', '/').rsplit('/', 1)[-1]
             sync_result = sync_students_table_from_csv_rows(rows, school_id=school_id, filename=filename, uploaded_by=current_user['username'])
@@ -83,7 +100,7 @@ def upload_csv():
             return jsonify({'error': 'CSV must contain students with a Student ID, Last, and a name in Preferred (or First when the Preferred column is absent)'}), 400
         storage.global_csv_data[school_id] = {
             'data': rows,
-            'columns': csv_reader.fieldnames,
+            'columns': columns,
             'uploaded_by': user_id,
             'uploaded_at': datetime.now().isoformat()
         }
