@@ -1,3 +1,4 @@
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
@@ -63,7 +64,7 @@ export default function SchoolEmailPolicySettings({ app, open, onOpenChange, onC
           <span>Require an approved email for school members</span>
         </label>
         <div className="space-y-2">
-          <Label htmlFor="email-rule-domains">Allowed domains</Label>
+          <HelpLabel htmlFor="email-rule-domains" label="Allowed domains" topic="entering email domains">Enter the part after @. For example, use school.edu to allow addresses like coach@school.edu.</HelpLabel>
           <Textarea id="email-rule-domains" value={domains} disabled={!loaded || busy} onChange={(event) => setDomains(event.target.value)} placeholder="school.edu" rows={3} aria-describedby="email-rule-domain-help" />
           <p id="email-rule-domain-help" className="text-sm text-muted-foreground">One domain per line. Add subdomains separately, such as students.school.edu.</p>
         </div>

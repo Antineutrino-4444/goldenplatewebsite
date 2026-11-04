@@ -1,3 +1,4 @@
+import { HelpLabel, HelpTip } from '@/components/HelpTip.jsx'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import SessionMetrics from '@/components/SessionMetrics.jsx'
 import RequireAdminEmailButton from '@/components/RequireAdminEmailButton.jsx'
@@ -215,6 +216,16 @@ function MainPortal({ app }) {
   } = app
 
   const deleteRequestsCount = deleteRequests.length
+  let startDrawBlockedReason = ''
+  if (!canManageDraw || user?.role === 'guest') {
+    startDrawBlockedReason = 'Ask a school admin or superadmin to run the draw.'
+  } else if (isSessionDiscarded) {
+    startDrawBlockedReason = 'A school superadmin can restore this session to enable its draw.'
+  } else if (drawActionLoading) {
+    startDrawBlockedReason = 'Wait for the current draw action to finish.'
+  } else if (!hasStudentRecords || (drawSummary?.total_tickets ?? 0) <= 0) {
+    startDrawBlockedReason = 'This session needs eligible student tickets. Check that students are on the roster and have qualifying plate records.'
+  }
 
   return (
     <div className="min-h-screen min-w-0 bg-gray-50 [overflow-wrap:anywhere]">
@@ -538,21 +549,19 @@ function MainPortal({ app }) {
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-3">
-                            <Button
-                              onClick={startDrawProcess}
-                              className="bg-emerald-600 hover:bg-emerald-700"
-                              disabled={
-                                drawActionLoading ||
-                                !canManageDraw ||
-                                user?.role === 'guest' ||
-                                isSessionDiscarded ||
-                                !hasStudentRecords ||
-                                (drawSummary?.total_tickets ?? 0) <= 0
-                              }
-                            >
-                              <Wand2 className="h-4 w-4 mr-2" />
-                              Start Draw
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                onClick={startDrawProcess}
+                                className="bg-emerald-600 hover:bg-emerald-700"
+                                disabled={Boolean(startDrawBlockedReason)}
+                              >
+                                <Wand2 className="h-4 w-4 mr-2" />
+                                Start Draw
+                              </Button>
+                              <HelpTip topic="starting a draw">
+                                {startDrawBlockedReason || 'Start Draw selects a winner. Choose Finalize Winner to confirm the result.'}
+                              </HelpTip>
+                            </div>
                             <Button
                               onClick={finalizeDrawWinner}
                               variant="outline"
@@ -1431,7 +1440,7 @@ function MainPortal({ app }) {
               )}
 
               {user?.role === 'superadmin' && (
-                <div className="flex flex-wrap justify-end gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <Button
                     onClick={() => toggleDiscardState(!isSessionDiscarded)}
                     variant="outline"
@@ -1441,6 +1450,11 @@ function MainPortal({ app }) {
                     <Ban className="h-4 w-4 mr-2" />
                     {isSessionDiscarded ? 'Restore Session' : 'Discard Session'}
                   </Button>
+                  <HelpTip topic={isSessionDiscarded ? 'restoring a session' : 'discarding a session'}>
+                    {isSessionDiscarded
+                      ? 'Restoring puts these plates back in live totals. Draws stay disabled for sessions merged as extras.'
+                      : 'Discarding removes these plates from live totals and disables the draw. The records stay saved and you can restore the session later.'}
+                  </HelpTip>
                 </div>
               )}
 
@@ -1921,7 +1935,7 @@ function MainPortal({ app }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <Label htmlFor="merge-main-session">Main session</Label>
+            <HelpLabel htmlFor="merge-main-session" label="Main session" topic="choosing the main session" video={17}>Choose the session where you plan to run the combined draw. Sessions already linked as extras are unavailable here.</HelpLabel>
             <select
               id="merge-main-session"
               value={mergeMainSessionId}

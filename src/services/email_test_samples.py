@@ -35,7 +35,7 @@ def send_map_verification_scenario(email):
 def build_email_samples():
     # Resolve the same functions the website calls, after loading the server env.
     from src.routes.golden_plate_recorder_db import map_routes, password_recovery_routes
-    from . import account_lifecycle, signup_notifications, startup_notifications, website_notifications
+    from . import account_lifecycle, release_notifications, signup_notifications, website_notifications
 
     scenarios = []
 
@@ -54,8 +54,9 @@ def build_email_samples():
     add('password_recovery', 'Password recovery', lambda email:
         password_recovery_routes.send_password_recovery_email(
             email, password_recovery_routes._recovery_link(secrets.token_urlsafe(32))))
-    add('server_startup', 'Website server started', lambda email:
-        startup_notifications.send_startup_notification(recipients=[email]), 'server_startup')
+    add('release_notes', 'Release notes', lambda email:
+        release_notifications.send_release_email(email, [('1.2.1.1', '- Added release notes to the school portal.')]),
+        'release_notes')
 
     school = SimpleNamespace(name='Example School', contact_email=None)
     account = SimpleNamespace(display_name='Alex Morgan', username='alex.morgan')

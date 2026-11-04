@@ -20,7 +20,7 @@ from flask_cors import CORS
 from src.routes.golden_plate_recorder_db import recorder_bp
 from src.routes.golden_plate_recorder_db.db import db_session
 from src.routes.golden_plate_recorder_db.map_db import map_db_session
-from src.services.startup_notifications import start_startup_notification
+from src.services.release_notifications import start_release_notifications
 from src.services.account_lifecycle import start_account_lifecycle
 
 
@@ -62,7 +62,7 @@ reloader_parent = (
     ))
     and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
 )
-start_startup_notification(app, reloader_parent=reloader_parent)
+start_release_notifications(app, reloader_parent=reloader_parent)
 start_account_lifecycle(app, reloader_parent=reloader_parent)
 
 if __name__ == '__main__':

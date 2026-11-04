@@ -228,7 +228,7 @@ function Join() {
 
 export function PublicFooter() {
   return <footer className="gp-footer"><div className="gp-container">
-    <div className="gp-footer-top"><Link to="/" className="public-brand"><PlateMark /><span>golden plate<span className="brand-caption">Student-led food waste prevention</span></span></Link><nav aria-label="Footer navigation"><Link to="/about">Our story</Link><Link to="/how-it-works">How it works</Link><Link to="/getting-started">Get started</Link><Link to="/getting-started#video-library">Video guides</Link><Link to="/stories">Watch & listen</Link><Link to="/map">School map</Link><Link to="/how-it-works#contact">Contact</Link><Link to="/login">School login</Link></nav></div>
+    <div className="gp-footer-top"><Link to="/" className="public-brand"><PlateMark /><span>golden plate<span className="brand-caption">Student-led food waste prevention</span></span></Link><nav aria-label="Footer navigation"><Link to="/about">Our story</Link><Link to="/how-it-works">How it works</Link><Link to="/getting-started">Get started</Link><Link to="/getting-started#video-library">Video guides</Link><Link to="/stories">Watch & listen</Link><Link to="/map">School map</Link><Link to="/release-notes">Release history</Link><Link to="/how-it-works#contact">Contact</Link><Link to="/login">School login</Link></nav></div>
     <div className="gp-footer-bottom"><span>PLATE — Prevention, Logging & Assessment of Tossed Edibles</span><div><ExternalLink href={CASE_STUDY}>Case study & photo source</ExternalLink><ExternalLink href={REPO}>GitHub</ExternalLink></div></div>
   </div></footer>
 }

@@ -1,4 +1,4 @@
-from src.routes.golden_plate_recorder_db import release_note_routes
+from src.services import release_notes
 
 URL = '/api/release-notes'
 
@@ -6,10 +6,11 @@ URL = '/api/release-notes'
 def test_release_notes_remember_account_and_order_versions(client, login, tmp_path, monkeypatch):
     notes = tmp_path / 'RELEASE_NOTES.md'
     notes.write_text('## 1.2.0.0\n\n- Earlier\n', encoding='utf-8')
-    monkeypatch.setattr(release_note_routes, 'RELEASE_NOTES_PATH', notes)
+    monkeypatch.setattr(release_notes, 'RELEASE_NOTES_PATH', notes)
 
     assert client.get(URL).status_code == 401
-    assert client.get(f'{URL}?view=history').status_code == 401
+    assert client.get(f'{URL}?view=history').json['entries'] == [{'version': '1.2.0.0', 'markdown': '- Earlier'}]
+    assert client.post(f'{URL}?view=history', json={'version': '1.2.0.0'}).status_code == 401
     assert login().status_code == 200
     assert client.get(URL).json['entries'] == [{'version': '1.2.0.0', 'markdown': '- Earlier'}]
     assert client.post(URL, json={'version': '99.0.0.0'}).status_code == 400

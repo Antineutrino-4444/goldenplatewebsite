@@ -23,7 +23,7 @@ def get_website_update_recipients():
     return list(unique.values())
 
 
-def notify_website_update(title, summary, details=(), *, url=None, notification_type='server_startup'):
+def notify_website_update(title, summary, details=(), *, url=None, notification_type=None):
     return send_notification(title, summary, details, url=url,
                              recipients=get_website_update_recipients(), notification_type=notification_type)
 
@@ -58,7 +58,7 @@ def notify_school_approval(school, admin_user):
     )
 
 
-def send_notification(title, summary, details=(), *, url=None, recipients=(), notification_type='server_startup'):
+def send_notification(title, summary, details=(), *, url=None, recipients=(), notification_type=None):
     """Send escaped metadata only, never passwords, verification codes or secrets.
 
     Return delivery status instead of raising, so a mail failure cannot discard

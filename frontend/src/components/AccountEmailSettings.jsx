@@ -1,3 +1,4 @@
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -65,7 +66,7 @@ function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
       Your administrator can add an exception for another address or domain.
     </p>}
     <div className="space-y-2">
-      <Label htmlFor="account-personal-email">Your email address</Label>
+      <HelpLabel htmlFor="account-personal-email" label="Your email address" topic="your account email">Choose an inbox you can access. Once verified, this address can receive password reset links. If it’s shared by several accounts, use your username to sign in.</HelpLabel>
       <Input id="account-personal-email" type="email" autoComplete="email" required maxLength={320} value={email} disabled={!!busy}
         onChange={(event) => { setEmail(event.target.value); setCode(''); setSent(false); setMessage(''); setError('') }} />
       <Button type="button" variant="outline" onClick={sendCode} disabled={!!busy || !email.trim()} className="w-full">

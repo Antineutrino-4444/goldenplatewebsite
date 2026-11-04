@@ -33,13 +33,13 @@ def test_every_email_has_a_persistent_private_preferences_link(client, email_out
 
 def test_selective_unsubscribe_filters_notifications_but_not_requested_codes(client, email_outbox, monkeypatch):
     monkeypatch.setenv('WEBSITE_UPDATE_NOTIFY_EMAILS', 'reader@example.com')
-    notify_website_update('Website started', 'Startup')
+    notify_website_update('New release', 'Release notes', notification_type='release_notes')
     path = preferences_path(email_outbox[-1])
-    data = {key: 'on' for key in NOTIFICATION_TYPES if key != 'server_startup'}
+    data = {key: 'on' for key in NOTIFICATION_TYPES if key != 'release_notes'}
     response = client.post(path, data={**data, 'action': 'save'}, follow_redirects=True)
     assert response.status_code == 200 and b'Preferences saved.' in response.data
     email_outbox.clear()
-    result = notify_website_update('Website started', 'Startup')
+    result = notify_website_update('New release', 'Release notes', notification_type='release_notes')
     assert result['success'] and result['deliveries']['reader@example.com']['skipped']
     assert email_outbox == []
     notify_website_update('School signup', 'New school', notification_type='school_registration')

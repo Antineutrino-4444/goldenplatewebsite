@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { MapPin, Search } from 'lucide-react'
+import { HelpTip } from '@/components/HelpTip.jsx'
 
 export default function PlaceSearch({ onChoose, initialQuery = '', placesOnly = false }) {
   const inputId = useId()
@@ -47,7 +48,12 @@ export default function PlaceSearch({ onChoose, initialQuery = '', placesOnly = 
   return (
     <div className="shrink-0 border-b bg-white p-3">
       <form onSubmit={search} role="search" aria-label="Find a school or address" className="space-y-2">
-        <label htmlFor={inputId} className="block text-sm font-semibold text-slate-800">Find a school or place</label>
+        <div className="flex items-center gap-1">
+          <label htmlFor={inputId} className="text-sm font-semibold text-slate-800">Find a school or place</label>
+          {placesOnly && <HelpTip topic="finding your school on the map" video={26}>
+            If your school doesn’t appear, try its street address or click the school’s location on the map to place the pin yourself.
+          </HelpTip>}
+        </div>
         <div className="flex gap-2">
           <input
             id={inputId}

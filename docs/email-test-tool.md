@@ -26,7 +26,7 @@ venv/bin/python scripts/test_emails.py
 ```
 
 Starting the terminal tool does not start the website, a browser form, the
-startup-notification worker, or the account lifecycle worker. It does not add a
+release-notification worker, or the account lifecycle worker. It does not add a
 testing route to the public website. Terminal mode uses the operator's existing
 server access plus explicit confirmation. This confirmation is not CAPTCHA;
 Cloudflare Turnstile requires a browser and is used only in optional web mode.
@@ -108,7 +108,7 @@ The current batch exercises 21 email scenarios:
 
 - School registration, account signup, account email, and map verification.
 - Password recovery.
-- Server startup, school registration requests, account signup requests, and
+- Release notes, school registration requests, account signup requests, and
   invite signups.
 - Map review requests, rejections, and deletions.
 - Account inactivity warnings at 14 and 3 days, inactivity disabling, deletion

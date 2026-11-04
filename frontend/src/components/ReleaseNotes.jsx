@@ -14,39 +14,46 @@ function ReleaseBody({ markdown }) {
   })
 }
 
-function ReleaseEntry({ version, markdown }) {
+export function ReleaseEntry({ version, markdown, publicHistory = false }) {
   const byline = /(?:^|\n[ \t]*\n)Authors?:[ \t]+([^\n]+)(?=\n[ \t]*\n|$)/
   const author = markdown.match(byline)?.[1].trim()
-  return <section className="space-y-2 border-t pt-3">
+  const id = `version-${version}`
+  const Heading = publicHistory ? 'h2' : 'h3'
+  return <section id={publicHistory ? id : undefined} className={publicHistory
+    ? 'space-y-3 border-t py-6'
+    : 'space-y-2 border-t pt-3'}>
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-      <h3 className="font-semibold">Version {version}</h3>
+      <Heading className={publicHistory ? undefined : 'font-semibold'}>
+        {publicHistory ? <a href={`#${id}`}>Version {version}</a> : `Version ${version}`}
+      </Heading>
       {author && <p className="text-muted-foreground">
         {author === 'Pending Git attribution'
           ? 'Author credit pending'
           : <>By <span className="font-semibold text-[var(--site-gold-ink)]">{author}</span></>}
       </p>}
     </div>
-    <ReleaseBody markdown={markdown.replace(byline, '').trim()} />
+    <div className={publicHistory ? 'grid gap-3' : 'space-y-2'}>
+      <ReleaseBody markdown={markdown.replace(byline, '').trim()} />
+    </div>
   </section>
 }
 
-export default function ReleaseNotes({ history = false, onClose, onCloseAutoFocus }) {
+export default function ReleaseNotes() {
   const [entries, setEntries] = useState(null)
-  const [loadFailed, setLoadFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch(history ? '/api/release-notes?view=history' : '/api/release-notes', { signal: controller.signal })
+    fetch('/api/release-notes', { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error('Release notes failed to load')
         return response.json()
       })
       .then((data) => { if (!controller.signal.aborted) setEntries(data.entries) })
-      .catch(() => { if (!controller.signal.aborted) setLoadFailed(true) })
+      .catch(() => { if (!controller.signal.aborted) setEntries([]) })
     return () => controller.abort()
-  }, [history])
+  }, [])
 
   async function acknowledge() {
     setSaving(true)
@@ -66,28 +73,19 @@ export default function ReleaseNotes({ history = false, onClose, onCloseAutoFocu
     }
   }
 
-  if (!history && !entries?.length) return null
+  if (!entries?.length) return null
 
-  function close() {
-    if (history) onClose()
-    else setEntries([])
-  }
-
-  return <Dialog open onOpenChange={(open) => { if (!open && !saving) close() }}>
-    <DialogContent aria-describedby={undefined} dismissOnOverlayClick={false} onCloseAutoFocus={onCloseAutoFocus} className={history ? "sm:max-w-2xl" : "sm:max-w-xl"}>
+  return <Dialog open onOpenChange={(open) => { if (!open && !saving) setEntries([]) }}>
+    <DialogContent aria-describedby={undefined} dismissOnOverlayClick={false} className="sm:max-w-xl">
       <DialogHeader>
-        <DialogTitle>{history ? "Release history" : "What’s new in Golden Plate"}</DialogTitle>
+        <DialogTitle>What’s new in Golden Plate</DialogTitle>
       </DialogHeader>
-      {history && !entries && (loadFailed
-        ? <p role="alert" className="text-sm text-destructive">Couldn’t load release history. Close and reopen it to try again.</p>
-        : <p role="status" className="text-sm">Loading release history…</p>)}
-      {history && entries?.length === 0 && <p className="text-sm">No release notes have been published yet.</p>}
-      {!!entries?.length && <div className="max-h-[50dvh] space-y-4 overflow-y-auto text-sm leading-relaxed" tabIndex={0} role="region" aria-label="Release notes">
+      <div className="max-h-[50dvh] space-y-4 overflow-y-auto text-sm leading-relaxed" tabIndex={0} role="region" aria-label="Release notes">
         {entries.map(({ version, markdown }) => <ReleaseEntry key={version} version={version} markdown={markdown} />)}
-      </div>}
+      </div>
       {error && <p role="alert" className="text-sm text-destructive">Couldn’t save your acknowledgment. Try again, or close to read the notes later.</p>}
       <DialogFooter>
-        {history ? <Button onClick={close}>Done</Button> : <Button onClick={acknowledge} disabled={saving}>{saving ? 'Saving…' : 'Got it'}</Button>}
+        <Button onClick={acknowledge} disabled={saving}>{saving ? 'Saving…' : 'Got it'}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>

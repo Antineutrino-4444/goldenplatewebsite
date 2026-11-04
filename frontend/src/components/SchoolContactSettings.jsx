@@ -1,9 +1,9 @@
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useRef, useState } from 'react'
 import { Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
 import { Input } from '@/components/ui/input.jsx'
-import { Label } from '@/components/ui/label.jsx'
 
 export default function SchoolContactSettings({ app, open: controlledOpen, onOpenChange, hideTrigger = false, onCloseAutoFocus }) {
   const { user } = app
@@ -70,7 +70,7 @@ export default function SchoolContactSettings({ app, open: controlledOpen, onOpe
         </DialogHeader>
         <form onSubmit={save} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="school-contact-email">Contact email</Label>
+            <HelpLabel htmlFor="school-contact-email" label="Contact email" topic="the school contact inbox">Use an inbox monitored by the person who handles school account requests. To change your own sign-in email, use “Your account email” in the account menu.</HelpLabel>
             <Input id="school-contact-email" type="email" autoComplete="email"
               required maxLength={320} value={email} disabled={busy}
               onChange={(event) => setEmail(event.target.value)} placeholder="school@example.com" />

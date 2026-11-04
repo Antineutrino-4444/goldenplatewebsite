@@ -34,7 +34,7 @@ export function siteReturnPath(value) {
   try {
     const url = new URL(value, 'https://goldenplate.invalid')
     const path = url.pathname.replace(/\/+$/, '') || '/'
-    const publicPage = ['/', '/about', '/how-it-works', '/getting-started', '/stories', '/stories/transcript', '/map', '/login', '/register', '/signup', '/live-counter', '/live-counter/community'].includes(path)
+    const publicPage = ['/', '/about', '/how-it-works', '/getting-started', '/stories', '/stories/transcript', '/release-notes', '/map', '/login', '/register', '/signup', '/live-counter', '/live-counter/community'].includes(path)
     if (url.origin !== 'https://goldenplate.invalid' || (!publicPage && !/^\/guest\/(sessions|schools)\/[a-zA-Z0-9-]+$/.test(path) && safeReturnPath(value, '') === '')) return '/'
     return url.pathname + url.search + url.hash
   } catch { return '/' }
@@ -42,6 +42,6 @@ export function siteReturnPath(value) {
 
 export function sitePageLabel(path) {
   const page = path.split(/[?#]/)[0].replace(/\/+$/, '') || '/'
-  return ({ '/': 'Home', '/about': 'Our story', '/how-it-works': 'How it works', '/getting-started': 'Getting started', '/stories': 'Watch & listen', '/map': 'School map', '/login': 'School login', '/register': 'School registration', '/signup': 'Account signup', '/live-counter': 'School counter', '/live-counter/community': 'Community counter' })[page]
+  return ({ '/': 'Home', '/about': 'Our story', '/how-it-works': 'How it works', '/getting-started': 'Getting started', '/stories': 'Watch & listen', '/release-notes': 'Release history', '/map': 'School map', '/login': 'School login', '/register': 'School registration', '/signup': 'Account signup', '/live-counter': 'School counter', '/live-counter/community': 'Community counter' })[page]
     || (page === '/stories/transcript' ? 'Podcast transcript' : page.startsWith('/guest/sessions/') ? 'Guest session' : page.startsWith('/guest/schools/') ? 'School guest view' : 'School portal')
 }

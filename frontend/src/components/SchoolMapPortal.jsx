@@ -1,4 +1,5 @@
 import VideoHelp from '@/components/VideoHelp.jsx'
+import { HelpTip } from '@/components/HelpTip.jsx'
 import SiteLink from '@/components/SiteLink.jsx'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowUpRight, Building2, MapPin, RefreshCcw, X } from 'lucide-react'
@@ -67,7 +68,15 @@ export default function SchoolMapPortal({ app }) {
         {error && <div role="alert" className="mb-4 flex items-center gap-3 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-800">{error}<button type="button" className="underline" onClick={loadSchools}>Try again</button></div>}
         <div className="grid items-start gap-5 lg:grid-cols-[290px_minmax(0,1fr)]">
           <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4"><h2 className="text-sm font-semibold">Participating schools</h2><button type="button" aria-label="Refresh schools" disabled={loading} onClick={loadSchools} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-50 hover:text-teal-700"><RefreshCcw size={15} /></button></div>
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
+              <div className="flex items-center gap-1">
+                <h2 className="text-sm font-semibold">Participating schools</h2>
+                <HelpTip topic="finding a participating school">
+                  The filter searches the selected tab. If you don’t find your school under On the map, check Others for schools without a pin.
+                </HelpTip>
+              </div>
+              <button type="button" aria-label="Refresh schools" disabled={loading} onClick={loadSchools} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-50 hover:text-teal-700"><RefreshCcw size={15} /></button>
+            </div>
             <div className="p-3">
               <div role="group" aria-label="School location group" className="mb-3 flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
                 <button type="button" aria-pressed={section === 'mapped'} onClick={() => { setSection('mapped'); setFilter('') }} className={`flex-1 rounded-md px-2 py-2 ${section === 'mapped' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-500'}`}>On the map ({mapped.length})</button>

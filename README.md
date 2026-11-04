@@ -239,9 +239,10 @@ Add, change, or remove comma-separated addresses without editing code, then
 restart/reload the server. Hosting environment variables take precedence over
 `.env`, so update those instead if configured by your host. These recipients
 receive pending school registration requests, map submissions, account signup
-alerts (including invite signups), and server startup/reload announcements.
-An empty or missing `WEBSITE_UPDATE_NOTIFY_EMAILS`
-disables website-wide alerts; no address is included automatically.
+alerts (including invite signups), and new release notes. An empty or missing
+`WEBSITE_UPDATE_NOTIFY_EMAILS` adds no website-wide recipients. Admin and
+superadmin account emails still receive release notes according to their
+notification preferences.
 
 `MAP_APPROVAL_NOTIFY_EMAILS` configures additional map reviewers. A non-empty
 list saved in the Map admin recipient editor overrides those additional reviewers,
@@ -257,17 +258,11 @@ Notifications use the existing `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` settings
 Set `WEBSITE_PUBLIC_URL` to set the website link in emails. Failed delivery is logged
 and does not discard a saved registration request or stop a running website.
 
-Startup announcements now run automatically after the application initializes,
-including direct starts of `src/main.py` and WSGI imports after a hosting reload.
-No notification command or deployment wrapper is needed. Delivery runs in a
-background thread when the host permits threads, otherwise during initialization.
-It announces application startup, not a verified build or public availability.
-The development reloader parent is skipped; its serving child announces startup.
-Each initialized process sends once; multi-worker hosts can send an announcement
-per worker. Set `WEBSITE_STARTUP_NOTIFY_ENABLED=false` to disable these announcements.
-Code-update emails and the manual notification scripts have been removed.
-Automated tests mock
-email delivery and never send real messages.
+Release emails are checked automatically during application initialization,
+including WSGI imports. Delivery state is shared across workers and restarts.
+Failed deliveries can retry during a later initialization. Set
+`WEBSITE_RELEASE_NOTIFY_ENABLED=false` to pause release emails. Automated tests
+mock email delivery.
 
 ## School contact email and account signup alerts
 
@@ -521,3 +516,7 @@ On the first signed-in visit after deployment, the portal displays every entry
 newer than the version saved on the account, newest first. Accounts with no
 saved version see the full history. **Got it** saves the newest displayed
 version across devices. Closing the dialog leaves the notes unread.
+
+The full release history is public at `/release-notes`. When a deployment adds
+more than three versions, its email shows the newest three and links to the
+first omitted version in the public archive.

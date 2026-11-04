@@ -110,9 +110,9 @@ def _prepare_test_database():
 
 _DB_CLEANUP_CALLBACK = _prepare_test_database()
 
-# Suppress startup delivery before importing the application, before any mail
-# transport fixtures have been installed. Startup tests use a mocked transport.
-os.environ['WEBSITE_STARTUP_NOTIFY_ENABLED'] = 'false'
+# Suppress automatic release delivery before importing the application, before
+# the mocked email transport has been installed.
+os.environ['WEBSITE_RELEASE_NOTIFY_ENABLED'] = 'false'
 os.environ['ACCOUNT_LIFECYCLE_WORKER_ENABLED'] = 'false'
 
 from src.main import app

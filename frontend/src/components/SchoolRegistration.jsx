@@ -1,4 +1,4 @@
-import VideoHelp from '@/components/VideoHelp.jsx'
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import React from 'react'
 import CaptchaVerification from '@/components/CaptchaVerification.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -76,9 +76,8 @@ function SchoolRegistration({ app }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <VideoHelp videos={[1]} label="Watch: register your school" />
           <div className="space-y-2">
-            <Label>Registration Method</Label>
+            <HelpLabel label="Registration Method" topic="choosing a school registration method" video={1}>Start with Email Verification unless the Golden Plate team issued you a one-time school registration invite.</HelpLabel>
             <div className="flex border rounded-lg overflow-hidden">
               <button
                 type="button"
@@ -130,7 +129,7 @@ function SchoolRegistration({ app }) {
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="school-invite-id">School ID (optional)</Label>
+                  <HelpLabel htmlFor="school-invite-id" label="School ID (optional)" topic="the optional school ID">Enter the school ID only if it came with your invite. Leave this field blank if you received just the invite code.</HelpLabel>
                   <Input
                     id="school-invite-id"
                     type="text"
@@ -154,7 +153,7 @@ function SchoolRegistration({ app }) {
 
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label htmlFor="school-email">Contact Email</Label>
+                  <HelpLabel htmlFor="school-email" label="Contact Email" topic="the registration contact email">Choose an inbox you can open now. If your code doesn’t arrive, check the address and your junk folder before resending.</HelpLabel>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Input
                       id="school-email"
@@ -239,7 +238,7 @@ function SchoolRegistration({ app }) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="school-code">School Code (optional)</Label>
+                    <HelpLabel htmlFor="school-code" label="School Code (optional)" topic="choosing a school code">Share this short code with your team so they can request accounts at your school.</HelpLabel>
                     <Input
                       id="school-code"
                       type="text"
@@ -275,7 +274,7 @@ function SchoolRegistration({ app }) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="admin-username">Admin Username</Label>
+                    <HelpLabel htmlFor="admin-username" label="Admin Username" topic="the primary admin username">Use this username to sign in as the school’s first superadmin once registration is complete.</HelpLabel>
                     <Input
                       id="admin-username"
                       type="text"

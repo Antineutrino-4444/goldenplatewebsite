@@ -12,6 +12,7 @@ import ReleaseNotes from '@/components/ReleaseNotes.jsx'
 import { AccountEmailRequired } from '@/components/AccountEmailSettings.jsx'
 
 const LandingPage = lazy(() => import('@/components/LandingPage.jsx'))
+const ReleaseHistoryPage = lazy(() => import('@/components/ReleaseHistoryPage.jsx'))
 const PodcastTranscriptPage = lazy(() => import('@/components/PodcastTranscriptPage.jsx'))
 const GettingStartedPage = lazy(() => import('@/components/GettingStartedPage.jsx'))
 const SignupAccessNotice = lazy(() => import('@/components/SignupAccessNotice.jsx'))
@@ -129,6 +130,7 @@ function SiteRoutes() {
     <Route path="/about" element={<LandingPage page="about" />} />
     <Route path="/how-it-works" element={<LandingPage page="how" />} />
     <Route path="/getting-started" element={<GettingStartedPage />} />
+    <Route path="/release-notes" element={<ReleaseHistoryPage />} />
     <Route path="/stories" element={<LandingPage page="stories" />} />
     <Route path="/stories/transcript" element={<PodcastTranscriptPage />} />
     <Route path="/account-deletion" element={<AccountDeletionPage />} />

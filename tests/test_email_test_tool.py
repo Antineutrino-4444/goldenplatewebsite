@@ -93,7 +93,7 @@ PRODUCTION_SENDERS = [
     ('account_email_verification', 'email_service', 'send_verification_email'),
     ('map_verification', 'map_routes', '_send_map_verification_email'),
     ('password_recovery', 'password_recovery_routes', 'send_password_recovery_email'),
-    ('server_startup', 'startup_notifications', 'send_startup_notification'),
+    ('release_notes', 'release_notifications', 'send_release_email'),
     ('school_registration', 'website_notifications', 'notify_school_registration'),
     ('account_signup', 'signup_notifications', 'notify_school_signup'),
     ('invite_signup', 'signup_notifications', 'notify_school_signup'),
@@ -222,7 +222,7 @@ def test_respects_disabled_notification_types(email_tool, email_outbox):
     db_session.commit()
     assert submit(client).status_code == 303
     run = latest(database)
-    message = next(row for row in run['messages'] if row['kind'] == 'server_startup')
+    message = next(row for row in run['messages'] if row['kind'] == 'release_notes')
     assert message['status'] == 'skipped' and message['sent_at'] is None
     assert len(email_outbox) == 20
     assert db_session.get(EmailNotificationPreference, 'recipient@example.com').disabled_types == '["server_startup"]'
@@ -472,5 +472,5 @@ def test_terminal_respects_notification_preferences(terminal_tool, monkeypatch, 
     answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
     assert script.main() == 0
     assert len(email_outbox) == 20
-    skipped = next(row for row in latest(database)['messages'] if row['kind'] == 'server_startup')
+    skipped = next(row for row in latest(database)['messages'] if row['kind'] == 'release_notes')
     assert skipped['status'] == 'skipped' and skipped['sent_at'] is None

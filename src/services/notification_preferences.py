@@ -10,13 +10,21 @@ from sqlalchemy.exc import IntegrityError
 
 NOTIFICATION_TYPES = {
     'account_lifecycle': ('Account inactivity notices', 'Warnings about disabled accounts and permanent account deletion.'),
-    'server_startup': ('Server restarts', 'Announcements when the website server starts or reloads.'),
+    'release_notes': ('Release notes', 'Updates when a new version of Golden Plate is released.'),
     'school_registration': ('School registration requests', 'New schools requesting registration.'),
     'account_signup': ('Account signup requests', 'People requesting an account at a school.'),
     'invite_signup': ('Invite signups', 'Accounts created using a school invite code.'),
     'map_submission': ('Map submissions to review', 'New ecological map submissions awaiting review.'),
     'map_status': ('Map submission decisions', 'Rejection or deletion messages about your submissions.'),
 }
+
+
+def disabled_notification_types(value):
+    disabled = set(json.loads(value))
+    if 'server_startup' in disabled:
+        disabled.remove('server_startup')
+        disabled.add('release_notes')
+    return disabled
 
 
 def prepare_email_preferences(email, notification_type=None):
@@ -38,7 +46,7 @@ def prepare_email_preferences(email, notification_type=None):
                 if notification_type:
                     known.add(notification_type)
                     preference.known_types = json.dumps(sorted(known))
-                allowed = notification_type not in json.loads(preference.disabled_types)
+                allowed = notification_type not in disabled_notification_types(preference.disabled_types)
                 token = preference.token
                 session.commit()
                 base_url = os.environ.get('WEBSITE_PUBLIC_URL', 'https://goldenplate.ca').rstrip('/')

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Iterable, List, Optional
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -508,6 +509,22 @@ class EmailNotificationPreference(Base):
     disabled_types = Column(Text, nullable=False, default='[]')
     known_types = Column(Text, nullable=False, default='[]')
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+
+
+class ReleaseEmailBatch(Base):
+    __tablename__ = 'release_email_batches'
+
+    version_key = Column(String(36), primary_key=True)
+    previous_key = Column(String(36), nullable=False, unique=True)
+
+
+class ReleaseEmailDelivery(Base):
+    __tablename__ = 'release_email_deliveries'
+
+    version_key = Column(String(36), ForeignKey('release_email_batches.version_key'), primary_key=True)
+    email = Column(String(320), primary_key=True)
+    completed = Column(Boolean, nullable=False, default=False)
+    claim_until = Column(Integer, nullable=False, default=0)
 
 
 class PasswordRecovery(Base):

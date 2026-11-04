@@ -1,3 +1,4 @@
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button.jsx'
@@ -42,7 +43,7 @@ export default function PasswordResetPage() {
     {stage === 'done' && <p role="status" className="mb-6">Sign in with your username or verified email and your new password.</p>}
     {stage === 'ready' && <form onSubmit={save} className="mb-6 space-y-4">
       <p className="text-sm">This changes your password and signs out your other devices. It does not sign you in.</p>
-      <div className="space-y-2"><Label htmlFor="reset-password">New password</Label><Input id="reset-password" type="password" autoComplete="new-password" required minLength={6} maxLength={256} value={password} disabled={busy} onChange={(event) => setPassword(event.target.value)} /></div>
+      <div className="space-y-2"><HelpLabel htmlFor="reset-password" label="New password" topic="choosing a new password">Use at least 6 characters. Choose a password you don’t already use on another site.</HelpLabel><Input id="reset-password" type="password" autoComplete="new-password" required minLength={6} maxLength={256} value={password} disabled={busy} onChange={(event) => setPassword(event.target.value)} /></div>
       <div className="space-y-2"><Label htmlFor="reset-password-confirm">Confirm new password</Label><Input id="reset-password-confirm" type="password" autoComplete="new-password" required minLength={6} maxLength={256} value={confirmation} disabled={busy} onChange={(event) => setConfirmation(event.target.value)} /></div>
       <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save new password'}</Button>
     </form>}

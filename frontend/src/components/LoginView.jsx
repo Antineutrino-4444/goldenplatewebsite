@@ -1,4 +1,4 @@
-import VideoHelp from '@/components/VideoHelp.jsx'
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import React, { useState } from 'react'
 import PasswordRecoveryDialog from '@/components/PasswordRecoveryDialog.jsx'
 import CaptchaVerification from '@/components/CaptchaVerification.jsx'
@@ -74,9 +74,8 @@ function LoginView({ app }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <VideoHelp videos={[2, 22]} label="Video help with your account" />
           <div className="space-y-2">
-            <Label htmlFor="username">Username or verified email</Label>
+            <HelpLabel htmlFor="username" label="Username or verified email" topic="sign-in email or username" video={2}>Use the email address you verified for this account. If you share that address across accounts or never verified it, enter your username.</HelpLabel>
             <Input
               id="username"
               type="text"
@@ -88,7 +87,7 @@ function LoginView({ app }) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <HelpLabel htmlFor="password" label="Password" topic="your sign-in password" video={22}>If you forgot your password, use “Forgot password?” below. A school superadmin can reset it if you can’t access your verified email.</HelpLabel>
             <Input
               id="password"
               type="password"
@@ -159,7 +158,7 @@ function LoginView({ app }) {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="guest-school-code">School Code</Label>
+              <HelpLabel htmlFor="guest-school-code" label="School Code" topic="guest access">Guest access lets you view school results without an account. Sign in with a school account to record plates.</HelpLabel>
               <Input
                 id="guest-school-code"
                 type="text"
@@ -174,7 +173,7 @@ function LoginView({ app }) {
                 autoFocus
               />
               <p className="text-xs text-gray-500">
-                Ask your school administrator for the code. Guest access is read-only.
+                Ask your school administrator for the code.
               </p>
             </div>
             <div className="flex gap-2">
@@ -212,10 +211,9 @@ function LoginView({ app }) {
               {signupMode === 'invite' ? 'Create an account with a one-time invite from your school administrator.' : 'Your school superadmin must approve your account before you can sign in.'}
             </DialogDescription>
           </DialogHeader>
-          <VideoHelp videos={[19]} label="Watch: joining your school team" />
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Sign-up method</Label>
+              <HelpLabel label="Sign-up method" topic="choosing a sign-up method" video={19}>If you’re unsure which option to use, ask your school administrator for the school code. Choose Legacy Invite if they gave you a one-time invite code.</HelpLabel>
               <div className="flex border rounded-lg overflow-hidden">
                 <button
                   type="button"
@@ -287,7 +285,7 @@ function LoginView({ app }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="signup-email">Email address (required)</Label>
+              <HelpLabel htmlFor="signup-email" label="Email address (required)" topic="the signup email address">Enter your school or invite code before you send a verification code. Your school may require an approved email address.</HelpLabel>
               <Input
                 id="signup-email"
                 type="email"
@@ -309,7 +307,7 @@ function LoginView({ app }) {
               </Button>
             </div>
             {signupCodeSent && <div className="space-y-2">
-              <Label htmlFor="signup-verification-code">Verification code</Label>
+              <HelpLabel htmlFor="signup-verification-code" label="Verification code" topic="the signup verification code">If the code expired, choose Resend Code and use the newest email. If the address was mistyped, correct it and request a code for that address.</HelpLabel>
               <Input
                 id="signup-verification-code"
                 type="text"

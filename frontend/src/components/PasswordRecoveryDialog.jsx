@@ -1,8 +1,8 @@
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
 import { Input } from '@/components/ui/input.jsx'
-import { Label } from '@/components/ui/label.jsx'
 import CaptchaVerification from '@/components/CaptchaVerification.jsx'
 import { getCaptchaToken, captchaErrorMessage } from '@/lib/captcha.js'
 
@@ -30,8 +30,8 @@ function RecoveryForm({ identifier, onClose }) {
   }
   if (message) return <div className="space-y-4"><p role="status" className="text-sm">{message}</p><Button onClick={onClose} className="w-full">Back to login</Button></div>
   return <form onSubmit={send} className="space-y-4">
-    <p className="text-sm">A school superadmin can reset your password without sending an email. If one is available and you do not need access right away, please ask them first to help reduce email sends.</p>
-    <div className="space-y-2"><Label htmlFor="recovery-account">Username or verified email</Label>
+    <p className="text-sm">If your school superadmin is available, ask them to reset your password first.</p>
+    <div className="space-y-2"><HelpLabel htmlFor="recovery-account" label="Username or verified email" topic="getting a password reset email">Check your spam or junk folder after requesting a reset. If you receive several reset emails, use the newest link.</HelpLabel>
       <Input id="recovery-account" autoComplete="username" required maxLength={320} value={account} disabled={busy} onChange={(event) => setAccount(event.target.value)} />
       <p className="text-sm text-muted-foreground">Use your username if you share an email with another account. Recovery needs an email you have already verified.</p>
     </div>

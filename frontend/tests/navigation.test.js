@@ -32,7 +32,7 @@ test('map subdomains link to the school portal on their corresponding main host'
 })
 
 test('public return links preserve real local destinations and reject external paths', () => {
-  for (const path of ['/', '/stories', '/stories/transcript#podcast-22-44', '/map?school=SAC', '/live-counter/community', '/guest/sessions/session-123', '/guest/schools/default-school', '/how-it-works#contact', '/getting-started#record-plates']) assert.equal(siteReturnPath(path), path)
+  for (const path of ['/', '/stories', '/stories/transcript#podcast-22-44', '/release-notes#version-1.2.1.1', '/map?school=SAC', '/live-counter/community', '/guest/sessions/session-123', '/guest/schools/default-school', '/how-it-works#contact', '/getting-started#record-plates']) assert.equal(siteReturnPath(path), path)
   for (const path of ['https://example.com', '//example.com', '/\\example.com', '/%2f%2fexample.com', '/unknown', null]) assert.equal(siteReturnPath(path), '/')
   assert.equal(sitePageLabel('/how-it-works#live-counter'), 'How it works')
   assert.equal(sitePageLabel('/live-counter/community'), 'Community counter')

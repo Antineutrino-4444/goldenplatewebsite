@@ -1,4 +1,5 @@
 import VideoHelp from '@/components/VideoHelp.jsx'
+import { HelpTip } from '@/components/HelpTip.jsx'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, Home, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
@@ -51,6 +52,9 @@ export default function HouseRanking({ app, fillHeight = false, showVideoHelp = 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex flex-wrap items-center gap-2">
             <Home className="h-5 w-5" />House Rankings
+            <HelpTip topic="house ranking views">
+              Count ranks houses by recorded plates. Clean Rate ranks by the share that were clean. Score uses points and penalties. Estimates models how anonymous student plates may be distributed across houses.
+            </HelpTip>
           </CardTitle>
           <div className="flex w-full min-w-0 items-center gap-2">
             <div role="group" aria-label="House ranking view" className="grid min-w-0 flex-1 grid-cols-2 border rounded-lg overflow-hidden sm:grid-cols-4">

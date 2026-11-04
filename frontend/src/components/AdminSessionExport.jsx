@@ -1,3 +1,4 @@
+import { HelpTip } from '@/components/HelpTip.jsx'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useState } from 'react'
 import { Download, RefreshCcw } from 'lucide-react'
@@ -152,7 +153,12 @@ export default function AdminSessionExport({ open, onOpenChange, accountKey }) {
             </section>
 
             <section className="space-y-3" aria-labelledby="export-anonymize-heading">
-              <h3 id="export-anonymize-heading" className="font-semibold">Anonymize columns</h3>
+              <div className="flex items-center gap-1">
+                <h3 id="export-anonymize-heading" className="font-semibold">Anonymize columns</h3>
+                <HelpTip topic="choosing which export columns to anonymize">
+                  “Anonymize identities” covers names and student IDs. If you’re sharing this file, also review readable fields such as advisor and house, which may identify students.
+                </HelpTip>
+              </div>
               <p className="text-sm text-gray-600">Exports use details saved with each record. Roster Status marks students missing from the current roster; House Changed and Roster Notes flag roster differences and matching conflicts.</p>
               <p className="text-sm text-gray-600">Choose which columns to anonymize. Consistent labels and a Person column help you follow each student across sessions within this download. New exports use new labels.</p>
               <div className="flex flex-wrap gap-2">

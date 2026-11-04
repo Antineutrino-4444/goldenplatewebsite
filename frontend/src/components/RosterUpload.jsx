@@ -1,3 +1,4 @@
+import { HelpTip } from '@/components/HelpTip.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 
@@ -198,17 +199,27 @@ function RosterReview({ reviews, setReviews, kind, loaded, isLoading, upload, cl
 
   return (
     <section aria-label="Review roster import" className="mt-3 space-y-4">
-      <h3 ref={heading} tabIndex={-1} className="font-semibold">Review {kind === 'teacher' ? 'faculty' : 'student'} roster</h3>
+      <div className="flex items-center gap-1">
+        <h3 ref={heading} tabIndex={-1} className="font-semibold">Review {kind === 'teacher' ? 'faculty' : 'student'} roster</h3>
+        <HelpTip topic="matching roster columns" video={kind === 'teacher' ? 6 : 5}>
+          If a file needs review, open its preview. Match each required field to the column that contains it and exclude the first row if it contains column headings.
+        </HelpTip>
+      </div>
       <p className="text-sm" aria-live="polite">
         {reviews.length - needsReview} of {reviews.length} {reviews.length === 1 ? 'file' : 'files'} ready to import.
         {needsReview > 0 && ` ${needsReview} ${needsReview === 1 ? 'needs' : 'need'} review.`}
       </p>
       {kind === 'student' && (
         <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={generateIds} disabled={isLoading} onChange={(event) => setGenerateIds(event.target.checked)} />
-            Generate student IDs from row order
-          </label>
+          <div className="flex items-center gap-1">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={generateIds} disabled={isLoading} onChange={(event) => setGenerateIds(event.target.checked)} />
+              Generate student IDs from row order
+            </label>
+            <HelpTip topic="generating student IDs">
+              Use this if your roster has no student IDs. For repeat imports, use stable student IDs so a change in row order doesn’t change who an ID belongs to.
+            </HelpTip>
+          </div>
           {generateIds && rowCount > 0 && <p className="mt-1 text-sm text-gray-600">IDs will run from 1 to {rowCount} across the selected files. Use stable IDs for future imports if the roster order changes.</p>}
         </div>
       )}

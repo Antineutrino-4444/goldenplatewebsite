@@ -5,14 +5,18 @@ from sqlalchemy import func
 
 from . import recorder_bp
 from .db import EmailNotificationPreference, School, db_session
-from src.services.notification_preferences import NOTIFICATION_TYPES
+from src.services.notification_preferences import NOTIFICATION_TYPES, disabled_notification_types
 from src.services.website_notifications import get_website_update_recipients
 
 
 def _configured_types(email, known_types):
+    from src.services.release_notifications import get_release_recipients
+
     configured = set()
     if email in {recipient.lower() for recipient in get_website_update_recipients()}:
-        configured.update({'server_startup', 'school_registration', 'account_signup', 'invite_signup', 'map_submission'})
+        configured.update({'school_registration', 'account_signup', 'invite_signup', 'map_submission'})
+    if email in get_release_recipients(db_session):
+        configured.add('release_notes')
     if db_session.query(School.id).filter(func.lower(School.contact_email) == email).first():
         configured.update({'account_signup', 'invite_signup'})
     from .map_routes import _get_map_approval_notify_recipients
@@ -39,7 +43,7 @@ def notification_preferences(token):
         db_session.commit()
         return redirect(url_for('recorder.notification_preferences', token=token, saved=1), code=303)
 
-    disabled = set(json.loads(preference.disabled_types))
+    disabled = disabled_notification_types(preference.disabled_types)
     configured = _configured_types(preference.email, json.loads(preference.known_types))
     response = make_response(render_template_string(PREFERENCES_PAGE,
         email=preference.email, types=NOTIFICATION_TYPES, disabled=disabled,

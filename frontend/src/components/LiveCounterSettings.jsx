@@ -1,3 +1,4 @@
+import { HelpLabel } from '@/components/HelpTip.jsx'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
@@ -85,7 +86,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
           <div className="space-y-2"><Label htmlFor="counter-year">Calendar year</Label>
             <Input id="counter-year" type="number" required min={1900} max={9998} step={1}
               value={year} onChange={(event) => setYear(event.target.value)} /></div>
-          <div className="space-y-2"><Label htmlFor="counter-timezone">Reporting timezone</Label>
+          <div className="space-y-2"><HelpLabel htmlFor="counter-timezone" label="Reporting timezone" topic="the reporting timezone">Choose your school’s local time zone so lunches near midnight count toward the intended date.</HelpLabel>
             <select id="counter-timezone" className={selectClass} value={timezone} onChange={(event) => setTimezone(event.target.value)}>
               {!zones.some(([value]) => value === timezone) && <option value={timezone}>{timezone}</option>}
               {zones.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -109,7 +110,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
                 onChange={(event) => update(index, 'end_date', event.target.value)} /></div>
           </div>
         </div>)}
-        {canSetDefault ? <div className="space-y-2"><Label htmlFor="counter-default-range">Default time range</Label>
+        {canSetDefault ? <div className="space-y-2"><HelpLabel htmlFor="counter-default-range" label="Default time range" topic="the default counter range">This range is selected when the counter opens. If a custom range is missing here, check that it has both a start and an end date.</HelpLabel>
           <select id="counter-default-range" className={selectClass} value={defaultRange} onChange={(event) => setDefaultRange(event.target.value)}>
             <option value="year">Calendar year {year}</option>
             {filledRanges.map((range) => <option key={range.id} value={range.id}>{rangeLabel(range)}</option>)}
