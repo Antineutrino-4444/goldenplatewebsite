@@ -1,23 +1,17 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.1.0 0a4aa85a71789d2f179bd330adad3ae1580d1e08 -->
+<!-- golden-plate-release-baseline: 1.2.1.1 0a4aa85a71789d2f179bd330adad3ae1580d1e08 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
 
 ## 1.2.1.1
 
-November 4, 2026 · Release notes in the school portal
+November 4, 2026 · Spreadsheet roster import and portal release notes
 
-Author: Pending Git attribution
+Author: Jiajun (Leo) Li
 
 - Golden Plate now shows release notes in the school portal. If you miss a release, you’ll see its notes alongside the newer updates when you next sign in.
 - Select Got it to acknowledge the displayed releases on your account across devices. Closing the dialog leaves those entries unread for your next sign-in.
-
-## 1.2.1.0
-
-November 3, 2026 · Spreadsheet roster import
-
-Author: Jiajun (Leo) Li
 
 - Admins could import student or faculty rosters from CSV, TSV, Excel (.xlsx or .xls), Apple Numbers, and delimited text. For workbooks with several sheets or tables, the review let admins choose which one to use.
 - The review suggested matches for recognized headings. Admins could assign columns by hand for files with unfamiliar headings or no header, and choose whether to exclude the first row as a heading or title.
