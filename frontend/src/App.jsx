@@ -8,6 +8,7 @@ import SchoolArrival from '@/components/SchoolArrival.jsx'
 import SiteShell, { RouteContent } from '@/components/SiteShell.jsx'
 import { originState } from '@/components/SiteLink.jsx'
 import GuestSessionBoundary from '@/components/GuestSessionBoundary.jsx'
+import ReleaseNotes from '@/components/ReleaseNotes.jsx'
 import { AccountEmailRequired } from '@/components/AccountEmailSettings.jsx'
 
 const LandingPage = lazy(() => import('@/components/LandingPage.jsx'))
@@ -31,11 +32,12 @@ function LoadingPage() {
   return <div className="min-h-screen bg-[var(--site-paper)] flex items-center justify-center text-sm text-[var(--site-muted)]" role="status">Opening Golden Plate…</div>
 }
 
-function AppFrame({ app, children }) {
+function AppFrame({ app, children, showReleaseNotes = true }) {
   if (app.authReady && app.user?.email_required) return <AccountEmailRequired app={app} />
   return <>
     {app.appEnvironment?.is_development && <div className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-950"><div className="mx-auto flex max-w-7xl items-center justify-center gap-2 text-center text-sm font-medium"><AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" /><span>Development mode is active. Default development admin credentials are enabled. Set APP_ENV=production before deploying.</span></div></div>}
     {children}
+    {showReleaseNotes && app.authReady && app.isAuthenticated && app.user?.id && app.user.role !== 'guest' && <ReleaseNotes key={app.user.id} />}
   </>
 }
 
@@ -94,8 +96,8 @@ function Workspace() {
   }, [app.isAuthenticated, app.user?.role, app.user?.email_required, path])
 
   if (!app.authReady) return <LoadingPage />
-  if (guestEntry) return <AppFrame app={app}><Suspense fallback={<LoadingPage />}><SchoolGuestEntry key={schoolId} schoolId={schoolId} guestLogin={app.guestLogin} /><OverlayElements app={app} /></Suspense></AppFrame>
-  if ((signup || registration) && app.isAuthenticated) return <AppFrame app={app}><SignupAccessNotice app={app} /><Suspense fallback={null}><OverlayElements app={app} /></Suspense></AppFrame>
+  if (guestEntry) return <AppFrame app={app} showReleaseNotes={false}><Suspense fallback={<LoadingPage />}><SchoolGuestEntry key={schoolId} schoolId={schoolId} guestLogin={app.guestLogin} /><OverlayElements app={app} /></Suspense></AppFrame>
+  if ((signup || registration) && app.isAuthenticated) return <AppFrame app={app} showReleaseNotes={false}><SignupAccessNotice app={app} /><Suspense fallback={null}><OverlayElements app={app} /></Suspense></AppFrame>
   if (authentication && app.isAuthenticated && !registration && !signup) {
     if (!showFlight) return <Navigate to={target} replace />
   }
@@ -105,7 +107,7 @@ function Workspace() {
   if (!authentication && app.isInterschoolUser && path !== '/interschool') return <Navigate to="/interschool" replace />
   if (!authentication && path === '/portal/admin' && !['admin', 'superadmin'].includes(app.user?.role)) return <Navigate to="/portal" replace />
 
-  return <><div className={showFlight ? 'arrival-portal' : undefined} inert={showFlight || undefined} aria-hidden={showFlight || undefined}><AppFrame app={app}><Suspense fallback={<LoadingPage />}>
+  return <><div className={showFlight ? 'arrival-portal' : undefined} inert={showFlight || undefined} aria-hidden={showFlight || undefined}><AppFrame app={app} showReleaseNotes={!authentication}><Suspense fallback={<LoadingPage />}>
     {authentication && !showFlight ? <div className="auth-page">{!registration && <div className="auth-intro"><h1>{signup ? 'Join your school community.' : 'Welcome back to your school.'}</h1><p>{signup ? 'Request an account or use an invite from your administrator.' : 'Sign in to record plates and review your school’s sessions.'}</p></div>}<main id="main-content">{registration ? <SchoolRegistration app={routeApp} /> : <LoginView app={routeApp} />}</main></div> : app.isInterschoolUser ? <InterschoolPortal app={routeApp} /> : <MainPortal app={routeApp} />}
     {!showFlight && <OverlayElements app={routeApp} />}
   </Suspense></AppFrame></div>{showFlight && <SchoolArrival user={app.user} onComplete={finishFlight} />}</>

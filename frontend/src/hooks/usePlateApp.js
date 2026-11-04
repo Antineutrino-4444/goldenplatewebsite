@@ -1205,9 +1205,9 @@ export function usePlateApp() {
     }
   }
 
-  const uploadCSV = async (file, mapping, onSuccess) => {
+  const uploadCSV = async (files, mapping, onSuccess) => {
     const formData = new FormData()
-    formData.append('file', file)
+    files.forEach((file) => formData.append('file', file))
     formData.append('mapping', JSON.stringify(mapping))
 
     setIsLoading(true)
@@ -1235,9 +1235,9 @@ export function usePlateApp() {
     }
   }
 
-  const uploadTeachers = async (file, mapping, onSuccess) => {
+  const uploadTeachers = async (files, mapping, onSuccess) => {
     const formData = new FormData()
-    formData.append('file', file)
+    files.forEach((file) => formData.append('file', file))
     formData.append('mapping', JSON.stringify(mapping))
 
     setIsLoading(true)

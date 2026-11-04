@@ -6,7 +6,7 @@ from sqlalchemy import func, or_
 from . import recorder_bp, storage
 from .db import School, Teacher, db_session
 from .security import get_current_user, require_admin, require_auth
-from .roster_import import mapped_roster
+from .roster_import import mapped_roster, roster_filename
 from .roster_csv import roster_csv_reader
 from .storage import save_global_teacher_data, sync_teacher_table_from_list
 from .utils import normalize_name
@@ -36,14 +36,18 @@ def upload_teachers():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
-    file = request.files['file']
+    files = request.files.getlist('file')
+    file = files[0]
+    mapped = 'mapping' in request.form
+    if len(files) > 1 and not mapped:
+        return jsonify({'error': 'Review and map all files before importing a combined roster.'}), 400
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
     try:
         teachers = []
-        if 'mapping' in request.form:
-            reader, fields, _ = mapped_roster(file, 'teacher')
+        if mapped:
+            reader, fields, _ = mapped_roster(files, 'teacher')
         else:
             if not file.filename.lower().endswith(('.csv', '.txt')):
                 return jsonify({'error': 'File must be a CSV or TXT file'}), 400
@@ -58,7 +62,7 @@ def upload_teachers():
             last = normalize_name(row.get('Last'))
             if first and last:
                 identifier = normalize_name(row.get('Faculty ID'))
-                if 'Faculty ID' in fields and not identifier:
+                if not mapped and 'Faculty ID' in fields and not identifier:
                     return jsonify({'error': 'Every named row must have a Faculty ID when that column is included.'}), 400
                 teacher_name = f'{first} {last}'
                 teachers.append({
@@ -72,7 +76,7 @@ def upload_teachers():
 
         user_id = session['user_id']
         try:
-            filename = file.filename.replace('\\', '/').rsplit('/', 1)[-1]
+            filename = roster_filename(files)
             teacher_sync = sync_teacher_table_from_list(
                 teachers, school_id=school_id, filename=filename, uploaded_by=current_user['username'],
             )

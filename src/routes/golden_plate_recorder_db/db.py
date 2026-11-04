@@ -118,6 +118,7 @@ class User(Base):
     is_record_actor = Column(Integer, nullable=False, default=0, server_default='0')
     role = Column(String, nullable=False)
     last_login_at = Column(DateTime(timezone=True))
+    seen_release_key = Column(String(36))
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
     status = Column(String, nullable=False, default='active')
@@ -835,6 +836,7 @@ def _migrate_schema() -> None:
             _ensure_column(inspector, table_name, 'email_verified_at', 'DATETIME')
     if 'users' in tables:
         _ensure_column(inspector, 'users', 'admin_email_required_at', 'DATETIME')
+        _ensure_column(inspector, 'users', 'seen_release_key', 'VARCHAR(36)')
         for name in ('inactivity_disabled_at', 'inactivity_delete_at', 'inactivity_restored_at'):
             _ensure_column(inspector, 'users', name, 'DATETIME')
         _ensure_column(inspector, 'users', 'disabled_reason', 'TEXT')

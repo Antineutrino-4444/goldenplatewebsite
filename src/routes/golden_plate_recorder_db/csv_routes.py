@@ -6,7 +6,7 @@ from sqlalchemy import func
 from . import recorder_bp, storage
 from .db import School, Student, db_session
 from .security import get_current_user, require_admin, require_auth
-from .roster_import import mapped_roster
+from .roster_import import mapped_roster, roster_filename
 from .roster_csv import roster_csv_reader
 from .storage import save_global_csv_data, sync_students_table_from_csv_rows
 from .utils import make_student_key, normalize_house, normalize_name
@@ -44,14 +44,18 @@ def upload_csv():
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
 
-    file = request.files['file']
+    files = request.files.getlist('file')
+    file = files[0]
+    mapped = 'mapping' in request.form
+    if len(files) > 1 and not mapped:
+        return jsonify({'error': 'Review and map all files before importing a combined roster.'}), 400
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
     try:
         generated = False
-        if 'mapping' in request.form:
-            rows, columns, generated = mapped_roster(file, 'student')
+        if mapped:
+            rows, columns, generated = mapped_roster(files, 'student')
         else:
             if not file.filename.lower().endswith('.csv'):
                 return jsonify({'error': 'File must be a CSV'}), 400
@@ -89,7 +93,7 @@ def upload_csv():
                 if incoming is not None and incoming != existing:
                     return jsonify({'error': 'Generated IDs would reassign an existing student ID. Use a column with stable IDs for this roster.'}), 400
         try:
-            filename = file.filename.replace('\\', '/').rsplit('/', 1)[-1]
+            filename = roster_filename(files)
             sync_result = sync_students_table_from_csv_rows(rows, school_id=school_id, filename=filename, uploaded_by=current_user['username'])
             print(f"Student roster sync complete: {sync_result}")
         except Exception as exc:

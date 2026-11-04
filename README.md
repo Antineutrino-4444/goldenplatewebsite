@@ -1,13 +1,13 @@
 # Golden Plate Recorder
 
 ## Overview
-Golden Plate Recorder is a web application for tracking student attendance and category-based events. The system combines a Flask backend with a modern React frontend and supports barcode scanners, CSV roster uploads, and role-based administration.
+Golden Plate Recorder is a web application for tracking student attendance and category-based events. The system combines a Flask backend with a modern React frontend and supports barcode scanners, spreadsheet roster imports, and role-based administration.
 
 ## Features
 - Multi-role authentication system (Super Admin, Admin, User, Guest)
 - Invite-only registration and account deletion workflow
 - Session creation and switching with default names
-- CSV roster upload with ID and name matching
+- Spreadsheet roster import with column mapping and ID matching
 - CLEAN, DIRTY, and RED category recording with barcode scanner support
 - Real-time history display and CSV export
 - Administrative panel for user, invite code, and session management
@@ -359,7 +359,7 @@ House Data shows rankings first. Scoring explanations, model assumptions, roster
 
 Named clean, dirty, and very dirty plates count toward the student's house. House rankings default to **Estimates**, alongside Score, Count, and Clean Rate. All four views use compact house cards, with supplemental statistics under **Notes and details**. Simple scores use observed house-attributed plates: each clean plate earns +2 points, each dirty plate deducts 2 points, and each very dirty plate deducts 10 points by default. Count-only entries and records without a house contribute no simple-score points. Superadmins can set each reward or deduction to a whole number from 0 to 20 in the Admin Panel's House score settings; values are saved per school and recalculate scores for all existing sessions. Count and Clean Rate use recorded house-attributed plates; Clean Rate is clean plates divided by all recorded student plates in that house. Exact two-part house names such as `Macdonald - Flavelle` use `Macdonald`. Startup automatically updates existing student and plate house fields; uploads and new records follow the same rule. Other separators and labels with three or more sections remain unchanged.
 
-Student CSV uploads replace the current roster for that school. Omitted students are marked inactive, hidden from roster suggestions and excluded from weighted draws and winner overrides. Historical plate records, ticket balances and draw history remain stored. Re-uploading a student restores their membership with the same ID and history. The draw and house panels refresh after an upload.
+Student roster imports replace the current roster for that school. Omitted students are marked inactive, hidden from roster suggestions and excluded from weighted draws and winner overrides. Historical plate records, ticket balances and draw history remain stored. Re-uploading a student restores their membership with the same ID and history. The draw and house panels refresh after an upload.
 
 ### Upper School Estimate tab
 
@@ -383,13 +383,15 @@ The Estimate tab refreshes every five seconds while visible and after the existi
 
 Superadmins can select **Review or exclude records** in House Data to review roster conflicts and exclude individual records from that session's calculations. Review uses the saved session roster when available and otherwise previews the current roster, explicitly identifying which roster is being checked. **Compare with → Current roster** previews a replacement roster without changing the session's saved match. A failed **Use current roster** attempt automatically refreshes the review against the current roster so conflicting students can be found and excluded before retrying the match. Reviewing or excluding records does not itself attest a missing historical roster; the user must retry **Use current roster**. Exclusions apply to Estimates, the original Score/Count/Clean Rate views, session and live totals, CSV exports, and student or faculty draw eligibility. A linked excluded student is also removed from that session's estimation population, rather than becoming an artificial absence. Count-only exclusions remove only that count. The student remains in the school's roster and can participate in other sessions. Ticket balances are recalculated from plate outcomes and independent ticket actions, respecting later resets and preserving balances predating ticket-event history. Affected draw selections are cleared, including a selected draw for the corrected session or its merged main session; existing public draw events and previously finalized ticket consumption remain historical records. Exclusions never delete plate records, and scan history marks them as excluded. **Restore record** includes a record again and recalculates the same values; it does not reinstate a cleared draw selection. Each change saves its superadmin, time, and optional reason. These controls are limited to the superadmin's own school, including archived sessions. Active sessions with only excluded student records follow the current roster until student recording resumes; excluded entries do not create a false mixed-roster warning.
 
-Student CSV columns may appear in any order and header matching is case-insensitive. Only `Student ID`, `Last`, and either `Preferred` or `First` are required. If the `Preferred` column exists, its values are always used; `First` is used only when the entire `Preferred` column is absent. Rows missing an ID, last name, or the selected first name are skipped. `Grade`, `Advisor`, `House`, and `Clan` can be blank or omitted. Files must be UTF-8 (with or without a BOM); surrounding header whitespace is ignored. Duplicate recognized headers, including duplicates with different capitalization, are rejected.
+In Recorder, open **Student and teacher databases** and select **Choose file** in the appropriate card. Both importers accept CSV, TSV, Excel (.xlsx or .xls), Apple Numbers, and delimited TXT files up to 8 MB. In the review, select the sheet or table if prompted, check whether the first row should be excluded, and assign each field to a different source column. Suggested assignments can be changed. Review the rows before selecting **Import roster** or **Replace roster**.
 
-Teacher CSV and TXT uploads require comma-separated columns with `Last` and `Preferred` (or `First` when there is no `Preferred` column). Headers are case-insensitive and can appear in any order. Files without these name headers are rejected without changing the roster. Include the optional `Faculty ID` column to match the same person across name changes; if included, every named row needs a nonblank ID. IDs are case-insensitive and scoped to a school. Conflicting rows for one ID are rejected. Without Faculty ID, unique full names are matched case-insensitively; ambiguous names are rejected. Separate people may have identical names when their Faculty IDs differ. Teachers retain exact first/preferred and last names, including spaces. Admins can also use **Edit name** in the teacher preview to rename an existing person without changing their permanent internal ID.
+Student imports require first or preferred name and last name. Map an existing Student ID column or select **Generate student IDs from row order**. Keep a stable ID for each student if you scan cards or plan to reorder the roster. Grade, Advisor, House, and Clan are optional.
+
+Teacher imports require first or preferred name and last name. Map a stable **Faculty ID** when available to match the same person across name changes. If assigned, each named row needs an ID. IDs are case-insensitive and scoped to a school. Without Faculty IDs, matching uses unique full names. Admins can also use **Edit name** in **Preview Teacher List** to rename a person while preserving their internal ID.
 
 The identity migration uses the active database connection from `DATABASE_URL` (with the usual local SQLite fallback). Every initialization, including WSGI imports, checks for missing faculty identity fields and links from plate records and draws. It removes the old name uniqueness constraint so different people can share a name. Existing record, person, and draw IDs are preserved. A transactional migration marker ensures historical faculty records are linked once, only where a name uniquely identifies one person within the same school. Ambiguous or unmatched legacy records stay unlinked; later arrivals with matching names cannot claim those old records. The original recorded names, dates, plate categories, draw outcomes, and ticket figures are retained. Repeated initialization is safe. Deploying and restarting applies the migration to the configured database without a separate command or development-computer access.
 
-Both student and teacher uploads display the loaded filename, or a database-loaded label for legacy rosters without a filename. Replacing a loaded database requires confirmation before choosing a file and a second replacement warning before upload. Faculty missing from the replacement roster are marked inactive instead of deleted, preserving their identity and historical links. They are omitted from new name suggestions and can return with the same ID. Filenames and upload metadata survive restarts, and both previews support searching the roster.
+Both student and teacher uploads display the loaded filename, or a database-loaded label for legacy rosters without a filename. For a replacement, review the new file and the warning, then select **Replace roster**. **Cancel** closes the review without saving. Faculty missing from the replacement roster are marked inactive instead of deleted, preserving their identity and historical links. They are omitted from new name suggestions and can return with the same ID. Filenames and upload metadata survive restarts, and both previews support searching the roster.
 
 Records and draw results resolve displayed names through their linked person's permanent internal ID. Renaming a student or faculty member updates names in past history and exports without rewriting original recording snapshots or changing the winner, counts, or ticket calculations. Historical grade, house, and other recording-time facts remain unchanged; detailed export roster notes retain name changes. New named faculty recordings always link to a permanent identity, including manual entries outside the active roster. If multiple people share a name, the recorder must select a person from the suggestions rather than relying on text alone. Unlinked manual student entries and ambiguous historical names remain unresolved rather than being assigned a guessed roster identity; their draw tickets are tracked under a separate manual identity and reset for each session. Internal faculty IDs are passed between the UI and API for selection but are not shown as names or exposed in anonymized guest views.
 
@@ -507,3 +509,15 @@ lightweight landing-page globe continues to use local Natural Earth outlines.
 Run `cd frontend && npm run build` to rebuild the Flask-served frontend, including
 its public media assets. See [landing-page.md](docs/landing-page.md) for source
 attribution and media verification notes.
+
+### Publishing release notes
+
+Add a section to [RELEASE_NOTES.md](RELEASE_NOTES.md) before deploying. Use an
+increasing four-part version heading such as `## 0.0.0.2`. Each part is a
+nonnegative integer of up to nine digits, without leading zeros. Use plain
+paragraphs and Markdown bullet lists separated by blank lines.
+
+On the first signed-in visit after deployment, the portal displays every entry
+newer than the version saved on the account, newest first. Accounts with no
+saved version see the full history. **Got it** saves the newest displayed
+version across devices. Closing the dialog leaves the notes unread.

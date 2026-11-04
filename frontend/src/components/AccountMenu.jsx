@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
-import { ChevronDown, Github, KeyRound, LogOut, Mail, MapPinned, UserRound } from 'lucide-react'
+import { ChevronDown, Github, History, KeyRound, LogOut, Mail, MapPinned, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.jsx'
 import PasswordSettings from '@/components/PasswordSettings.jsx'
 import SchoolContactSettings from '@/components/SchoolContactSettings.jsx'
 import SchoolLocationDialog from '@/components/SchoolLocationDialog.jsx'
+import ReleaseNotes from '@/components/ReleaseNotes.jsx'
 import AccountEmailSettings from '@/components/AccountEmailSettings.jsx'
 import SchoolEmailPolicySettings from '@/components/SchoolEmailPolicySettings.jsx'
 import { beginOwnAccountDeletion } from '@/lib/account-deletion.js'
@@ -12,6 +13,7 @@ import { emailReminderKey, needsEmailReminder } from '@/lib/account-email-remind
 
 export default function AccountMenu({ app, onSchoolLocationSaved }) {
   const { user, logout } = app
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
   const [emailReminderPending, setEmailReminderPending] = useState(() => needsEmailReminder(user))
@@ -51,7 +53,7 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-2rem)]" onCloseAutoFocus={(event) => {
-          if (passwordOpen || contactOpen || locationOpen || emailOpen || emailPolicyOpen) event.preventDefault()
+          if (historyOpen || passwordOpen || contactOpen || locationOpen || emailOpen || emailPolicyOpen) event.preventDefault()
         }}>
           <DropdownMenuLabel className="min-w-0 space-y-1 [overflow-wrap:anywhere]">
             <div className="font-semibold">{user.name}</div>
@@ -71,6 +73,7 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
           )}
           {user.role !== 'guest' && <DropdownMenuItem onSelect={() => setEmailOpen(true)}><Mail />Your account email</DropdownMenuItem>}
           {['admin', 'superadmin'].includes(user.role) && <DropdownMenuItem onSelect={() => setEmailPolicyOpen(true)}><Mail />School email rules</DropdownMenuItem>}
+          {user.role !== 'guest' && <DropdownMenuItem onSelect={() => setHistoryOpen(true)}><History />Release history</DropdownMenuItem>}
           <DropdownMenuItem asChild>
             <a href="https://github.com/Antineutrino-4444/goldenplatewebsite" target="_blank" rel="noopener noreferrer"><Github />GitHub repository</a>
           </DropdownMenuItem>
@@ -81,6 +84,7 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
       </DropdownMenu>
       {/* Keep dialogs mounted outside the menu so closing the menu neither
           closes them nor suppresses the automatic missing-email reminder. */}
+      {historyOpen && <ReleaseNotes history onClose={() => setHistoryOpen(false)} onCloseAutoFocus={restoreFocus} />}
       <PasswordSettings user={user} open={passwordOpen} onOpenChange={setPasswordOpen} hideTrigger onCloseAutoFocus={restoreFocus} />
       {user.role !== 'guest' && <AccountEmailSettings app={app} open={emailOpen} onOpenChange={changeEmailOpen} reminder={emailReminderPending} onCloseAutoFocus={restoreFocus} />}
       {['admin', 'superadmin'].includes(user.role) && <SchoolEmailPolicySettings app={app} open={emailPolicyOpen} onOpenChange={setEmailPolicyOpen} onCloseAutoFocus={restoreFocus} />}
@@ -89,7 +93,7 @@ export default function AccountMenu({ app, onSchoolLocationSaved }) {
         else restoreFocus(event)
       }} />}
       <SchoolLocationDialog app={app} open={locationOpen} onOpenChange={setLocationOpen} hideTrigger
-        autoPrompt allowAutomaticPrompt={!contactOpen && !passwordOpen && !emailOpen && !emailPolicyOpen}
+        autoPrompt allowAutomaticPrompt={!historyOpen && !contactOpen && !passwordOpen && !emailOpen && !emailPolicyOpen}
         onSaved={onSchoolLocationSaved} onCloseAutoFocus={restoreFocus} />
     </>
   )

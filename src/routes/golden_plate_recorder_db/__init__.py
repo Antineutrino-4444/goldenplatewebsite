@@ -10,6 +10,7 @@ from . import hooks  # noqa: F401
 from . import guest_privacy  # noqa: F401
 from . import app_routes  # noqa: F401
 from . import auth_routes  # noqa: F401
+from . import release_note_routes  # noqa: F401
 from . import account_email_routes  # noqa: F401
 from . import account_lifecycle_routes  # noqa: F401
 from . import password_routes  # noqa: F401

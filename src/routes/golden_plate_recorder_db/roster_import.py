@@ -18,6 +18,7 @@ MAX_ROWS = 20000
 MAX_COLUMNS = 128
 MAX_CELLS = 500000
 MAX_TABLES = 50
+MAX_FILES = 10
 
 NAME_FIELDS = {
     'Preferred': ('preferred', 'preferred name', 'preferred first name', 'first', 'first name', 'given name', 'forename'),
@@ -176,10 +177,44 @@ def review_roster(kind):
     return jsonify({'tables': tables}), 200, {'Cache-Control': 'no-store'}
 
 
-def mapped_roster(file, kind):
-    settings = json.loads(request.form['mapping'])
-    if not isinstance(settings, dict):
-        raise ValueError('Invalid roster mapping.')
+def mapped_roster(files, kind):
+    mappings = json.loads(request.form['mapping'])
+    if isinstance(mappings, dict):
+        mappings = [mappings]
+    if not isinstance(mappings, list) or not 1 <= len(files) <= MAX_FILES or len(mappings) != len(files):
+        raise ValueError('Choose and map up to 10 roster files.')
+    generated = isinstance(mappings[0], dict) and mappings[0].get('generate_ids', False)
+    rows = []
+    columns = set()
+    identifiers = set()
+    id_field = 'Student ID' if kind == 'student' else 'Faculty ID'
+    for file, settings in zip(files, mappings):
+        try:
+            if not isinstance(settings, dict) or settings.get('generate_ids', False) != generated:
+                raise ValueError('Use the same student ID mode for all files.')
+            file_rows, file_columns = _mapped_file(file, kind, settings, len(rows))
+            for row in file_rows:
+                if id_field not in row:
+                    continue
+                identifier = row[id_field].casefold()
+                if identifier in identifiers:
+                    raise ValueError(f'A {id_field} appears more than once in the combined roster.')
+                identifiers.add(identifier)
+            rows.extend(file_rows)
+            columns.update(file_columns)
+            if len(rows) > MAX_ROWS:
+                raise ValueError('The combined roster can contain up to 20,000 rows.')
+        except ValueError as exc:
+            raise ValueError(f'{file.filename}: {exc}') from None
+    return rows, [field for field in FIELDS[kind] if field in columns], generated
+
+
+def roster_filename(files):
+    first = files[0].filename.replace('\\', '/').rsplit('/', 1)[-1]
+    return first if len(files) == 1 else f'{first} + {len(files) - 1} more'
+
+
+def _mapped_file(file, kind, settings, row_offset):
     tables = read_roster(file, kind)
     table_index = settings.get('table')
     if type(table_index) is not int or not 0 <= table_index < len(tables):
@@ -205,7 +240,6 @@ def mapped_roster(file, kind):
         raise ValueError('Assign columns for ' + ', '.join(required) + '.')
 
     rows = []
-    identifiers = set()
     start = int(skip_first)
     id_field = 'Student ID' if kind == 'student' else 'Faculty ID'
     for row_number, source in enumerate(table['rows'][start:], start + 1):
@@ -216,13 +250,8 @@ def mapped_roster(file, kind):
         if missing:
             raise ValueError(f'Row {row_number} is missing {", ".join(missing)}.')
         if generate_ids:
-            row[id_field] = str(len(rows) + 1)
-        if id_field in row:
-            identifier = row[id_field].casefold()
-            if identifier in identifiers:
-                raise ValueError(f'Row {row_number} repeats a {id_field}.')
-            identifiers.add(identifier)
+            row[id_field] = str(row_offset + len(rows) + 1)
         rows.append(row)
     if not rows:
         raise ValueError('The selected sheet or table has no roster rows to import.')
-    return rows, list(rows[0]), generate_ids
+    return rows, list(rows[0])
