@@ -1,8 +1,20 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.1.1 0a4aa85a71789d2f179bd330adad3ae1580d1e08 -->
+<!-- golden-plate-release-baseline: 1.2.2.0 d7ce074380cac616e9bd6259f782d701cffa4d9b -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.2.0
+
+November 4, 2026 · Public release history and multi-file roster imports
+
+Author: Jiajun (Leo) Li
+
+- Open Release history from the public site footer or the portal’s account menu to browse every published version. Each version has a link you can share, and anyone can read the history without signing in.
+- Golden Plate emails new release notes to admin and superadmin account addresses and any additional recipients configured for website updates. When several versions are published together, the email includes up to three entries and links to the full history. Recipients can manage Release notes in their email preferences.
+- Admins and superadmins can combine up to 10 files into one student or faculty roster. In the Recorder, open Student and teacher databases and select Choose files or Add files. Review shows which files are ready and which need attention. You can preview each file, choose a sheet or table when prompted, adjust its column assignments, or remove it before importing.
+- Roster review flags duplicate student or faculty IDs across files before saving. If you select Generate student IDs from row order, numbering continues across the selected files. The combined roster can contain up to 20,000 rows.
+- Help icons beside controls explain how to sign in, register a school, and find or place a school on the map. In the portal, they also explain roster column matching, why Start Draw may be unavailable, and what to check before sharing a session export. Some tips link to a video guide.
 
 ## 1.2.1.1
 
