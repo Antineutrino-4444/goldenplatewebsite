@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useId, useState } from 'react'
 import { KeyRound } from 'lucide-react'
@@ -46,7 +47,7 @@ function PasswordForm({ reset, accounts, loading, loadError, reload, busy, setBu
           ...(reset ? { user_id: targetId } : {}),
         }),
       })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) {
         setMessage({ error: true, text: result.error || 'Unable to update the password.' })
         return
@@ -183,7 +184,7 @@ export default function PasswordSettings({ user, open: controlledOpen, onOpenCha
     setAccounts([])
     fetch('/api/auth/password-accounts', { credentials: 'same-origin', signal: controller.signal })
       .then(async (response) => {
-        const result = await response.json()
+        const result = await readApiJson(response)
         if (!response.ok) throw new Error(result.error || 'Unable to load accounts.')
         if (!controller.signal.aborted) setAccounts(result.users || [])
       })

@@ -101,12 +101,13 @@ test('all sections start collapsed, with pending requests first and approved req
   assert.equal(requests[0].id, 'a1', 'rendering must not mutate shared data')
 
   const sections = [...html.matchAll(/<details\b([^>]*)>([\s\S]*?)<\/details>/g)].filter(([, attributes]) => /\bid="/.test(attributes))
-  assert.equal(sections.length, 8)
+  assert.equal(sections.length, 9)
   for (const [, attributes, content] of sections) {
     assert.doesNotMatch(attributes, /\bopen(?:\s|=|$)/, 'every section starts closed')
     assert.match(content, /^<summary\b/, 'every section has a native keyboard-accessible toggle')
   }
   assert.match(sections[0][1], /id="pending-registrations"/)
+  assert.match(sections[1][1], /id="server-log"/)
   assert.match(sections.at(-1)[1], /id="approved-registrations"/)
   assert.match(sections[0][2], /Pending newest/)
   assert.doesNotMatch(sections[0][2], /Approved newest|Rejected school/)

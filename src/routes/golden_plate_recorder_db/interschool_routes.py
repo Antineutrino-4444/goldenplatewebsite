@@ -2,9 +2,10 @@ import logging
 import re
 import uuid
 
-from flask import jsonify, request
+from flask import Response, jsonify, request, stream_with_context
 from sqlalchemy import func
 
+from src.api_errors import export_server_activity, recent_api_errors, recent_server_activity
 from src.services.website_notifications import notify_school_approval, notify_school_registration
 
 from . import recorder_bp
@@ -35,6 +36,28 @@ from .users import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@recorder_bp.route('/interschool/error-log', methods=['GET'])
+@recorder_bp.route('/interschool/server-log', methods=['GET'], endpoint='get_server_log')
+def get_api_error_log():
+    if not require_auth():
+        return jsonify({'error': 'Sign in to view the server log.'}), 401
+    if not is_interschool_user():
+        return jsonify({'error': 'Inter-school access is required to view the server log.'}), 403
+    headers = {'Cache-Control': 'no-store'}
+    if request.endpoint != 'recorder.get_server_log':
+        return jsonify({'errors': recent_api_errors()}), 200, headers
+    search = request.args.get('search', '').strip()[:160]
+    failures = request.args.get('failures') == '1'
+    if request.args.get('format') == 'csv':
+        headers['Content-Disposition'] = 'attachment; filename="golden-plate-server-log.csv"'
+        return Response(stream_with_context(export_server_activity(search, failures)),
+                        mimetype='text/csv', headers=headers)
+    after = request.args.get('after', 0, type=int)
+    if not 0 <= after <= 2**63 - 1:
+        return jsonify({'error': 'This log position is invalid. Reload the server log.'}), 400
+    return jsonify(recent_server_activity(search, failures, after)), 200, headers
 
 
 def _serialize_school_model(school, *, user_counts=None):

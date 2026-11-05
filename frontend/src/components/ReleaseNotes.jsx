@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -41,14 +42,14 @@ export function ReleaseEntry({ version, markdown, publicHistory = false }) {
 export default function ReleaseNotes() {
   const [entries, setEntries] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
     fetch('/api/release-notes', { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error('Release notes failed to load')
-        return response.json()
+        return readApiJson(response)
       })
       .then((data) => { if (!controller.signal.aborted) setEntries(data.entries) })
       .catch(() => { if (!controller.signal.aborted) setEntries([]) })
@@ -57,17 +58,17 @@ export default function ReleaseNotes() {
 
   async function acknowledge() {
     setSaving(true)
-    setError(false)
+    setError('')
     try {
       const response = await fetch('/api/release-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ version: entries[0].version }),
       })
-      if (!response.ok) throw new Error('Acknowledgment failed')
+      if (!response.ok) throw new Error((await readApiJson(response)).error)
       setEntries([])
-    } catch {
-      setError(true)
+    } catch (failure) {
+      setError(failure.message || 'Couldn’t save your acknowledgment. Try again, or close to read the notes later.')
     } finally {
       setSaving(false)
     }
@@ -83,7 +84,7 @@ export default function ReleaseNotes() {
       <div className="max-h-[50dvh] space-y-4 overflow-y-auto text-sm leading-relaxed" tabIndex={0} role="region" aria-label="Release notes">
         {entries.map(({ version, markdown }) => <ReleaseEntry key={version} version={version} markdown={markdown} />)}
       </div>
-      {error && <p role="alert" className="text-sm text-destructive">Couldn’t save your acknowledgment. Try again, or close to read the notes later.</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <DialogFooter>
         <Button onClick={acknowledge} disabled={saving}>{saving ? 'Saving…' : 'Got it'}</Button>
       </DialogFooter>

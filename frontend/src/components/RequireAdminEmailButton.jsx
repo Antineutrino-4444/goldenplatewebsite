@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 
@@ -9,7 +10,7 @@ export default function RequireAdminEmailButton({ app, account }) {
     setBusy(true)
     try {
       const response = await fetch(`/api/superadmin/users/${encodeURIComponent(account.id)}/require-email`, { method: 'POST' })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) throw new Error(result.error || 'Unable to require email verification.')
       app.showMessage(result.message, 'success')
       await Promise.all([app.loadAllUsers(), app.loadAdminData()])

@@ -1,9 +1,10 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 
 async function request(url, options) {
   const response = await fetch(url, options)
-  const data = await response.json()
+  const data = await readApiJson(response)
   if (!response.ok) throw new Error(data.error || 'Unable to update session records.')
   return data
 }

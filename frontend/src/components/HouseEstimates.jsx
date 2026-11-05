@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import LegacyHouseEstimates, { HouseEstimateDetails as LegacyDetails } from './LegacyHouseEstimates.jsx'
@@ -65,7 +66,7 @@ function SeparatingCoverage({ estimation, sessionId }) {
     setResult(null)
     try {
       const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/house-stats?estimate_separation=1`, { signal: request.signal })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (request.signal.aborted) return
       if (!response.ok) throw new Error(data.error || 'Unable to calculate interval separation.')
       if (data.estimation?.calculation_signature !== estimation.calculation_signature) {

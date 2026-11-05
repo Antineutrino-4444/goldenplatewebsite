@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpLabel } from '@/components/HelpTip.jsx'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useRef, useState } from 'react'
@@ -60,7 +61,7 @@ export default function LiveCounterSettings({ settings, canSetDefault, onSaved }
             milestone: milestone === '' ? null : Number(milestone),
             percentage_milestone: percentageMilestone === '' ? null : Number(percentageMilestone), ...banner } : {}) }),
       })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) { setError(result.error || 'Unable to save date ranges.'); return }
       onSaved()
     } catch {

@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpTip } from '@/components/HelpTip.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
@@ -295,7 +296,7 @@ export default function RosterUpload({ roster, kind, isLoading, upload }) {
           const body = new FormData()
           body.append('file', file)
           const response = await fetch(`/api/rosters/${kind}/review`, { method: 'POST', body })
-          const data = await response.json()
+          const data = await readApiJson(response)
           if (!response.ok) throw new Error(data.error || 'Could not open this file.')
           const tables = data.tables
           const recognized = tables.map((table, index) => ({ table, index }))

@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 
@@ -9,7 +10,7 @@ export default function DisabledAccounts({ app }) {
   const load = useCallback(async () => {
     try {
       const response = await fetch('/api/admin/disabled-accounts')
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) throw new Error(data.error || 'Unable to load disabled accounts.')
       setAccounts(data.accounts)
       setError('')
@@ -24,7 +25,7 @@ export default function DisabledAccounts({ app }) {
     setError('')
     try {
       const response = await fetch(`/api/admin/disabled-accounts/${encodeURIComponent(account.id)}/${kind}`, { method: 'POST' })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) throw new Error(data.error || 'Unable to update the account.')
       if (kind === 'deletion-link') {
         window.location.assign(`/account-deletion#token=${encodeURIComponent(data.token)}`)

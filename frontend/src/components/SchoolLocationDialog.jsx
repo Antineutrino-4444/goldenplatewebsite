@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { MapPinned } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
@@ -25,7 +26,7 @@ function SchoolLocationEditor({ app, onSaved, onClose, schoolId, hideHeader = fa
     setLoading(true)
     setError('')
     fetch(locationUrl, { signal: controller.signal }).then(async (response) => {
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (controller.signal.aborted) return
       if (!response.ok) throw new Error(data.error || 'Unable to load your school location.')
       setSchoolName(data.school_name)
@@ -50,7 +51,7 @@ function SchoolLocationEditor({ app, onSaved, onClose, schoolId, hideHeader = fa
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(remainUnmapped ? { unmapped: true } : { ...point, unmapped: false, location_name: point.location_name || point.name || schoolName }),
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) throw new Error(data.error || 'Unable to save your school location.')
       app.showMessage?.(remainUnmapped ? `${schoolName} will remain unmapped and appear under Others` : `Location saved for ${schoolName}`, 'success')
       onSaved?.(data.location)
@@ -129,7 +130,7 @@ function InterschoolLocationEditor({ app, onSaved, onClose, initialSchoolId = ''
     setLoading(true)
     setError('')
     fetch('/api/map/schools', { signal: controller.signal }).then(async (response) => {
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) throw new Error(data.error || 'Unable to load schools.')
       if (!controller.signal.aborted) setSchools(data.schools || [])
     }).catch((failure) => {
@@ -184,7 +185,7 @@ export default function SchoolLocationDialog({
     const controller = new AbortController()
     fetch('/api/map/school-location', { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error('Unable to check school location')
-      const data = await response.json()
+      const data = await readApiJson(response)
       promptChecked.current = true
       if (data.decision_required) setOpen(true)
     }).catch(() => {

@@ -207,6 +207,11 @@ def captcha_disabled_for_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolate_api_error_log(monkeypatch, tmp_path):
+    monkeypatch.setitem(app.config, 'API_ERROR_LOG_PATH', tmp_path / 'api-errors.sqlite3')
+
+
+@pytest.fixture(autouse=True)
 def email_outbox(monkeypatch):
     """Capture Brevo delivery without sending real messages from any test."""
     from src.services import email_delivery

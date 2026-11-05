@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useId, useRef, useState } from 'react'
 import { MapPin, Search } from 'lucide-react'
 import { HelpTip } from '@/components/HelpTip.jsx'
@@ -32,7 +33,7 @@ export default function PlaceSearch({ onChoose, initialQuery = '', placesOnly = 
     setSelected(null)
     try {
       const response = await fetch(`/api/map/places/search?q=${encodeURIComponent(term)}${placesOnly ? '&scope=places' : ''}`, { signal: controller.signal })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (current !== sequence.current) return
       if (!response.ok) throw new Error(data.error || 'Unable to search places. Please try again.')
       setResults(Array.isArray(data.results) ? data.results : [])

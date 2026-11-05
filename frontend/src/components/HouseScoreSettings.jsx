@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -23,7 +24,7 @@ export default function HouseScoreSettings({ app }) {
     const load = async () => {
       try {
         const response = await fetch('/api/superadmin/house-score-settings')
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (cancelled) return
         if (!response.ok) {
           setError(data.error || 'Unable to load house score settings.')
@@ -56,7 +57,7 @@ export default function HouseScoreSettings({ app }) {
       const response = await fetch('/api/superadmin/house-score-settings', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values),
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) {
         setError(data.error || 'Unable to save house score settings.')
         return

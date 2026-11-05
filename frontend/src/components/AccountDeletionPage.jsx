@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button.jsx'
@@ -20,7 +21,7 @@ export default function AccountDeletionPage() {
     fetch('/api/account-deletion/inspect', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
     }).then(async (response) => {
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) throw new Error(data.error || 'Unable to open the deletion link.')
       if (!active) return
       setAccount(data)
@@ -39,7 +40,7 @@ export default function AccountDeletionPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, nonce, ...(action === 'authorize' ? { username, password } : {}) }),
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) {
         if (response.status === 403 && action !== 'authorize') { setStep('signin'); setNonce('') }
         if (response.status === 410) setStep('error')

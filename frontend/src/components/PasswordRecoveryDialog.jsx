@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
@@ -22,7 +23,7 @@ function RecoveryForm({ identifier, onClose }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: account.trim(), confirmed: true, captcha_token: captchaToken }),
       })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) throw new Error(result.error || 'Unable to request recovery.')
       setMessage(result.message)
     } catch (failure) { setError(captchaErrorMessage(failure, failure.message || 'Unable to connect. Try again.')) }

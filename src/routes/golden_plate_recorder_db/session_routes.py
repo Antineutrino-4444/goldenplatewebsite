@@ -2,12 +2,16 @@ import csv
 import io
 import json
 import re
+import sqlite3
 import uuid
 from datetime import datetime
+from time import monotonic, sleep
 
 from flask import Response, current_app, jsonify, request, session
 from sqlalchemy import func, or_
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+
+from src.api_errors import note_api_exception
 
 from . import recorder_bp
 import random
@@ -1014,21 +1018,50 @@ def get_scan_history():
     }), 200
 
 
+def _is_record_identity_conflict(error):
+    if not isinstance(error, IntegrityError):
+        return False
+    original = error.orig
+    constraint = getattr(getattr(original, 'diag', None), 'constraint_name', None)
+    return constraint in {'uq_session_records_dedupe', 'uq_students_school_identifier'} or (
+        isinstance(original, sqlite3.IntegrityError) and str(original) in {
+            'UNIQUE constraint failed: session_records.school_id, session_records.session_id, session_records.dedupe_key',
+            'UNIQUE constraint failed: students.school_id, students.student_identifier',
+        }
+    )
+
+
 @recorder_bp.route('/record/<category>', methods=['POST'])
 def record_student(category):
-    try:
-        return _record_student(category)
-    except SQLAlchemyError:
-        db_session.rollback()
-        current_app.logger.exception('Unable to save plate record')
-        return jsonify({'error': 'record_save_failed',
-                        'message': 'The plate could not be saved. Please try again.'}), 503
+    started_at = monotonic()
+    for attempt in range(2):
+        try:
+            return _record_student(category)
+        except SQLAlchemyError as error:
+            db_session.rollback()
+            # Extended SQLite result codes store the primary result in the low byte.
+            busy = isinstance(error, OperationalError) and (
+                getattr(error.orig, 'sqlite_errorcode', 0) & 0xff
+            ) == sqlite3.SQLITE_BUSY
+            if attempt == 0:
+                # A fresh transaction can see the student or plate that won the race.
+                if _is_record_identity_conflict(error):
+                    continue
+                # SQLite already waits for ordinary locks. Retry only a fast failure.
+                if busy and monotonic() - started_at < 1:
+                    sleep(0.05)
+                    continue
+            note_api_exception(error)
+            message = ('The database is busy. Please try recording the plate again.' if busy else
+                       'The plate could not be saved. Please try again.')
+            return jsonify({'error': 'record_save_failed', 'message': message,
+                            'error_code': 'RECORD_DB_BUSY' if busy else 'RECORD_SAVE_FAILED'}), 503
 
 
 def _record_student(category):
     """Record a student in a category."""
     if not require_auth():
-        return jsonify({'error': 'Authentication required'}), 401
+        return jsonify({'error': 'Sign in to record a plate.', 'error_code': 'RECORD_SIGN_IN_REQUIRED'}), 401
 
     forbidden = _forbid_interschool_accounts()
     if forbidden:
@@ -1038,14 +1071,16 @@ def _record_student(category):
 
     session_id = session.get('session_id')
     if not session_id:
-        return jsonify({'error': 'No active session'}), 400
+        return jsonify({'error': 'Select or start a session before recording a plate.',
+                        'error_code': 'RECORD_NO_ACTIVE_SESSION'}), 400
 
     session_info = get_session_entry(session_id)
     if session_info is None:
-        return jsonify({'error': 'Session not found'}), 404
+        return jsonify({'error': 'This session could not be found. Select another session to record a plate.',
+                        'error_code': 'RECORD_SESSION_NOT_FOUND'}), 404
 
     if category not in ['clean', 'dirty', 'red', 'faculty']:
-        return jsonify({'error': 'Invalid category'}), 400
+        return jsonify({'error': 'Choose a valid plate category.', 'error_code': 'RECORD_INVALID_CATEGORY'}), 400
 
     data = request.get_json(silent=True) or {}
     input_value = str(data.get('input_value', '') or '').strip()
@@ -1101,19 +1136,21 @@ def _record_student(category):
     if category == 'faculty':
         input_value = input_value or ' '.join(filter(None, [provided_preferred, provided_last]))
         if not input_value and not provided_teacher_id:
-            return jsonify({'error': 'Faculty name is required'}), 400
+            return jsonify({'error': 'Faculty name is required.', 'error_code': 'RECORD_FACULTY_NAME_REQUIRED'}), 400
 
         if provided_teacher_id:
             teacher = db_session.query(Teacher).filter_by(id=provided_teacher_id, school_id=school_id).first()
             if not teacher:
-                return jsonify({'error': 'Faculty member not found'}), 404
+                return jsonify({'error': 'Faculty member not found. Search for them again.',
+                                'error_code': 'RECORD_FACULTY_NOT_FOUND'}), 404
         else:
             matches = db_session.query(Teacher).filter(Teacher.school_id == school_id, or_(
                 func.lower(Teacher.display_name) == input_value.lower(),
                 func.lower(Teacher.name) == input_value.lower(),
             )).all()
             if len(matches) > 1:
-                return jsonify({'error': 'Multiple faculty members have this name. Select the person from the suggestions.'}), 409
+                return jsonify({'error': 'Multiple faculty members have this name. Select the person from the suggestions.',
+                                'error_code': 'RECORD_FACULTY_AMBIGUOUS'}), 409
             teacher = matches[0] if matches else None
         if teacher is None:
             parts = input_value.split(maxsplit=1)
@@ -1138,6 +1175,7 @@ def _record_student(category):
         if existing_faculty:
             return jsonify({
                 'error': 'duplicate',
+                'error_code': 'RECORD_DUPLICATE',
                 'existing_category': 'faculty',
                 'message': 'This faculty member already has a FACULTY CLEAN plate recorded in this session. No new plate was added.'
             }), 409
@@ -1189,7 +1227,7 @@ def _record_student(category):
         
         return jsonify({
             'status': 'success',
-            'teacher_id': teacher.id,
+            'teacher_id': record['teacher_id'],
             'preferred_name': preferred_name,
             'first_name': preferred_name,
             'last_name': last_name,
@@ -1375,6 +1413,7 @@ def _record_student(category):
         existing_category = existing_record.category
         return jsonify({
             'error': 'duplicate',
+            'error_code': 'RECORD_DUPLICATE',
             'existing_category': existing_category,
             'message': f'This student already has a {"VERY DIRTY" if existing_category == "red" else (existing_category or "student").upper()} plate recorded in this session. No new plate was added.'
         }), 409

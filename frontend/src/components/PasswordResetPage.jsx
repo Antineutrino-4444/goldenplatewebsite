@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -17,7 +18,7 @@ export default function PasswordResetPage() {
     const controller = new AbortController()
     fetch('/api/auth/password-recovery/inspect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }), signal: controller.signal })
       .then(async (response) => {
-        const result = await response.json()
+        const result = await readApiJson(response)
         if (!response.ok) throw new Error(result.error || 'Unable to check this link.')
         if (!controller.signal.aborted) setStage('ready')
       }).catch((failure) => { if (!controller.signal.aborted) { setError(failure.message); setStage('error') } })
@@ -30,7 +31,7 @@ export default function PasswordResetPage() {
     setBusy(true); setError('')
     try {
       const response = await fetch('/api/auth/password-recovery/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, new_password: password }) })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) throw new Error(result.error || 'Unable to reset your password.')
       setPassword(''); setConfirmation(''); setStage('done')
       window.history.replaceState(null, '', window.location.pathname)

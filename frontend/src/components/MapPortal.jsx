@@ -1,3 +1,4 @@
+import { formatApiError, readApiJson } from '../lib/api-errors.js'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import CaptchaVerification from '@/components/CaptchaVerification.jsx'
 import { getCaptchaToken, captchaErrorMessage } from '@/lib/captcha.js'
@@ -189,29 +190,21 @@ function needsServerImageConversion(file) {
 }
 
 async function readApiResponse(response) {
-  const raw = await response.text()
   let data = {}
-  if (raw) {
-    try {
-      data = JSON.parse(raw)
-    } catch {
-      data = {
-        error: `Server returned a non-JSON response (${response.status})`,
-        detail: raw.slice(0, 180),
-        non_json: true
-      }
-    }
+  try {
+    data = await response.json()
+  } catch {
+    return { ok: false, status: response.status, data: { error: 'The server returned an unreadable response.' } }
   }
-  return { ok: response.ok, status: response.status, data, raw }
+  return { ok: response.ok, status: response.status, data }
 }
 
 function buildApiErrorMessage(result, fallbackCode, fallbackMessage) {
   const status = result?.status
   const data = result?.data || {}
-  const code = data.code || fallbackCode || `HTTP_${status || 'UNKNOWN'}`
   const message = data.error || fallbackMessage
   const detail = data.detail ? ` (${data.detail})` : ''
-  return `[${code}] ${message}${detail}`
+  return formatApiError(`${message}${detail}`, data, fallbackCode || `HTTP_${status || 'UNKNOWN'}`)
 }
 
 function buildNetworkErrorMessage(code, message, error) {
@@ -1891,7 +1884,7 @@ function MapPortal({ app }) {
   const loadSchoolPins = async () => {
     try {
       const response = await fetch(`${API_BASE}/map/schools`)
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) setSchoolPins(Array.isArray(data.schools) ? data.schools : [])
       else showMessage(data.error || 'Unable to load school locations. Please refresh the map.', 'error')
     } catch {
@@ -2478,7 +2471,6 @@ function MapPortal({ app }) {
         await loadPins()
       } else {
         showMessage(buildApiErrorMessage(result, 'MAP_SUBMIT_FAILED', 'Failed to submit map entry'), 'error')
-        console.error('Map submission failed:', { status: result.status, data: result.data, raw: result.raw })
       }
     } catch (error) {
       showMessage(captchaErrorMessage(error, buildNetworkErrorMessage('MAP_SUBMIT_NETWORK', 'Failed to submit map entry', error)), 'error')

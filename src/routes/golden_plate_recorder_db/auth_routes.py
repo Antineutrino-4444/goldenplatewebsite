@@ -88,6 +88,7 @@ def login():
     session['user_id'] = user.username
     session['username'] = user.username
     session['school_id'] = user.school_id
+    session['audit_school_slug'] = user.school.slug if user.school else user.school_id
     session['password_token'] = password_session_token(user)
     session['authenticated_at'] = _now_utc().isoformat()
     session['signup_email_confirmation'] = bool(
@@ -95,6 +96,7 @@ def login():
         and user.email and user.email_verified_at
     )
     session.pop('guest_access', None)
+    session.pop('audit_guest_id', None)
     user.last_login_at = _now_utc()
     user.updated_at = _now_utc()
     revoke_account_links(db_session, user.id)
@@ -117,8 +119,10 @@ def logout():
     session.pop('user_uuid', None)
     session.pop('username', None)
     session.pop('school_id', None)
+    session.pop('audit_school_slug', None)
     session.pop('session_id', None)
     session.pop('guest_access', None)
+    session.pop('audit_guest_id', None)
     session.pop('password_token', None)
     session.pop('authenticated_at', None)
     session.pop('account_email_challenge', None)
@@ -164,7 +168,9 @@ def guest_login():
     session.pop('password_token', None)
 
     session['guest_access'] = True
+    session.pop('audit_guest_id', None)
     session['school_id'] = target_school.id
+    session['audit_school_slug'] = target_school.slug
 
     return jsonify({
         'status': 'success',

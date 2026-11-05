@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { HelpTip } from '@/components/HelpTip.jsx'
 import SiteLink from '@/components/SiteLink.jsx'
@@ -28,7 +29,7 @@ export default function SchoolMapPortal({ app }) {
     setLoading(true)
     try {
       const response = await fetch('/api/map/schools')
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) throw new Error(data.error || 'Unable to load schools.')
       setSchools(Array.isArray(data.schools) ? data.schools : [])
     } catch {

@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import SiteLink from '@/components/SiteLink.jsx'
 import { useCallback, useEffect, useState } from 'react'
@@ -57,7 +58,7 @@ export default function LiveCounterPage() {
     setError('')
     try {
       const response = await guestSession.enter({ school_slug: schoolCode.trim() })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) { setError(data.error || 'Unable to find this school.'); return }
       setSelectedRange(null)
       setSelectedMetric(null)

@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useRef, useState } from 'react'
 import { Mail } from 'lucide-react'
@@ -27,7 +28,7 @@ export default function SchoolContactSettings({ app, open: controlledOpen, onOpe
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
       })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) {
         setError(result.error || 'Unable to save the contact email.')
         return

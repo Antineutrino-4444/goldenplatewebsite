@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpTip } from '@/components/HelpTip.jsx'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useState } from 'react'
@@ -35,7 +36,7 @@ export default function AdminSessionExport({ open, onOpenChange, accountKey }) {
     const load = async () => {
       try {
         const response = await fetch('/api/admin/sessions/export', { signal: controller.signal })
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (!response.ok) throw new Error(data.error || 'Could not load sessions')
         setSessions(data.sessions)
         setColumns(data.columns)
@@ -77,7 +78,7 @@ export default function AdminSessionExport({ open, onOpenChange, accountKey }) {
         }),
       })
       if (!response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         throw new Error(data.error || 'Could not export records')
       }
       const blob = await response.blob()

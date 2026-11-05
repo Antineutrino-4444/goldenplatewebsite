@@ -1,15 +1,16 @@
 import VideoHelp from '@/components/VideoHelp.jsx'
 import React from 'react'
+import ServerLog from '@/components/ServerLog.jsx'
 import PortalHeader from '@/components/PortalHeader.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
 import { CardContent } from '@/components/ui/card.jsx'
-import { CheckCircle, ChevronDown, Copy, KeyRound, ListOrdered, RefreshCcw, School, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react'
+import { CheckCircle, ChevronDown, Copy, KeyRound, ListOrdered, RefreshCcw, School, ShieldCheck, Terminal, Trash2, UserPlus, XCircle } from 'lucide-react'
 
-function PortalSection({ id, title, description, icon: Icon, count, children }) {
+function PortalSection({ id, title, description, icon: Icon, count, onToggle, children }) {
   return (
-    <details id={id} className="group min-w-0 rounded-xl border bg-card text-card-foreground shadow-sm">
+    <details id={id} onToggle={onToggle} className="group min-w-0 rounded-xl border bg-card text-card-foreground shadow-sm">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-4 rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 sm:p-6 [&::-webkit-details-marker]:hidden">
         <div className="min-w-0 space-y-1.5">
           <h2 className="flex flex-wrap items-center gap-2 font-semibold">
@@ -27,6 +28,7 @@ function PortalSection({ id, title, description, icon: Icon, count, children }) 
 }
 
 function InterschoolPortal({ app }) {
+  const [showServerLog, setShowServerLog] = React.useState(false)
   const {
     issueSchoolInvite,
     schoolInviteLoading,
@@ -183,6 +185,10 @@ function InterschoolPortal({ app }) {
           <CardContent>
             {renderRegistrationRequests(pendingRegistrationRequests, 'No pending school registration requests.')}
           </CardContent>
+        </PortalSection>
+
+        <PortalSection id="server-log" title="Server Log" description="Follow requests across schools, search the last 30 days, or export the matching actions." icon={Terminal} onToggle={(event) => setShowServerLog(event.currentTarget.open)}>
+          {showServerLog && <CardContent><ServerLog /></CardContent>}
         </PortalSection>
 
         <PortalSection id="overview" title="Inter-School Overview" description="Review school registrations, issue invites, and manage partner schools." icon={ShieldCheck}>

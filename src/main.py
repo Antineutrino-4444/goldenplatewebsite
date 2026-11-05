@@ -14,9 +14,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-from flask import Flask, send_from_directory
+from flask import Flask, got_request_exception, send_from_directory
 from flask_cors import CORS
 
+from src.api_errors import log_api_response, note_api_exception, start_api_request
 from src.routes.golden_plate_recorder_db import recorder_bp
 from src.routes.golden_plate_recorder_db.db import db_session
 from src.routes.golden_plate_recorder_db.map_db import map_db_session
@@ -26,15 +27,25 @@ from src.services.account_lifecycle import start_account_lifecycle
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-only-change-me')
+app.config['API_ERROR_LOG_PATH'] = os.environ.get('API_ERROR_LOG_PATH', 'data/api_errors.sqlite3')
 
 # Enable CORS for all routes
 CORS(app, supports_credentials=True)
 
 app.register_blueprint(recorder_bp, url_prefix='/api')
+app.before_request(start_api_request)
+app.after_request(log_api_response)
+
+
+@got_request_exception.connect_via(app)
+def _note_unhandled_api_exception(sender, exception):
+    note_api_exception(exception)
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
+    if path == 'api' or path.startswith('api/'):
+        return {'error': 'This API endpoint could not be found.'}, 404
     static_folder_path = app.static_folder
     if static_folder_path is None:
             return "Static folder not configured", 404

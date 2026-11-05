@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpLabel } from '@/components/HelpTip.jsx'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useState } from 'react'
@@ -21,7 +22,7 @@ export default function SchoolEmailPolicySettings({ app, open, onOpenChange, onC
     setLoaded(false)
     setError('')
     fetch('/api/school/email-policy').then(async (response) => {
-      const policy = await response.json()
+      const policy = await readApiJson(response)
       if (!active) return
       if (!response.ok) throw new Error(policy.error || 'Unable to load email rules.')
       setEnabled(policy.enabled)
@@ -42,7 +43,7 @@ export default function SchoolEmailPolicySettings({ app, open, onOpenChange, onC
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled, allowed_domains: entries(domains), exceptions: entries(exceptions) }),
       })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) throw new Error(result.error || 'Unable to save email rules.')
       app.showMessage('School email rules saved.', 'success')
       onOpenChange(false)

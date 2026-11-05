@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import VideoHelp from '@/components/VideoHelp.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -16,7 +17,7 @@ export default function GuestPrivacySettings({ app }) {
     const load = async () => {
       try {
         const response = await fetch('/api/admin/guest-privacy')
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (cancelled) return
         if (!response.ok) throw new Error(data.error || 'Unable to load guest privacy.')
         setEnabled(data.enabled)
@@ -39,7 +40,7 @@ export default function GuestPrivacySettings({ app }) {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: next }),
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!response.ok) throw new Error(data.error || 'Unable to save guest privacy.')
       setEnabled(data.enabled)
       setMessage(data.enabled ? 'Saved. Guest views now use anonymous student labels.' : 'Saved. Guest views now show original student details.')

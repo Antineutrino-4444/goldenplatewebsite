@@ -396,6 +396,14 @@ Record entry appears near the top of the session page in a two-column grid. Sect
 
 Closing a record dialog restores focus to its original category button without scrolling and restores the page position captured when it opened. Successful submissions refresh existing ranking and draw panels in the background without replacing them with loading placeholders. Repeated clicks or Enter presses during an active submission send only one request. A failed submission keeps the input available; uncertain network responses direct the recorder to check history before retrying. Manual entries are identified as lacking a unique roster match. Duplicate feedback identifies the plate category already saved in this session and confirms that no new plate was added. Persisted records determine duplicates; session caches update only after the database save succeeds, so failed writes cannot leave phantom entries.
 
+### Error codes and live server log
+
+Failed API responses include an error code. Server failures also include a reference for the individual occurrence. **Inter-School Administration → Server Log** follows completed API requests from signed-in accounts, guest sessions, and anonymous visitors. The panel updates every three seconds. Pause to inspect older entries, or scroll up and use **Jump to latest** when you are ready to follow again. Search by account, school, route, error code, or reference, and use **Failures only** to narrow the list. The live view shows up to 200 matches. **Export CSV** includes all matching actions from the last 30 days.
+
+Access is limited to inter-school accounts. Entries include the account or guest identifier, school, action, timestamp, status, response time, and available exception identifiers. Automatic log updates are excluded to keep the feed from logging itself. Request contents, raw exception text, and browser-only activity are excluded. Log opens and exports are recorded.
+
+The log is stored in `data/api_errors.sqlite3`, separately from plate records. Set `API_ERROR_LOG_PATH` to a writable persistent file path if the host uses a different data directory.
+
 ### Draw finalization and email preferences
 
 Faculty winners can be finalized separately from student winners. Finalization persists across restarts. Repeating a finalized student or faculty draw requires confirmation, and all selections and finalizations remain in the public draw log. Superadmin overrides use the explicit `override` method and log type.

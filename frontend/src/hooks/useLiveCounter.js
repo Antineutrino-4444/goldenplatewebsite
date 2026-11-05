@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { startCounterPolling } from '@/lib/live-counter.js'
 
@@ -14,8 +15,8 @@ export default function useLiveCounter() {
     const check = async () => {
       try {
         const response = await fetch('/api/auth/status', { signal: controller.signal, cache: 'no-store' })
-        if (!response.ok) throw new Error('Unable to check access. Please reload to try again.')
-        const data = await response.json()
+        const data = await readApiJson(response)
+        if (!response.ok) throw new Error(data.error)
         if (!controller.signal.aborted) setUser(data.authenticated ? data.user : null)
       } catch (failure) {
         if (!controller.signal.aborted) setError(failure.message)
@@ -36,7 +37,7 @@ export default function useLiveCounter() {
     const active = startCounterPolling({
       read: async (signal) => {
         const response = await fetch('/api/live-counter', { signal, cache: 'no-store' })
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (!response.ok) {
           const failure = new Error(data.error || 'Unable to update the live counter.')
           failure.status = response.status
@@ -63,15 +64,15 @@ export default function useLiveCounter() {
   const switchSchool = async () => {
     try {
       const response = await fetch('/api/auth/logout', { method: 'POST' })
-      if (!response.ok) throw new Error('Unable to change school.')
+      if (!response.ok) throw new Error((await readApiJson(response)).error)
       poller.current?.stop()
       setUser(null)
       setSnapshot(null)
       setError('')
       setConnected(false)
       return true
-    } catch {
-      setError('Unable to change school. Please try again.')
+    } catch (failure) {
+      setError(failure.message || 'Unable to change school. Please try again.')
       return false
     }
   }

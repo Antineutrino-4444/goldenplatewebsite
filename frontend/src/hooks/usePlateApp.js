@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { dashboardMetrics } from '@/lib/session-metrics.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { makeStudentKey, normalizeName, sanitizeSelection } from '@/lib/names.js'
@@ -278,7 +279,7 @@ export function usePlateApp() {
       try {
         const response = await fetch(`${API_BASE}/auth/status`)
         if (!response.ok || !active) return
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (!active) return
         if (data.authenticated) {
           setUser(data.user)
@@ -308,7 +309,7 @@ export function usePlateApp() {
       if (!response.ok) {
         return
       }
-      const data = await response.json()
+      const data = await readApiJson(response)
       setAppEnvironment({
         environment: data.environment || 'unknown',
         is_development: Boolean(data.is_development),
@@ -334,7 +335,7 @@ export function usePlateApp() {
       const response = await fetch(`${API_BASE}/interschool/overview`)
       let data = null
       try {
-        data = await response.json()
+        data = await readApiJson(response)
       } catch (error) {
         data = null
       }
@@ -406,7 +407,7 @@ export function usePlateApp() {
         }),
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
 
       if (response.ok) {
         setVerificationSent(true)
@@ -466,7 +467,7 @@ export function usePlateApp() {
         }),
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       console.log('Verification response:', { status: response.status, data })
 
       if (response.ok && data.verified) {
@@ -574,7 +575,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/auth/status`, { signal: controller.signal })
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (data.authenticated) {
           setUser(data.user)
           setIsAuthenticated(true)
@@ -606,7 +607,7 @@ export function usePlateApp() {
         })
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         setLoginFlight(data.user?.role !== 'inter_school')
         setUser(data.user)
@@ -637,7 +638,7 @@ export function usePlateApp() {
     setIsLoading(true)
     try {
       return await guestSession.enter(payload, async (response) => {
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (response.ok) {
           setLoginFlight(false)
           setUser(data.user)
@@ -689,7 +690,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, ...schoolDetails, captcha_token: captchaToken }),
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         setSignupCodeSent(true)
         setSignupVerificationCode('')
@@ -783,7 +784,7 @@ export function usePlateApp() {
         body: JSON.stringify(payload)
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         showMessage(data.message || (usingInvite ? 'Account created. You can now sign in.' : 'Account request submitted. Your school superadmin must approve it before you can sign in.'), 'success')
         setSignupUsername('')
@@ -889,7 +890,7 @@ export function usePlateApp() {
         body: JSON.stringify(payload)
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         showMessage(data.message || (usingInvite ? 'School registered. You can now sign in.' : 'School registration request submitted for PLATE administrator approval.'), 'success')
         setShowSchoolRegistration(false)
@@ -966,7 +967,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/session/status`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setSessionId(data.session_id)
         setSessionName(data.session_name)
         setSessionOwner(data.owner || '')
@@ -1053,7 +1054,7 @@ export function usePlateApp() {
         body: JSON.stringify({ session_name: customName })
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         setSessionId(data.session_id)
         setSessionName(data.session_name)
@@ -1091,7 +1092,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/session/list`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         let sessionList = data.sessions || []
         if (user?.role === 'guest') {
           sessionList = sessionList.filter(s => s.is_public)
@@ -1113,7 +1114,7 @@ export function usePlateApp() {
         method: 'POST'
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         setSessionId(targetSessionId)
         setSessionName(data.session_name)
@@ -1146,10 +1147,10 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error, 'error')
       }
     } catch (error) {
@@ -1164,7 +1165,7 @@ export function usePlateApp() {
         const response = await fetch(`${API_BASE}/session/delete/${targetSessionId}`, {
           method: 'DELETE'
         })
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (response.ok) {
           showMessage(data.message, 'success')
           const updated = await loadSessions()
@@ -1197,7 +1198,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/csv/status`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setCsvData(data.loaded ? data : null)
       }
     } catch {
@@ -1217,7 +1218,7 @@ export function usePlateApp() {
         body: formData
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         onSuccess()
         setCsvData(data)
@@ -1247,7 +1248,7 @@ export function usePlateApp() {
         body: formData
       })
 
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         onSuccess()
         showMessage(`Teacher roster uploaded. ${data.count} teachers loaded.`, 'success')
@@ -1269,7 +1270,7 @@ export function usePlateApp() {
     setCsvPreviewLoading(true)
     try {
       const response = await fetch(`${API_BASE}/csv/preview?page=${page}&per_page=50&search=${encodeURIComponent(search)}`)
-      const data = await response.json()
+      const data = await readApiJson(response)
 
       if (response.ok) {
         if (data.status === 'no_data') {
@@ -1293,7 +1294,7 @@ export function usePlateApp() {
     setTeacherPreviewLoading(true)
     try {
       const response = await fetch(`${API_BASE}/teachers/preview?page=${page}&per_page=50&search=${encodeURIComponent(search)}`)
-      const data = await response.json()
+      const data = await readApiJson(response)
 
       if (response.ok) {
         if (data.status === 'no_data') {
@@ -1388,7 +1389,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/session/status`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setSessionStats((prev) => ({
           ...prev,
           clean_count: data.clean_count,
@@ -1433,7 +1434,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/session/scan-history`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setScanHistory(data.scan_history || [])
       }
     } catch (error) {
@@ -1445,7 +1446,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/csv/student-names`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         if (data.status === 'success') {
           const sanitizedNames = (data.names || []).map((name) => {
             const preferred = normalizeName(name.preferred ?? name.preferred_name)
@@ -1482,7 +1483,7 @@ export function usePlateApp() {
     const response = await fetch(`${API_BASE}/teachers/${encodeURIComponent(teacherId)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(names)
     })
-    const data = await response.json()
+    const data = await readApiJson(response)
     if (!response.ok) throw new Error(data.error || 'Unable to save faculty name.')
     await loadTeacherNames()
     await previewTeachers(teacherPreviewPage, teacherPreviewSearch)
@@ -1494,7 +1495,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/teachers/list`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setTeacherRoster(data.names?.length ? { ...data.metadata, count: data.names.length } : null)
         if (data.status === 'success') {
           console.log('Loaded teacher names:', data.names?.length || 0)
@@ -1559,7 +1560,7 @@ export function usePlateApp() {
     if (!background) setDrawSummaryLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${targetSessionId}/draw/summary`)
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         const summaryPayload = {
           session_id: data.session_id || targetSessionId,
@@ -1613,7 +1614,7 @@ export function usePlateApp() {
     if (!background) setHouseStatsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${targetSessionId}/house-stats`, { signal })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (signal?.aborted || requestId !== houseStatsRequest.current) return
       if (response.ok) {
         setHouseStats(data)
@@ -1720,7 +1721,7 @@ export function usePlateApp() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirm_redraw: confirmed })
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
 
       if (response.ok) {
         const faculty = data.faculty || {}
@@ -1753,7 +1754,7 @@ export function usePlateApp() {
     setFacultyPickLoading(true)
     try {
       const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/finalize`, { method: 'POST' })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         setFacultyPick(data.faculty)
         await loadDrawSummary({ silent: true })
@@ -1796,7 +1797,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...buildDrawActionPayload(), confirm_redraw: confirmed })
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         if (data.winner?.display_name) {
@@ -1834,7 +1835,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildDrawActionPayload())
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner finalized', 'success')
@@ -1872,7 +1873,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildDrawActionPayload())
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Draw reset.', 'success')
@@ -1963,7 +1964,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         showMessage('Winner overridden.', 'success')
@@ -2010,7 +2011,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ discarded: nextDiscarded })
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         applyDrawResponse(data, { silent: true })
         if (typeof data.discarded === 'boolean') {
@@ -2045,7 +2046,7 @@ export function usePlateApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ main_session_id: mainSessionId })
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         showMessage(data.message || 'Session merged.', 'success')
         await loadSessions()
@@ -2080,7 +2081,7 @@ export function usePlateApp() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         showMessage(data.message || 'Session unmerged.', 'success')
         await loadSessions()
@@ -2129,7 +2130,7 @@ export function usePlateApp() {
         document.body.removeChild(a)
         showMessage('Records exported.', 'success')
       } else {
-        showMessage('Failed to export records', 'error')
+        showMessage((await readApiJson(response)).error, 'error')
       }
     } catch (error) {
       showMessage('Failed to export records', 'error')
@@ -2151,7 +2152,7 @@ export function usePlateApp() {
         document.body.removeChild(a)
         showMessage('Detailed records exported.', 'success')
       } else {
-        showMessage('Failed to export detailed records', 'error')
+        showMessage((await readApiJson(response)).error, 'error')
       }
     } catch (error) {
       showMessage('Failed to export detailed records', 'error')
@@ -2164,7 +2165,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/admin/overview`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setAdminUsers(data.users || [])
         setAdminSessions(data.sessions || [])
       }
@@ -2197,7 +2198,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/admin/users`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setAllUsers(data.users || [])
       }
     } catch (error) {
@@ -2215,11 +2216,11 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         loadAllUsers()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error, 'error')
       }
     } catch (error) {
@@ -2231,7 +2232,7 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/admin/delete-requests`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         const pending = (data.requests || []).filter(req => req.status === 'pending')
         setDeleteRequests(pending)
       }
@@ -2249,7 +2250,7 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         const updated = await loadSessions()
         loadDeleteRequests()
@@ -2263,7 +2264,7 @@ export function usePlateApp() {
           }
         }
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error, 'error')
       }
     } catch (error) {
@@ -2279,11 +2280,11 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         loadDeleteRequests()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error || 'Failed to reject delete request', 'error')
       }
     } catch (error) {
@@ -2300,7 +2301,7 @@ export function usePlateApp() {
   const generateInviteCode = async () => {
     try {
       const response = await fetch(`${API_BASE}/admin/invite`, { method: 'POST' })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         setInviteCode(data.invite_code)
         setModal({ type: 'invite' })
@@ -2316,7 +2317,7 @@ export function usePlateApp() {
     setSchoolInviteLoading(true)
     try {
       const response = await fetch(`${API_BASE}/interschool/school-invite`, { method: 'POST' })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (response.ok) {
         const inviteInfo = {
           code: data.invite_code,
@@ -2344,11 +2345,11 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         await refreshInterschoolOverview()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error || 'Failed to approve registration request', 'error')
       }
     } catch (error) {
@@ -2365,11 +2366,11 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         await refreshInterschoolOverview()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error || 'Failed to reject registration request', 'error')
       }
     } catch (error) {
@@ -2384,11 +2385,11 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         await refreshInterschoolOverview()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error || 'Failed to delete school', 'error')
       }
     } catch (error) {
@@ -2445,11 +2446,11 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         loadAllUsers()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error, 'error')
       }
     } catch (error) {
@@ -2466,12 +2467,12 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         loadAllUsers()
         loadAdminData()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error, 'error')
       }
     } catch (error) {
@@ -2486,7 +2487,7 @@ export function usePlateApp() {
     if (!silent) setAccountRequestsLoading(true)
     try {
       const response = await fetch(`${API_BASE}/superadmin/account-requests`)
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (fetchId !== accountRequestsFetchId.current) return
       if (response.ok) {
         setAccountRequests(data.requests || [])
@@ -2533,10 +2534,10 @@ export function usePlateApp() {
     try {
       const response = await fetch(`${API_BASE}/superadmin/account-requests/pending`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         setAccountRequests(data.requests || [])
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error || 'Failed to load pending account requests', 'error')
       }
     } catch (error) {
@@ -2554,13 +2555,13 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         loadAccountRequests()
         loadAllUsers()
         loadAdminData()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error, 'error')
       }
     } catch (error) {
@@ -2577,11 +2578,11 @@ export function usePlateApp() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await readApiJson(response)
         showMessage(data.message, 'success')
         loadAccountRequests()
       } else {
-        const error = await response.json()
+        const error = await readApiJson(response)
         showMessage(error.error, 'error')
       }
     } catch (error) {

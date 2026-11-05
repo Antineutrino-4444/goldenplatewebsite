@@ -1,3 +1,7 @@
+import { formatApiError } from './api-errors.js'
+
+const UNCONFIRMED_SAVE = 'Could not confirm whether the plate was saved. Check Plate Tracking History before trying again.'
+
 // A lost response can follow a successful save. Never describe it as a rejection.
 export async function submitRecordRequest(category, payload, fetcher = fetch) {
   let response
@@ -8,18 +12,26 @@ export async function submitRecordRequest(category, payload, fetcher = fetch) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
+  } catch {
+    throw new Error(formatApiError(UNCONFIRMED_SAVE, null, 'RECORD_NETWORK_ERROR'))
+  }
+  const fallbackCode = response.status >= 400 ? `RECORD_HTTP_${response.status}` : undefined
+  try {
     data = await response.json()
   } catch {
-    throw new Error('Could not confirm whether the plate was saved. Check Plate Tracking History before trying again.')
+    throw new Error(formatApiError(UNCONFIRMED_SAVE, null, fallbackCode || 'RECORD_RESPONSE_INVALID'))
   }
   if (!data || typeof data !== 'object') {
-    throw new Error('Could not confirm whether the plate was saved. Check Plate Tracking History before trying again.')
+    throw new Error(formatApiError(UNCONFIRMED_SAVE, null, fallbackCode || 'RECORD_RESPONSE_INVALID'))
   }
   if (!response.ok) {
-    throw new Error(data.message || data.error || 'The plate could not be saved. Please try again.')
+    const message = response.status >= 500 && data.error !== 'record_save_failed'
+      ? UNCONFIRMED_SAVE
+      : data.message || data.error || 'The plate could not be saved. Please try again.'
+    throw new Error(formatApiError(message, data, fallbackCode))
   }
   if (data.status !== 'success') {
-    throw new Error('Could not confirm whether the plate was saved. Check Plate Tracking History before trying again.')
+    throw new Error(formatApiError(UNCONFIRMED_SAVE, data, 'RECORD_RESPONSE_UNCONFIRMED'))
   }
   return data
 }

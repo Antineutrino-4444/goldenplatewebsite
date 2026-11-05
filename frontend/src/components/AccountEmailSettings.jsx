@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { HelpLabel } from '@/components/HelpTip.jsx'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
@@ -28,7 +29,7 @@ function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), captcha_token: token }),
       })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) throw new Error(result.error || 'Unable to send the verification email.')
       setSent(true)
       setCode('')
@@ -49,7 +50,7 @@ function AccountEmailForm({ app, required = false, onSaved, onDismiss }) {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), verification_code: code }),
       })
-      const result = await response.json()
+      const result = await readApiJson(response)
       if (!response.ok) throw new Error(result.error || 'Unable to verify your email.')
       app.setUser(result.user)
       app.showMessage(result.message, 'success')

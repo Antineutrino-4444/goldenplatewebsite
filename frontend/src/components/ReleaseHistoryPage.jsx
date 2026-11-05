@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { PublicFooter } from '@/components/LandingPage.jsx'
@@ -6,19 +7,20 @@ import { ReleaseEntry } from '@/components/ReleaseNotes.jsx'
 export default function ReleaseHistoryPage() {
   const { hash } = useLocation()
   const [entries, setEntries] = useState(null)
-  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     document.title = 'Release history · Golden Plate'
     const controller = new AbortController()
     fetch('/api/release-notes?view=history', { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('Release history failed to load')
-        return response.json()
+      .then(async (response) => {
+        const data = await readApiJson(response)
+        if (!response.ok) throw new Error(data.error)
+        return data
       })
       .then((data) => { if (!controller.signal.aborted) setEntries(data.entries) })
-      .catch(() => { if (!controller.signal.aborted) setLoadFailed(true) })
+      .catch((failure) => { if (!controller.signal.aborted) setLoadError(failure.message || 'Couldn’t load the release history.') })
     return () => controller.abort()
   }, [attempt])
 
@@ -35,9 +37,9 @@ export default function ReleaseHistoryPage() {
           <h1>Release history</h1>
           <p className="text-muted-foreground">What’s changed in Golden Plate, newest first.</p>
         </header>
-        {loadFailed ? <div role="alert" className="gp-session-state">
-          <p>Couldn’t load the release history.</p>
-          <button className="gp-text-link" onClick={() => { setLoadFailed(false); setAttempt(attempt + 1) }}>Try again</button>
+        {loadError ? <div role="alert" className="gp-session-state">
+          <p>{loadError}</p>
+          <button className="gp-text-link" onClick={() => { setLoadError(''); setAttempt(attempt + 1) }}>Try again</button>
         </div> : entries ? (
           entries.length ? entries.map((entry) => <ReleaseEntry key={entry.version} {...entry} publicHistory />)
             : <p>No release notes have been published yet.</p>

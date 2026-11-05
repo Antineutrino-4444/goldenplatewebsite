@@ -1,3 +1,4 @@
+import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button.jsx'
@@ -28,7 +29,7 @@ export default function MatchSessionRoster({ sessionId, loading, onMatched, onMa
     setMessage('')
     try {
       const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/roster/current`, { method: 'POST' })
-      const data = await response.json()
+      const data = await readApiJson(response)
       if (!mounted.current) return
       if (!response.ok) {
         setError(data.error || 'Unable to match this session to the current roster.')

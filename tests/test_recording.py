@@ -1,11 +1,16 @@
 import csv
 import io
+import sqlite3
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+from threading import Barrier
 
 import pytest
+from sqlalchemy import event
 
 from src.routes.golden_plate_recorder_db.db import (
-    Session as SessionModel, SessionRecord, SessionTicketEvent, Student, db_session,
+    Session as SessionModel, SessionRecord, SessionTicketEvent, Student, db_session, engine,
 )
 from src.routes.golden_plate_recorder_db.storage import hydrate_session_from_db
 
@@ -182,6 +187,85 @@ def test_failed_save_does_not_leave_phantom_duplicate_or_counts(client, login, m
         assert duplicate.status_code == 409
         assert duplicate.get_json()['existing_category'] == category
         assert 'No new plate was added' in duplicate.get_json()['message']
+
+
+def test_simultaneous_clean_submissions_save_one_plate_and_ticket(client, login, monkeypatch):
+    from src.main import app
+    from src.routes.golden_plate_recorder_db import session_routes
+    from src.routes.golden_plate_recorder_db.draw_db import get_student_ticket_balance
+
+    login()
+    upload_csv(client)
+    session_id = client.post('/api/session/create', json={'session_name': 'concurrent-clean'}).get_json()['session_id']
+    with client.session_transaction() as browser_session:
+        browser_state = dict(browser_session)
+
+    both_passed_duplicate_check = Barrier(2, timeout=10)
+    prepare_roster = session_routes.prepare_recording_roster
+
+    def sync_before_insert(meal):
+        prepare_roster(meal)
+        both_passed_duplicate_check.wait()
+
+    def submit():
+        browser = app.test_client()
+        with browser.session_transaction() as browser_session:
+            browser_session.update(browser_state)
+        return browser.post('/api/record/clean', json={'input_value': 'John Doe (123)'})
+
+    monkeypatch.setattr(session_routes, 'prepare_recording_roster', sync_before_insert)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(submit) for _ in range(2)]
+        responses = sorted((pending.result() for pending in requests), key=lambda response: response.status_code)
+
+    assert [response.status_code for response in responses] == [200, 409]
+    duplicate = responses[1].get_json()
+    assert duplicate['error'] == 'duplicate'
+    assert duplicate['existing_category'] == 'clean'
+    assert 'No new plate was added' in duplicate['message']
+    record = db_session.query(SessionRecord).filter_by(session_id=session_id).one()
+    assert db_session.query(SessionTicketEvent).filter_by(session_id=session_id, session_record_id=record.id).count() == 1
+    assert get_student_ticket_balance(record.student_id) == 1
+    assert client.get('/api/session/status').get_json()['clean_count'] == 1
+
+
+@pytest.mark.parametrize('release_lock', [True, False])
+def test_fast_sqlite_lock_failure_retries_once(client, login, monkeypatch, release_lock):
+    from src.routes.golden_plate_recorder_db import session_routes
+
+    login()
+    upload_csv(client)
+    session_id = client.post('/api/session/create', json={'session_name': f'locked-{release_lock}'}).get_json()['session_id']
+    retries = []
+
+    def skip_sqlite_wait(connection, *_):
+        connection.execute('PRAGMA busy_timeout=0')
+
+    with closing(sqlite3.connect(engine.url.database)) as writer:
+        def retry_delay(seconds):
+            retries.append(seconds)
+            if release_lock:
+                writer.rollback()
+
+        monkeypatch.setattr(session_routes, 'sleep', retry_delay)
+        monkeypatch.setattr(session_routes, 'monotonic', lambda: 0)
+        event.listen(engine, 'checkout', skip_sqlite_wait)
+        try:
+            writer.execute('BEGIN IMMEDIATE')
+            response = client.post('/api/record/clean', json={'input_value': '123'})
+        finally:
+            event.remove(engine, 'checkout', skip_sqlite_wait)
+            engine.dispose()
+
+    assert len(retries) == 1
+    assert db_session.query(SessionRecord).filter_by(session_id=session_id).count() == int(release_lock)
+    assert db_session.query(SessionTicketEvent).filter_by(session_id=session_id).count() == int(release_lock)
+    if release_lock:
+        assert response.status_code == 200
+    else:
+        assert response.status_code == 503
+        assert response.get_json()['error'] == 'record_save_failed'
+        assert 'database is busy' in response.get_json()['message']
 
 
 def test_lookup_refresh_failure_does_not_report_a_committed_plate_as_failed(client, login, monkeypatch):
