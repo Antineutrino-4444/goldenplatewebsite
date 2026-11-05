@@ -1,8 +1,19 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.2.0 d7ce074380cac616e9bd6259f782d701cffa4d9b -->
+<!-- golden-plate-release-baseline: 1.2.3.0 ba3a3ff10ef36dac1907c08fedde86029fe719b6 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.3.0
+
+November 5, 2026 · Live Server Log and clearer error messages
+
+Author: Jiajun (Leo) Li
+
+- Inter-school administrators can open Server Log under Inter-School Administration to see requests from signed-in users, guests, and anonymous visitors across schools. The log refreshes every three seconds and shows when each request ran, what action it performed, and how long it took.
+- Use Find an action to search by account, school, route, error code, or reference. Select Failures only to narrow the results, Pause to hold the feed, or Jump to latest to return to the newest requests. The live view shows up to 200 matches. Export CSV downloads all matching entries from the last 30 days.
+- Error messages across the site now include codes when a server request fails. Server errors also include a reference for that occurrence, which inter-school administrators can look up in Server Log when helping someone troubleshoot.
+- The Recorder now retries some brief database conflicts. When two staff members submit the same plate at nearly the same time, the second submission can receive the usual duplicate message. If the Recorder can’t confirm whether a plate was saved, it directs staff to check Plate Tracking History before trying again.
 
 ## 1.2.2.0
 
