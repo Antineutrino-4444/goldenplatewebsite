@@ -1,8 +1,21 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.3.0 ba3a3ff10ef36dac1907c08fedde86029fe719b6 -->
+<!-- golden-plate-release-baseline: 1.2.4.0 10e7190b66d2bf1af734a1bb2b0fe20414b0fea0 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.4.0
+
+November 6, 2026 · Plate Leaderboards and faculty ticket draws
+
+Author: Jiajun (Leo) Li
+
+- Open Plate Leaderboards in the Recorder to compare students and teachers across sessions by Tickets or Clean Plates. The Very Dirty Plates tab ranks students. Signed-in users can search by name or displayed roster ID, and IDs appear when ranked names repeat and an ID is available.
+- Each signed-in ranking shows plate counts, ticket balance, finalized wins, and win chance where applicable. Student entries also show the share of their recorded plates that were clean. Win chance uses the current unfinished draw, the next eligible session, or a projection from current balances if no eligible session is available. Guests can see plate rankings based on public sessions, with roster IDs, ticket balances, and draw odds hidden.
+- In Draw Center, school admins and superadmins can run and finalize separate Faculty Ticket Draw and Student Ticket Draw results. Each section shows the top three candidates, the eligible list, the selected winner, and its own draw history. School superadmins can override a faculty winner or reset a finalized faculty draw from Faculty draw options.
+- Faculty win chances are weighted by eligible tickets. Teachers on the roster carry tickets across sessions and need a qualifying clean plate in the session being drawn. Faculty entered by name can earn tickets for that session. Finalizing a faculty winner resets the winner’s applicable ticket balance.
+- House Rankings has a Tickets tab that totals the current ticket balances of students assigned to each house. Updated ranking bars show how scores and clean rates compare, and Estimates marks the predicted values and ranges.
+- The macOS local deployment launcher is now named `deploy_local.command`.
 
 ## 1.2.3.0
 
