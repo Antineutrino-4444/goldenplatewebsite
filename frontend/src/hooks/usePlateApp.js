@@ -154,12 +154,13 @@ export function usePlateApp() {
   const [facultyPick, setFacultyPick] = useState(null)
   const [facultyPickLoading, setFacultyPickLoading] = useState(false)
   const [drawActionComment, setDrawActionComment] = useState('')
+  const [facultyDrawActionComment, setFacultyDrawActionComment] = useState('')
 
   // House stats state
   const houseStatsRequest = useRef(0)
   const [houseStats, setHouseStats] = useState(null)
   const [houseStatsLoading, setHouseStatsLoading] = useState(false)
-  const [houseSortBy, setHouseSortBy] = useState('estimates') // 'score', 'count', 'percentage', or 'estimates'
+  const [houseSortBy, setHouseSortBy] = useState('score')
 
   // Notification and modal states
   const [notification, setNotification] = useState(null)
@@ -1256,6 +1257,7 @@ export function usePlateApp() {
         setTeacherPreviewData(null)
         setTeacherPreviewSearch('')
         await loadTeacherNames()
+        await loadDrawSummary({ silent: true, background: true })
       } else {
         showMessage(data.error || 'Failed to upload teacher list', 'error')
       }
@@ -1575,6 +1577,7 @@ export function usePlateApp() {
           ticket_snapshot: data.ticket_snapshot ?? {},
           generated_at: data.generated_at ?? new Date().toISOString(),
           draw_info: data.draw_info ?? null,
+          faculty_draw: data.faculty_draw ?? null,
           history: data.history ?? [],
           main_session_id: data.main_session_id ?? null,
           is_extra: Boolean(data.is_extra ?? data.main_session_id),
@@ -1665,6 +1668,7 @@ export function usePlateApp() {
         generated_at: summaryData.generated_at ?? new Date().toISOString(),
         history: summaryData.history ?? drawSummary?.history ?? [],
         draw_info: data.draw_info ?? sessionStats.draw_info,
+        faculty_draw: summaryData.faculty_draw ?? drawSummary?.faculty_draw ?? null,
         main_session_id: summaryData.main_session_id ?? drawSummary?.main_session_id ?? null,
         is_extra: Boolean(summaryData.is_extra ?? summaryData.main_session_id ?? drawSummary?.is_extra),
         extra_session_count: summaryData.extra_session_count ?? drawSummary?.extra_session_count ?? 0
@@ -1690,23 +1694,37 @@ export function usePlateApp() {
     }
   }
 
+  const submitFacultyAction = async (action, payload, successMessage, errorMessage) => {
+    setFacultyPickLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/${action}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, comment: facultyDrawActionComment.trim() }),
+      })
+      const data = await readApiJson(response)
+      if (!response.ok) {
+        showMessage(data.error || errorMessage, 'error')
+        return false
+      }
+      setFacultyPick(data.faculty ?? null)
+      setFacultyDrawActionComment('')
+      await loadDrawSummary({ silent: true })
+      if (successMessage) showMessage(successMessage, 'success')
+      return true
+    } catch {
+      showMessage(errorMessage, 'error')
+      return false
+    } finally {
+      setFacultyPickLoading(false)
+    }
+  }
+
   const pickRandomFaculty = async ({ confirmed = false } = {}) => {
-    if (!sessionId) {
-      showMessage('Select a session before picking a faculty name', 'error')
+    if (!sessionId || !canManageDraw || isSessionDiscarded || isExtraSession) return
+    if ((drawSummary?.faculty_draw?.total_tickets ?? 0) <= 0) {
+      showMessage('This session needs eligible faculty tickets', 'error')
       return
     }
-
-    if (isSessionDiscarded) {
-      showMessage('Restore the session before picking a faculty name', 'error')
-      return
-    }
-
-    if ((sessionStats.faculty_clean_count ?? 0) <= 0) {
-      showMessage('Add at least one faculty record before picking a name', 'error')
-      return
-    }
-
-    if (!canManageDraw) return
     if (facultyPick?.finalized && !confirmed) {
       setModal({
         type: 'confirm', title: 'Redo the finalized faculty draw?', confirmLabel: 'Redo faculty draw',
@@ -1715,58 +1733,22 @@ export function usePlateApp() {
       })
       return
     }
-    setFacultyPickLoading(true)
-    try {
-      const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/pick`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm_redraw: confirmed })
-      })
-      const data = await readApiJson(response)
-
-      if (response.ok) {
-        const faculty = data.faculty || {}
-        const preferred = normalizeName(faculty.preferred_name)
-        const last = normalizeName(faculty.last_name)
-        const displayName = (faculty.display_name || `${preferred} ${last}`.trim()).trim() || 'Faculty Member'
-
-        setFacultyPick({
-          preferred_name: preferred,
-          last_name: last,
-          display_name: displayName,
-          recorded_at: faculty.recorded_at || null,
-          recorded_by: faculty.recorded_by || null,
-          finalized: Boolean(faculty.finalized),
-          finalized_at: faculty.finalized_at || null
-        })
-        await loadDrawSummary({ silent: true })
-      } else {
-        showMessage(data.error || 'Failed to pick a faculty name', 'error')
-      }
-    } catch (error) {
-      showMessage('Failed to pick a faculty name', 'error')
-    } finally {
-      setFacultyPickLoading(false)
-    }
+    await submitFacultyAction('pick', { confirm_redraw: confirmed }, '', 'Failed to start faculty draw')
   }
 
   const finalizeFacultyWinner = async () => {
     if (!sessionId || !canManageDraw || !facultyPick || facultyPick.finalized) return
-    setFacultyPickLoading(true)
-    try {
-      const response = await fetch(`${API_BASE}/session/${sessionId}/faculty/finalize`, { method: 'POST' })
-      const data = await readApiJson(response)
-      if (response.ok) {
-        setFacultyPick(data.faculty)
-        await loadDrawSummary({ silent: true })
-        showMessage('Faculty winner finalized', 'success')
-      } else {
-        showMessage(data.error || 'Failed to finalize faculty winner', 'error')
-      }
-    } catch {
-      showMessage('Failed to finalize faculty winner', 'error')
-    } finally {
-      setFacultyPickLoading(false)
-    }
+    await submitFacultyAction('finalize', {}, 'Faculty winner finalized', 'Failed to finalize faculty winner')
+  }
+
+  const resetFacultyWinner = async () => {
+    if (!sessionId || !canManageDraw || !facultyPick) return
+    await submitFacultyAction('reset', {}, 'Faculty draw reset', 'Failed to reset faculty draw')
+  }
+
+  const overrideFacultyWinner = async (recordId) => {
+    if (!sessionId || !canOverrideWinner || !recordId) return false
+    return submitFacultyAction('override', { record_id: recordId }, 'Faculty winner overridden', 'Failed to override faculty winner')
   }
 
   const startDrawProcess = async ({ confirmed = false } = {}) => {
@@ -2809,6 +2791,7 @@ export function usePlateApp() {
     hasStudentRecords,
     canExportSessionData,
     drawActionComment,
+    facultyDrawActionComment,
     selectedCandidate,
     overrideOptions,
     sessionDashboardStats,
@@ -2850,6 +2833,9 @@ export function usePlateApp() {
     loadDrawSummary,
     applyDrawResponse,
     setDrawActionComment,
+    setFacultyDrawActionComment,
+    resetFacultyWinner,
+    overrideFacultyWinner,
     pickRandomFaculty,
     finalizeFacultyWinner,
     startDrawProcess,

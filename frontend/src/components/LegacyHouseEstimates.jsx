@@ -1,3 +1,5 @@
+import { RankNumber, RankingTrack } from './RankingVisuals.jsx'
+
 const number = (value) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)
 const range = (values) => values.map(number).join('–')
 const scoreRange = (values) => values.map(number).join(' to ')
@@ -64,23 +66,31 @@ export default function HouseEstimates({ estimation }) {
       {estimation?.reason || 'Estimated scores are unavailable for this session.'}
     </p>
   }
+  const min = Math.min(0, ...estimation.house_stats.map((house) => Math.min(house.score, house.score_interval[0])))
+  const max = Math.max(0, ...estimation.house_stats.map((house) => Math.max(house.score, house.score_interval[1])))
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {estimation.house_estimates_available === false && <p role="status" className="py-3 text-sm text-gray-600">
         {estimation.house_estimates_reason}
       </p>}
+      {!!estimation.house_stats.length && (
+        <p className="text-sm text-muted-foreground">Each bar shows the estimated score range. The dot marks the point estimate.</p>
+      )}
       {estimation.house_stats.map((house) => (
-        <div key={house.house} className="rounded-lg border bg-white p-4 space-y-3">
+        <div key={house.house} className="space-y-4 rounded-lg border bg-gray-50 p-3 sm:p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold text-gray-900">{house.house}</p>
-              <p className="text-sm font-medium text-teal-800">
-                Point estimate rank #{house.point_rank}
-              </p>
-              <p className={`text-xs ${house.rank_range[0] === house.rank_range[1] ? 'text-teal-800' : 'text-amber-800'}`}>
-                {house.rank_range[0] === house.rank_range[1]
-                  ? `Clear rank: ${house.rank_range[0]}` : `Order uncertain • Range-based rank: ${range(house.rank_range)}`}
-              </p>
+            <div className="flex min-w-0 items-center gap-3">
+              <RankNumber rank={house.point_rank} />
+              <div>
+                <p className="font-semibold">{house.house}</p>
+                <p className="text-sm font-medium text-teal-800">
+                  Point estimate rank #{house.point_rank}
+                </p>
+                <p className={`text-xs ${house.rank_range[0] === house.rank_range[1] ? 'text-teal-800' : 'text-amber-800'}`}>
+                  {house.rank_range[0] === house.rank_range[1]
+                    ? `Clear rank: ${house.rank_range[0]}` : `Order uncertain • Range-based rank: ${range(house.rank_range)}`}
+                </p>
+              </div>
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-600">95% score range: {scoreRange(house.score_interval)}</p>
@@ -88,6 +98,7 @@ export default function HouseEstimates({ estimation }) {
               <p className="text-xs text-gray-500">Point estimate</p>
             </div>
           </div>
+          <RankingTrack value={house.score} range={house.score_interval} min={min} max={max} tone={house.score < 0 ? 'red' : 'teal'} />
         </div>
       ))}
     </div>

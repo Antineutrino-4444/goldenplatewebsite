@@ -60,22 +60,23 @@ def get_or_create_session_draw(session_id: str) -> SessionModel:
     return session
 
 
-def calculate_ticket_balances() -> Dict[str, float]:
+def calculate_ticket_balances(school_id: Optional[str] = None) -> Dict[str, float]:
     """Return stored cumulative ticket balances for all students.
 
     This is the roster ledger.  Manual entries are replayed from their
     session's records instead; see :func:`get_draw_ticket_totals`.
     """
-    pool_entries = (
+    pool_query = (
         db_session.query(DraftPool.student_id, DraftPool.ticket_number)
         .join(Student, DraftPool.student_id == Student.id)
         .filter(DraftPool.ticket_number > 0)
-        .all()
     )
+    if school_id is not None:
+        pool_query = pool_query.filter(DraftPool.school_id == school_id, Student.school_id == school_id)
 
     return {
         student_id: float(ticket_number)
-        for student_id, ticket_number in pool_entries
+        for student_id, ticket_number in pool_query
         if student_id
     }
 
@@ -257,32 +258,25 @@ def perform_weighted_draw(
     Returns (winner_student, winner_tickets, probability, pool_size)
     """
     eligible = get_eligible_students_with_tickets(session_id)
-    
+    return choose_weighted_candidate(eligible)
+
+
+def choose_weighted_candidate(eligible):
+    """Return the winner, their tickets, their percentage chance, and pool size."""
     if not eligible:
         return None, 0.0, 0.0, 0
-    
+
     total_tickets = sum(tickets for _, tickets in eligible)
-    
-    # Perform weighted random selection
     target = secure_random.random() * total_tickets
     cumulative = 0.0
-    winner = None
-    winner_tickets = 0.0
-    
-    for student, tickets in eligible:
+
+    for candidate, tickets in eligible:
         cumulative += tickets
-        if target <= cumulative:
-            winner = student
-            winner_tickets = tickets
-            break
-    
-    # Fallback to first student if something went wrong
-    if winner is None and eligible:
-        winner, winner_tickets = eligible[0]
-    
-    probability = (winner_tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
-    
-    return winner, winner_tickets, probability, len(eligible)
+        if target < cumulative:
+            return candidate, tickets, tickets / total_tickets * 100.0, len(eligible)
+
+    candidate, tickets = eligible[-1]
+    return candidate, tickets, tickets / total_tickets * 100.0, len(eligible)
 
 
 def record_draw_event(

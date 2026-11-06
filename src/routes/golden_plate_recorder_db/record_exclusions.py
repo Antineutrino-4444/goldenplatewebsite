@@ -9,6 +9,7 @@ from .db import (RecordExclusionEvent, RosterSnapshot, School, Session, SessionR
                  SessionTicketEvent, Student, _now_utc, db_session)
 from .draw_db import (get_clean_student_ids_for_session, get_student_ticket_balance,
                       record_draw_event, update_draft_pool)
+from .faculty_draw import clear_faculty_pick
 from .utils import normalize_house, plate_count_label
 from .person_identity import record_names
 
@@ -137,16 +138,12 @@ def set_record_excluded(meal, row, excluded, actor_id, reason):
         draw.finalized = draw.override_applied = 0
         draw.updated_at = _now_utc()
         reset_sessions.append(draw.id)
-    if row.category == 'faculty' and meal.faculty_pick_display_name:
-        event = record_draw_event(meal, 'restore', actor_id,
-                                  comment='Faculty draw cleared after a record was excluded or restored.')
-        event.draw_target = 'faculty'
-        event.faculty_name = meal.faculty_pick_display_name
-        event.selected_record_id = meal.faculty_pick_record_id
-        event.selected_teacher_id = meal.faculty_pick_teacher_id
-        for field in ('faculty_pick_preferred_name', 'faculty_pick_last_name', 'faculty_pick_display_name',
-                      'faculty_pick_recorded_at', 'faculty_pick_recorded_by', 'faculty_pick_record_id', 'faculty_pick_teacher_id',
-                      'faculty_finalized_at', 'faculty_finalized_by'):
-            setattr(meal, field, None)
-        meal.faculty_finalized = 0
+    if row.category == 'faculty' and not row.dedupe_key.startswith('count:'):
+        faculty_draws = db_session.query(Session).filter(
+            Session.school_id == meal.school_id,
+            Session.id.in_({meal.id, target_id}),
+            Session.faculty_pick_display_name.isnot(None),
+        )
+        for draw in faculty_draws:
+            clear_faculty_pick(draw, actor_id, 'Faculty draw cleared after a record was excluded or restored.')
     return reset_sessions

@@ -14,4 +14,4 @@ def test_deploy_script_matches_vite_output_path():
 def test_both_deployment_scripts_start_application_directly():
     root = Path(__file__).resolve().parent.parent
     assert 'python src\\main.py' in (root / 'deploy.bat').read_text()
-    assert 'python src/main.py' in (root / 'deploy_local.sh').read_text()
+    assert 'python src/main.py' in (root / 'deploy_local.command').read_text()

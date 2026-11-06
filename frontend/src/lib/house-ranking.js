@@ -8,6 +8,9 @@ export const compareHouses = (a, b, sortBy) => {
   if (sortBy === 'score') {
     return b.score - a.score || a.house.localeCompare(b.house)
   }
+  if (sortBy === 'tickets') {
+    return b.tickets - a.tickets || a.house.localeCompare(b.house)
+  }
   if (sortBy === 'percentage') {
     return b.clean_rate - a.clean_rate || b.total_count - a.total_count || a.house.localeCompare(b.house)
   }

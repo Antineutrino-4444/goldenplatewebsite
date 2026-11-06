@@ -2,6 +2,7 @@ import { readApiJson } from '../lib/api-errors.js'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import LegacyHouseEstimates, { HouseEstimateDetails as LegacyDetails } from './LegacyHouseEstimates.jsx'
+import { RankNumber, RankingTrack } from './RankingVisuals.jsx'
 
 const model = 'conditional_clean_percentage_hypergeometric'
 const number = (value) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)
@@ -105,19 +106,25 @@ export default function HouseEstimates({ estimation }) {
   if (!estimation.available) return <p role="status" className="py-6 text-sm text-gray-600">{estimation.reason}</p>
   return <div className="space-y-3">
     {estimation.refresh_failed && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Unable to refresh. Showing the last available estimates; retrying automatically.</p>}
-    <p className="text-sm text-gray-500">Overlapping ranges indicate an uncertain order.</p>
+    <p className="text-sm text-muted-foreground">Each bar shows the 90% prediction interval. The dot marks the estimate. Overlapping ranges indicate an uncertain order.</p>
     {estimation.house_estimates_available === false && <p role="status" className="py-3 text-sm text-gray-600">{estimation.house_estimates_reason}</p>}
-    {estimation.house_stats.map((house) => <div key={house.house} className="min-w-0 rounded-lg border bg-white p-4 shadow-sm space-y-3 [overflow-wrap:anywhere]">
+    {estimation.house_stats.map((house) => <div key={house.house} className="min-w-0 space-y-4 rounded-lg border bg-gray-50 p-3 sm:p-4 [overflow-wrap:anywhere]">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-gray-900">{house.house}</p>
-          <p className="text-sm font-medium text-teal-800">{house.percentage_rank == null ? 'Unranked • No participants possible' : `Estimated rank #${house.percentage_rank}`}</p>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <RankNumber rank={house.percentage_rank} />
+          <div>
+            <p className="font-semibold">{house.house}</p>
+            <p className="text-sm font-medium text-teal-800">{house.percentage_rank == null ? 'Unranked • No participants possible' : `Estimated rank #${house.percentage_rank}`}</p>
+          </div>
         </div>
         <div className="shrink-0 text-right">
           <p className="text-2xl font-bold tabular-nums text-emerald-700">{house.clean_percentage_display == null ? '—' : `${house.clean_percentage_display}%`}</p>
           <p className="text-xs text-gray-500">Estimated clean rate</p>
         </div>
       </div>
+      {house.clean_percentage_interval && (
+        <RankingTrack value={house.clean_percentage} range={house.clean_percentage_interval} max={100} />
+      )}
       <div className="grid gap-2 text-sm sm:grid-cols-2">
         <div><p className="text-xs text-gray-500">90% percentage prediction interval</p><p>{house.clean_percentage_interval == null ? 'Unavailable' : interval(house.clean_percentage_interval)}</p></div>
         <div><p className="text-xs text-gray-500">90% rank confidence range</p><p>{house.rank_range ? (house.rank_range[0] === house.rank_range[1] ? `#${house.rank_range[0]}` : `#${house.rank_range[0]}–#${house.rank_range[1]}`) : 'Unranked'}</p></div>

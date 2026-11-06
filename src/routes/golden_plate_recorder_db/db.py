@@ -275,6 +275,7 @@ class Teacher(Base):
     last_name = Column(String)
     faculty_identifier = Column(String)
     is_active = Column(Integer, nullable=False, default=1, server_default='1')
+    faculty_tickets_reset_at = Column(DateTime(timezone=True))
 
 
 class Session(Base):
@@ -349,6 +350,7 @@ class SessionRecord(Base):
     session_id = Column(String, ForeignKey('sessions.id', ondelete='CASCADE'), nullable=False)
     student_id = Column(String, ForeignKey('students.id'))
     teacher_id = Column(String, ForeignKey('teachers.id'))
+    faculty_roster_entry = Column(Integer)
     category = Column(String, nullable=False)
     grade = Column(String)
     house = Column(String)
@@ -392,6 +394,7 @@ class SessionDrawEvent(Base):
     event_type = Column(String, nullable=False)
     draw_target = Column(String, nullable=False, default='student', server_default='student')
     faculty_name = Column(String)
+    faculty_ticket_scope = Column(String)
     selected_record_id = Column(String, ForeignKey('session_records.id'))
     selected_student_id = Column(String, ForeignKey('students.id'))
     selected_teacher_id = Column(String, ForeignKey('teachers.id'))
@@ -868,6 +871,8 @@ def _migrate_schema() -> None:
         _ensure_column(inspector, 'teachers', 'last_name', 'TEXT')
         _ensure_column(inspector, 'teachers', 'faculty_identifier', 'TEXT')
         _ensure_column(inspector, 'teachers', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
+        reset_time_type = Teacher.__table__.c.faculty_tickets_reset_at.type.compile(dialect=engine.dialect)
+        _ensure_column(inspector, 'teachers', 'faculty_tickets_reset_at', reset_time_type)
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
@@ -1038,12 +1043,14 @@ def _migrate_schema() -> None:
             ('excluded_at', 'DATETIME'), ('excluded_by', 'TEXT'), ('exclusion_reason', 'TEXT'),
             ('student_profile', 'TEXT'),
             ('teacher_id', 'TEXT REFERENCES teachers(id)'),
+            ('faculty_roster_entry', 'INTEGER'),
         ]:
             _ensure_column(inspector, 'session_records', column_name, ddl)
 
     if 'session_draw_events' in tables:
         _ensure_column(inspector, 'session_draw_events', 'draw_target', "TEXT NOT NULL DEFAULT 'student'")
         _ensure_column(inspector, 'session_draw_events', 'faculty_name', 'TEXT')
+        _ensure_column(inspector, 'session_draw_events', 'faculty_ticket_scope', 'TEXT')
         _ensure_column(inspector, 'session_draw_events', 'selected_teacher_id', 'TEXT REFERENCES teachers(id)')
 
     if 'draft_pool' in tables:

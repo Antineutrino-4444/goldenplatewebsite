@@ -373,6 +373,22 @@ def test_excluded_faculty_record_invalidates_faculty_draw_and_counts(client, sch
     assert client.post(f'/api/session/{session_id}/faculty/pick', json={}).status_code == 200
 
 
+def test_merged_faculty_plates_can_enter_main_draw_and_exclusion_clears_selection(client, school):
+    main_id = create(client)
+    extra_id = create(client)
+    assert client.post('/api/record/faculty', json={'input_value': 'Extra Faculty'}).status_code == 200
+    record_id = db_session.query(SessionRecord.id).filter_by(session_id=extra_id, category='faculty').scalar()
+    assert client.post(f'/api/session/{extra_id}/merge', json={'main_session_id': main_id}).status_code == 200
+    assert client.post(f'/api/session/{extra_id}/faculty/pick').status_code == 400
+    pick = client.post(f'/api/session/{main_id}/faculty/pick')
+    assert pick.get_json()['faculty']['display_name'] == 'Extra Faculty'
+    assert exclude(client, extra_id, record_id).status_code == 200
+    summary = client.get(f'/api/session/{main_id}/draw/summary').get_json()
+    assert summary['faculty_draw']['total_tickets'] == 0
+    assert [event['event_type'] for event in summary['history']] == ['faculty_draw', 'faculty_restore']
+    assert client.post(f'/api/session/{main_id}/faculty/finalize').status_code == 400
+
+
 def test_exclusion_failure_rolls_back_counts_tickets_audit_and_cached_records(client, school, monkeypatch):
     from sqlalchemy.exc import SQLAlchemyError
     session_id = create(client)

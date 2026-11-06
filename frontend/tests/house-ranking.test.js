@@ -18,6 +18,12 @@ test('count and clean rate tabs retain their ranking rules', () => {
   assert.deepEqual(houses.slice().sort((a, b) => compareHouses(a, b, 'percentage')).map((h) => h.house), ['B', 'A', 'C', 'D'])
 })
 
+test('house tickets sort by the current balance with alphabetical ties', () => {
+  const balances = [{ house: 'Oak', tickets: 2 }, { house: 'Maple', tickets: 2 }, { house: 'Elm', tickets: 5 }]
+  assert.deepEqual(balances.sort((a, b) => compareHouses(a, b, 'tickets')).map((house) => house.house),
+    ['Elm', 'Maple', 'Oak'])
+})
+
 test('equal scores including zero use a stable alphabetical order', () => {
   const tied = houses.map((h) => ({ ...h, score: 0 })).reverse()
   assert.deepEqual(tied.sort((a, b) => compareHouses(a, b, 'score')).map((h) => h.house), ['A', 'B', 'C', 'D'])

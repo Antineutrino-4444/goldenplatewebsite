@@ -6,6 +6,8 @@ import DisabledAccounts from '@/components/DisabledAccounts.jsx'
 import React, { useRef, useState } from 'react'
 import AdminSessionExport from '@/components/AdminSessionExport.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
+import IndividualRankings from '@/components/IndividualRankings.jsx'
+import DrawColumn, { DrawOptions, FacultyOverride } from '@/components/DrawColumn.jsx'
 import HouseScoreSettings from '@/components/HouseScoreSettings.jsx'
 import GuestPrivacySettings from '@/components/GuestPrivacySettings.jsx'
 import PortalHeader from '@/components/PortalHeader.jsx'
@@ -33,19 +35,15 @@ import {
   Copy,
   Download,
   FileText,
-  History,
-  ListOrdered,
   Plus,
   RefreshCcw,
   Shield,
   ShieldCheck,
-  Sparkles,
   Trash2,
   Trophy,
   Upload,
   UserPlus,
   Users,
-  Wand2,
   XCircle
 } from 'lucide-react'
 
@@ -94,7 +92,6 @@ function MainPortal({ app }) {
     canManageDraw,
     canOverrideWinner,
     selectedCandidate,
-    selectedCandidateKey,
     setSelectedCandidateKey,
     drawSummary,
     drawSummaryLoading,
@@ -104,6 +101,10 @@ function MainPortal({ app }) {
     setIsDrawCenterCollapsed,
     drawActionComment,
     setDrawActionComment,
+    facultyDrawActionComment,
+    setFacultyDrawActionComment,
+    resetFacultyWinner,
+    overrideFacultyWinner,
     facultyPick,
     facultyPickLoading,
     pickRandomFaculty,
@@ -216,16 +217,38 @@ function MainPortal({ app }) {
   } = app
 
   const deleteRequestsCount = deleteRequests.length
-  let startDrawBlockedReason = ''
-  if (!canManageDraw || user?.role === 'guest') {
-    startDrawBlockedReason = 'Ask a school admin or superadmin to run the draw.'
-  } else if (isSessionDiscarded) {
-    startDrawBlockedReason = 'A school superadmin can restore this session to enable its draw.'
-  } else if (drawActionLoading) {
-    startDrawBlockedReason = 'Wait for the current draw action to finish.'
-  } else if (!hasStudentRecords || (drawSummary?.total_tickets ?? 0) <= 0) {
-    startDrawBlockedReason = 'This session needs eligible student tickets. Check that students are on the roster and have qualifying plate records.'
+  const facultyDraw = drawSummary?.faculty_draw
+  const history = drawSummary?.history ?? []
+  const facultyHistory = history.filter((entry) => entry.event_type.startsWith('faculty_'))
+  const studentHistory = history.filter((entry) => !entry.event_type.startsWith('faculty_'))
+  const facultySelection = facultyHistory.findLast((entry) => ['faculty_draw', 'faculty_override'].includes(entry.event_type))
+  const studentSelection = studentHistory.findLast((entry) => ['draw', 'override'].includes(entry.event_type))
+  const facultyWinner = facultyPick && {
+    ...facultyPick,
+    selectedAt: facultySelection?.timestamp,
+    tickets: facultySelection?.tickets,
+    probability: facultySelection?.probability,
+    overridden: facultySelection?.event_type === 'faculty_override',
   }
+  const studentWinner = currentDrawInfo?.winner && {
+    ...currentDrawInfo.winner,
+    finalized: currentDrawInfo.finalized,
+    selectedAt: currentDrawInfo.winner_timestamp || studentSelection?.timestamp,
+    tickets: currentDrawInfo.tickets_at_selection,
+    probability: currentDrawInfo.probability_at_selection,
+    overridden: currentDrawInfo.override_applied || currentDrawInfo.method === 'override',
+  }
+
+  const drawUnavailable = !canManageDraw
+    ? 'Ask a school admin or superadmin to run the draw.'
+    : isSessionDiscarded ? 'A school superadmin can restore this session to enable its draw.' : ''
+  const startFacultyBlockedReason = drawUnavailable || (facultyPickLoading
+    ? 'Wait for the current faculty draw action to finish.'
+    : (facultyDraw?.total_tickets ?? 0) <= 0 ? 'Record an eligible faculty clean plate to earn a ticket.' : '')
+  const startStudentBlockedReason = drawUnavailable || (drawActionLoading
+    ? 'Wait for the current student draw action to finish.'
+    : !hasStudentRecords || (drawSummary?.total_tickets ?? 0) <= 0
+      ? 'Record an eligible student clean plate to earn a ticket.' : '')
 
   return (
     <div className="min-h-screen min-w-0 bg-gray-50 [overflow-wrap:anywhere]">
@@ -398,6 +421,7 @@ function MainPortal({ app }) {
             <div role="group" aria-label="Session sections" className="mb-4 flex flex-wrap gap-2 text-sm">
               {[
                 ['rankings', 'House rankings', 'session-rankings-panel'],
+                ['individual', 'Plate Leaderboards', 'session-individual-rankings-panel'],
                 ['draw', 'Draw Center', 'session-draw-panel'],
                 ...(['admin', 'superadmin'].includes(user?.role) ? [['databases', 'Student and teacher databases', 'session-databases-panel']] : []),
               ].map(([panel, label, id]) => (
@@ -407,14 +431,19 @@ function MainPortal({ app }) {
               ))}
               <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal sm:ml-auto"
                 aria-expanded={sessionPanel === 'all'}
-                aria-controls={`session-rankings-panel session-draw-panel${['admin', 'superadmin'].includes(user?.role) ? ' session-databases-panel' : ''}`}
+                aria-controls={`session-rankings-panel session-draw-panel session-individual-rankings-panel${['admin', 'superadmin'].includes(user?.role) ? ' session-databases-panel' : ''}`}
                 onClick={() => selectSessionPanel('all')}>{sessionPanel === 'all' ? 'Collapse all' : 'Expand all'}</Button>
             </div>
             <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${sessionPanel === 'all' && canExportSessionData ? 'lg:grid-cols-2' : ''}`}>
               <div id="session-rankings-panel" hidden={!panelIsOpen('rankings')} className="min-w-0">
                 <HouseRanking app={app} showVideoHelp={app.pageSection === 'recorder' && panelIsOpen('rankings')} />
               </div>
-              <div id="session-draw-panel" hidden={!panelIsOpen('draw')} className="min-w-0">
+              <div id="session-individual-rankings-panel" hidden={!panelIsOpen('individual')} className="min-w-0">
+                {panelIsOpen('individual') && <IndividualRankings isGuest={user?.role === 'guest'} sessionId={sessionId}
+                  refreshKey={drawSummary?.generated_at} />}
+              </div>
+              <div id="session-draw-panel" hidden={!panelIsOpen('draw')}
+                className={`min-w-0 ${sessionPanel === 'all' && canExportSessionData ? 'lg:col-span-2' : ''}`}>
               {app.pageSection === 'recorder' && panelIsOpen('draw') && <VideoHelp videos={canManageDraw ? [12, 13] : [12]} label="Video help with draws" />}
               {isExtraSession ? (
                 <Card
@@ -498,7 +527,7 @@ function MainPortal({ app }) {
                     {!isDrawCenterCollapsed && (
                       <>
                         <CardDescription>
-                          Review ticket standings and manage the draw for this session.
+                          Manage the student and faculty draws for this session.
                         </CardDescription>
                         {drawSummary?.generated_at && (
                           <div className="text-xs text-gray-500">
@@ -522,359 +551,83 @@ function MainPortal({ app }) {
                               </AlertDescription>
                             </Alert>
                           )}
-                          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="text-sm text-gray-500">Total tickets</div>
-                              <div className="text-2xl font-semibold">
-                                {Number(drawSummary.total_tickets ?? 0).toFixed(2)}
-                              </div>
-                            </div>
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="text-sm text-gray-500">Eligible students</div>
-                              <div className="text-2xl font-semibold">
-                                {drawSummary.eligible_count ?? 0}
-                              </div>
-                            </div>
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="text-sm text-gray-500">Excluded records</div>
-                              <div className="text-2xl font-semibold">
-                                {drawSummary.excluded_records ?? 0}
-                              </div>
-                            </div>
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="text-sm text-gray-500">Winner status</div>
-                              <div className="text-2xl font-semibold">
-                                {currentDrawInfo?.finalized ? 'Finalized' : 'Pending'}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                onClick={startDrawProcess}
-                                className="bg-emerald-600 hover:bg-emerald-700"
-                                disabled={Boolean(startDrawBlockedReason)}
-                              >
-                                <Wand2 className="h-4 w-4 mr-2" />
-                                Start Draw
-                              </Button>
-                              <HelpTip topic="starting a draw">
-                                {startDrawBlockedReason || 'Start Draw selects a winner. Choose Finalize Winner to confirm the result.'}
-                              </HelpTip>
-                            </div>
-                            <Button
-                              onClick={finalizeDrawWinner}
-                              variant="outline"
-                              disabled={
-                                drawActionLoading ||
-                                !canManageDraw ||
-                                user?.role === 'guest' ||
-                                !currentDrawInfo?.winner ||
-                                currentDrawInfo.finalized
-                              }
-                            >
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              Finalize Winner
-                            </Button>
-                            <Button
-                              onClick={resetDrawWinner}
-                              variant="outline"
-                              disabled={
-                                drawActionLoading ||
-                                !canManageDraw ||
-                                user?.role === 'guest' ||
-                                !currentDrawInfo?.winner
-                              }
-                            >
-                              <RefreshCcw className="h-4 w-4 mr-2" />
-                              Reset Draw
-                            </Button>
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <Label htmlFor="draw-action-comment" className="text-xs text-gray-600">
-                              Action comment (optional)
-                            </Label>
-                            <Input
-                              id="draw-action-comment"
-                              value={drawActionComment}
-                              onChange={(event) => setDrawActionComment(event.target.value)}
-                              placeholder="Add context for this draw action"
-                            />
-                            <p className="text-xs text-gray-500">
-                              The note is saved to the draw history when you start, finalize, reset, or override.
-                            </p>
-                          </div>
-                          <div className="flex w-full flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <div className="text-sm text-gray-500">Random Faculty Picker</div>
-                              <div className="text-lg font-semibold">
-                                {facultyPick?.display_name || 'No faculty selected yet'}
-                              </div>
-                              {facultyPick && <div className="text-xs text-gray-600">{facultyPick.finalized ? 'Finalized winner' : 'Pending finalization'}</div>}
-                              {facultyPick?.recorded_at && (
-                                <div className="text-xs text-gray-500">
-                                  Recorded at {new Date(facultyPick.recorded_at).toLocaleString()}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                onClick={pickRandomFaculty}
-                                variant="outline"
-                                disabled={
-                                  facultyPickLoading ||
-                                  !canManageDraw ||
-                                  user?.role === 'guest' ||
-                                  isSessionDiscarded ||
-                                  (sessionStats.faculty_clean_count ?? 0) <= 0 ||
-                                  !sessionId
-                                }
-                              >
-                                <Sparkles className="h-4 w-4 mr-2" />
-                                Pick Faculty Name
-                              </Button>
-                              <Button
-                                onClick={finalizeFacultyWinner}
-                                variant="outline"
-                                disabled={facultyPickLoading || !canManageDraw || !facultyPick || facultyPick.finalized || isSessionDiscarded}
-                              >
-                                <CheckCircle className="h-4 w-4 mr-2" />
-                                Finalize Faculty Winner
-                              </Button>
-                            </div>
-                          </div>
-                          {canOverrideWinner && (
-                            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                              <div className="w-full sm:max-w-xs">
-                                <SearchableNameInput
-                                  placeholder="Search student (name or ID)"
-                                  value={overrideInput}
-                                  onChange={(value, meta) => {
-                                    setOverrideInput(value)
-                                    if (!meta || meta.source !== 'selection') {
-                                      setOverrideCandidate(null)
-                                    }
-                                  }}
-                                  onSelectName={(candidate) => {
-                                    if (candidate) {
-                                      const sanitized = sanitizeSelection(candidate)
-                                      setOverrideCandidate(sanitized)
-                                      if (sanitized?.key && drawSummary?.candidates?.some(entry => entry.key === sanitized.key)) {
-                                        setSelectedCandidateKey(sanitized.key)
-                                      }
-                                    }
-                                  }}
-                                  onKeyPress={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault()
-                                      overrideDrawWinner()
-                                    }
-                                  }}
-                                  names={overrideOptions}
-                                  className="w-full"
-                                />
-                              </div>
-                              <Button
-                                onClick={overrideDrawWinner}
-                                variant="outline"
-                                disabled={
-                                  drawActionLoading ||
-                                  user?.role === 'guest' ||
-                                  !overrideInput.trim() ||
-                                  !hasStudentRecords
-                                }
-                              >
-                                <ShieldCheck className="h-4 w-4 mr-2" />
-                                Override Winner
-                              </Button>
-                            </div>
-                          )}
-                          <div className="grid gap-4 lg:grid-cols-2">
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
-                                <Trophy className="h-4 w-4" />
-                                Current Winner
-                              </div>
-                              <div className="mt-3 text-sm">
-                                {currentDrawInfo?.winner ? (
-                                  <div className="space-y-2">
-                                    <div className="text-lg font-semibold">{currentDrawInfo.winner.display_name}</div>
-                                    {currentDrawInfo.winner.student_identifier && (
-                                      <div className="text-xs text-gray-500">Student ID: {currentDrawInfo.winner.student_identifier}</div>
-                                    )}
-                                    <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                                      {currentDrawInfo.winner.grade && <span>Grade: {currentDrawInfo.winner.grade}</span>}
-                                      {currentDrawInfo.winner.house && <span>House: {currentDrawInfo.winner.house}</span>}
-                                      {currentDrawInfo.winner.clan && <span>Clan: {currentDrawInfo.winner.clan}</span>}
-                                    </div>
-                                    <div className="flex items-center gap-1 text-xs text-gray-500">
-                                      <Clock className="h-3 w-3" />
-                                      {currentDrawInfo.winner_timestamp ? new Date(currentDrawInfo.winner_timestamp).toLocaleString() : 'Time not recorded'}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      Tickets at selection: {Number(currentDrawInfo.tickets_at_selection ?? 0).toFixed(2)} • Chance: {Number(currentDrawInfo.probability_at_selection ?? 0).toFixed(2)}%
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      Draw type: {currentDrawInfo.override_applied || currentDrawInfo.method === 'override' ? 'Override' : 'Random'}
-                                    </div>
-                                    <div className="text-xs">
-                                      Status:{' '}
-                                      <Badge variant={currentDrawInfo.finalized ? 'default' : 'outline'}>
-                                        {currentDrawInfo.finalized ? 'Finalized' : 'Awaiting Finalization'}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-gray-500">No winner selected yet.</div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
-                                <ListOrdered className="h-4 w-4" />
-                                Top Candidates
-                              </div>
-                              <div className="mt-3">
-                                {drawSummary.top_candidates && drawSummary.top_candidates.length > 0 ? (
-                                  <div className="space-y-2">
-                                    {drawSummary.top_candidates.map((candidate, index) => {
-                                      const isActive = selectedCandidateKey === candidate.key
-                                      return (
-                                        <button
-                                          key={candidate.key}
-                                          type="button"
-                                          onClick={() => setSelectedCandidateKey(candidate.key)}
-                                          className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left transition ${
-                                            isActive ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
-                                          }`}
-                                        >
-                                          <div>
-                                            <div className="font-medium">{candidate.display_name}</div>
-                                            <div className="text-xs text-gray-500">
-                                              Tickets: {Number(candidate.tickets ?? 0).toFixed(2)} • Chance: {Number(candidate.probability ?? 0).toFixed(2)}%
-                                            </div>
-                                          </div>
-                                          <Badge variant={isActive ? 'default' : 'outline'}>#{index + 1}</Badge>
-                                        </button>
-                                      )
-                                    })}
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-gray-500">No eligible students yet.</div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="grid gap-4 lg:grid-cols-2">
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
-                                <Users className="h-4 w-4" />
-                                Selected Candidate Details
-                              </div>
-                              <div className="mt-3 text-sm">
-                                {selectedCandidate ? (
-                                  <div className="space-y-3">
-                                    <div>
-                                      <div className="text-lg font-semibold">{selectedCandidate.display_name}</div>
-                                      {selectedCandidate.student_identifier && (
-                                        <div className="text-xs text-gray-500">Student ID: {selectedCandidate.student_identifier}</div>
-                                      )}
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-1 text-xs text-gray-600 sm:grid-cols-2">
-                                      {selectedCandidate.grade && <span>Grade: {selectedCandidate.grade}</span>}
-                                      {selectedCandidate.advisor && <span>Advisor: {selectedCandidate.advisor}</span>}
-                                      {selectedCandidate.house && <span>House: {selectedCandidate.house}</span>}
-                                      {selectedCandidate.clan && <span>Clan: {selectedCandidate.clan}</span>}
-                                    </div>
-                                    <div className="text-xs text-gray-600">
-                                      Tickets: {Number(selectedCandidate.tickets ?? 0).toFixed(2)} • Chance: {Number(selectedCandidate.probability ?? 0).toFixed(2)}%
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-gray-500">Select a student to see their ticket details and student ID.</div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
-                                <History className="h-4 w-4" />
-                                Draw History
-                              </div>
-                              <div className="mt-3 text-sm">
-                                {drawSummary?.history && drawSummary.history.length > 0 ? (
-                                  <div className="max-h-48 space-y-2 overflow-x-hidden overflow-y-auto pr-1 text-xs text-gray-600">
-                                    {drawSummary.history
-                                      .slice()
-                                      .reverse()
-                                      .map((entry, index) => (
-                                        <div key={`${entry.timestamp}-${index}`} className="rounded border p-2">
-                                          <div className="font-semibold uppercase">{entry.event_type.replace(/_/g, ' ')}</div>
-                                          <div>When: {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A'}</div>
-                                          {entry.student_name && <div>Student: {entry.student_name}</div>}
-                                          {entry.faculty_name && <div>Faculty: {entry.faculty_name}</div>}
-                                          {entry.tickets !== null && entry.tickets !== undefined && (
-                                            <div>Student tickets: {Number(entry.tickets ?? 0).toFixed(2)}</div>
-                                          )}
-                                          {entry.probability !== null && entry.probability !== undefined && (
-                                            <div>Probability: {Number(entry.probability ?? 0).toFixed(2)}%</div>
-                                          )}
-                                          {entry.pool_size !== null && entry.pool_size !== undefined && (
-                                            <div>Eligible pool: {entry.pool_size}</div>
-                                          )}
-                                          {entry.created_by && <div>By: {entry.created_by}</div>}
-                                          {entry.comment && <div className="text-gray-700">Comment: {entry.comment}</div>}
-                                        </div>
-                                      ))}
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-gray-500">No draw activity recorded yet.</div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-700">
-                              <ListOrdered className="h-4 w-4" />
-                              Eligible Students
-                            </div>
-                            <div className="mt-3">
-                              {drawSummary.candidates && drawSummary.candidates.length > 0 ? (
-                                <div className="max-h-56 space-y-1 overflow-x-hidden overflow-y-auto pr-1">
-                                  {drawSummary.candidates.map((candidate) => {
-                                    const isActive = selectedCandidateKey === candidate.key
-                                    return (
-                                      <button
-                                        key={candidate.key}
-                                        type="button"
-                                        onClick={() => setSelectedCandidateKey(candidate.key)}
-                                        className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left transition ${
-                                          isActive ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:bg-gray-50'
-                                        }`}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <DrawColumn title="Faculty Ticket Draw" participantLabel="Faculty"
+                              summary={facultyDraw} winner={facultyWinner} history={facultyHistory}
+                              blockedReason={startFacultyBlockedReason} onStart={() => pickRandomFaculty()}
+                              finalizeDisabled={Boolean(drawUnavailable || facultyPickLoading || !facultyWinner || facultyWinner.finalized)}
+                              onFinalize={finalizeFacultyWinner}
+                              options={canManageDraw && (
+                                <DrawOptions label="Faculty" comment={facultyDrawActionComment} onCommentChange={setFacultyDrawActionComment}
+                                  onReset={resetFacultyWinner}
+                                  resetDisabled={Boolean(drawUnavailable || facultyPickLoading || !facultyWinner || (facultyWinner.finalized && !canOverrideWinner))}>
+                                  {canOverrideWinner && <FacultyOverride key={sessionId} candidates={facultyDraw?.override_candidates ?? []}
+                                    disabled={Boolean(drawUnavailable || facultyPickLoading)} onOverride={overrideFacultyWinner} />}
+                                </DrawOptions>
+                              )} />
+                            <DrawColumn title="Student Ticket Draw" participantLabel="Student"
+                              summary={drawSummary} winner={studentWinner} history={studentHistory}
+                              blockedReason={startStudentBlockedReason} onStart={() => startDrawProcess()}
+                              finalizeDisabled={Boolean(drawUnavailable || drawActionLoading || !studentWinner || studentWinner.finalized)}
+                              onFinalize={finalizeDrawWinner} selectedCandidate={selectedCandidate}
+                              onSelectCandidate={setSelectedCandidateKey}
+                              options={canManageDraw && (
+                                <DrawOptions label="Student" comment={drawActionComment} onCommentChange={setDrawActionComment}
+                                  onReset={resetDrawWinner}
+                                  resetDisabled={Boolean(drawUnavailable || drawActionLoading || !studentWinner || (studentWinner.finalized && !canOverrideWinner))}>
+                                  {canOverrideWinner && (
+                                    <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                                      <div className="w-full sm:max-w-xs">
+                                        <SearchableNameInput
+                                          placeholder="Search student (name or ID)"
+                                          value={overrideInput}
+                                          onChange={(value, meta) => {
+                                            setOverrideInput(value)
+                                            if (!meta || meta.source !== 'selection') {
+                                              setOverrideCandidate(null)
+                                            }
+                                          }}
+                                          onSelectName={(candidate) => {
+                                            if (candidate) {
+                                              const sanitized = sanitizeSelection(candidate)
+                                              setOverrideCandidate(sanitized)
+                                              if (sanitized?.key && drawSummary?.candidates?.some(entry => entry.key === sanitized.key)) {
+                                                setSelectedCandidateKey(sanitized.key)
+                                              }
+                                            }
+                                          }}
+                                          onKeyPress={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault()
+                                              overrideDrawWinner()
+                                            }
+                                          }}
+                                          names={overrideOptions}
+                                          className="w-full"
+                                        />
+                                      </div>
+                                      <Button
+                                        onClick={overrideDrawWinner}
+                                        variant="outline"
+                                        disabled={
+                                          drawActionLoading ||
+                                          user?.role === 'guest' ||
+                                          !overrideInput.trim() ||
+                                          !hasStudentRecords
+                                        }
                                       >
-                                        <div>
-                                          <div className="font-medium">{candidate.display_name}</div>
-                                          <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            {candidate.student_identifier && <span>ID: {candidate.student_identifier}</span>}
-                                            <span>Tickets: {Number(candidate.tickets ?? 0).toFixed(2)}</span>
-                                            <span>Chance: {Number(candidate.probability ?? 0).toFixed(2)}%</span>
-                                          </div>
-                                        </div>
-                                        {candidate.key === currentDrawInfo?.winner?.key && (
-                                          <Badge variant="outline" className="text-xs">Winner</Badge>
-                                        )}
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="text-sm text-gray-500">No eligible students yet.</div>
-                              )}
-                            </div>
+                                        <ShieldCheck className="h-4 w-4 mr-2" />
+                                        Override Winner
+                                      </Button>
+                                    </div>
+                                  )}
+                                </DrawOptions>
+                              )} />
                           </div>
                         </div>
                       ) : (
                         <div className="py-8 text-center text-gray-500">
-                          No draw data available. Record an eligible student’s plate to generate tickets.
+                          No draw data available. Select a session to view its draws.
                         </div>
                       )}
                       </CardContent>

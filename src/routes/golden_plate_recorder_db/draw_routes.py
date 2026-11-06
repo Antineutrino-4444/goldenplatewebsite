@@ -16,6 +16,7 @@ from .draw_db import (
     record_draw_event,
     reset_draw as reset_draw_db,
 )
+from .faculty_draw import faculty_ticket_summary
 from .manual_draw import public_student_identifier
 from .utils import extract_student_id_from_key, format_display_name, make_student_key, normalize_house, normalize_name
 from .security import get_current_user, is_guest, require_admin, require_auth_or_guest, require_superadmin
@@ -122,6 +123,7 @@ def get_draw_summary(session_id):
         'top_candidates': candidates[:3],
         'candidates': candidates,
         'draw_info': draw_info,
+        'faculty_draw': faculty_ticket_summary(sess, can_override=bool(user and user['role'] == 'superadmin')),
         'history': history,
         'main_session_id': sess.main_session_id,
         'is_extra': bool(sess.main_session_id),

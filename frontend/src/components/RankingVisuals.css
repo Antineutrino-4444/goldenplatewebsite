@@ -1,0 +1,5 @@
+@media (prefers-reduced-motion: no-preference) {
+  .ranking-track-fill {
+    transition: width 300ms ease-out, left 300ms ease-out;
+  }
+}

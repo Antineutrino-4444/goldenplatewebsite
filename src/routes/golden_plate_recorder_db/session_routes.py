@@ -14,9 +14,9 @@ from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from src.api_errors import note_api_exception
 
 from . import recorder_bp
-import random
 from .db import (
     DEFAULT_SCHOOL_ID,
+    School,
     Session as SessionModel,
     SessionDeleteRequest,
     SessionDrawEvent,
@@ -30,12 +30,14 @@ from .db import (
 from .domain import serialize_draw_info
 from .person_identity import faculty_pick_names, record_names, teacher_names
 from .users import readable_user_label, user_labels_for_school
-from .draw_db import record_draw_event
+from .draw_db import choose_weighted_candidate, record_draw_event
+from .faculty_draw import clear_faculty_pick, eligible_faculty_with_tickets, faculty_record_names
+from .individual_rankings import house_ticket_rankings, school_individual_rankings
 from .house_scoring import house_score_settings
 from .clean_percentage_estimation import estimate_session_percentages
 from .session_metrics import session_metrics
 from .roster_history import current_roster_snapshot, match_session_to_current_roster, prepare_recording_roster
-from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest
+from .security import get_current_user, is_guest, is_interschool_user, require_admin, require_auth, require_auth_or_guest, require_superadmin
 from .storage import (
     delete_requests,
     ensure_session_structure,
@@ -89,16 +91,7 @@ def _isoformat_timestamp(value):
             return str(value)
 
 
-def _parse_iso_timestamp(value):
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _serialize_faculty_pick(db_sess, fallback=None):
+def _serialize_faculty_pick(db_sess):
     if db_sess and (
         db_sess.faculty_pick_display_name
         or db_sess.faculty_pick_preferred_name
@@ -112,17 +105,6 @@ def _serialize_faculty_pick(db_sess, fallback=None):
             'finalized_at': _isoformat_timestamp(db_sess.faculty_finalized_at),
             'finalized_by': db_sess.faculty_finalized_by,
         }
-    if isinstance(fallback, dict) and fallback:
-        return {
-            'preferred_name': fallback.get('preferred_name'),
-            'last_name': fallback.get('last_name'),
-            'display_name': fallback.get('display_name'),
-            'recorded_at': fallback.get('recorded_at'),
-            'recorded_by': fallback.get('recorded_by'),
-            'finalized': bool(fallback.get('finalized')),
-            'finalized_at': fallback.get('finalized_at'),
-            'finalized_by': fallback.get('finalized_by'),
-        }
     return None
 
 
@@ -133,9 +115,20 @@ def _delete_session_with_dependencies(db_sess):
 
     # Explicitly delete dependents because SQLite foreign key cascades
     # are easy to disable accidentally and we do not want orphan rows.
+    record_ids = db_session.query(SessionRecord.id).filter_by(session_id=session_id)
+    db_session.query(SessionDrawEvent).filter(
+        SessionDrawEvent.school_id == db_sess.school_id,
+        SessionDrawEvent.session_id != session_id,
+        SessionDrawEvent.selected_record_id.in_(record_ids),
+    ).update({SessionDrawEvent.selected_record_id: None}, synchronize_session=False)
+    db_session.query(SessionModel).filter(
+        SessionModel.school_id == db_sess.school_id,
+        SessionModel.id != session_id,
+        SessionModel.faculty_pick_record_id.in_(record_ids),
+    ).update({SessionModel.faculty_pick_record_id: None}, synchronize_session=False)
     db_session.query(RecordExclusionEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
-    db_session.query(SessionRecord).filter_by(session_id=session_id).delete(synchronize_session=False)
     db_session.query(SessionDrawEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
+    db_session.query(SessionRecord).filter_by(session_id=session_id).delete(synchronize_session=False)
 
     db_session.delete(db_sess)
     db_session.commit()
@@ -672,7 +665,7 @@ def get_session_status():
     ensure_session_structure(json_data)
     scan_history_count = len(json_data.get('scan_history', []))
     draw_info = serialize_draw_info(json_data.get('draw_info', {}))
-    faculty_pick = _serialize_faculty_pick(db_sess, json_data.get('faculty_pick'))
+    faculty_pick = _serialize_faculty_pick(db_sess)
 
     return jsonify({
         'session_id': session_id,
@@ -712,102 +705,157 @@ def get_session_history():
     }), 200
 
 
+def _lock_faculty_draw_school(school_id):
+    # Faculty tickets span sessions. Serialize selections and finalizations in
+    # the same school, including on SQLite where SELECT FOR UPDATE is ignored.
+    db_session.query(School).filter_by(id=school_id).update(
+        {School.updated_at: School.updated_at}, synchronize_session=False,
+    )
+
+
+def _faculty_draw_context(session_id):
+    actor_id, _, school_id = _get_request_actor()
+    _lock_faculty_draw_school(school_id)
+    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
+    if not db_sess:
+        return None, None, (jsonify({'error': 'Session not found'}), 404)
+
+    if db_sess.status == 'discarded':
+        return None, None, (jsonify({'error': 'Session is discarded from draw calculations'}), 400)
+
+    if db_sess.main_session_id:
+        return None, None, (jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400)
+
+    return db_sess, actor_id, None
+
+
+def _save_faculty_pick(draw, actor_id, candidate, tickets, probability, pool_size, event_type, comment):
+    record, teacher, ticket_scope = candidate
+    preferred, last, display_name = faculty_record_names(record, teacher)
+    draw.faculty_pick_preferred_name = preferred
+    draw.faculty_pick_last_name = last
+    draw.faculty_pick_display_name = display_name
+    draw.faculty_pick_recorded_at = record.recorded_at
+    draw.faculty_pick_recorded_by = record.recorded_by
+    draw.faculty_pick_record_id = record.id
+    draw.faculty_pick_teacher_id = record.teacher_id
+    draw.faculty_finalized = 0
+    draw.faculty_finalized_at = None
+    draw.faculty_finalized_by = None
+    draw.updated_at = _now_utc()
+    event = record_draw_event(
+        draw, event_type, actor_id, tickets_at_event=tickets,
+        probability_at_event=probability, eligible_pool_size=pool_size, comment=comment,
+    )
+    event.selected_record_id = draw.faculty_pick_record_id
+    event.selected_teacher_id = draw.faculty_pick_teacher_id
+    event.draw_target = 'faculty'
+    event.faculty_name = draw.faculty_pick_display_name
+    event.faculty_ticket_scope = ticket_scope
+    db_session.commit()
+    faculty = _serialize_faculty_pick(draw)
+    session_data[draw.id] = hydrate_session_from_db(draw.id, session_model=draw, persist=False)
+    return jsonify({'status': 'success', 'faculty': faculty, 'session_id': draw.id})
+
+
 @recorder_bp.route('/session/<session_id>/faculty/pick', methods=['GET', 'POST'])
 def pick_random_faculty(session_id):
-    """Return a random faculty clean record for the given session."""
+    """Select a faculty member at random, weighted by eligible tickets."""
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
 
-    actor_id, _, school_id = _get_request_actor()
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
-    if not db_sess:
-        return jsonify({'error': 'Session not found'}), 404
-
-    if is_guest() and not db_sess.is_public:
-        return jsonify({'error': 'Access denied'}), 403
-
-    data = get_session_entry(session_id) or {}
-    if data.get('school_id') and data.get('school_id') != school_id:
-        data = {}
-
-    data = hydrate_session_from_db(session_id, session_model=db_sess) or data
-    ensure_session_structure(data)
-
-    if db_sess.status == 'discarded':
-        return jsonify({'error': 'Session is discarded from draw calculations'}), 400
-
-    if db_sess.main_session_id:
-        return jsonify({'error': 'Draws are disabled for extra sessions merged into a main session'}), 400
-
-    faculty_records = [record for record in data.get('faculty_clean_records', [])
-                       if format_display_name(record)]
-    if not faculty_records:
-        return jsonify({'error': 'No named faculty records available for this session'}), 400
+    db_sess, actor_id, error = _faculty_draw_context(session_id)
+    if error:
+        return error
 
     payload = request.get_json(silent=True) or {}
     if db_sess.faculty_finalized and payload.get('confirm_redraw') is not True:
         return jsonify({'error': 'Confirm repeating the finalized faculty draw. This action is recorded in the public draw log.'}), 409
 
-    chosen = random.choice(faculty_records)
-    preferred = normalize_name(chosen.get('preferred_name') or chosen.get('first_name'))
-    last = normalize_name(chosen.get('last_name'))
-    display_name = format_display_name({'preferred_name': preferred, 'last_name': last})
-    recorded_at = chosen.get('timestamp')
+    chosen, tickets, probability, pool_size = choose_weighted_candidate(eligible_faculty_with_tickets(db_sess))
+    if chosen is None:
+        return jsonify({'error': 'No eligible faculty tickets available for drawing'}), 400
+    return _save_faculty_pick(db_sess, actor_id, chosen, tickets, probability, pool_size,
+                              'draw', normalize_name(payload.get('comment')) or 'Faculty draw')
 
-    faculty_payload = {
-        'preferred_name': preferred,
-        'last_name': last,
-        'display_name': display_name,
-        'recorded_at': recorded_at,
-        'recorded_by': chosen.get('recorded_by') or actor_id,
-        'finalized': False,
-        'finalized_at': None,
-        'finalized_by': None,
-    }
 
-    db_sess.faculty_pick_preferred_name = preferred
-    db_sess.faculty_pick_last_name = last
-    db_sess.faculty_pick_display_name = display_name
-    db_sess.faculty_pick_recorded_at = _parse_iso_timestamp(recorded_at)
-    db_sess.faculty_pick_recorded_by = faculty_payload['recorded_by']
-    db_sess.faculty_pick_record_id = chosen.get('record_id')
-    db_sess.faculty_pick_teacher_id = chosen.get('teacher_id')
-    faculty_payload['teacher_id'] = db_sess.faculty_pick_teacher_id
-    db_sess.faculty_finalized = 0
-    db_sess.faculty_finalized_at = None
-    db_sess.faculty_finalized_by = None
-    db_sess.updated_at = _now_utc()
-    event = record_draw_event(db_sess, 'draw', actor_id, comment='Faculty draw')
-    event.selected_record_id = db_sess.faculty_pick_record_id
-    event.selected_teacher_id = db_sess.faculty_pick_teacher_id
-    event.draw_target = 'faculty'
-    event.faculty_name = display_name
+@recorder_bp.route('/session/<session_id>/faculty/reset', methods=['POST'])
+def reset_faculty_draw(session_id):
+    if not require_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    draw, actor_id, error = _faculty_draw_context(session_id)
+    if error:
+        return error
+    if not _serialize_faculty_pick(draw):
+        return jsonify({'error': 'No faculty draw to reset'}), 400
+    if draw.faculty_finalized and not require_superadmin():
+        return jsonify({'error': 'Only superadmins can reset a finalized faculty draw'}), 403
 
-    data['faculty_pick'] = faculty_payload
-    session_data[session_id] = data
-    save_session_data()
+    payload = request.get_json(silent=True) or {}
+    clear_faculty_pick(draw, actor_id, normalize_name(payload.get('comment')))
     db_session.commit()
+    if session_id in session_data:
+        session_data[session_id]['faculty_pick'] = None
+    return jsonify({'status': 'success', 'faculty': None})
 
-    return jsonify({
-        'status': 'success',
-        'faculty': faculty_payload,
-        'session_id': session_id
-    }), 200
+
+@recorder_bp.route('/session/<session_id>/faculty/override', methods=['POST'])
+def override_faculty_draw(session_id):
+    if not require_superadmin():
+        return jsonify({'error': 'Super admin access required'}), 403
+    draw, actor_id, error = _faculty_draw_context(session_id)
+    if error:
+        return error
+
+    payload = request.get_json(silent=True) or {}
+    record_id = normalize_name(payload.get('record_id'))
+    teacher_id = normalize_name(payload.get('teacher_id'))
+    if not (record_id or teacher_id):
+        return jsonify({'error': 'Select a faculty member to override the draw winner'}), 400
+
+    candidates = eligible_faculty_with_tickets(draw, include_zero=True)
+    selected = next(
+        ((candidate, tickets) for candidate, tickets in candidates
+         if (candidate[0].id == record_id if record_id else candidate[0].teacher_id == teacher_id)),
+        None,
+    )
+    if selected is None:
+        return jsonify({'error': 'The selected faculty member has no qualifying record in this draw'}), 404
+
+    candidate, tickets = selected
+    total_tickets = sum(balance for _, balance in candidates)
+    probability = tickets / total_tickets * 100 if total_tickets else 0
+    pool_size = sum(balance > 0 for _, balance in candidates)
+    return _save_faculty_pick(draw, actor_id, candidate, tickets, probability, pool_size,
+                              'override', normalize_name(payload.get('comment')))
 
 
 @recorder_bp.route('/session/<session_id>/faculty/finalize', methods=['POST'])
 def finalize_faculty_winner(session_id):
     if not require_admin():
         return jsonify({'error': 'Admin access required'}), 403
-    actor_id, _, school_id = _get_request_actor()
-    db_sess = db_session.query(SessionModel).filter_by(id=session_id, school_id=school_id).first()
-    if not db_sess:
-        return jsonify({'error': 'Session not found'}), 404
-    if db_sess.main_session_id or db_sess.status == 'discarded':
-        return jsonify({'error': 'Faculty draws are unavailable for merged or discarded sessions'}), 400
+    db_sess, actor_id, error = _faculty_draw_context(session_id)
+    if error:
+        return error
+    school_id = db_sess.school_id
+    payload = request.get_json(silent=True) or {}
     if not _serialize_faculty_pick(db_sess):
         return jsonify({'error': 'Choose a faculty winner first'}), 400
     if not db_sess.faculty_finalized:
+        latest_pick = db_session.query(SessionDrawEvent).filter_by(
+            session_id=session_id, school_id=school_id, draw_target='faculty',
+        ).filter(SessionDrawEvent.event_type.in_(['draw', 'override'])).order_by(SessionDrawEvent.created_at.desc(), SessionDrawEvent.id).first()
+        ticket_scope = latest_pick.faculty_ticket_scope if latest_pick else None
+        if ticket_scope:
+            eligible = eligible_faculty_with_tickets(db_sess, include_zero=latest_pick.event_type == 'override')
+            winner_id = db_sess.faculty_pick_teacher_id
+            still_eligible = any(
+                scope == ticket_scope and
+                (record.teacher_id == winner_id if winner_id else record.id == db_sess.faculty_pick_record_id)
+                for (record, _, scope), _tickets in eligible
+            )
+            if not still_eligible:
+                return jsonify({'error': 'The faculty winner is no longer eligible for this draw. Draw again.'}), 400
         db_sess.faculty_finalized = 1
         db_sess.faculty_finalized_at = _now_utc()
         db_sess.faculty_finalized_by = actor_id
@@ -820,11 +868,21 @@ def finalize_faculty_winner(session_id):
                 last_name=db_sess.faculty_pick_last_name,
             ).first()
             db_sess.faculty_pick_record_id = record.id if record else None
-        event = record_draw_event(db_sess, 'finalize', actor_id, comment='Faculty winner finalized')
+        event = record_draw_event(
+            db_sess, 'finalize', actor_id, comment=normalize_name(payload.get('comment')) or 'Faculty winner finalized',
+        )
         event.selected_record_id = db_sess.faculty_pick_record_id
-        event.selected_teacher_id = faculty_pick_names(db_sess)['teacher_id']
+        names = faculty_pick_names(db_sess)
+        event.selected_teacher_id = names['teacher_id']
         event.draw_target = 'faculty'
-        event.faculty_name = _serialize_faculty_pick(db_sess)['display_name']
+        event.faculty_name = names['display_name']
+        event.faculty_ticket_scope = ticket_scope
+        event.created_at = db_sess.faculty_finalized_at
+        if event.selected_teacher_id and ticket_scope != 'session':
+            teacher = db_session.query(Teacher).filter_by(id=event.selected_teacher_id, school_id=school_id).first()
+            if teacher:
+                # Keep the cumulative reset even if the finalized session is deleted.
+                teacher.faculty_tickets_reset_at = db_sess.faculty_finalized_at
         db_session.commit()
     faculty = _serialize_faculty_pick(db_sess)
     data = get_session_entry(session_id)
@@ -949,6 +1007,7 @@ def get_house_stats(session_id):
         'session_name': db_sess.session_name,
         'total_records_with_house': total_with_house,
         'house_stats': house_stats,
+        'house_tickets': house_ticket_rankings(school_id),
         'estimation': estimate_session_percentages(
             db_sess, records, score_settings,
             include_separation=request.args.get('estimate_separation') == '1',
@@ -990,32 +1049,38 @@ def get_scan_history():
         .all()
     )
 
-    formatted_history = []
-    for session_record, student, teacher in records:
-        category = session_record.category.lower()
-        
-        labels = record_names(session_record, student=student, teacher=teacher)
-        name = labels['display_name']
-        
-        # Handle special categories
-        if not name:
-            name = plate_count_label(category)
-
-        formatted_history.append({
-            'record_id': session_record.id,
-            'is_excluded': bool(session_record.is_excluded),
-            'exclusion_reason': session_record.exclusion_reason,
-            'timestamp': session_record.recorded_at.isoformat() if session_record.recorded_at else '',
-            'name': name,
-            'recorded_name': labels['recorded_name'],
-            'category': category.upper(),
-            'is_manual_entry': bool(session_record.is_manual_entry),
-            'is_count_only': not bool(session_record.student_id or session_record.preferred_name or session_record.last_name),
-        })
-
     return jsonify({
-        'scan_history': formatted_history
+        'scan_history': [_scan_history_record(*row) for row in records]
     }), 200
+
+
+def _scan_history_record(record, student, teacher):
+    category = record.category.lower()
+    labels = record_names(record, student=student, teacher=teacher)
+    return {
+        'record_id': record.id,
+        'is_excluded': bool(record.is_excluded),
+        'exclusion_reason': record.exclusion_reason,
+        'timestamp': record.recorded_at.isoformat() if record.recorded_at else '',
+        'name': labels['display_name'] or plate_count_label(category),
+        'recorded_name': labels['recorded_name'],
+        'category': category.upper(),
+        'is_manual_entry': bool(record.is_manual_entry),
+        'is_count_only': not bool(record.student_id or record.teacher_id or record.preferred_name or record.last_name),
+    }
+
+
+@recorder_bp.route('/session/individual-rankings', methods=['GET'])
+def get_individual_rankings():
+    if not require_auth_or_guest():
+        return jsonify({'error': 'Authentication or guest access required'}), 401
+    if not is_guest():
+        forbidden = _forbid_interschool_accounts()
+        if forbidden:
+            return forbidden
+
+    _, _, school_id = _get_request_actor()
+    return jsonify(school_individual_rankings(school_id, session_id=session.get('session_id'), public_only=is_guest()))
 
 
 def _is_record_identity_conflict(error):
@@ -1199,6 +1264,7 @@ def _record_student(category):
         dedupe_key = f'faculty-id:{teacher.id}'
         db_record = SessionRecord(
             teacher_id=teacher.id,
+            faculty_roster_entry=int(bool(teacher.is_active)),
             school_id=school_id,
             session_id=session_id,
             category='faculty',
