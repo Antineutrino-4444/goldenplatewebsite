@@ -1,8 +1,19 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.5.2 c21404b48430c1fa62d2dbe0bf1a3715db2f5914 -->
+<!-- golden-plate-release-baseline: 1.2.5.3 935cb6752ea4923ad25f8e0bfd252fc401b26247 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.5.3
+
+November 7, 2026 · Complete clean-plate rankings and reliable ticket updates
+
+Author: Jiajun (Leo) Li
+
+- Clean Plates in Plate Leaderboards now includes everyone on the current student and faculty rosters, including people with zero clean plates. This also applies to guest rankings. Very Dirty Plates continues to show only students with at least one very dirty plate.
+- Current-roster students retain their earlier plate totals, finalized wins, and cumulative ticket balances when the roster is replaced, provided their records remain linked to the same student identity at that school. For example, five clean plates before a roster upload plus three afterward now shows eight. Students absent from the current roster remain outside the rankings.
+- Removed the current-draw estimate, projected odds, and Win chance from Plate Leaderboards. The page shows school-wide standings across sessions without attaching them to a particular draw.
+- Fixed a Recorder failure affecting students whose existing ticket balance had an outdated school assignment. Recording a clean or very dirty plate now updates that existing balance and repairs its school assignment instead of attempting to create a conflicting balance.
 
 ## 1.2.5.2
 
