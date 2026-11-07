@@ -36,7 +36,7 @@ def _faculty_clean_plates(school_id):
     )
 
 
-def faculty_roster_ticket_totals(school_id, *, teacher_ids=None, active_only=True):
+def faculty_roster_ticket_totals(school_id, *, teacher_ids=None, active_only=True, since=None):
     """Return cumulative roster balances, optionally including past members."""
     resets = (
         db_session.query(
@@ -69,6 +69,8 @@ def faculty_roster_ticket_totals(school_id, *, teacher_ids=None, active_only=Tru
         totals = totals.filter(Teacher.is_active == 1)
     if teacher_ids is not None:
         totals = totals.filter(SessionRecord.teacher_id.in_(teacher_ids))
+    if since is not None:
+        totals = totals.filter(SessionRecord.recorded_at >= since)
     return dict(totals.all())
 
 

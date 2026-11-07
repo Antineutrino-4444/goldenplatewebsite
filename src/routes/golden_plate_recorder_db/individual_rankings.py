@@ -2,14 +2,14 @@
 
 from collections import Counter, defaultdict
 
-from sqlalchemy import case, func
+from sqlalchemy import func, literal
 
-from .db import Session, SessionDrawEvent, SessionRecord, Student, Teacher, db_session
-from .draw_db import calculate_ticket_balances, get_eligible_students_with_tickets
-from .faculty_draw import faculty_roster_ticket_totals, faculty_ticket_summary
+from .db import School, Session, SessionDrawEvent, SessionRecord, SessionTicketEvent, Student, Teacher, db_session
+from .draw_db import calculate_ticket_balances, get_session_ids_for_draw
+from .faculty_draw import faculty_roster_ticket_totals
 from .manual_draw import public_student_identifier
 from .person_identity import teacher_names
-from .utils import make_student_key, normalize_house, normalize_name
+from .utils import normalize_house
 
 
 def house_ticket_rankings(school_id):
@@ -47,165 +47,168 @@ def _sort_rows(rows):
     ))
 
 
-def _plate_totals(sessions, school_id, students, faculty, people, plates):
-    unlinked = (SessionRecord.student_id.is_(None)) & (SessionRecord.teacher_id.is_(None))
-    preferred_group = case((unlinked, func.lower(func.trim(SessionRecord.preferred_name))))
-    last_group = case((unlinked, func.lower(func.trim(SessionRecord.last_name))))
-    records = db_session.query(
-        SessionRecord.category, SessionRecord.student_id, SessionRecord.teacher_id,
-        func.min(SessionRecord.preferred_name), func.min(SessionRecord.last_name), func.count(SessionRecord.id),
-    ).filter(
+def _roster_records(sessions, school_id, roster, person_id, since):
+    records = db_session.query(SessionRecord).filter(
+        SessionRecord.school_id == school_id,
         SessionRecord.session_id.in_(sessions.with_entities(Session.id)),
-        SessionRecord.school_id == school_id, SessionRecord.is_excluded == 0,
+        SessionRecord.is_excluded == 0, person_id.in_(roster),
         ~SessionRecord.dedupe_key.startswith('count:'),
     )
-
-    for category, student_id, teacher_id, preferred, last, count in records.group_by(
-        SessionRecord.category, SessionRecord.student_id, SessionRecord.teacher_id, preferred_group, last_group,
-    ):
-        student = students.get(student_id)
-        teacher = faculty.get(teacher_id)
-        group = 'faculty' if category == 'faculty' else 'students'
-        if category == 'faculty' and teacher:
-            key, row = teacher.id, _faculty_row(teacher)
-        elif category != 'faculty' and student:
-            key, row = student.id, _student_row(student)
-        else:
-            preferred, last = normalize_name(preferred), normalize_name(last)
-            display_name = f'{preferred} {last}'.strip()
-            if not display_name:
-                continue
-            row = {'display_name': display_name, 'category': category}
-            if category != 'faculty':
-                row['student_key'] = make_student_key(preferred, last)
-            key = row.get('student_key') or display_name.casefold()
-        people[group][key] = row
-        plates[group][key]['clean' if category == 'faculty' else category] += count
+    if since is not None:
+        records = records.filter(SessionRecord.recorded_at >= since)
+    return records
 
 
-def _win_totals(sessions, school_id):
-    wins = {'students': Counter(), 'faculty': Counter()}
+def _plate_totals(records, person_id):
+    plates = defaultdict(Counter)
+    for key, category, count in records.with_entities(
+        person_id, SessionRecord.category, func.count(SessionRecord.id),
+    ).group_by(person_id, SessionRecord.category):
+        plates[key]['clean' if category == 'faculty' else category] = count
+    return plates
+
+
+def _win_totals(sessions, school_id, *, faculty, since):
+    wins = Counter()
     recorded = set()
-    # A confirmed redraw leaves prior finalizations in the draw history.
-    events = db_session.query(
-        SessionDrawEvent.session_id, SessionDrawEvent.draw_target, SessionDrawEvent.selected_student_id,
-        SessionDrawEvent.selected_teacher_id, SessionDrawEvent.faculty_name, SessionRecord.teacher_id,
-    ).outerjoin(
-        SessionRecord, (SessionRecord.id == SessionDrawEvent.selected_record_id) &
-        (SessionRecord.school_id == school_id),
-    ).filter(
+    events = db_session.query(SessionDrawEvent).filter(
         SessionDrawEvent.school_id == school_id, SessionDrawEvent.event_type == 'finalize',
+        SessionDrawEvent.draw_target == ('faculty' if faculty else 'student'),
         SessionDrawEvent.session_id.in_(sessions.with_entities(Session.id)),
     )
-    for session_id, target, student_id, teacher_id, name, record_teacher_id in events:
-        group = 'faculty' if target == 'faculty' else 'students'
-        key = (teacher_id or record_teacher_id or normalize_name(name).casefold()) if group == 'faculty' else student_id
+    if faculty:
+        events = events.outerjoin(
+            SessionRecord, (SessionRecord.id == SessionDrawEvent.selected_record_id) &
+            (SessionRecord.school_id == school_id),
+        )
+        winner_id = func.coalesce(SessionDrawEvent.selected_teacher_id, SessionRecord.teacher_id)
+    else:
+        winner_id = SessionDrawEvent.selected_student_id
+    if since is not None:
+        events = events.filter(SessionDrawEvent.created_at >= since)
+    for meal_id, key in events.with_entities(SessionDrawEvent.session_id, winner_id):
         if key:
-            wins[group][key] += 1
-            recorded.add((session_id, group, key))
+            wins[key] += 1
+            recorded.add((meal_id, key))
 
     # Older sessions can retain a finalized winner without a corresponding event.
-    finalized_meals = sessions.outerjoin(
-        SessionRecord, (SessionRecord.id == Session.faculty_pick_record_id) &
-        (SessionRecord.school_id == school_id),
-    ).with_entities(
-        Session.id, Session.winner_student_id, Session.finalized, Session.faculty_pick_teacher_id,
-        SessionRecord.teacher_id, Session.faculty_pick_display_name, Session.faculty_finalized,
-    ).filter((Session.finalized == 1) | (Session.faculty_finalized == 1))
-    for meal_id, student_id, student_finalized, teacher_id, record_teacher_id, name, faculty_finalized in finalized_meals:
-        for group, key, finalized in (
-            ('students', student_id, student_finalized),
-            ('faculty', teacher_id or record_teacher_id or normalize_name(name).casefold(), faculty_finalized),
-        ):
-            if finalized and key and (meal_id, group, key) not in recorded:
-                wins[group][key] += 1
+    if faculty:
+        finalized_meals = sessions.outerjoin(
+            SessionRecord, (SessionRecord.id == Session.faculty_pick_record_id) &
+            (SessionRecord.school_id == school_id),
+        ).filter(Session.faculty_finalized == 1)
+        winner_id = func.coalesce(Session.faculty_pick_teacher_id, SessionRecord.teacher_id)
+        finalized_at = Session.faculty_finalized_at
+    else:
+        finalized_meals = sessions.filter(Session.finalized == 1)
+        winner_id, finalized_at = Session.winner_student_id, Session.finalized_at
+    if since is not None:
+        finalized_meals = finalized_meals.filter(func.coalesce(finalized_at, Session.created_at) >= since)
+    for meal_id, key in finalized_meals.with_entities(Session.id, winner_id):
+        if key and (meal_id, key) not in recorded:
+            wins[key] += 1
     return wins
 
 
-def _draw_pool(sessions, current, group, balances, roster):
-    finalized = Session.finalized if group == 'students' else Session.faculty_finalized
-    eligible_sessions = sessions.filter(Session.main_session_id.is_(None), finalized == 0)
-    if current and current.status != 'discarded' and not getattr(current, finalized.key):
-        meal, source = current, 'current'
-    else:
-        if current:
-            eligible_sessions = eligible_sessions.filter(Session.created_at > current.created_at)
-        meal = eligible_sessions.filter(Session.status == 'active').order_by(Session.created_at, Session.id).first()
-        source = 'upcoming'
+def _student_ticket_balances(records, sessions, school_id, since):
+    if since is None:
+        # Legacy rosters without an upload date can have balances from before the event log.
+        return calculate_ticket_balances(school_id)
 
-    if not meal:
-        return {'source': 'projected'}, {
-            key: tickets for key, tickets in balances.items() if key in roster and roster[key].is_active
-        }
+    plates = records.filter(SessionRecord.category.in_(['clean', 'red'])).with_entities(
+        SessionRecord.student_id, SessionRecord.recorded_at.label('occurred_at'),
+        literal(0).label('priority'), SessionRecord.id.label('event_id'),
+        SessionRecord.category.label('action'), literal(1).label('delta'),
+    )
+    # Plate actions come from the surviving records. Independent actions, such as
+    # finalizing a winner, come from the ticket ledger.
+    actions = db_session.query(
+        SessionTicketEvent.student_id, SessionTicketEvent.occurred_at, literal(1),
+        SessionTicketEvent.id, SessionTicketEvent.event_type, SessionTicketEvent.tickets_delta,
+    ).filter(
+        SessionTicketEvent.school_id == school_id, SessionTicketEvent.occurred_at >= since,
+        SessionTicketEvent.session_id.in_(sessions.with_entities(Session.id)),
+        SessionTicketEvent.session_record_id.is_(None),
+        SessionTicketEvent.event_type.in_(['reset', 'manual_adjust']),
+    )
+    balances = Counter()
+    for key, _, _, _, action, delta in plates.union_all(actions).order_by('occurred_at', 'priority', 'event_id'):
+        balances[key] = 0 if action in ('red', 'reset') else max(0, balances[key] + delta)
+    return balances
 
-    if group == 'students':
-        pool = {student.id: tickets for student, tickets in get_eligible_students_with_tickets(meal.id)}
-    else:
-        pool = {row['teacher_id'] or row['display_name'].casefold(): row['tickets']
-                for row in faculty_ticket_summary(meal)['candidates']}
-    return {'source': source, 'session_name': meal.session_name}, pool
+
+def _draw_pool(meal, records, person_id, category, balances, roster):
+    if not meal or (meal.faculty_finalized if category == 'faculty' else meal.finalized):
+        return {'source': 'projected'}, {key: balances.get(key, 0) for key in roster}
+
+    eligible = records.filter(
+        SessionRecord.session_id.in_(get_session_ids_for_draw(meal.id)),
+        SessionRecord.category == category,
+    ).with_entities(person_id).distinct()
+    return {'source': 'current', 'session_name': meal.session_name}, {
+        key: balances.get(key, 0) for (key,) in eligible
+    }
 
 
-def school_individual_rankings(school_id, *, session_id=None, public_only=False):
-    students = {student.id: student for student in db_session.query(Student).filter_by(school_id=school_id)}
-    faculty = {teacher.id: teacher for teacher in db_session.query(Teacher).filter_by(school_id=school_id)}
+def school_individual_rankings(school_id, *, public_only=False):
+    school = db_session.get(School, school_id)
     sessions = db_session.query(Session).filter(Session.school_id == school_id, Session.status != 'discarded')
     if public_only:
         sessions = sessions.filter(Session.is_public == 1)
+    meal = None if public_only else sessions.filter_by(status='active', main_session_id=None).order_by(
+        Session.created_at.desc(), Session.id.desc(),
+    ).first()
 
-    rosters = {'students': students, 'faculty': faculty}
-    people = {group: {} for group in rosters}
-    plates = {group: defaultdict(Counter) for group in rosters}
-    _plate_totals(sessions, school_id, students, faculty, people, plates)
-    wins = _win_totals(sessions, school_id)
-    rankings = {'clean': {}, 'red': {}, 'tickets': None, 'draw_context': {}}
-
-    if not public_only:
-        rankings['tickets'] = {}
-        balances = {'students': calculate_ticket_balances(school_id),
-                    'faculty': faculty_roster_ticket_totals(school_id, active_only=False)}
-        current = db_session.query(Session).filter_by(school_id=school_id, id=session_id).first() if session_id else None
-        if current and current.main_session_id:
-            current = db_session.query(Session).filter_by(school_id=school_id, id=current.main_session_id).first()
-        for group, roster in rosters.items():
-            make_row = _student_row if group == 'students' else _faculty_row
-            for key in balances[group]:
-                if key in roster and key not in people[group]:
-                    people[group][key] = make_row(roster[key])
-
-    names = Counter(' '.join(row['display_name'].casefold().split())
-                    for rows in people.values() for row in rows.values())
-    for group, roster in rosters.items():
-        is_student = group == 'students'
-        group_balances = pool = {}
+    rankings = {'clean': {}, 'red': {}, 'tickets': None if public_only else {}, 'draw_context': {}}
+    groups = (
+        ('students', Student, SessionRecord.student_id, school.roster_uploaded_at, _student_row),
+        ('faculty', Teacher, SessionRecord.teacher_id, school.teacher_roster_uploaded_at, _faculty_row),
+    )
+    for group, model, person_id, since, make_row in groups:
+        is_faculty = group == 'faculty'
+        roster_query = db_session.query(model).filter_by(school_id=school_id, is_active=1)
+        roster = {person.id: person for person in roster_query}
+        records = _roster_records(sessions, school_id, roster_query.with_entities(model.id), person_id, since)
+        if is_faculty:
+            records = records.filter(SessionRecord.category == 'faculty',
+                                     SessionRecord.faculty_roster_entry.is_distinct_from(0))
+        else:
+            records = records.filter(SessionRecord.category != 'faculty', SessionRecord.is_manual_entry == 0)
+        plates = _plate_totals(records, person_id)
+        wins = _win_totals(sessions, school_id, faculty=is_faculty, since=since)
+        rows = {key: make_row(person) for key, person in roster.items()}
         if not public_only:
-            group_balances = balances[group]
-            rankings['draw_context'][group], pool = _draw_pool(sessions, current, group, group_balances, roster)
-        pool_total = sum(pool.values())
-        rows = []
-        for key, identity in people[group].items():
-            clean, dirty, red = (plates[group][key][metric] for metric in ('clean', 'dirty', 'red'))
+            balances = (faculty_roster_ticket_totals(school_id, since=since) if is_faculty else
+                        _student_ticket_balances(records, sessions, school_id, since))
+            rankings['draw_context'][group], pool = _draw_pool(
+                meal, records, person_id, 'faculty' if is_faculty else 'clean', balances, roster,
+            )
+            pool_total = sum(pool.values())
+            names = Counter(' '.join(row['display_name'].casefold().split()) for row in rows.values())
+
+        for key, row in rows.items():
+            clean, dirty, red = (plates[key][metric] for metric in ('clean', 'dirty', 'red'))
             total = clean + dirty + red
-            stats = {'clean': clean, 'red': red if is_student else None, 'wins': wins[group][key],
-                     'clean_rate': clean / total * 100 if is_student and total else None}
-            row = {**identity, 'stats': stats}
+            stats = {'clean': clean, 'red': None if is_faculty else red, 'wins': wins[key],
+                     'clean_rate': clean / total * 100 if not is_faculty and total else None}
+            row['stats'] = stats
             if not public_only:
-                draw_tickets = pool.get(key, 0)
-                stats.update(tickets=group_balances.get(key, 0), draw_tickets=draw_tickets,
-                             draw_odds=draw_tickets / pool_total * 100 if pool_total else 0)
+                stats.update(tickets=balances.get(key, 0), draw_odds=pool.get(key, 0) / pool_total * 100 if pool_total else 0)
                 if names[' '.join(row['display_name'].casefold().split())] > 1:
-                    person = roster.get(key)
-                    if is_student:
-                        row['student_identifier'] = public_student_identifier(person.student_identifier) if person else None
-                    else:
-                        row['faculty_identifier'] = person.faculty_identifier if person else None
-            rows.append(row)
+                    person = roster[key]
+                    if is_faculty and person.faculty_identifier:
+                        row['faculty_identifier'] = person.faculty_identifier
+                    elif not is_faculty:
+                        identifier = public_student_identifier(person.student_identifier)
+                        if identifier:
+                            row['student_identifier'] = identifier
 
-        rankings['clean'][group] = _sort_rows({**row, 'count': row['stats']['clean']} for row in rows if row['stats']['clean'])
-        if is_student:
-            rankings['red'][group] = _sort_rows({**row, 'count': row['stats']['red']} for row in rows if row['stats']['red'])
+        metrics = ['clean'] if is_faculty else ['clean', 'red']
         if not public_only:
-            id_field = 'student_id' if is_student else 'teacher_id'
-            rankings['tickets'][group] = _sort_rows({**row, 'count': row['stats']['tickets']} for row in rows
-                                                   if id_field in row or row['stats']['draw_tickets'])
+            metrics.append('tickets')
+        for metric in metrics:
+            rankings[metric][group] = _sort_rows(
+                {**row, 'count': row['stats'][metric]} for row in rows.values()
+                if metric == 'tickets' or row['stats'][metric]
+            )
     return rankings

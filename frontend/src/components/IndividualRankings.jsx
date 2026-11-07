@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ListOrdered, RefreshCcw, Search } from 'lucide-react'
 import { readApiJson } from '@/lib/api-errors.js'
+import { leaderboardPage, normalizeLeaderboardSearch } from '@/lib/leaderboard.js'
 import { Button } from '@/components/ui/button.jsx'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card.jsx'
 import { HelpTip } from '@/components/HelpTip.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { RankNumber, RankingTabs, RankingTrack } from '@/components/RankingVisuals.jsx'
@@ -29,7 +30,7 @@ const formatPercent = (value) => {
 
 function PersonStats({ stats, view, drawContext }) {
   const metrics = [
-    ...(drawContext ? [['tickets', 'Tickets'], ['draw_tickets', 'Draw tickets']] : []),
+    ...(drawContext ? [['tickets', 'Tickets']] : []),
     ['clean', 'Clean plates'],
     ['red', 'Red plates'],
     ['wins', 'Wins'],
@@ -38,7 +39,7 @@ function PersonStats({ stats, view, drawContext }) {
   ]
   return (
     <dl className="grid grid-cols-2 gap-x-2 gap-y-1.5 border-t border-gray-200 pt-2 min-[400px]:grid-cols-3">
-      {metrics.filter(([key]) => key !== view && !(key === 'draw_tickets' && drawContext?.source === 'projected'))
+      {metrics.filter(([key]) => key !== view)
         .map(([key, label, format = formatCount]) => (
           <div key={key}>
             <dt className="text-xs text-muted-foreground">{label}</dt>
@@ -57,9 +58,9 @@ function PersonRanking({ entry, view, max, drawContext, podium = false }) {
   const rosterId = row.student_identifier || row.faculty_identifier
   const name = <>
     <span className="block break-words">{row.display_name}</span>
-    {('student_identifier' in row || 'faculty_identifier' in row) && (
+    {rosterId && (
       <span className="block break-all text-xs font-normal text-muted-foreground">
-        {rosterId ? `ID ${rosterId}` : 'No roster ID'}
+        ID {rosterId}
       </span>
     )}
   </>
@@ -88,37 +89,65 @@ function PersonRanking({ entry, view, max, drawContext, podium = false }) {
   )
 }
 
+function RankingPagination({ label, page, pageCount, onPageChange }) {
+  const [pageInput, setPageInput] = useState(null)
+  const changePage = (requestedPage) => {
+    setPageInput(null)
+    onPageChange(requestedPage)
+  }
+  const submitPage = (event) => {
+    event.preventDefault()
+    const requestedPage = Number(pageInput ?? page)
+    if (Number.isInteger(requestedPage) && requestedPage >= 1 && requestedPage <= pageCount) {
+      changePage(requestedPage)
+    }
+  }
+
+  return (
+    <nav aria-label={`${label} ranking pages`} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+      <Button type="button" variant="outline" size="sm" onClick={() => changePage(page - 1)} disabled={page === 1}>Previous</Button>
+      <form onSubmit={submitPage} className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1.5 whitespace-nowrap">
+          Page
+          <Input type="number" min={1} max={pageCount} step={1} required value={pageInput ?? page}
+            aria-label={`${label} page number`} className="h-8 w-16 px-2 tabular-nums"
+            onChange={(event) => setPageInput(event.target.value)} />
+          of {pageCount}
+        </label>
+        <Button type="submit" variant="outline" size="sm">Go</Button>
+      </form>
+      <Button type="button" variant="outline" size="sm" onClick={() => changePage(page + 1)} disabled={page === pageCount}>Next</Button>
+    </nav>
+  )
+}
+
 function RankingColumn({ group, rows, view, query, page, onPageChange, drawContext }) {
-  const pageSize = 50
   const { label } = group
-  const entries = rows.map((row, index) => ({ row, rank: index + 1 }))
   const max = rows[0]?.count ?? 0
-  const podium = query ? [] : entries.slice(0, 3)
-  const matches = query
-    ? entries.filter(({ row }) => [row.display_name, row.student_identifier, row.faculty_identifier]
-      .some((value) => value?.toLocaleLowerCase().includes(query)))
-    : entries.slice(3)
-  const pageCount = Math.max(1, Math.ceil(matches.length / pageSize))
-  const currentPage = Math.min(page, pageCount)
-  const start = (currentPage - 1) * pageSize
-  const visible = [...podium, ...matches.slice(start, start + pageSize)]
+  const { currentPage, pageCount, matchCount, visible } = leaderboardPage(rows, query, page)
 
   return (
     <section className="min-w-0 space-y-3 rounded-xl border bg-gray-50 p-4" aria-label={label}>
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-lg font-semibold">{label}</h3>
-        <span className="text-xs text-muted-foreground">{rows.length.toLocaleString()} ranked</span>
+        <span className="text-xs text-muted-foreground">
+          {query ? `${matchCount.toLocaleString()} of ${rows.length.toLocaleString()} ranked` : `${rows.length.toLocaleString()} ranked`}
+        </span>
       </div>
       {drawContext && (
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span>{drawContext.source === 'projected' ? 'Projected odds for the next draw' :
-            `${drawContext.source === 'upcoming' ? 'Upcoming draw' : 'Current draw'} · ${drawContext.session_name}`}</span>
+            `Current draw estimate · ${drawContext.session_name}`}</span>
           <HelpTip topic={`${label.toLowerCase()} draw odds`}>
             {drawContext.source === 'projected'
-              ? 'This estimate uses today’s ticket balances and assumes all active roster members with tickets qualify for the next draw.'
-              : 'Win chance uses each person’s share of eligible tickets in this session. Draw tickets include any eligible session-only tickets.'}
+              ? 'This estimate assumes everyone on the current roster with tickets qualifies for the next draw.'
+              : 'This estimate uses current-roster ticket balances. You need a qualifying clean plate in this draw to have a chance of winning.'}
           </HelpTip>
         </div>
+      )}
+      {pageCount > 1 && (
+        <RankingPagination label={label} page={currentPage}
+          pageCount={pageCount} onPageChange={onPageChange} />
       )}
       {visible.length > 0 ? (
         <ol aria-label={`${label} rankings`} className="grid gap-2">
@@ -131,13 +160,6 @@ function RankingColumn({ group, rows, view, query, page, onPageChange, drawConte
         <p className="text-sm text-muted-foreground">
           {query ? 'No ranked names match your search.' : `No ${view.unit} to rank yet.`}
         </p>
-      )}
-      {pageCount > 1 && (
-        <nav aria-label={`${label} ranking pages`} className="flex items-center justify-between gap-2 text-sm">
-          <Button variant="outline" size="sm" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1}>Previous</Button>
-          <span>Page {currentPage} of {pageCount}</span>
-          <Button variant="outline" size="sm" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === pageCount}>Next</Button>
-        </nav>
       )}
     </section>
   )
@@ -158,7 +180,7 @@ function Rankings({ standings, view, query, drawContext }) {
   )
 }
 
-export default function IndividualRankings({ isGuest, refreshKey, sessionId }) {
+export default function IndividualRankings({ isGuest }) {
   const [view, setView] = useState(isGuest ? 'clean' : 'tickets')
   const [search, setSearch] = useState('')
   const [revision, setRevision] = useState(0)
@@ -170,7 +192,7 @@ export default function IndividualRankings({ isGuest, refreshKey, sessionId }) {
     const controller = new AbortController()
     async function loadRankings() {
       try {
-        const response = await fetch('/api/session/individual-rankings', { signal: controller.signal })
+        const response = await fetch('/api/leaderboards', { signal: controller.signal })
         const data = await readApiJson(response)
         if (!response.ok) throw new Error(data.error || 'Unable to load plate leaderboards.')
         if (!controller.signal.aborted) {
@@ -183,38 +205,33 @@ export default function IndividualRankings({ isGuest, refreshKey, sessionId }) {
     }
     loadRankings()
     return () => controller.abort()
-  }, [revision, refreshKey, sessionId])
+  }, [revision])
 
   const refresh = () => {
     setRankings(null)
     setError('')
-    setSearch('')
     setRevision((value) => value + 1)
   }
   const standings = rankings?.[view]
-  const hasRankedPeople = groups.some(({ key }) => standings?.[key]?.length > 0)
-  const query = search.trim().toLocaleLowerCase()
+  const query = normalizeLeaderboardSearch(search)
 
   return (
     <Card>
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2">
+          <h1 id="plate-leaderboards-title" className="flex items-center gap-2 text-lg leading-none font-semibold">
             <ListOrdered className="h-5 w-5 shrink-0" aria-hidden="true" />
             Plate Leaderboards
-          </CardTitle>
+          </h1>
           <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={!rankings && !error}>
             <RefreshCcw className="h-4 w-4" /> Refresh
           </Button>
         </div>
+        <CardDescription>Standings across sessions since the latest roster upload for each group.</CardDescription>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <RankingTabs label="Individual ranking view" options={views} value={view}
-            className="w-full grid-cols-3 sm:w-auto" onChange={(next) => {
-              if (next === view) return
-              setView(next)
-              setSearch('')
-            }} />
-          {hasRankedPeople && (
+            className="w-full grid-cols-3 sm:w-auto" onChange={setView} />
+          {standings && (
             <div className="relative w-full sm:w-60">
               <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               <Input type="search" value={search} aria-label={isGuest ? 'Search ranked names' : 'Search ranked names or IDs'}

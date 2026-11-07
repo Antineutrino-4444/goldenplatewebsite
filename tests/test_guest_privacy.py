@@ -123,14 +123,18 @@ def test_toggle_applies_to_existing_guests_and_preserves_staff_and_records(clien
     assert any(row['preferred_name'] == 'PrivateName' for row in session_data[sessions[-1]]['clean_records'])
 
 
-def test_individual_rankings_include_older_sessions_and_respect_guest_privacy(client, privacy_school):
+def test_current_roster_rankings_include_public_sessions_and_respect_guest_privacy(client, privacy_school):
     school, admin, _ = privacy_school
+    roster = io.BytesIO(b'Faculty ID,First,Last\nprivate-faculty,Roster,Faculty')
+    assert client.post('/api/teachers/upload', data={'file': (roster, 'faculty.csv')}).status_code == 200
+    assert client.post('/api/session/create', json={'session_name': 'Public faculty meal'}).status_code == 200
+    assert client.post('/api/record/faculty', json={'input_value': 'Roster Faculty'}).status_code == 200
     private_session = client.post('/api/session/create', json={
         'session_name': 'Staff-only archive', 'is_public': False,
     })
     assert private_session.status_code == 200
     assert client.post('/api/record/red', json={'input_value': 'private-101'}).status_code == 200
-    url = '/api/session/individual-rankings'
+    url = '/api/leaderboards'
     response = client.get(url)
     assert response.status_code == 200
     staff = response.get_json()
@@ -140,19 +144,20 @@ def test_individual_rankings_include_older_sessions_and_respect_guest_privacy(cl
     assert {row['student_identifier'] for row in staff['clean']['students']} == {'private-101', 'private-102'}
     assert staff['red']['students'][0]['stats'] == {
         'clean': 2, 'red': 1, 'wins': 0, 'clean_rate': pytest.approx(200 / 3),
-        'tickets': 0, 'draw_tickets': 0, 'draw_odds': 0,
+        'tickets': 0, 'draw_odds': 0,
     }
 
     guest(client, school)
     result = client.get(url)
     assert result.status_code == 200
+    assert result.headers['Cache-Control'] == 'no-store'
     public = result.get_json()
     assert public['tickets'] is None
     assert public['red']['students'] == []
     assert [row['count'] for row in public['clean']['students']] == [2, 2]
     assert len({row['display_name'] for row in public['clean']['students']}) == 2
     assert 'PrivateName' not in result.get_data(as_text=True)
-    assert public['clean']['faculty'][0]['display_name'] == 'Faculty member'
+    assert [row['display_name'] for row in public['clean']['faculty']] == ['Faculty member']
     assert public['draw_context'] == {}
     assert all(row['stats'] == {'clean': 2, 'red': 0, 'wins': 0, 'clean_rate': 100}
                for row in public['clean']['students'])

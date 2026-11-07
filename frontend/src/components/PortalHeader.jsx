@@ -46,6 +46,7 @@ export default function PortalHeader({ app, interschool = false }) {
           {[
             ['/portal', 'Recorder'],
             ['/portal/dashboard', 'Session dashboard'],
+            ['/portal/leaderboards', 'Plate Leaderboards'],
             ...(['admin', 'superadmin'].includes(app.user?.role) ? [['/portal/admin', 'School administration']] : []),
           ].map(([to, label]) => <NavLink key={to} end to={to} className={({ isActive }) => `inline-flex items-center gap-2 rounded-md px-3 py-2 ${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-slate-500 hover:bg-slate-50'}`}>
             {label}

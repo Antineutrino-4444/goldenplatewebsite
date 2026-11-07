@@ -167,7 +167,7 @@ class GuestView:
 
 @recorder_bp.after_request
 def anonymize_guest_session_response(response):
-    if not request.path.startswith('/api/session/'):
+    if not (request.path.startswith('/api/session/') or request.path == '/api/leaderboards'):
         return response
     # Privacy changes must apply on the next request, without a cached response.
     response.headers['Cache-Control'] = 'no-store'

@@ -183,12 +183,12 @@ def test_ticket_rankings_carry_balances_across_sessions_and_use_current_houses(c
     by_id['9403'].is_active = 0
     db_session.commit()
 
-    rankings = client.get('/api/session/individual-rankings').get_json()
+    rankings = client.get('/api/leaderboards').get_json()
     assert [(row['display_name'], row['count']) for row in rankings['tickets']['students']] == [
-        ('Name9401 Student', 2), ('Name9403 Student', 1), ('Name9402 Student', 0),
+        ('Name9401 Student', 2), ('Name9402 Student', 0),
     ]
     assert [(row['display_name'], row['count']) for row in rankings['tickets']['faculty']] == [('Alex Ranked', 1)]
-    assert [row['count'] for row in rankings['clean']['students']] == [2, 1, 1]
+    assert [row['count'] for row in rankings['clean']['students']] == [2, 1]
     assert [(row['display_name'], row['count']) for row in rankings['red']['students']] == [('Name9402 Student', 1)]
     houses = client.get(f'/api/session/{current}/house-stats').get_json()['house_tickets']
     assert {'house': 'Current House', 'roster_count': 2, 'tickets': 2} in houses
@@ -208,7 +208,7 @@ def test_leaderboard_odds_follow_each_draw_and_keep_finalized_wins(client, login
         return client.post('/api/session/create', json={'session_name': f'{name} {uuid.uuid4().hex}'}).get_json()['session_id']
 
     def standings():
-        return client.get('/api/session/individual-rankings').get_json()
+        return client.get('/api/leaderboards').get_json()
 
     prior = make_meal('Prior')
     for category, data in [('clean', {'input_value': '9501'}), ('faculty', {'teacher_id': faculty['rank-faculty-1']})]:
@@ -247,10 +247,63 @@ def test_leaderboard_odds_follow_each_draw_and_keep_finalized_wins(client, login
     assert next_meal != prior
     assert client.post('/api/record/clean', json={'input_value': '9501'}).status_code == 200
     assert client.post('/api/record/faculty', json={'teacher_id': faculty['rank-faculty-1']}).status_code == 200
-    assert client.post(f'/api/session/switch/{current}').status_code == 200
     results = standings()
-    assert {context['source'] for context in results['draw_context'].values()} == {'upcoming'}
+    assert client.post(f'/api/session/switch/{current}').status_code == 200
+    assert standings() == results
+    assert {context['source'] for context in results['draw_context'].values()} == {'current'}
     for group in ('students', 'faculty'):
         winner, other = results['clean'][group]
         assert (winner['stats']['wins'], winner['stats']['draw_odds']) == (1, 100)
         assert (other['stats']['wins'], other['stats']['draw_odds']) == (0, 0)
+
+
+def test_leaderboard_excludes_earlier_roster_activity_for_retained_members(client, login, monkeypatch):
+    login()
+    assert upload_roster(client, ['9601', '9602']).status_code == 200
+
+    def upload_faculty(rows):
+        roster = f'Faculty ID,First,Last\n{rows}'.encode()
+        return client.post('/api/teachers/upload', data={'file': (io.BytesIO(roster), 'faculty.csv')})
+
+    assert upload_faculty('retained,Alex,Retained\nremoved,Jamie,Removed').status_code == 200
+    prior = client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).get_json()['session_id']
+    for category, name in [('clean', '9601'), ('red', '9602'), ('faculty', 'Alex Retained')]:
+        assert client.post(f'/api/record/{category}', json={'input_value': name}).status_code == 200
+    monkeypatch.setattr(secure_random, 'random', lambda: 0)
+    for draw, action in [('draw', 'start'), ('faculty', 'pick')]:
+        assert client.post(f'/api/session/{prior}/{draw}/{action}').status_code == 200
+        assert client.post(f'/api/session/{prior}/{draw}/finalize').status_code == 200
+
+    older = client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).get_json()['session_id']
+    for category, name in [('clean', '9601'), ('clean', '9602'), ('faculty', 'Alex Retained'), ('faculty', 'Jamie Removed')]:
+        assert client.post(f'/api/record/{category}', json={'input_value': name}).status_code == 200
+
+    assert upload_roster(client, ['9601', '9603']).status_code == 200
+    assert upload_faculty('retained,Alex,Retained\nnew,Taylor,New').status_code == 200
+    with client.session_transaction() as browser_session:
+        browser_session.pop('session_id', None)
+    url = '/api/leaderboards'
+    result = client.get(url)
+    assert result.status_code == 200
+    standings = result.get_json()
+    assert [(row['display_name'], row['count']) for row in standings['tickets']['students']] == [
+        ('Name9601 Student', 0), ('Name9603 Student', 0),
+    ]
+    assert [(row['display_name'], row['count']) for row in standings['tickets']['faculty']] == [
+        ('Alex Retained', 0), ('Taylor New', 0),
+    ]
+    assert standings['clean'] == {'students': [], 'faculty': []}
+    assert standings['red'] == {'students': []}
+    assert all(row['stats']['wins'] == 0 for group in standings['tickets'].values() for row in group)
+
+    assert client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).status_code == 200
+    for category, name in [('clean', '9601'), ('faculty', 'Alex Retained'), ('faculty', 'Manual Faculty')]:
+        assert client.post(f'/api/record/{category}', json={'input_value': name}).status_code == 200
+    standings = client.get(url).get_json()
+    for group in ('students', 'faculty'):
+        winner, other = standings['tickets'][group]
+        assert winner['count'] == winner['stats']['tickets'] == winner['stats']['clean'] == 1
+        assert winner['stats']['draw_odds'] == 100
+        assert winner['stats']['wins'] == other['count'] == 0
+        assert 'draw_tickets' not in winner['stats']
+    assert db_session.query(SessionRecord).filter_by(session_id=older).count() == 4

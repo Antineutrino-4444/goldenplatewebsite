@@ -77,6 +77,18 @@ function MainPortal({ app }) {
     window.scrollTo({ left: origin.x, top: origin.y, behavior: 'instant' })
     requestAnimationFrame(() => window.scrollTo({ left: origin.x, top: origin.y, behavior: 'instant' }))
   }
+
+  if (app.pageSection === 'leaderboards') {
+    return (
+      <div className="min-h-screen min-w-0 bg-gray-50">
+        <PortalHeader app={app} />
+        <main id="main-content" className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-8 lg:px-8">
+          <IndividualRankings isGuest={app.user?.role === 'guest'} />
+        </main>
+      </div>
+    )
+  }
+
   const {
     user,
     sessionId,
@@ -421,7 +433,6 @@ function MainPortal({ app }) {
             <div role="group" aria-label="Session sections" className="mb-4 flex flex-wrap gap-2 text-sm">
               {[
                 ['rankings', 'House rankings', 'session-rankings-panel'],
-                ['individual', 'Plate Leaderboards', 'session-individual-rankings-panel'],
                 ['draw', 'Draw Center', 'session-draw-panel'],
                 ...(['admin', 'superadmin'].includes(user?.role) ? [['databases', 'Student and teacher databases', 'session-databases-panel']] : []),
               ].map(([panel, label, id]) => (
@@ -431,16 +442,12 @@ function MainPortal({ app }) {
               ))}
               <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal sm:ml-auto"
                 aria-expanded={sessionPanel === 'all'}
-                aria-controls={`session-rankings-panel session-draw-panel session-individual-rankings-panel${['admin', 'superadmin'].includes(user?.role) ? ' session-databases-panel' : ''}`}
+                aria-controls={`session-rankings-panel session-draw-panel${['admin', 'superadmin'].includes(user?.role) ? ' session-databases-panel' : ''}`}
                 onClick={() => selectSessionPanel('all')}>{sessionPanel === 'all' ? 'Collapse all' : 'Expand all'}</Button>
             </div>
             <div className={`grid grid-cols-1 gap-4 sm:gap-6 ${sessionPanel === 'all' && canExportSessionData ? 'lg:grid-cols-2' : ''}`}>
               <div id="session-rankings-panel" hidden={!panelIsOpen('rankings')} className="min-w-0">
                 <HouseRanking app={app} showVideoHelp={app.pageSection === 'recorder' && panelIsOpen('rankings')} />
-              </div>
-              <div id="session-individual-rankings-panel" hidden={!panelIsOpen('individual')} className="min-w-0">
-                {panelIsOpen('individual') && <IndividualRankings isGuest={user?.role === 'guest'} sessionId={sessionId}
-                  refreshKey={drawSummary?.generated_at} />}
               </div>
               <div id="session-draw-panel" hidden={!panelIsOpen('draw')}
                 className={`min-w-0 ${sessionPanel === 'all' && canExportSessionData ? 'lg:col-span-2' : ''}`}>

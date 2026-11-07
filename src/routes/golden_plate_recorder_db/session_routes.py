@@ -1071,6 +1071,7 @@ def _scan_history_record(record, student, teacher):
 
 
 @recorder_bp.route('/session/individual-rankings', methods=['GET'])
+@recorder_bp.route('/leaderboards', methods=['GET'])
 def get_individual_rankings():
     if not require_auth_or_guest():
         return jsonify({'error': 'Authentication or guest access required'}), 401
@@ -1080,7 +1081,7 @@ def get_individual_rankings():
             return forbidden
 
     _, _, school_id = _get_request_actor()
-    return jsonify(school_individual_rankings(school_id, session_id=session.get('session_id'), public_only=is_guest()))
+    return jsonify(school_individual_rankings(school_id, public_only=is_guest()))
 
 
 def _is_record_identity_conflict(error):

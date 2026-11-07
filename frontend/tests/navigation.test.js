@@ -7,8 +7,8 @@ test('login returns to supported local pages and preserves filters', () => {
   assert.equal(safeReturnPath('/map?school=SAC#schools'), '/map?school=SAC#schools')
   assert.equal(safeReturnPath(null, '/interschool'), '/interschool')
 })
-test('school arrival includes encoded admin and dashboard login destinations', () => {
-  for (const destination of ['/portal', '/portal/admin', '/portal/dashboard', '/portal/admin/?tab=accounts#invites', '/portal/dashboard?session=abc']) {
+test('school arrival includes encoded school portal destinations', () => {
+  for (const destination of ['/portal', '/portal/admin', '/portal/dashboard', '/portal/leaderboards', '/portal/admin/?tab=accounts#invites', '/portal/dashboard?session=abc']) {
     const query = new URLSearchParams(`next=${encodeURIComponent(destination)}`)
     const target = safeReturnPath(query.get('next'))
     assert.equal(target, destination, 'the requested destination is preserved after the animation')

@@ -67,21 +67,21 @@ function Workspace() {
   useEffect(() => {
     if (!location.state?.schoolArrival || authentication || !app.authReady || !app.isAuthenticated) return
     const frame = requestAnimationFrame(() => {
-      const heading = document.getElementById('record-entry-title')
+      const heading = document.getElementById(path === '/portal/leaderboards' ? 'plate-leaderboards-title' : 'record-entry-title')
       if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }) }
     })
     return () => cancelAnimationFrame(frame)
-  }, [location.key, location.state?.schoolArrival, authentication, app.authReady, app.isAuthenticated])
+  }, [location.key, location.state?.schoolArrival, authentication, app.authReady, app.isAuthenticated, path])
 
   useEffect(() => {
-    document.title = `${guestEntry ? 'School guest access' : registration ? 'Register your school' : authentication ? 'School login' : app.isInterschoolUser ? 'Inter-school administration' : path.endsWith('/dashboard') ? 'Session dashboard' : path.endsWith('/admin') ? 'School administration' : 'School portal'} · Golden Plate`
+    document.title = `${guestEntry ? 'School guest access' : registration ? 'Register your school' : authentication ? 'School login' : app.isInterschoolUser ? 'Inter-school administration' : path.endsWith('/dashboard') ? 'Session dashboard' : path.endsWith('/admin') ? 'School administration' : path === '/portal/leaderboards' ? 'Plate Leaderboards' : 'School portal'} · Golden Plate`
   }, [guestEntry, registration, authentication, path, app.isInterschoolUser])
   useEffect(() => { app.setShowSignupDialog(signup) }, [signup, app.setShowSignupDialog])
   // Dedicated URLs keep the existing registration workflow and success notices.
   const routeApp = {
     ...app,
     signupPage: signup,
-    pageSection: path === '/portal/dashboard' ? 'dashboard' : path === '/portal/admin' ? 'admin' : 'recorder',
+    pageSection: path.startsWith('/portal/') ? path.split('/').at(-1) : 'recorder',
     signup: async () => { if (await app.signup()) navigate('/login', { replace: true }) },
     registerSchool: async () => { if (await app.registerSchool()) navigate('/login', { replace: true }) },
     showSchoolRegistration: registration,
@@ -103,7 +103,7 @@ function Workspace() {
     if (!showFlight) return <Navigate to={target} replace />
   }
   if (!authentication && !app.isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />
-  if (!authentication && !['/portal', '/portal/dashboard', '/portal/admin', '/interschool'].includes(path)) return <NotFound />
+  if (!authentication && !isSchoolPortalPath(path) && path !== '/interschool') return <NotFound />
   if (!authentication && path === '/interschool' && !app.isInterschoolUser) return <Navigate to="/portal" replace />
   if (!authentication && app.isInterschoolUser && path !== '/interschool') return <Navigate to="/interschool" replace />
   if (!authentication && path === '/portal/admin' && !['admin', 'superadmin'].includes(app.user?.role)) return <Navigate to="/portal" replace />

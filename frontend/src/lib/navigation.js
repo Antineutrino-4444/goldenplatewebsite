@@ -8,7 +8,7 @@ export function isMapHost(hostname = '') {
 
 export function isSchoolPortalPath(value) {
   const path = value.split(/[?#]/)[0].replace(/\/+$/, '')
-  return ['/portal', '/portal/dashboard', '/portal/admin'].includes(path)
+  return ['/portal', '/portal/dashboard', '/portal/admin', '/portal/leaderboards'].includes(path)
 }
 
 // Never allow a login redirect to leave this origin or return to authentication.
@@ -18,7 +18,7 @@ export function safeReturnPath(value, fallback = '/portal') {
     const url = new URL(value, 'https://goldenplate.invalid')
     if (url.origin !== 'https://goldenplate.invalid') return fallback
     const path = url.pathname.replace(/\/+$/, '') || '/'
-    if (!['/portal', '/portal/dashboard', '/portal/admin', '/map', '/live-counter', '/live-counter/community', '/interschool'].includes(path)) return fallback
+    if (!isSchoolPortalPath(path) && !['/map', '/live-counter', '/live-counter/community', '/interschool'].includes(path)) return fallback
     return `${url.pathname}${url.search}${url.hash}`
   } catch { return fallback }
 }
@@ -42,6 +42,6 @@ export function siteReturnPath(value) {
 
 export function sitePageLabel(path) {
   const page = path.split(/[?#]/)[0].replace(/\/+$/, '') || '/'
-  return ({ '/': 'Home', '/about': 'Our story', '/how-it-works': 'How it works', '/getting-started': 'Getting started', '/stories': 'Watch & listen', '/release-notes': 'Release history', '/map': 'School map', '/login': 'School login', '/register': 'School registration', '/signup': 'Account signup', '/live-counter': 'School counter', '/live-counter/community': 'Community counter' })[page]
+  return ({ '/': 'Home', '/about': 'Our story', '/how-it-works': 'How it works', '/getting-started': 'Getting started', '/stories': 'Watch & listen', '/release-notes': 'Release history', '/map': 'School map', '/login': 'School login', '/register': 'School registration', '/signup': 'Account signup', '/live-counter': 'School counter', '/live-counter/community': 'Community counter', '/portal/leaderboards': 'Plate Leaderboards' })[page]
     || (page === '/stories/transcript' ? 'Podcast transcript' : page.startsWith('/guest/sessions/') ? 'Guest session' : page.startsWith('/guest/schools/') ? 'School guest view' : 'School portal')
 }

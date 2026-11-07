@@ -13,6 +13,7 @@ from .db import (
     Student,
     Teacher,
     User,
+    _now_utc,
     db_session,
 )
 from .users import (
@@ -155,7 +156,7 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
             if filename is not None:
                 school = db_session.get(School, school_id)
                 school.roster_filename = filename
-                school.roster_uploaded_at = datetime.now()
+                school.roster_uploaded_at = _now_utc()
                 school.roster_uploaded_by = uploaded_by
             db_session.flush()
             snapshot = current_roster_snapshot(school_id, refresh=True)
@@ -273,7 +274,7 @@ def sync_teacher_table_from_list(teachers, *, school_id=None, filename=None, upl
             if filename is not None:
                 school = db_session.get(School, school_id)
                 school.teacher_roster_filename = filename
-                school.teacher_roster_uploaded_at = datetime.now()
+                school.teacher_roster_uploaded_at = _now_utc()
                 school.teacher_roster_uploaded_by = uploaded_by
             db_session.commit()
         except Exception:
