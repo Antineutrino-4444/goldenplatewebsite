@@ -11,7 +11,6 @@ from sqlalchemy.exc import IntegrityError
 NOTIFICATION_TYPES = {
     'account_lifecycle': ('Account inactivity notices', 'Warnings about disabled accounts and permanent account deletion.'),
     'release_notes': ('Release notes', 'Updates when a new version of Golden Plate is released.'),
-    'update_subscription': ('Update list signups', 'Verified subscriptions to website release emails.'),
     'school_registration': ('School registration requests', 'New schools requesting registration.'),
     'account_signup': ('Account signup requests', 'People requesting an account at a school.'),
     'invite_signup': ('Invite signups', 'Accounts created using a school invite code.'),

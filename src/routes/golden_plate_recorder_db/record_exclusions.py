@@ -1,13 +1,14 @@
 """Session-scoped, reversible exclusions with consistent totals and draw state."""
 
 import json
+from datetime import timezone
 
 from sqlalchemy import func
 
 from .db import (RecordExclusionEvent, RosterSnapshot, School, Session, SessionRecord,
-                 Student, _now_utc, db_session)
+                 SessionTicketEvent, Student, _now_utc, db_session)
 from .draw_db import (get_clean_student_ids_for_session, get_student_ticket_balance,
-                      record_draw_event)
+                      record_draw_event, update_draft_pool)
 from .faculty_draw import clear_faculty_pick
 from .utils import normalize_house, plate_count_label
 from .person_identity import record_names
@@ -52,12 +53,47 @@ def review_records(meal, roster_scope='auto'):
                                                'available': bool(members), 'has_saved_roster': bool(snapshot)}}
 
 
-def _recalculate_tickets(student_id, school_id):
-    from .ticket_combos import recalculate_school_tickets
+def _time(value):
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.timestamp()
 
+
+def _recalculate_tickets(student_id, school_id):
+    """Replay plate outcomes and independent ticket actions; preserve audit events.
+
+    Reset deltas are historical snapshots, so subtracting a removed clean/red
+    event from today's balance is incorrect. Replay resets as resets instead.
+    """
+    events = db_session.query(SessionTicketEvent).filter_by(
+        student_id=student_id, school_id=school_id,
+    ).order_by(SessionTicketEvent.occurred_at, SessionTicketEvent.id).all()
+    if not events:
+        return False
     previous = get_student_ticket_balance(student_id)
-    recalculate_school_tickets(school_id)
-    return get_student_ticket_balance(student_id) != previous
+    first = events[0]
+    balance = max(0, (first.ticket_balance_after or 0) - first.tickets_delta)
+    records = db_session.query(SessionRecord).filter_by(
+        student_id=student_id, school_id=school_id,
+    ).filter(SessionRecord.category.in_(['clean', 'red'])).all()
+    linked_events = {event.session_record_id: event for event in events if event.session_record_id}
+    operations = []
+    for row in records:
+        if row.is_excluded:
+            continue
+        event = linked_events.get(row.id)
+        # Clean records without a ticket event may predate the ticket system.
+        # Red plates must still reset even if they originally encountered zero.
+        if event or row.category == 'red':
+            operations.append((_time(event.occurred_at if event else row.recorded_at),
+                               0, row.id, 'reset' if row.category == 'red' else 'earn', 1))
+    for event in events:
+        if not event.session_record_id:
+            operations.append((_time(event.occurred_at), 1, event.id, event.event_type, event.tickets_delta))
+    for _, _, _, action, delta in sorted(operations):
+        balance = 0 if action == 'reset' else max(0, balance + delta)
+    update_draft_pool(student_id, balance)
+    return balance != previous
 
 
 def set_record_excluded(meal, row, excluded, actor_id, reason):
@@ -81,7 +117,7 @@ def set_record_excluded(meal, row, excluded, actor_id, reason):
     meal.total_clean = meal.clean_number + meal.faculty_number
     meal.total_dirty = meal.dirty_number + meal.red_number
     meal.updated_at = _now_utc()
-    tickets_changed = bool(row.student_id and
+    tickets_changed = bool(row.student_id and row.category in ('clean', 'red') and
                            _recalculate_tickets(row.student_id, meal.school_id))
     reset_sessions = []
     target_id = meal.main_session_id or meal.id

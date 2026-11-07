@@ -8,7 +8,6 @@ from .draw_db import (
     finalize_draw as finalize_draw_db,
     get_draw_history,
     get_draw_ticket_totals,
-    get_manual_student_ids_for_draw,
     get_eligible_students_with_tickets,
     get_or_create_session_draw,
     get_session_ids_for_draw,
@@ -18,7 +17,6 @@ from .draw_db import (
     reset_draw as reset_draw_db,
 )
 from .faculty_draw import faculty_ticket_summary
-from .ticket_combos import replay_school_tickets
 from .manual_draw import public_student_identifier
 from .utils import extract_student_id_from_key, format_display_name, make_student_key, normalize_house, normalize_name
 from .security import get_current_user, is_guest, require_admin, require_auth_or_guest, require_superadmin
@@ -30,7 +28,7 @@ def _student_draw_identity(student):
     return identifier, make_student_key(student.preferred_name, student.last_name, identifier)
 
 
-def _student_draw_payload(student, tickets=None, probability=None, next_ticket_gain=None):
+def _student_draw_payload(student, tickets=None, probability=None):
     identifier, key = _student_draw_identity(student)
     return {
         'student_id': student.id,
@@ -45,7 +43,6 @@ def _student_draw_payload(student, tickets=None, probability=None, next_ticket_g
         'clan': student.clan,
         'tickets': tickets,
         'probability': probability,
-        'next_ticket_gain': next_ticket_gain,
     }
 
 
@@ -66,17 +63,13 @@ def get_draw_summary(session_id):
         return jsonify({'error': 'Access denied'}), 403
 
     # Get eligible students with tickets
-    combo_states = replay_school_tickets(school_id)[0]
-    eligible = get_eligible_students_with_tickets(session_id, states=combo_states)
+    eligible = get_eligible_students_with_tickets(session_id)
     total_tickets = sum(tickets for _, tickets in eligible)
     
     candidates = []
-    manual_ids = get_manual_student_ids_for_draw(session_id)
     for student, tickets in eligible:
         probability = (tickets / total_tickets * 100.0) if total_tickets > 0 else 0.0
-        scope = session_id if student.id in manual_ids else 'roster'
-        state = combo_states.get(('student', student.id, scope))
-        candidates.append(_student_draw_payload(student, tickets, probability, state.next_gain if state else 1))
+        candidates.append(_student_draw_payload(student, tickets, probability))
     
     # Get draw info
     draw = db_session.query(SessionModel.__table__.c.id).filter_by(id=session_id).first()
@@ -105,9 +98,8 @@ def get_draw_summary(session_id):
         winner = db_session.query(Student).filter_by(id=draw_record.winner_student_id).first()
         winner_is_manual = winner and is_manual_draw_participant(session_id, winner.id)
         if winner and (winner.is_active or winner_is_manual):
-            state = combo_states.get(('student', winner.id, session_id if winner_is_manual else 'roster'))
             draw_info['winner'] = _student_draw_payload(
-                winner, draw_record.tickets_at_selection, probability_at_selection, state.next_gain if state else 1,
+                winner, draw_record.tickets_at_selection, probability_at_selection,
             )
         elif not draw_record.finalized:
             draw_info['has_winner'] = False
@@ -131,7 +123,7 @@ def get_draw_summary(session_id):
         'top_candidates': candidates[:3],
         'candidates': candidates,
         'draw_info': draw_info,
-        'faculty_draw': faculty_ticket_summary(sess, can_override=bool(user and user['role'] == 'superadmin'), states=combo_states),
+        'faculty_draw': faculty_ticket_summary(sess, can_override=bool(user and user['role'] == 'superadmin')),
         'history': history,
         'main_session_id': sess.main_session_id,
         'is_extra': bool(sess.main_session_id),

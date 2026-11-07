@@ -112,7 +112,6 @@ def _delete_session_with_dependencies(db_sess):
     """Remove a session and any dependent draw and record rows."""
     session_id = db_sess.id
     session_name = db_sess.session_name
-    school_id = db_sess.school_id
 
     # Explicitly delete dependents because SQLite foreign key cascades
     # are easy to disable accidentally and we do not want orphan rows.
@@ -128,17 +127,10 @@ def _delete_session_with_dependencies(db_sess):
         SessionModel.faculty_pick_record_id.in_(record_ids),
     ).update({SessionModel.faculty_pick_record_id: None}, synchronize_session=False)
     db_session.query(RecordExclusionEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
-    from .db import SessionTicketEvent, DraftPool
-    db_session.query(SessionTicketEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
-    db_session.query(DraftPool).filter_by(session_id=session_id).update(
-        {DraftPool.session_id: None}, synchronize_session=False,
-    )
     db_session.query(SessionDrawEvent).filter_by(session_id=session_id).delete(synchronize_session=False)
     db_session.query(SessionRecord).filter_by(session_id=session_id).delete(synchronize_session=False)
 
     db_session.delete(db_sess)
-    from .ticket_combos import recalculate_school_tickets
-    recalculate_school_tickets(school_id)
     db_session.commit()
 
     save_delete_requests()
@@ -467,8 +459,6 @@ def toggle_discard(session_id):
         db_sess.discarded_at = _now_utc() if discarded else None
         db_sess.discarded_by = user['id'] if discarded else None
         try:
-            from .ticket_combos import recalculate_school_tickets
-            recalculate_school_tickets(user['school_id'])
             db_session.commit()
         except Exception:
             db_session.rollback()
@@ -893,7 +883,6 @@ def finalize_faculty_winner(session_id):
             if teacher:
                 # Keep the cumulative reset even if the finalized session is deleted.
                 teacher.faculty_tickets_reset_at = db_sess.faculty_finalized_at
-                teacher.faculty_combo_round_up = event.combo_round_up
         db_session.commit()
     faculty = _serialize_faculty_pick(db_sess)
     data = get_session_entry(session_id)

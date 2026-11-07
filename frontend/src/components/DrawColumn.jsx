@@ -81,11 +81,6 @@ function CandidateList({ candidates, winner, selectable, selectedCandidate, onSe
               <span className="text-xs text-gray-500">
                 {formatTickets(candidate.tickets)} tickets • {formatTickets(candidate.probability)}% chance
               </span>
-              {candidate.next_ticket_gain != null && (
-                <span className="block text-xs font-medium text-emerald-700">
-                  Next clean plate: +{Number(candidate.next_ticket_gain).toLocaleString()} tickets
-                </span>
-              )}
             </span>
             {isWinner && <Badge variant="outline">Winner</Badge>}
           </>

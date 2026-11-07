@@ -10,7 +10,7 @@ from html import escape
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
-from src.routes.golden_plate_recorder_db.db import ReleaseEmailBatch, ReleaseEmailDelivery, SessionFactory, User, WebsiteUpdateSubscriber
+from src.routes.golden_plate_recorder_db.db import ReleaseEmailBatch, ReleaseEmailDelivery, SessionFactory, User
 
 from .email_delivery import send_email_via_brevo
 from .release_notes import read_release_notes, version_key
@@ -61,9 +61,8 @@ def get_release_recipients(session):
     account_emails = session.scalars(select(User.email).where(
         User.role.in_(('superadmin', 'admin')), User.email.is_not(None),
     ))
-    subscriber_emails = session.scalars(select(WebsiteUpdateSubscriber.email))
     return {
-        email.strip().lower() for email in [*get_website_update_recipients(), *account_emails, *subscriber_emails]
+        email.strip().lower() for email in [*get_website_update_recipients(), *account_emails]
         if email.strip()
     }
 

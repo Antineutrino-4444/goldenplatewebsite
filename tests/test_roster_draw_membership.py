@@ -235,8 +235,8 @@ def test_clean_rankings_keep_five_plus_three_plates_across_roster_uploads(client
             ).one().id, 0),
         ]
         assert standings['clean']['students'][0]['stats']['clean'] == 8
-        assert standings['clean']['students'][0]['stats']['tickets'] == 36
-        assert standings['clean']['students'][0]['stats']['historical_tickets'] == 36
+        assert standings['clean']['students'][0]['stats']['tickets'] == 8
+        assert standings['clean']['students'][0]['stats']['historical_tickets'] == 8
 
     school_slug = db_session.get(School, DEFAULT_SCHOOL_ID).slug
     assert client.post('/api/auth/guest', json={'school_slug': school_slug}).status_code == 200
@@ -260,27 +260,27 @@ def test_ticket_rankings_separate_current_balances_from_lifetime_earnings(client
     meal(('clean', '830'), ('clean', '831'))
     meal(('clean', '830'), ('clean', '831'))
     meal(('red', '830'))
-    assert tickets('tickets') == [('Name831 Student', 3), ('Name830 Student', 0), ('Name832 Student', 0)]
-    assert tickets('historical_tickets') == [('Name830 Student', 3), ('Name831 Student', 3), ('Name832 Student', 0)]
+    assert tickets('tickets') == [('Name831 Student', 2), ('Name830 Student', 0), ('Name832 Student', 0)]
+    assert tickets('historical_tickets') == [('Name830 Student', 2), ('Name831 Student', 2), ('Name832 Student', 0)]
 
     winning_meal = meal(('clean', '830'))
     assert client.post(f'/api/session/{winning_meal}/draw/override', json={'student_key': 'id:830'}).status_code == 200
     assert client.post(f'/api/session/{winning_meal}/draw/finalize', json={}).status_code == 200
     assert tickets('tickets')[1] == ('Name830 Student', 0)
-    assert tickets('historical_tickets')[0] == ('Name830 Student', 4)
+    assert tickets('historical_tickets')[0] == ('Name830 Student', 3)
     meal(('clean', '830'))
     meal(('dirty', '830'))
 
     for url in ('/api/leaderboards', '/api/session/individual-rankings'):
         standings = client.get(url).get_json()
-        assert [row['count'] for row in standings['tickets']['students']] == [3, 1, 0]
-        assert [row['count'] for row in standings['historical_tickets']['students']] == [5, 3, 0]
+        assert [row['count'] for row in standings['tickets']['students']] == [2, 1, 0]
+        assert [row['count'] for row in standings['historical_tickets']['students']] == [4, 2, 0]
         assert standings['historical_tickets']['students'][0]['stats']['tickets'] == 1
-        assert standings['tickets']['students'][1]['stats']['historical_tickets'] == 5
+        assert standings['tickets']['students'][1]['stats']['historical_tickets'] == 4
 
     # Replacing membership retains the returning student's lifetime total.
     assert upload_roster(client, ['830', '832']).status_code == 200
-    assert tickets('historical_tickets') == [('Name830 Student', 5), ('Name832 Student', 0)]
+    assert tickets('historical_tickets') == [('Name830 Student', 4), ('Name832 Student', 0)]
 
 
 def test_historical_tickets_follow_valid_plates_and_independent_grants(client, login):
@@ -312,4 +312,4 @@ def test_historical_tickets_follow_valid_plates_and_independent_grants(client, l
 
     assert client.post(f'/api/session/{sessions[0]}/records/{record_id}/exclusion',
                        json={'excluded': False}).status_code == 200
-    assert client.get('/api/leaderboards').get_json()['historical_tickets']['students'][0]['count'] == 10
+    assert client.get('/api/leaderboards').get_json()['historical_tickets']['students'][0]['count'] == 8

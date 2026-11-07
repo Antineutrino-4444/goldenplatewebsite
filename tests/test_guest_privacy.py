@@ -139,12 +139,12 @@ def test_current_roster_rankings_include_public_sessions_and_respect_guest_priva
     assert response.status_code == 200
     staff = response.get_json()
     assert [row['count'] for row in staff['clean']['students']] == [2, 2]
-    assert [row['count'] for row in staff['tickets']['students']] == [3, 0]
+    assert [row['count'] for row in staff['tickets']['students']] == [2, 0]
     assert [row['count'] for row in staff['red']['students']] == [1]
     assert {row['student_identifier'] for row in staff['clean']['students']} == {'private-101', 'private-102'}
     assert staff['red']['students'][0]['stats'] == {
         'clean': 2, 'red': 1, 'wins': 0, 'clean_rate': pytest.approx(200 / 3),
-        'tickets': 0, 'historical_tickets': 3, 'next_ticket_gain': 1,
+        'tickets': 0, 'historical_tickets': 2,
     }
 
     guest(client, school)

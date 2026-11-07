@@ -40,7 +40,6 @@ def test_faculty_finalization_survives_restart_and_redraw_requires_confirmation(
 
 def test_faculty_weights_roster_tickets_across_sessions_and_keeps_manual_tickets_local(client, login, monkeypatch):
     login()
-    monkeypatch.setattr('src.routes.golden_plate_recorder_db.db.secrets.randbits', lambda _: 0)
     roster = b'Faculty ID,First,Last\nweight-1,Riley,Roster\nweight-2,Taylor,Roster'
     assert client.post('/api/teachers/upload', data={'file': (io.BytesIO(roster), 'faculty.csv')}).status_code == 200
 
@@ -63,17 +62,17 @@ def test_faculty_weights_roster_tickets_across_sessions_and_keeps_manual_tickets
         return client.get(f'/api/session/{session_id}/draw/summary').get_json()
 
     standings = summary()['faculty_draw']
-    assert standings['total_tickets'] == 4
+    assert standings['total_tickets'] == 3
     assert [(candidate['display_name'], candidate['tickets']) for candidate in standings['candidates']] == [
-        ('Riley Roster', 3), ('Casey Manual', 1),
+        ('Riley Roster', 2), ('Casey Manual', 1),
     ]
-    assert standings['candidates'][0]['probability'] == 75
+    assert standings['candidates'][0]['probability'] == 2 / 3 * 100
     monkeypatch.setattr(secure_random, 'random', lambda: 0.6)
     url = f'/api/session/{session_id}/faculty'
     assert client.post(f'{url}/pick').get_json()['faculty']['display_name'] == 'Riley Roster'
     assert summary()['faculty_draw'] == standings
     selection = summary()['history'][-1]
-    assert (selection['tickets'], selection['probability'], selection['pool_size']) == (3, 75, 2)
+    assert (selection['tickets'], selection['probability'], selection['pool_size']) == (2, 66.67, 2)
     assert client.post(f'{url}/finalize').status_code == 200
     assert summary()['faculty_draw']['total_tickets'] == 1
     new_session_id = create_session()
@@ -186,19 +185,18 @@ def test_ticket_rankings_carry_balances_across_sessions_and_use_current_houses(c
 
     rankings = client.get('/api/leaderboards').get_json()
     assert [(row['display_name'], row['count']) for row in rankings['tickets']['students']] == [
-        ('Name9401 Student', 3), ('Name9402 Student', 0),
+        ('Name9401 Student', 2), ('Name9402 Student', 0),
     ]
     assert [(row['display_name'], row['count']) for row in rankings['tickets']['faculty']] == [('Alex Ranked', 1)]
     assert [row['count'] for row in rankings['clean']['students']] == [2, 1]
     assert [(row['display_name'], row['count']) for row in rankings['red']['students']] == [('Name9402 Student', 1)]
     houses = client.get(f'/api/session/{current}/house-stats').get_json()['house_tickets']
-    assert {'house': 'Current House', 'roster_count': 2, 'tickets': 3} in houses
+    assert {'house': 'Current House', 'roster_count': 2, 'tickets': 2} in houses
     assert not any(house['house'] == 'Former House' for house in houses)
 
 
 def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(client, login, monkeypatch):
     login()
-    monkeypatch.setattr('src.routes.golden_plate_recorder_db.db.secrets.randbits', lambda _: 0)
     assert upload_roster(client, ['9501', '9502']).status_code == 200
     roster = b'Faculty ID,First,Last\nrank-faculty-1,Alex,Ranked\nrank-faculty-2,Alex,Ranked'
     assert client.post('/api/teachers/upload', data={'file': (io.BytesIO(roster), 'faculty.csv')}).status_code == 200
@@ -232,7 +230,7 @@ def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(c
     assert set(results) == {'clean', 'red', 'tickets', 'historical_tickets'}
     for metric in results.values():
         for rows in metric.values():
-            assert all(set(row['stats']) == {'clean', 'red', 'wins', 'clean_rate', 'tickets', 'historical_tickets', 'next_ticket_gain'} for row in rows)
+            assert all(set(row['stats']) == {'clean', 'red', 'wins', 'clean_rate', 'tickets', 'historical_tickets'} for row in rows)
     teachers = results['clean']['faculty']
     assert [row['faculty_identifier'] for row in teachers] == ['rank-faculty-1', 'rank-faculty-2']
     assert all(row['stats']['red'] is None for row in teachers)
@@ -245,13 +243,13 @@ def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(c
     results = standings()
     winner, other = results['clean']['students']
     assert (winner['stats']['wins'], winner['stats']['tickets']) == (1, 0)
-    assert winner['stats']['historical_tickets'] == 3
+    assert winner['stats']['historical_tickets'] == 2
     assert (other['stats']['wins'], other['stats']['tickets']) == (0, 1)
 
     assert client.post(f'/api/session/{current}/faculty/pick').status_code == 200
     assert client.post(f'/api/session/{current}/faculty/finalize').status_code == 200
     finalized_results = standings()
-    assert [row['count'] for row in finalized_results['historical_tickets']['faculty']] == [3, 1]
+    assert [row['count'] for row in finalized_results['historical_tickets']['faculty']] == [2, 1]
     next_meal = make_meal('Next')
     assert next_meal != prior
     assert standings() == finalized_results
@@ -263,7 +261,7 @@ def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(c
     for group in ('students', 'faculty'):
         winner, other = results['clean'][group]
         assert (winner['stats']['wins'], winner['stats']['tickets']) == (1, 1)
-        assert winner['stats']['historical_tickets'] == 4
+        assert winner['stats']['historical_tickets'] == 3
         assert (other['stats']['wins'], other['stats']['tickets']) == (0, 1)
 
 
@@ -300,7 +298,7 @@ def test_leaderboard_preserves_student_history_and_keeps_faculty_upload_window(c
         ('Name9601 Student', 1), ('Name9603 Student', 0),
     ]
     assert [(row['display_name'], row['count']) for row in standings['tickets']['faculty']] == [
-        ('Alex Retained', 1), ('Taylor New', 0),
+        ('Alex Retained', 0), ('Taylor New', 0),
     ]
     assert [(row['display_name'], row['count']) for row in standings['historical_tickets']['students']] == [
         ('Name9601 Student', 2), ('Name9603 Student', 0),
@@ -324,7 +322,7 @@ def test_leaderboard_preserves_student_history_and_keeps_faculty_upload_window(c
     standings = client.get(url).get_json()
     for group in ('students', 'faculty'):
         winner, other = standings['tickets'][group]
-        assert winner['count'] == winner['stats']['tickets'] == 3
+        assert winner['count'] == winner['stats']['tickets'] == (2 if group == 'students' else 1)
         assert winner['stats']['clean'] == (3 if group == 'students' else 1)
         assert 'draw_odds' not in winner['stats']
         assert winner['stats']['wins'] == (1 if group == 'students' else 0)

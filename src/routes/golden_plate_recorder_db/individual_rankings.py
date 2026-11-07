@@ -3,11 +3,11 @@
 import json
 from collections import Counter, defaultdict
 
-from sqlalchemy import func
+from sqlalchemy import func, literal
 
-from .db import RosterSnapshot, School, Session, SessionDrawEvent, SessionRecord, Student, Teacher, db_session
+from .db import RosterSnapshot, School, Session, SessionDrawEvent, SessionRecord, SessionTicketEvent, Student, Teacher, db_session
 from .draw_db import calculate_ticket_balances
-from .ticket_combos import replay_school_tickets
+from .faculty_draw import faculty_roster_ticket_totals
 from .manual_draw import public_student_identifier
 from .person_identity import teacher_names
 from .utils import normalize_house
@@ -123,6 +123,53 @@ def _win_totals(sessions, school_id, *, faculty, since):
     return wins
 
 
+def _student_ticket_balances(records, sessions, school_id, since):
+    if since is None:
+        # All-time standings use cumulative balances, including legacy tickets.
+        return calculate_ticket_balances(school_id)
+
+    plates = records.filter(SessionRecord.category.in_(['clean', 'red'])).with_entities(
+        SessionRecord.student_id, SessionRecord.recorded_at.label('occurred_at'),
+        literal(0).label('priority'), SessionRecord.id.label('event_id'),
+        SessionRecord.category.label('action'), literal(1).label('delta'),
+    )
+    # Plate actions come from the surviving records. Independent actions, such as
+    # finalizing a winner, come from the ticket ledger.
+    actions = db_session.query(
+        SessionTicketEvent.student_id, SessionTicketEvent.occurred_at, literal(1),
+        SessionTicketEvent.id, SessionTicketEvent.event_type, SessionTicketEvent.tickets_delta,
+    ).filter(
+        SessionTicketEvent.school_id == school_id, SessionTicketEvent.occurred_at >= since,
+        SessionTicketEvent.session_id.in_(sessions.with_entities(Session.id)),
+        SessionTicketEvent.session_record_id.is_(None),
+        SessionTicketEvent.event_type.in_(['reset', 'manual_adjust']),
+    )
+    balances = Counter()
+    for key, _, _, _, action, delta in plates.union_all(actions).order_by('occurred_at', 'priority', 'event_id'):
+        balances[key] = 0 if action in ('red', 'reset') else max(0, balances[key] + delta)
+    return balances
+
+
+def _historical_student_ticket_totals(plates, sessions, school_id, roster):
+    # Every valid roster clean plate earned one ticket, including legacy plates
+    # recorded before the ticket ledger existed. Resets never subtract earnings.
+    totals = Counter({key: counts['clean'] for key, counts in plates.items()})
+    # Independent grants have no plate record; count them once, without adding
+    # the normal linked earn events a second time or counting negative actions.
+    grants = db_session.query(
+        SessionTicketEvent.student_id, func.sum(SessionTicketEvent.tickets_delta),
+    ).filter(
+        SessionTicketEvent.school_id == school_id,
+        SessionTicketEvent.student_id.in_(roster),
+        SessionTicketEvent.session_id.in_(sessions.with_entities(Session.id)),
+        SessionTicketEvent.session_record_id.is_(None),
+        SessionTicketEvent.event_type.in_(['earn', 'manual_adjust']),
+        SessionTicketEvent.tickets_delta > 0,
+    ).group_by(SessionTicketEvent.student_id)
+    totals.update(dict(grants.all()))
+    return totals
+
+
 def school_individual_rankings(school_id, *, public_only=False):
     school = db_session.get(School, school_id)
     sessions = db_session.query(Session).filter(Session.school_id == school_id, Session.status != 'discarded')
@@ -130,7 +177,6 @@ def school_individual_rankings(school_id, *, public_only=False):
         sessions = sessions.filter(Session.is_public == 1)
     rankings = {'clean': {}, 'red': {}, 'tickets': None if public_only else {},
                 'historical_tickets': None if public_only else {}}
-    ticket_states = replay_school_tickets(school_id)[0] if not public_only else {}
     groups = (
         # Membership comes from today's roster; a returning student's permanent
         # identity keeps their totals from earlier rosters as well.
@@ -152,6 +198,17 @@ def school_individual_rankings(school_id, *, public_only=False):
         wins = _win_totals(sessions, school_id, faculty=is_faculty, since=since)
         rows = {key: make_row(person) for key, person in roster.items()}
         if not public_only:
+            balances = (faculty_roster_ticket_totals(school_id, since=since) if is_faculty else
+                        _student_ticket_balances(records, sessions, school_id, since))
+            if is_faculty:
+                lifetime_records = _roster_records(
+                    sessions, school_id, roster_query.with_entities(model.id), person_id, None,
+                ).filter(SessionRecord.category == 'faculty',
+                         SessionRecord.faculty_roster_entry.is_distinct_from(0))
+                historical = {key: counts['clean'] for key, counts in
+                              _plate_totals(lifetime_records, person_id).items()}
+            else:
+                historical = _historical_student_ticket_totals(plates, sessions, school_id, roster)
             names = Counter(' '.join(row['display_name'].casefold().split()) for row in rows.values())
 
         for key, row in rows.items():
@@ -161,10 +218,8 @@ def school_individual_rankings(school_id, *, public_only=False):
                      'clean_rate': clean / total * 100 if not is_faculty and total else None}
             row['stats'] = stats
             if not public_only:
-                state = ticket_states.get(('faculty' if is_faculty else 'student', key, 'roster'))
-                stats['tickets'] = state.balance if state else 0
-                stats['historical_tickets'] = state.earned if state else 0
-                stats['next_ticket_gain'] = state.next_gain if state else 1
+                stats['tickets'] = balances.get(key, 0)
+                stats['historical_tickets'] = historical.get(key, 0)
                 if names[' '.join(row['display_name'].casefold().split())] > 1:
                     person = roster[key]
                     if is_faculty and person.faculty_identifier:

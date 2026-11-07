@@ -171,10 +171,8 @@ def test_recording_reuses_legacy_ticket_row_with_stale_school(client, login, mon
         student_identifier='123', school_id=session_school, is_active=1,
     ).one()
     student_id, school_id = student.id, student.school_id
-    student.ticket_legacy_balance = None  # Simulate an unconverted legacy row.
     pool = DraftPool(school_id=INTERSCHOOL_SCHOOL_ID, student_id=student_id, ticket_number=7)
     other_student = db_session.query(Student).filter_by(student_identifier='456', school_id=school_id).one()
-    other_student.ticket_legacy_balance = None
     # Public roster IDs may repeat across schools; internal IDs must remain separate.
     other_school = School(id=uuid.uuid4().hex, slug=uuid.uuid4().hex, name='Separate school')
     db_session.add(other_school)
