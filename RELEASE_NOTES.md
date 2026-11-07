@@ -1,8 +1,22 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.6.0 d5e874e4f0fe7689ce79112d891e7ed58bce6c9c -->
+<!-- golden-plate-release-baseline: 1.3.0.0 fffd9db254868fabb1285d7d721a1efba79db2f2 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.3.0.0
+
+November 7, 2026 · Clean-plate combos and website update subscriptions
+
+Author: Jiajun (Leo) Li
+
+- Students and teachers now earn increasing ticket rewards for clean plates in consecutive school sessions: +1, then +2, then +3, and so on. Sessions follow their creation order, and each merged extra session advances the combo separately. Repeated records for the same person within one session do not advance it again.
+- A named dirty plate, very dirty plate, or missed session resets the next clean-plate reward to +1. Dirty plates and missed sessions keep the existing ticket balance; very dirty plates reset it to zero. The latest unfinished session remains an opportunity to record a clean plate: a missed session takes effect when it is finalized or archived, or when a later session exists. Unnamed plate counts do not affect anyone's combo.
+- Finalizing a student or faculty winner resets their current tickets and halves their next clean-plate reward, with a minimum of +1. For an odd reward, rounding up or down has an equal chance. The rounding result is saved so refreshing or restarting does not change it.
+- Plate Leaderboards, the eligible candidate lists, and Top 3 Candidates in Draw Center now show Next clean plate, the number of tickets that person will earn next. Current Tickets and Historical Tickets include combo rewards; Historical Tickets keeps earned rewards after a win or very dirty plate resets the current balance.
+- Existing records are automatically recalculated under the combo rules when the application starts. Excluding or restoring records, deleting sessions, and discarding or restoring sessions also recalculate rewards. Discarded sessions do not break a streak. Manual participants keep tickets within their session's draw scope, with merged extras advancing their combo there.
+- Anyone can subscribe without an account using Get website updates near the top of the homepage or its footer link. Enter an email address, select Send verification code, then enter the six-digit code and select Verify & subscribe. The form supports resending a code or changing the address before verification.
+- Verified subscribers receive future published release notes alongside existing recipients, with duplicate addresses combined. Email preference links let subscribers unsubscribe; verifying a new subscription restores release emails. New subscriptions also send an alert to the configured website notification recipients. If that alert cannot be delivered, the subscription remains saved and the form reports the delivery failure.
 
 ## 1.2.6.0
 
