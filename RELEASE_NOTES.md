@@ -1,8 +1,18 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.4.0 10e7190b66d2bf1af734a1bb2b0fe20414b0fea0 -->
+<!-- golden-plate-release-baseline: 1.2.5.0 32aeb8d85ebc1b427808066f2d76e0bc649e1c8f -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.5.0
+
+November 6, 2026 · School-wide Plate Leaderboards
+
+Author: Jiajun (Leo) Li
+
+- Open Plate Leaderboards from the school portal navigation. The page works independently of the Recorder’s selected session. Each ranking includes only current roster members and uses activity since the latest upload for that roster, even for people who appeared on earlier rosters.
+- Search by name or a displayed roster ID to see how many people match across the full ranking. Matches keep their original ranks. To jump directly to a page, type its number and select Go.
+- For signed-in users, each row shows one ticket total. Win chance uses current-roster balances and qualifying clean plates for the latest active session’s unfinished draw. If that draw is finalized or there’s no active session, the page shows a projection for the next draw. Guest standings use public sessions and anonymize names when the school enables guest privacy.
 
 ## 1.2.4.0
 
