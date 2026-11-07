@@ -18,6 +18,7 @@ from . import password_recovery_routes  # noqa: F401
 from . import school_contact_routes  # noqa: F401
 from . import live_counter_routes  # noqa: F401
 from . import notification_routes  # noqa: F401
+from . import update_subscription_routes  # noqa: F401
 from . import admin_routes  # noqa: F401
 from . import session_routes  # noqa: F401
 from . import public_session_routes  # noqa: F401

@@ -23,6 +23,7 @@ from src.routes.golden_plate_recorder_db.db import db_session
 from src.routes.golden_plate_recorder_db.map_db import map_db_session
 from src.services.release_notifications import start_release_notifications
 from src.services.account_lifecycle import start_account_lifecycle
+from src.routes.golden_plate_recorder_db.ticket_combos import initialize_ticket_combos
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -33,6 +34,7 @@ app.config['API_ERROR_LOG_PATH'] = os.environ.get('API_ERROR_LOG_PATH', 'data/ap
 CORS(app, supports_credentials=True)
 
 app.register_blueprint(recorder_bp, url_prefix='/api')
+initialize_ticket_combos()
 app.before_request(start_api_request)
 app.after_request(log_api_response)
 

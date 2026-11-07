@@ -25,6 +25,8 @@ def require_account_email():
         return None
     if request.path.startswith('/api/auth/password-recovery/'):
         return None
+    if request.path.startswith('/api/updates/'):
+        return None
     if request.path in {
         '/api/auth/login', '/api/auth/logout', '/api/auth/status',
         '/api/auth/account-email/send-verification-code', '/api/auth/account-email',

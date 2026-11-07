@@ -33,6 +33,7 @@ function PersonStats({ stats, view }) {
   const metrics = [
     ...(stats.tickets != null ? [['tickets', 'Current tickets']] : []),
     ...(stats.historical_tickets != null ? [['historical_tickets', 'Historical tickets']] : []),
+    ...(stats.next_ticket_gain != null ? [['next_ticket_gain', 'Next clean plate', (value) => `+${formatCount(value)} tickets`]] : []),
     ['clean', 'Clean plates'],
     ['red', 'Red plates'],
     ['wins', 'Wins'],

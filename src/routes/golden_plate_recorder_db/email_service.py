@@ -73,7 +73,10 @@ def render_verification_email(code: str, *, purpose: str = 'school_registration'
     """Render a verification email without creating a challenge or sending mail."""
     subject = 'Golden Plate - Email Verification Code'
     heading = 'Account Email Verification' if purpose in {'account_signup', 'account_email'} else 'School Registration Verification'
-    if purpose == 'account_email':
+    if purpose == 'website_updates':
+        heading = 'Website Updates Verification'
+        introduction = 'Use the verification code below to subscribe to Golden Plate website release emails:'
+    elif purpose == 'account_email':
         introduction = 'Use the verification code below to verify the email address for your Golden Plate Recorder account:'
     elif purpose == 'account_signup':
         introduction = 'Use the verification code below to confirm your email and join your school on Golden Plate Recorder:'
