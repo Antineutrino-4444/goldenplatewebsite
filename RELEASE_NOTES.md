@@ -1,8 +1,16 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.5.0 32aeb8d85ebc1b427808066f2d76e0bc649e1c8f -->
+<!-- golden-plate-release-baseline: 1.2.5.1 ae86dc378f5b889b05e2a3b83f7c8e4b2006dd5c -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.5.1
+
+November 7, 2026 · Leaderboard colors
+
+Author: Jiajun (Leo) Li
+
+- First place in the Tickets and Clean Plates rankings now uses gold highlights. Very Dirty Plates uses red for counts, ranking bars, and the first-place card.
 
 ## 1.2.5.0
 
