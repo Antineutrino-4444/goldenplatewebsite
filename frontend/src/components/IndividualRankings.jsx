@@ -4,7 +4,6 @@ import { readApiJson } from '@/lib/api-errors.js'
 import { leaderboardPage, normalizeLeaderboardSearch } from '@/lib/leaderboard.js'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card.jsx'
-import { HelpTip } from '@/components/HelpTip.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { RankNumber, RankingTabs, RankingTrack } from '@/components/RankingVisuals.jsx'
 
@@ -29,13 +28,12 @@ const formatPercent = (value) => {
   return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
 }
 
-function PersonStats({ stats, view, drawContext }) {
+function PersonStats({ stats, view }) {
   const metrics = [
-    ...(drawContext ? [['tickets', 'Tickets']] : []),
+    ...(stats.tickets != null ? [['tickets', 'Tickets']] : []),
     ['clean', 'Clean plates'],
     ['red', 'Red plates'],
     ['wins', 'Wins'],
-    ...(drawContext ? [['draw_odds', 'Win chance', formatPercent]] : []),
     ...(stats.clean_rate != null ? [['clean_rate', 'Clean rate', formatPercent]] : []),
   ]
   return (
@@ -51,7 +49,7 @@ function PersonStats({ stats, view, drawContext }) {
   )
 }
 
-function PersonRanking({ entry, view, max, drawContext, podium = false }) {
+function PersonRanking({ entry, view, max, podium = false }) {
   const { row, rank } = entry
   const firstPlace = rank === 1
   const tone = firstPlace && view.tone !== 'red' ? 'amber' : view.tone
@@ -67,7 +65,7 @@ function PersonRanking({ entry, view, max, drawContext, podium = false }) {
       </span>
     )}
   </>
-  const stats = <PersonStats stats={row.stats} view={view.key} drawContext={drawContext} />
+  const stats = <PersonStats stats={row.stats} view={view.key} />
   if (podium) {
     return (
       <li value={rank} className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 sm:block sm:space-y-2 sm:px-4 sm:py-3 ${firstPlace ? firstPlaceColors[tone] : 'bg-white'}`}>
@@ -124,7 +122,7 @@ function RankingPagination({ label, page, pageCount, onPageChange }) {
   )
 }
 
-function RankingColumn({ group, rows, view, query, page, onPageChange, drawContext }) {
+function RankingColumn({ group, rows, view, query, page, onPageChange }) {
   const { label } = group
   const max = rows[0]?.count ?? 0
   const { currentPage, pageCount, matchCount, visible } = leaderboardPage(rows, query, page)
@@ -137,17 +135,6 @@ function RankingColumn({ group, rows, view, query, page, onPageChange, drawConte
           {query ? `${matchCount.toLocaleString()} of ${rows.length.toLocaleString()} ranked` : `${rows.length.toLocaleString()} ranked`}
         </span>
       </div>
-      {drawContext && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span>{drawContext.source === 'projected' ? 'Projected odds for the next draw' :
-            `Current draw estimate · ${drawContext.session_name}`}</span>
-          <HelpTip topic={`${label.toLowerCase()} draw odds`}>
-            {drawContext.source === 'projected'
-              ? 'This estimate assumes everyone on the current roster with tickets qualifies for the next draw.'
-              : 'This estimate uses current-roster ticket balances. You need a qualifying clean plate in this draw to have a chance of winning.'}
-          </HelpTip>
-        </div>
-      )}
       {pageCount > 1 && (
         <RankingPagination label={label} page={currentPage}
           pageCount={pageCount} onPageChange={onPageChange} />
@@ -156,7 +143,7 @@ function RankingColumn({ group, rows, view, query, page, onPageChange, drawConte
         <ol aria-label={`${label} rankings`} className="grid gap-2">
           {visible.map((entry) => (
             <PersonRanking key={entry.row.student_id ?? entry.row.teacher_id ?? entry.rank}
-              entry={entry} view={view} max={max} drawContext={drawContext} podium={!query && entry.rank <= 3} />
+              entry={entry} view={view} max={max} podium={!query && entry.rank <= 3} />
           ))}
         </ol>
       ) : (
@@ -168,7 +155,7 @@ function RankingColumn({ group, rows, view, query, page, onPageChange, drawConte
   )
 }
 
-function Rankings({ standings, view, query, drawContext }) {
+function Rankings({ standings, view, query }) {
   const [pages, setPages] = useState({})
   const columns = groups.filter(({ key }) => Array.isArray(standings[key]))
 
@@ -176,7 +163,7 @@ function Rankings({ standings, view, query, drawContext }) {
     <div className={`grid min-w-0 items-start gap-4 ${columns.length > 1 ? 'sm:grid-cols-2' : ''}`}>
       {columns.map((group) => (
         <RankingColumn key={group.key} group={group} rows={standings[group.key]} view={view}
-          query={query} page={pages[group.key] ?? 1} drawContext={drawContext[group.key]}
+          query={query} page={pages[group.key] ?? 1}
           onPageChange={(page) => setPages((previous) => ({ ...previous, [group.key]: page }))} />
       ))}
     </div>
@@ -230,7 +217,7 @@ export default function IndividualRankings({ isGuest }) {
             <RefreshCcw className="h-4 w-4" /> Refresh
           </Button>
         </div>
-        <CardDescription>Standings across sessions since the latest roster upload for each group.</CardDescription>
+        <CardDescription>Standings across sessions for the current student and teacher rosters.</CardDescription>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <RankingTabs label="Individual ranking view" options={views} value={view}
             className="w-full grid-cols-3 sm:w-auto" onChange={setView} />
@@ -248,8 +235,7 @@ export default function IndividualRankings({ isGuest }) {
         {error && <p role="alert" className="py-6 text-sm text-red-700">{error}</p>}
         {!rankings && !error && <p role="status" className="py-6 text-sm text-muted-foreground">Loading plate leaderboards…</p>}
         {rankings && !standings && <p className="py-6 text-sm text-muted-foreground">Sign in to see school-wide ticket balances.</p>}
-        {standings && <Rankings key={`${view}:${query}`} standings={standings} view={activeView} query={query}
-          drawContext={rankings.draw_context} />}
+        {standings && <Rankings key={`${view}:${query}`} standings={standings} view={activeView} query={query} />}
       </CardContent>
     </Card>
   )

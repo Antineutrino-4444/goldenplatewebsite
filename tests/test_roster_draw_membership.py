@@ -129,7 +129,7 @@ def test_rankings_require_current_snapshot_membership_even_for_active_historical
         standings = response.get_json()
         for metric in ('tickets', 'clean'):
             assert {row['student_id'] for row in standings[metric]['students']} == current_ids
-            assert all(row['count'] == 1 and row['stats']['draw_odds'] == 50
+            assert all(row['count'] == 1 and row['stats']['tickets'] == 1
                        for row in standings[metric]['students'])
         assert standings['red']['students'] == []
     houses = client.get(f'/api/session/{current}/house-stats').get_json()['house_tickets']
@@ -170,3 +170,73 @@ def test_rankings_do_not_fall_back_to_student_history_without_a_current_roster(c
     standings = response.get_json()
     assert all(standings[metric]['students'] == [] for metric in ('clean', 'red', 'tickets'))
     assert db_session.query(Student).filter_by(school_id=DEFAULT_SCHOOL_ID, is_active=1).count() == 1
+
+
+def test_clean_rankings_include_entire_roster_but_red_rankings_require_a_red_plate(client, login):
+    login()
+    identifiers = [str(2000 + index) for index in range(492)]
+    assert upload_roster(client, identifiers).status_code == 200
+    assert client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).status_code == 200
+    assert client.post('/api/record/clean', json={'input_value': identifiers[0]}).status_code == 200
+    assert client.post('/api/record/red', json={'input_value': identifiers[1]}).status_code == 200
+    school_slug = db_session.get(School, DEFAULT_SCHOOL_ID).slug
+    current_ids = {student.id for student in db_session.query(Student).filter_by(
+        school_id=DEFAULT_SCHOOL_ID, is_active=1,
+    )}
+
+    for guest in (False, True):
+        if guest:
+            assert client.post('/api/auth/guest', json={'school_slug': school_slug}).status_code == 200
+        for url in ('/api/leaderboards', '/api/session/individual-rankings'):
+            response = client.get(url)
+            assert response.status_code == 200
+            standings = response.get_json()
+            clean = standings['clean']['students']
+            assert len(clean) == 492
+            if not guest:
+                assert {row['student_id'] for row in clean} == current_ids
+            assert [row['count'] for row in clean] == [1] + [0] * 491
+            assert all(row['stats']['clean'] == row['count'] for row in clean)
+            assert [row['count'] for row in standings['red']['students']] == [1]
+
+
+@pytest.mark.parametrize('temporarily_removed', [False, True])
+def test_clean_rankings_keep_five_plus_three_plates_across_roster_uploads(client, login, temporarily_removed):
+    login()
+    assert upload_roster(client, ['820', '821']).status_code == 200
+    student_id = db_session.query(Student).filter_by(
+        school_id=DEFAULT_SCHOOL_ID, student_identifier='820',
+    ).one().id
+    for _ in range(5):
+        assert client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).status_code == 200
+        assert client.post('/api/record/clean', json={'input_value': '820'}).status_code == 200
+    # A departed student must disappear even though their history is retained.
+    assert client.post('/api/record/clean', json={'input_value': '821'}).status_code == 200
+    if temporarily_removed:
+        assert upload_roster(client, ['821']).status_code == 200
+        assert student_id not in {
+            row['student_id'] for row in client.get('/api/leaderboards').get_json()['clean']['students']
+        }
+
+    assert upload_roster(client, ['820', '822']).status_code == 200
+    assert db_session.query(Student).filter_by(
+        school_id=DEFAULT_SCHOOL_ID, student_identifier='820',
+    ).one().id == student_id
+    for _ in range(3):
+        assert client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).status_code == 200
+        assert client.post('/api/record/clean', json={'input_value': '820'}).status_code == 200
+
+    for url in ('/api/leaderboards', '/api/session/individual-rankings'):
+        standings = client.get(url).get_json()
+        assert [(row['student_id'], row['count']) for row in standings['clean']['students']] == [
+            (student_id, 8),
+            (db_session.query(Student).filter_by(
+                school_id=DEFAULT_SCHOOL_ID, student_identifier='822',
+            ).one().id, 0),
+        ]
+        assert standings['clean']['students'][0]['stats']['clean'] == 8
+        assert standings['clean']['students'][0]['stats']['tickets'] == 8
+
+    school_slug = db_session.get(School, DEFAULT_SCHOOL_ID).slug
+    assert client.post('/api/auth/guest', json={'school_slug': school_slug}).status_code == 200
+    assert [row['count'] for row in client.get('/api/leaderboards').get_json()['clean']['students']] == [8, 0]

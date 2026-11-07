@@ -144,7 +144,7 @@ def test_current_roster_rankings_include_public_sessions_and_respect_guest_priva
     assert {row['student_identifier'] for row in staff['clean']['students']} == {'private-101', 'private-102'}
     assert staff['red']['students'][0]['stats'] == {
         'clean': 2, 'red': 1, 'wins': 0, 'clean_rate': pytest.approx(200 / 3),
-        'tickets': 0, 'draw_odds': 0,
+        'tickets': 0,
     }
 
     guest(client, school)
@@ -158,7 +158,7 @@ def test_current_roster_rankings_include_public_sessions_and_respect_guest_priva
     assert len({row['display_name'] for row in public['clean']['students']}) == 2
     assert 'PrivateName' not in result.get_data(as_text=True)
     assert [row['display_name'] for row in public['clean']['faculty']] == ['Faculty member']
-    assert public['draw_context'] == {}
+    assert 'draw_context' not in public
     assert all(row['stats'] == {'clean': 2, 'red': 0, 'wins': 0, 'clean_rate': 100}
                for row in public['clean']['students'])
     assert 'private-101' not in result.get_data(as_text=True)

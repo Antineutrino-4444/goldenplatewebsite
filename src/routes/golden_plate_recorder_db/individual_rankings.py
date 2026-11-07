@@ -1,4 +1,4 @@
-"""School-wide standings and the relevant draw odds for each person."""
+"""School-wide standings across sessions for the current roster."""
 
 import json
 from collections import Counter, defaultdict
@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from sqlalchemy import func, literal
 
 from .db import RosterSnapshot, School, Session, SessionDrawEvent, SessionRecord, SessionTicketEvent, Student, Teacher, db_session
-from .draw_db import calculate_ticket_balances, get_session_ids_for_draw
+from .draw_db import calculate_ticket_balances
 from .faculty_draw import faculty_roster_ticket_totals
 from .manual_draw import public_student_identifier
 from .person_identity import teacher_names
@@ -125,7 +125,7 @@ def _win_totals(sessions, school_id, *, faculty, since):
 
 def _student_ticket_balances(records, sessions, school_id, since):
     if since is None:
-        # Legacy rosters without an upload date can have balances from before the event log.
+        # All-time standings use cumulative balances, including legacy tickets.
         return calculate_ticket_balances(school_id)
 
     plates = records.filter(SessionRecord.category.in_(['clean', 'red'])).with_entities(
@@ -150,31 +150,16 @@ def _student_ticket_balances(records, sessions, school_id, since):
     return balances
 
 
-def _draw_pool(meal, records, person_id, category, balances, roster):
-    if not meal or (meal.faculty_finalized if category == 'faculty' else meal.finalized):
-        return {'source': 'projected'}, {key: balances.get(key, 0) for key in roster}
-
-    eligible = records.filter(
-        SessionRecord.session_id.in_(get_session_ids_for_draw(meal.id)),
-        SessionRecord.category == category,
-    ).with_entities(person_id).distinct()
-    return {'source': 'current', 'session_name': meal.session_name}, {
-        key: balances.get(key, 0) for (key,) in eligible
-    }
-
-
 def school_individual_rankings(school_id, *, public_only=False):
     school = db_session.get(School, school_id)
     sessions = db_session.query(Session).filter(Session.school_id == school_id, Session.status != 'discarded')
     if public_only:
         sessions = sessions.filter(Session.is_public == 1)
-    meal = None if public_only else sessions.filter_by(status='active', main_session_id=None).order_by(
-        Session.created_at.desc(), Session.id.desc(),
-    ).first()
-
-    rankings = {'clean': {}, 'red': {}, 'tickets': None if public_only else {}, 'draw_context': {}}
+    rankings = {'clean': {}, 'red': {}, 'tickets': None if public_only else {}}
     groups = (
-        ('students', Student, SessionRecord.student_id, school.roster_uploaded_at, _student_row),
+        # Membership comes from today's roster; a returning student's permanent
+        # identity keeps their totals from earlier rosters as well.
+        ('students', Student, SessionRecord.student_id, None, _student_row),
         ('faculty', Teacher, SessionRecord.teacher_id, school.teacher_roster_uploaded_at, _faculty_row),
     )
     for group, model, person_id, since, make_row in groups:
@@ -194,10 +179,6 @@ def school_individual_rankings(school_id, *, public_only=False):
         if not public_only:
             balances = (faculty_roster_ticket_totals(school_id, since=since) if is_faculty else
                         _student_ticket_balances(records, sessions, school_id, since))
-            rankings['draw_context'][group], pool = _draw_pool(
-                meal, records, person_id, 'faculty' if is_faculty else 'clean', balances, roster,
-            )
-            pool_total = sum(pool.values())
             names = Counter(' '.join(row['display_name'].casefold().split()) for row in rows.values())
 
         for key, row in rows.items():
@@ -207,7 +188,7 @@ def school_individual_rankings(school_id, *, public_only=False):
                      'clean_rate': clean / total * 100 if not is_faculty and total else None}
             row['stats'] = stats
             if not public_only:
-                stats.update(tickets=balances.get(key, 0), draw_odds=pool.get(key, 0) / pool_total * 100 if pool_total else 0)
+                stats['tickets'] = balances.get(key, 0)
                 if names[' '.join(row['display_name'].casefold().split())] > 1:
                     person = roster[key]
                     if is_faculty and person.faculty_identifier:
@@ -223,6 +204,6 @@ def school_individual_rankings(school_id, *, public_only=False):
         for metric in metrics:
             rankings[metric][group] = _sort_rows(
                 {**row, 'count': row['stats'][metric]} for row in rows.values()
-                if metric == 'tickets' or row['stats'][metric]
+                if metric != 'red' or row['stats'][metric]
             )
     return rankings

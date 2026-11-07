@@ -10,7 +10,8 @@ import pytest
 from sqlalchemy import event
 
 from src.routes.golden_plate_recorder_db.db import (
-    Session as SessionModel, SessionRecord, SessionTicketEvent, Student, db_session, engine,
+    DraftPool, INTERSCHOOL_SCHOOL_ID, School, Session as SessionModel, SessionRecord,
+    SessionTicketEvent, Student, db_session, engine,
 )
 from src.routes.golden_plate_recorder_db.storage import hydrate_session_from_db
 
@@ -154,6 +155,108 @@ def test_count_only_records_do_not_change_existing_tickets(client, login):
     assert len(summary['candidates']) == 1
     assert summary['candidates'][0]['student_identifier'] == '123'
     assert summary['candidates'][0]['tickets'] == 1
+
+
+@pytest.mark.parametrize('category,expected_balance', [('clean', 8), ('red', 0)])
+def test_recording_reuses_legacy_ticket_row_with_stale_school(client, login, monkeypatch, category, expected_balance):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    login()
+    assert upload_csv(client).status_code == 200
+    session_id = client.post('/api/session/create', json={
+        'session_name': f'legacy-ticket-{uuid.uuid4().hex}',
+    }).json['session_id']
+    session_school = db_session.get(SessionModel, session_id).school_id
+    student = db_session.query(Student).filter_by(
+        student_identifier='123', school_id=session_school, is_active=1,
+    ).one()
+    student_id, school_id = student.id, student.school_id
+    pool = DraftPool(school_id=INTERSCHOOL_SCHOOL_ID, student_id=student_id, ticket_number=7)
+    other_student = db_session.query(Student).filter_by(student_identifier='456', school_id=school_id).one()
+    # Public roster IDs may repeat across schools; internal IDs must remain separate.
+    other_school = School(id=uuid.uuid4().hex, slug=uuid.uuid4().hex, name='Separate school')
+    db_session.add(other_school)
+    db_session.flush()
+    other_school_student = Student(school_id=other_school.id, student_identifier='123',
+                                   preferred_name='Other', last_name='School')
+    db_session.add(other_school_student)
+    db_session.flush()
+    untouched = [
+        DraftPool(school_id=school_id, student_id=other_student.id, ticket_number=12),
+        DraftPool(school_id=other_school.id, student_id=other_school_student.id, ticket_number=30),
+    ]
+    db_session.add_all([pool, *untouched])
+    db_session.commit()
+    pool_id = pool.id
+    untouched_balances = {row.id: (row.school_id, row.student_id, row.ticket_number) for row in untouched}
+
+    # Older production databases enforce UNIQUE(student_id), even though the
+    # ORM now declares UNIQUE(school_id, student_id).
+    with engine.begin() as connection:
+        connection.exec_driver_sql('CREATE UNIQUE INDEX test_legacy_pool_student ON draft_pool (student_id)')
+    try:
+        assert db_session.query(SessionRecord).filter_by(session_id=session_id).count() == 0
+        # A failure after repairing the school must roll back the repair, plate,
+        # ticket event and balance together, so a subsequent retry remains safe.
+        with monkeypatch.context() as patch:
+            def fail_commit():
+                raise SQLAlchemyError('simulated commit failure')
+            patch.setattr(db_session, 'commit', fail_commit)
+            assert client.post(f'/api/record/{category}', json={'input_value': '123'}).status_code == 503
+        db_session.expire_all()
+        failed_pool = db_session.get(DraftPool, pool_id)
+        assert (failed_pool.school_id, failed_pool.ticket_number) == (INTERSCHOOL_SCHOOL_ID, 7)
+        assert db_session.query(SessionRecord).filter_by(session_id=session_id).count() == 0
+        assert db_session.query(SessionTicketEvent).filter_by(session_id=session_id).count() == 0
+        assert client.get('/api/session/status').json['total_recorded'] == 0
+
+        response = client.post(f'/api/record/{category}', json={'input_value': '123'})
+        assert response.status_code == 200, response.json
+        db_session.expire_all()
+        saved_pool = db_session.query(DraftPool).filter_by(student_id=student_id).one()
+        assert saved_pool.id == pool_id
+        assert saved_pool.school_id == school_id
+        assert saved_pool.ticket_number == expected_balance
+        record = db_session.query(SessionRecord).filter_by(session_id=session_id).one()
+        assert record.student_id == student_id and record.category == category
+        ticket_event = db_session.query(SessionTicketEvent).filter_by(session_record_id=record.id).one()
+        assert ticket_event.ticket_balance_after == expected_balance
+        assert ticket_event.tickets_delta == (1 if category == 'clean' else -7)
+        assert client.get('/api/session/status').json['total_recorded'] == 1
+        assert client.post(f'/api/record/{category}', json={'input_value': '123'}).status_code == 409
+        db_session.expire_all()
+        assert db_session.get(DraftPool, pool_id).ticket_number == expected_balance
+        for row_id, expected in untouched_balances.items():
+            row = db_session.get(DraftPool, row_id)
+            assert (row.school_id, row.student_id, row.ticket_number) == expected
+            assert db_session.query(SessionTicketEvent).filter_by(student_id=row.student_id).count() == 0
+    finally:
+        db_session.rollback()
+        with engine.begin() as connection:
+            connection.exec_driver_sql('DROP INDEX test_legacy_pool_student')
+
+
+def test_ticket_update_rejects_a_session_from_another_school(client, login):
+    from src.routes.golden_plate_recorder_db.draw_db import update_draft_pool
+
+    login()
+    session_id = client.post('/api/session/create', json={
+        'session_name': f'wrong-school-ticket-{uuid.uuid4().hex}',
+    }).json['session_id']
+    student = Student(school_id=INTERSCHOOL_SCHOOL_ID, student_identifier=uuid.uuid4().hex,
+                      preferred_name='Separate', last_name='School')
+    db_session.add(student)
+    db_session.flush()
+    pool = DraftPool(school_id=student.school_id, student_id=student.id, ticket_number=9)
+    db_session.add(pool)
+    db_session.commit()
+    with pytest.raises(ValueError, match='same school'):
+        update_draft_pool(student.id, 10, session_id=session_id)
+    db_session.commit()
+    db_session.expire_all()
+    assert pool.school_id == INTERSCHOOL_SCHOOL_ID
+    assert pool.ticket_number == 9
+    assert pool.session_id is None
 
 
 @pytest.mark.parametrize('category,payload', [

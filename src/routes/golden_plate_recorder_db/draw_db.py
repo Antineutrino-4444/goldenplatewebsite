@@ -478,14 +478,24 @@ def get_student_ticket_balance(student_id: str) -> float:
 
 def update_draft_pool(student_id: str, new_balance: float, session_id: Optional[str] = None) -> None:
     """Update or create the draft_pool entry for a student."""
-    school_id = _resolve_school_id(session_id=session_id, student_id=student_id)
+    school_id = db_session.query(Student.school_id).filter_by(id=student_id).one()[0]
+    if session_id:
+        session_school_id = db_session.query(SessionModel.school_id).filter_by(id=session_id).one()[0]
+        if session_school_id != school_id:
+            raise ValueError('Student and session must belong to the same school')
+
+    # student_id is the internal, globally unique Student primary key. Legacy
+    # balances may have a missing/stale school_id and UNIQUE(student_id). Use
+    # the same identity as get_student_ticket_balance rather than inserting a
+    # second balance when its school label needs repair.
     pool_entry = (
         db_session.query(DraftPool)
-        .filter_by(school_id=school_id, student_id=student_id)
-        .first()
+        .filter_by(student_id=student_id)
+        .one_or_none()
     )
     
     if pool_entry:
+        pool_entry.school_id = school_id
         pool_entry.session_id = session_id or pool_entry.session_id
         pool_entry.ticket_number = int(new_balance)
     else:

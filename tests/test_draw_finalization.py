@@ -195,7 +195,7 @@ def test_ticket_rankings_carry_balances_across_sessions_and_use_current_houses(c
     assert not any(house['house'] == 'Former House' for house in houses)
 
 
-def test_leaderboard_odds_follow_each_draw_and_keep_finalized_wins(client, login, monkeypatch):
+def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(client, login, monkeypatch):
     login()
     assert upload_roster(client, ['9501', '9502']).status_code == 200
     roster = b'Faculty ID,First,Last\nrank-faculty-1,Alex,Ranked\nrank-faculty-2,Alex,Ranked'
@@ -214,17 +214,23 @@ def test_leaderboard_odds_follow_each_draw_and_keep_finalized_wins(client, login
     for category, data in [('clean', {'input_value': '9501'}), ('faculty', {'teacher_id': faculty['rank-faculty-1']})]:
         assert client.post(f'/api/record/{category}', json=data).status_code == 200
 
+    prior_results = standings()
     current = make_meal('Current')
+    assert standings() == prior_results
+    with client.session_transaction() as browser_session:
+        browser_session.pop('session_id', None)
+    assert standings() == prior_results
+    assert client.post(f'/api/session/switch/{current}').status_code == 200
     for identifier in ('9501', '9502'):
         assert client.post('/api/record/clean', json={'input_value': identifier}).status_code == 200
     for teacher_id in faculty.values():
         assert client.post('/api/record/faculty', json={'teacher_id': teacher_id}).status_code == 200
 
     results = standings()
-    assert {context['source'] for context in results['draw_context'].values()} == {'current'}
-    summary = client.get(f'/api/session/{current}/draw/summary').get_json()
-    for group, candidates in [('students', summary['candidates']), ('faculty', summary['faculty_draw']['candidates'])]:
-        assert [row['stats']['draw_odds'] for row in results['clean'][group]] == [row['probability'] for row in candidates]
+    assert set(results) == {'clean', 'red', 'tickets'}
+    for metric in results.values():
+        for rows in metric.values():
+            assert all(set(row['stats']) == {'clean', 'red', 'wins', 'clean_rate', 'tickets'} for row in rows)
     teachers = results['clean']['faculty']
     assert [row['faculty_identifier'] for row in teachers] == ['rank-faculty-1', 'rank-faculty-2']
     assert all(row['stats']['red'] is None for row in teachers)
@@ -232,32 +238,31 @@ def test_leaderboard_odds_follow_each_draw_and_keep_finalized_wins(client, login
 
     monkeypatch.setattr(secure_random, 'random', lambda: 0)
     assert client.post(f'/api/session/{current}/draw/start').status_code == 200
-    assert standings()['clean']['students'][0]['stats']['wins'] == 0
+    assert standings() == results
     assert client.post(f'/api/session/{current}/draw/finalize').status_code == 200
     results = standings()
-    assert results['draw_context']['students']['source'] == 'projected'
-    assert results['draw_context']['faculty']['source'] == 'current'
     winner, other = results['clean']['students']
-    assert (winner['stats']['wins'], winner['stats']['tickets'], winner['stats']['draw_odds']) == (1, 0, 0)
-    assert other['stats']['draw_odds'] == 100
+    assert (winner['stats']['wins'], winner['stats']['tickets']) == (1, 0)
+    assert (other['stats']['wins'], other['stats']['tickets']) == (0, 1)
 
     assert client.post(f'/api/session/{current}/faculty/pick').status_code == 200
     assert client.post(f'/api/session/{current}/faculty/finalize').status_code == 200
+    finalized_results = standings()
     next_meal = make_meal('Next')
     assert next_meal != prior
+    assert standings() == finalized_results
     assert client.post('/api/record/clean', json={'input_value': '9501'}).status_code == 200
     assert client.post('/api/record/faculty', json={'teacher_id': faculty['rank-faculty-1']}).status_code == 200
     results = standings()
     assert client.post(f'/api/session/switch/{current}').status_code == 200
     assert standings() == results
-    assert {context['source'] for context in results['draw_context'].values()} == {'current'}
     for group in ('students', 'faculty'):
         winner, other = results['clean'][group]
-        assert (winner['stats']['wins'], winner['stats']['draw_odds']) == (1, 100)
-        assert (other['stats']['wins'], other['stats']['draw_odds']) == (0, 0)
+        assert (winner['stats']['wins'], winner['stats']['tickets']) == (1, 1)
+        assert (other['stats']['wins'], other['stats']['tickets']) == (0, 1)
 
 
-def test_leaderboard_excludes_earlier_roster_activity_for_retained_members(client, login, monkeypatch):
+def test_leaderboard_preserves_student_history_and_keeps_faculty_upload_window(client, login, monkeypatch):
     login()
     assert upload_roster(client, ['9601', '9602']).status_code == 200
 
@@ -287,14 +292,20 @@ def test_leaderboard_excludes_earlier_roster_activity_for_retained_members(clien
     assert result.status_code == 200
     standings = result.get_json()
     assert [(row['display_name'], row['count']) for row in standings['tickets']['students']] == [
-        ('Name9601 Student', 0), ('Name9603 Student', 0),
+        ('Name9601 Student', 1), ('Name9603 Student', 0),
     ]
     assert [(row['display_name'], row['count']) for row in standings['tickets']['faculty']] == [
         ('Alex Retained', 0), ('Taylor New', 0),
     ]
-    assert standings['clean'] == {'students': [], 'faculty': []}
+    assert [(row['display_name'], row['count']) for row in standings['clean']['students']] == [
+        ('Name9601 Student', 2), ('Name9603 Student', 0),
+    ]
+    assert [(row['display_name'], row['count']) for row in standings['clean']['faculty']] == [
+        ('Alex Retained', 0), ('Taylor New', 0),
+    ]
     assert standings['red'] == {'students': []}
-    assert all(row['stats']['wins'] == 0 for group in standings['tickets'].values() for row in group)
+    assert [row['stats']['wins'] for row in standings['tickets']['students']] == [1, 0]
+    assert all(row['stats']['wins'] == 0 for row in standings['tickets']['faculty'])
 
     assert client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).status_code == 200
     for category, name in [('clean', '9601'), ('faculty', 'Alex Retained'), ('faculty', 'Manual Faculty')]:
@@ -302,8 +313,10 @@ def test_leaderboard_excludes_earlier_roster_activity_for_retained_members(clien
     standings = client.get(url).get_json()
     for group in ('students', 'faculty'):
         winner, other = standings['tickets'][group]
-        assert winner['count'] == winner['stats']['tickets'] == winner['stats']['clean'] == 1
-        assert winner['stats']['draw_odds'] == 100
-        assert winner['stats']['wins'] == other['count'] == 0
+        assert winner['count'] == winner['stats']['tickets'] == (2 if group == 'students' else 1)
+        assert winner['stats']['clean'] == (3 if group == 'students' else 1)
+        assert 'draw_odds' not in winner['stats']
+        assert winner['stats']['wins'] == (1 if group == 'students' else 0)
+        assert other['count'] == 0
         assert 'draw_tickets' not in winner['stats']
     assert db_session.query(SessionRecord).filter_by(session_id=older).count() == 4
