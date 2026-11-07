@@ -1,5 +1,9 @@
 {
   "dependencies": {
     "vite": "^7.1.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
   }
 }
