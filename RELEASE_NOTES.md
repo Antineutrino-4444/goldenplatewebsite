@@ -1,8 +1,19 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.5.3 935cb6752ea4923ad25f8e0bfd252fc401b26247 -->
+<!-- golden-plate-release-baseline: 1.2.6.0 d5e874e4f0fe7689ce79112d891e7ed58bce6c9c -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.6.0
+
+November 7, 2026 · Current and historical tickets, and one-click dirty plates
+
+Author: Jiajun (Leo) Li
+
+- Plate Leaderboards now has separate Current Tickets and Historical Tickets tabs for students and teachers. Current Tickets shows the balance a person has available now; Historical Tickets shows their total earned tickets across sessions, including tickets earned before a draw win or a very dirty plate reset their balance. Each person's statistics also show both totals.
+- Historical Tickets includes earlier qualifying records linked to people on the current roster, including records from before the ticket ledger existed. Student totals also include independent positive ticket grants. Excluded records and discarded sessions do not count, and guests cannot see either ticket ranking.
+- School superadmins can open Plate recording in Admin Panel, turn off Dirty plate name input, and select Save recording settings. Staff can then select Add Dirty Plate to add one unnamed dirty plate immediately, without an input or confirmation dialog. The setting applies only to that school and can be turned back on to restore name input.
+- Existing named dirty-plate records remain intact. Unnamed dirty plates contribute to session totals without assigning a student, changing tickets, or preventing a later named plate entry. Clean, Very Dirty, and Faculty Clean recording keep their existing input flows.
 
 ## 1.2.5.3
 
