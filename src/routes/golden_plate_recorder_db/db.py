@@ -228,6 +228,7 @@ class Student(Base):
     clan = Column(String)
     is_active = Column(Integer, nullable=False, default=1, server_default='1')
     roster_conflicts = Column(Text)
+    ticket_legacy_balance = Column(Integer)
 
 
 class GuestStudentAlias(Base):
@@ -277,6 +278,7 @@ class Teacher(Base):
     faculty_identifier = Column(String)
     is_active = Column(Integer, nullable=False, default=1, server_default='1')
     faculty_tickets_reset_at = Column(DateTime(timezone=True))
+    faculty_combo_round_up = Column(Integer)
 
 
 class Session(Base):
@@ -403,6 +405,7 @@ class SessionDrawEvent(Base):
     probability_at_event = Column(Integer)
     eligible_pool_size = Column(Integer)
     comment = Column(Text)
+    combo_round_up = Column(Integer, default=lambda: secrets.randbits(1))
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     created_by = Column(String, ForeignKey('users.id'))
 
@@ -513,6 +516,13 @@ class EmailNotificationPreference(Base):
     disabled_types = Column(Text, nullable=False, default='[]')
     known_types = Column(Text, nullable=False, default='[]')
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
+
+
+class WebsiteUpdateSubscriber(Base):
+    __tablename__ = 'website_update_subscribers'
+
+    email = Column(String(320), primary_key=True)
+    subscribed_at = Column(DateTime(timezone=True), nullable=False, default=_now_utc)
 
 
 class ReleaseEmailBatch(Base):
@@ -874,6 +884,7 @@ def _migrate_schema() -> None:
         _ensure_column(inspector, 'teachers', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
         reset_time_type = Teacher.__table__.c.faculty_tickets_reset_at.type.compile(dialect=engine.dialect)
         _ensure_column(inspector, 'teachers', 'faculty_tickets_reset_at', reset_time_type)
+        _ensure_column(inspector, 'teachers', 'faculty_combo_round_up', 'INTEGER')
 
     if 'schools' in tables:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
@@ -986,8 +997,12 @@ def _migrate_schema() -> None:
 
     if 'session_draw_events' in tables:
         _ensure_column(inspector, 'session_draw_events', 'comment', 'TEXT')
+        _ensure_column(inspector, 'session_draw_events', 'combo_round_up', 'INTEGER')
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
+
+    if 'students' in tables:
+        _ensure_column(inspector, 'students', 'ticket_legacy_balance', 'INTEGER')
 
     # Handle legacy session_draws table
     if 'session_draws' in tables:
@@ -1307,6 +1322,7 @@ __all__ = [
     'EmailVerification',
     'PasswordRecovery',
     'EmailNotificationPreference',
+    'WebsiteUpdateSubscriber',
     'INTERSCHOOL_SCHOOL_ID',
     'INTERSCHOOL_SCHOOL_NAME',
     'INTERSCHOOL_SCHOOL_SLUG',

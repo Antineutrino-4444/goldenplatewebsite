@@ -1,9 +1,10 @@
 """Database operations for draw system."""
 import random
+import secrets
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from .users import readable_user_label, user_labels_for_school
 
 from .db import (
@@ -19,6 +20,7 @@ from .db import (
     db_session,
 )
 from .person_identity import teacher_names
+from .ticket_combos import recalculate_school_tickets, replay_school_tickets
 
 secure_random = random.SystemRandom()
 
@@ -61,24 +63,14 @@ def get_or_create_session_draw(session_id: str) -> SessionModel:
 
 
 def calculate_ticket_balances(school_id: Optional[str] = None) -> Dict[str, float]:
-    """Return stored cumulative ticket balances for all students.
-
-    This is the roster ledger.  Manual entries are replayed from their
-    session's records instead; see :func:`get_draw_ticket_totals`.
-    """
-    pool_query = (
-        db_session.query(DraftPool.student_id, DraftPool.ticket_number)
-        .join(Student, DraftPool.student_id == Student.id)
-        .filter(DraftPool.ticket_number > 0)
-    )
-    if school_id is not None:
-        pool_query = pool_query.filter(DraftPool.school_id == school_id, Student.school_id == school_id)
-
-    return {
-        student_id: float(ticket_number)
-        for student_id, ticket_number in pool_query
-        if student_id
-    }
+    """Return current roster balances under the combo rules."""
+    schools = [school_id] if school_id else [key for key, in db_session.query(Student.school_id).distinct()]
+    balances = {}
+    for school in schools:
+        states = replay_school_tickets(school)[0]
+        balances.update({key[1]: float(state.balance) for key, state in states.items()
+                         if key[0] == 'student' and key[2] == 'roster' and state.balance > 0})
+    return balances
 
 
 def get_session_ids_for_draw(session_id: str) -> List[str]:
@@ -181,45 +173,31 @@ def get_manual_student_ids_for_draw(session_id: str) -> Set[str]:
 
 
 def get_manual_session_ticket_total(session_id: str, student_id: str) -> float:
-    """Replay one manual participant's clean/red records in this draw scope."""
-    session_ids = get_session_ids_for_draw(session_id)
-    # A finalization remains historical even if the draw is later reset or
-    # overridden. Plate records from that finalization are already consumed.
-    finalized_at = db_session.query(func.max(SessionDrawEvent.created_at)).filter(
-        SessionDrawEvent.session_id == session_id,
-        SessionDrawEvent.event_type == 'finalize',
-        SessionDrawEvent.selected_student_id == student_id,
-    ).scalar()
-    query = db_session.query(SessionRecord.category).filter(
-        SessionRecord.session_id.in_(session_ids),
-        SessionRecord.student_id == student_id,
-        SessionRecord.is_excluded == 0,
-        SessionRecord.category.in_(['clean', 'red']),
-    )
-    if finalized_at is not None:
-        query = query.filter(SessionRecord.recorded_at > finalized_at)
-    rows = query.order_by(SessionRecord.recorded_at, SessionRecord.id).all()
-    balance = 0
-    for (category,) in rows:
-        balance = balance + 1 if category == 'clean' else 0
-    return float(balance)
+    """Replay session-local combo rewards, including each merged extra."""
+    states = replay_school_tickets(_resolve_school_id(session_id=session_id))[0]
+    state = states.get(('student', student_id, session_id))
+    return float(state.balance) if state else 0.0
 
 
-def get_draw_ticket_totals(session_id: str) -> Dict[str, float]:
+def get_draw_ticket_totals(session_id: str, *, states=None) -> Dict[str, float]:
     """Return ticket totals, using session-local tickets for manual entries."""
-    totals = calculate_ticket_balances()
+    if states is None:
+        states = replay_school_tickets(_resolve_school_id(session_id=session_id))[0]
+    totals = {key[1]: float(state.balance) for key, state in states.items()
+              if key[0] == 'student' and key[2] == 'roster'}
     for student_id in get_manual_student_ids_for_draw(session_id):
-        totals[student_id] = get_manual_session_ticket_total(session_id, student_id)
+        state = states.get(('student', student_id, session_id))
+        totals[student_id] = float(state.balance) if state else 0.0
     return totals
 
 
 def get_eligible_students_with_tickets(
-    session_id: str
+    session_id: str, *, states=None,
 ) -> List[Tuple[Student, float]]:
     """
     Get list of (student, ticket_count) for students eligible for draw.
     """
-    ticket_balances = get_draw_ticket_totals(session_id)
+    ticket_balances = get_draw_ticket_totals(session_id, states=states)
     
     if not ticket_balances:
         return []
@@ -301,6 +279,7 @@ def record_draw_event(
         probability_at_event=int(round(probability_at_event * 100)) if probability_at_event is not None else None,
         eligible_pool_size=eligible_pool_size,
         comment=(comment or '').strip() or None,
+        combo_round_up=secrets.randbits(1) if event_type == 'finalize' else None,
         created_by=user_id,
     )
     db_session.add(event)
@@ -388,7 +367,7 @@ def finalize_draw(draw: SessionModel, user_id: str, comment: Optional[str] = Non
             user_id=user_id,
             reason='Winner finalized - tickets reset',
         )
-    
+    recalculate_school_tickets(draw.school_id)
     db_session.commit()
 
 
@@ -516,9 +495,7 @@ def update_tickets_for_record(
     user_id: str,
 ) -> None:
     """
-    Update tickets when a record is created.
-    - clean: +1 ticket
-    - red: reset to 0 tickets
+    Record the plate action, then replay the school's combo rewards.
     """
     current_balance = get_student_ticket_balance(student_id)
     
@@ -564,6 +541,8 @@ def update_tickets_for_record(
             
             # Update draft pool
             update_draft_pool(student_id, new_balance)
+
+    recalculate_school_tickets(_resolve_school_id(session_id=session_id))
 
 
 __all__ = [

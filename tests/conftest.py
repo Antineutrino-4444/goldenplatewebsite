@@ -149,12 +149,14 @@ def _clear_ticket_tables():
         SessionRecord,
         RecordExclusionEvent,
         SessionTicketEvent,
+        Student,
         db_session,
     )
 
     # Delete in dependency order to avoid FK constraint issues.
     for model in (RecordExclusionEvent, SessionTicketEvent, SessionDrawEvent, SessionRecord, DraftPool, EmailNotificationPreference):
         db_session.query(model).delete()
+    db_session.query(Student).update({Student.ticket_legacy_balance: None})
 
     db_session.query(Session).update({
         Session.draw_number: 1,

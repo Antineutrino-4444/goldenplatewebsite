@@ -2,12 +2,11 @@
 
 from collections import defaultdict
 
-from sqlalchemy import func, or_
-
-from .db import Session, SessionDrawEvent, SessionRecord, Teacher, _now_utc, db_session
+from .db import Session, SessionRecord, Teacher, _now_utc, db_session
 from .draw_db import get_session_ids_for_draw, record_draw_event
 from .person_identity import teacher_names
 from .utils import normalize_name
+from .ticket_combos import faculty_key, replay_school_tickets
 
 
 def faculty_record_names(record, teacher=None):
@@ -37,44 +36,18 @@ def _faculty_clean_plates(school_id):
 
 
 def faculty_roster_ticket_totals(school_id, *, teacher_ids=None, active_only=True, since=None):
-    """Return cumulative roster balances, optionally including past members."""
-    resets = (
-        db_session.query(
-            SessionDrawEvent.selected_teacher_id.label('teacher_id'),
-            func.max(SessionDrawEvent.created_at).label('last_reset'),
-        )
-        .filter_by(school_id=school_id, draw_target='faculty', event_type='finalize')
-        .filter(or_(SessionDrawEvent.faculty_ticket_scope == 'roster',
-                    SessionDrawEvent.faculty_ticket_scope.is_(None)))
-        .group_by(SessionDrawEvent.selected_teacher_id)
-        .subquery()
-    )
-    totals = (
-        _faculty_clean_plates(school_id).with_entities(SessionRecord.teacher_id, func.count(SessionRecord.id))
-        .join(Teacher, (Teacher.id == SessionRecord.teacher_id) & (Teacher.school_id == school_id))
-        .outerjoin(resets, resets.c.teacher_id == SessionRecord.teacher_id)
-        .filter(
-            or_(
-                SessionRecord.faculty_roster_entry == 1,
-                SessionRecord.faculty_roster_entry.is_(None) &
-                or_(Teacher.is_active == 1, Teacher.faculty_identifier.isnot(None)),
-            ),
-            or_(resets.c.last_reset.is_(None), SessionRecord.recorded_at > resets.c.last_reset),
-            or_(Teacher.faculty_tickets_reset_at.is_(None),
-                SessionRecord.recorded_at > Teacher.faculty_tickets_reset_at),
-        )
-        .group_by(SessionRecord.teacher_id)
-    )
+    """Return actual cumulative combo balances, independent of roster uploads."""
+    teachers = db_session.query(Teacher).filter_by(school_id=school_id)
     if active_only:
-        totals = totals.filter(Teacher.is_active == 1)
+        teachers = teachers.filter(Teacher.is_active == 1)
     if teacher_ids is not None:
-        totals = totals.filter(SessionRecord.teacher_id.in_(teacher_ids))
-    if since is not None:
-        totals = totals.filter(SessionRecord.recorded_at >= since)
-    return dict(totals.all())
+        teachers = teachers.filter(Teacher.id.in_(teacher_ids))
+    states = replay_school_tickets(school_id)[0]
+    return {teacher.id: states['faculty', teacher.id, 'roster'].balance
+            for teacher in teachers if ('faculty', teacher.id, 'roster') in states}
 
 
-def eligible_faculty_with_tickets(meal, *, include_zero=False):
+def eligible_faculty_with_tickets(meal, *, include_zero=False, states=None):
     """Require a clean plate in scope, using cumulative or session-local tickets."""
     if meal.status == 'discarded':
         return []
@@ -108,49 +81,35 @@ def eligible_faculty_with_tickets(meal, *, include_zero=False):
     if not candidates:
         return []
 
-    finalizations = db_session.query(SessionDrawEvent).filter_by(
-        school_id=meal.school_id, draw_target='faculty', event_type='finalize',
-    )
-    roster_ids = [key[1] for key in candidates if key not in manual_keys]
-    balances = faculty_roster_ticket_totals(meal.school_id, teacher_ids=roster_ids) if roster_ids else {}
-    manual_resets = {}
-    if manual_keys:
-        local_finalizations = finalizations.filter(
-            SessionDrawEvent.session_id == meal.id,
-            or_(SessionDrawEvent.faculty_ticket_scope == 'session', SessionDrawEvent.faculty_ticket_scope.is_(None)),
-        ).order_by(SessionDrawEvent.created_at)
-        for event in local_finalizations:
-            key = (
-                ('teacher', event.selected_teacher_id) if event.selected_teacher_id
-                else ('legacy', normalize_name(event.faculty_name).casefold())
-            )
-            manual_resets[key] = event.created_at
-
+    if states is None:
+        states = replay_school_tickets(meal.school_id)[0]
+    sessions = {row.id: row for row in db_session.query(Session).filter_by(school_id=meal.school_id)}
     eligible = []
     for key, plates in candidates.items():
         scope = 'session' if key in manual_keys else 'roster'
-        if scope == 'session':
-            reset = manual_resets.get(key)
-            tickets = sum(1 for record, _ in plates if reset is None or record.recorded_at > reset)
-        else:
-            tickets = balances.get(key[1], 0)
+        record, teacher = plates[0]
+        state = states.get(faculty_key(record, teacher, sessions))
+        tickets = state.balance if state else 0
         if tickets or include_zero:
-            record, teacher = plates[0]
             eligible.append(((record, teacher, scope), tickets))
     return sorted(eligible, key=lambda entry: (
         -entry[1], faculty_record_names(*entry[0][:2])[2].casefold(), entry[0][0].id,
     ))
 
 
-def faculty_ticket_summary(meal, *, can_override=False):
-    candidates = eligible_faculty_with_tickets(meal, include_zero=can_override)
+def faculty_ticket_summary(meal, *, can_override=False, states=None):
+    if states is None:
+        states = replay_school_tickets(meal.school_id)[0]
+    candidates = eligible_faculty_with_tickets(meal, include_zero=can_override, states=states)
     eligible = [(candidate, tickets) for candidate, tickets in candidates if tickets > 0]
     total_tickets = sum(tickets for _, tickets in eligible)
+    sessions = {row.id: row for row in db_session.query(Session).filter_by(school_id=meal.school_id)}
     standings = [{
         'category': 'faculty',
         'display_name': faculty_record_names(record, teacher)[2],
         'teacher_id': record.teacher_id,
         'tickets': tickets,
+        'next_ticket_gain': states[faculty_key(record, teacher, sessions)].next_gain,
         'probability': tickets / total_tickets * 100,
     } for (record, teacher, _), tickets in eligible]
     summary = {'total_tickets': total_tickets, 'eligible_count': len(standings), 'candidates': standings}

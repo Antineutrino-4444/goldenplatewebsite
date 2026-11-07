@@ -14,7 +14,7 @@ def _configured_types(email, known_types):
 
     configured = set()
     if email in {recipient.lower() for recipient in get_website_update_recipients()}:
-        configured.update({'school_registration', 'account_signup', 'invite_signup', 'map_submission'})
+        configured.update({'school_registration', 'account_signup', 'invite_signup', 'map_submission', 'update_subscription'})
     if email in get_release_recipients(db_session):
         configured.add('release_notes')
     if db_session.query(School.id).filter(func.lower(School.contact_email) == email).first():
