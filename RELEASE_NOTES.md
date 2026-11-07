@@ -1,8 +1,18 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.2.5.1 ae86dc378f5b889b05e2a3b83f7c8e4b2006dd5c -->
+<!-- golden-plate-release-baseline: 1.2.5.2 c21404b48430c1fa62d2dbe0bf1a3715db2f5914 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.2.5.2
+
+November 7, 2026 · Current-roster ranking fixes and clearer error details
+
+Author: Jiajun (Leo) Li
+
+- Fixed former students remaining in Plate Leaderboards when an older database still marked them active. Student rankings, displayed win chances, and House Rankings ticket totals now require membership in the school's saved current roster. The fix also applies to guest plate rankings; a missing or empty current roster leaves student rankings empty.
+- Creating a session no longer adds historical student identities back into an existing current roster. Uploading a replacement roster updates its membership, while past plate records remain available.
+- For newly logged SQLite duplicate-constraint failures, Server Log now includes the affected database table and column names when they match the application's schema. Inter-school administrators can use these details to investigate recording failures without exposing submitted values or SQL parameters.
 
 ## 1.2.5.1
 
