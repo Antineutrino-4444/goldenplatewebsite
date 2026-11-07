@@ -16,10 +16,11 @@ const groups = [
 const views = [
   { key: 'tickets', label: 'Tickets', unit: 'tickets', singular: 'ticket', tone: 'teal' },
   { key: 'clean', label: 'Clean Plates', unit: 'clean plates', singular: 'clean plate', tone: 'emerald' },
-  { key: 'red', label: 'Very Dirty Plates', unit: 'very dirty plates', singular: 'very dirty plate', tone: 'amber' },
+  { key: 'red', label: 'Very Dirty Plates', unit: 'very dirty plates', singular: 'very dirty plate', tone: 'red' },
 ]
 
-const valueColors = { teal: 'text-teal-800', emerald: 'text-emerald-800', amber: 'text-amber-800' }
+const valueColors = { teal: 'text-teal-800', emerald: 'text-emerald-800', amber: 'text-amber-800', red: 'text-red-800' }
+const firstPlaceColors = { amber: 'border-amber-200 bg-amber-50', red: 'border-red-200 bg-red-50' }
 
 const formatCount = (value) => value == null ? '—' : Number(value).toLocaleString()
 const formatPercent = (value) => {
@@ -52,9 +53,11 @@ function PersonStats({ stats, view, drawContext }) {
 
 function PersonRanking({ entry, view, max, drawContext, podium = false }) {
   const { row, rank } = entry
+  const firstPlace = rank === 1
+  const tone = firstPlace && view.tone !== 'red' ? 'amber' : view.tone
   const unit = row.count === 1 ? view.singular : view.unit
-  const count = <span className={`font-semibold tabular-nums ${podium ? 'text-xl sm:text-2xl' : 'text-lg'} ${valueColors[view.tone]}`}>{formatCount(row.count)}</span>
-  const track = <RankingTrack value={row.count} max={max} tone={view.tone} />
+  const count = <span className={`font-semibold tabular-nums ${podium ? 'text-xl sm:text-2xl' : 'text-lg'} ${valueColors[tone]}`}>{formatCount(row.count)}</span>
+  const track = <RankingTrack value={row.count} max={max} tone={tone} />
   const rosterId = row.student_identifier || row.faculty_identifier
   const name = <>
     <span className="block break-words">{row.display_name}</span>
@@ -67,7 +70,7 @@ function PersonRanking({ entry, view, max, drawContext, podium = false }) {
   const stats = <PersonStats stats={row.stats} view={view.key} drawContext={drawContext} />
   if (podium) {
     return (
-      <li value={rank} className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 sm:block sm:space-y-2 sm:px-4 sm:py-3 ${rank === 1 ? 'border-emerald-200 bg-emerald-50' : 'bg-white'}`}>
+      <li value={rank} className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 sm:block sm:space-y-2 sm:px-4 sm:py-3 ${firstPlace ? firstPlaceColors[tone] : 'bg-white'}`}>
         <RankNumber rank={rank} />
         <div className="col-start-1 row-start-2 min-w-0 font-semibold text-foreground">{name}</div>
         <div className="col-start-2 row-span-2 row-start-1 text-right sm:flex sm:items-baseline sm:gap-x-2 sm:text-left">
