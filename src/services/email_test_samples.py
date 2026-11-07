@@ -46,6 +46,7 @@ def build_email_samples():
         ('school_registration', 'School registration verification'),
         ('account_signup', 'Account signup verification'),
         ('account_email', 'Account email verification'),
+        ('website_updates', 'Website update subscription verification'),
     ):
         add(purpose + '_verification', label, partial(send_verification_scenario, purpose=purpose))
     add('map_verification', 'Map submission verification', send_map_verification_scenario)
@@ -57,6 +58,9 @@ def build_email_samples():
     add('release_notes', 'Release notes', lambda email:
         release_notifications.send_release_email(email, [('1.2.1.1', '- Added release notes to the school portal.')]),
         'release_notes')
+    add('update_subscription', 'New website update subscriber', lambda email:
+        website_notifications.notify_update_subscription('subscriber@example.com', recipients=[email]),
+        'update_subscription')
 
     school = SimpleNamespace(name='Example School', contact_email=None)
     account = SimpleNamespace(display_name='Alex Morgan', username='alex.morgan')

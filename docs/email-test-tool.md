@@ -104,12 +104,13 @@ Use `--port` together with `--web` to change the local browser port.
 
 ## Email coverage
 
-The current batch exercises 21 email scenarios:
+The current batch exercises 23 email scenarios:
 
-- School registration, account signup, account email, and map verification.
+- School registration, account signup, account email, website update subscription,
+  and map verification.
 - Password recovery.
 - Release notes, school registration requests, account signup requests, and
-  invite signups.
+  invite signups, plus verified website update subscription alerts.
 - Map review requests, rejections, and deletions.
 - Account inactivity warnings at 14 and 3 days, inactivity disabling, deletion
   warnings at 7 and 1 days, and completed deletion.
@@ -120,7 +121,7 @@ website event. The script leaves the subject, HTML body, formatting, and normal
 preferences footer unchanged. It adds no subject prefix, banner, or timing text
 to the email. Timing and delivery results stay in the terminal and audit log.
 
-The four verification scenarios call the normal code-creation services and then
+The five verification scenarios call the normal code-creation services and then
 pass the generated codes into the normal email senders. Codes are saved in the
 website/map verification tables with the usual expiry and attempt rules. The
 normal service replaces older matching pending challenges when another code is

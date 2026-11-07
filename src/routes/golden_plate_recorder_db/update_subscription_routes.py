@@ -13,7 +13,7 @@ from .db import EmailNotificationPreference, EmailVerification, WebsiteUpdateSub
 from .email_policy import normalize_email
 from .email_service import VERIFICATION_CODE_EXPIRY_MINUTES, create_verification_code, send_verification_email
 from src.services.notification_preferences import disabled_notification_types
-from src.services.website_notifications import notify_website_update
+from src.services.website_notifications import notify_update_subscription
 
 logger = logging.getLogger(__name__)
 PURPOSE = 'website_updates'
@@ -99,11 +99,7 @@ def subscribe_to_updates():
     notification = {'success': True}
     if newly_subscribed:
         try:
-            notification = notify_website_update(
-                'New website update subscriber',
-                'Someone verified their email and subscribed to Golden Plate website release emails.',
-                [('Subscriber email', email)], notification_type='update_subscription',
-            )
+            notification = notify_update_subscription(email)
         except Exception:
             logger.exception('Unable to notify website recipients about a new subscriber')
             notification = {'success': False}

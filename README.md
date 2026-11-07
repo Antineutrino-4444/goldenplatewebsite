@@ -239,10 +239,20 @@ Add, change, or remove comma-separated addresses without editing code, then
 restart/reload the server. Hosting environment variables take precedence over
 `.env`, so update those instead if configured by your host. These recipients
 receive pending school registration requests, map submissions, account signup
-alerts (including invite signups), and new release notes. An empty or missing
+alerts (including invite signups), verified website update subscription alerts,
+and new release notes. An empty or missing
 `WEBSITE_UPDATE_NOTIFY_EMAILS` adds no website-wide recipients. Admin and
 superadmin account emails still receive release notes according to their
 notification preferences.
+
+Visitors can join the website update email list from the form near the top of
+the home page without creating an account. They must confirm a six-digit email
+code (valid for five minutes, with five attempts and a one-minute resend cooldown).
+Verified subscribers receive future published release notes through the same
+deduplicated delivery queue as admins and configured recipients. They can
+unsubscribe using the notification preferences link in their emails, and verify
+again to resubscribe. Subscription alerts go only to `WEBSITE_UPDATE_NOTIFY_EMAILS`
+and contain the subscriber's email address, never their verification code.
 
 `MAP_APPROVAL_NOTIFY_EMAILS` configures additional map reviewers. A non-empty
 list saved in the Map admin recipient editor overrides those additional reviewers,

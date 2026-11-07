@@ -55,8 +55,8 @@ def latest(database):
 
 def test_all_current_categories_have_production_send_calls(email_outbox):
     scenarios = build_email_samples()
-    assert len(scenarios) == 21
-    assert len({scenario.key for scenario in scenarios}) == 21
+    assert len(scenarios) == 23
+    assert len({scenario.key for scenario in scenarios}) == 23
     assert {scenario.notification_type for scenario in scenarios} == set(NOTIFICATION_TYPES) | {None}
     assert all(callable(scenario.send) for scenario in scenarios)
     assert not email_outbox
@@ -74,7 +74,7 @@ def test_verification_scenarios_generate_store_and_email_normal_codes(monkeypatc
     monkeypatch.setattr(map_routes, '_generate_verification_code', map_generator)
     scenarios = {scenario.key: scenario for scenario in build_email_samples()}
     recipient = 'codes@example.com'
-    for index, purpose in enumerate(('school_registration', 'account_signup', 'account_email')):
+    for index, purpose in enumerate(('school_registration', 'account_signup', 'account_email', 'website_updates')):
         assert scenarios[purpose + '_verification'].send(recipient)['success']
         record = db_session.query(EmailVerification).filter_by(email=recipient, purpose=purpose).one()
         assert len(record.code) == 6 and record.code.isdigit()
@@ -84,16 +84,18 @@ def test_verification_scenarios_generate_store_and_email_normal_codes(monkeypatc
     record = map_db_session.query(MapEmailVerification).filter_by(email=recipient).one()
     assert len(record.code) == 6 and record.code.isdigit()
     assert record.code in email_outbox[-1]['htmlContent']
-    assert account_generator.call_count == 3 and map_generator.call_count == 1
+    assert account_generator.call_count == 4 and map_generator.call_count == 1
 
 
 PRODUCTION_SENDERS = [
     ('school_registration_verification', 'email_service', 'send_verification_email'),
     ('account_signup_verification', 'email_service', 'send_verification_email'),
     ('account_email_verification', 'email_service', 'send_verification_email'),
+    ('website_updates_verification', 'email_service', 'send_verification_email'),
     ('map_verification', 'map_routes', '_send_map_verification_email'),
     ('password_recovery', 'password_recovery_routes', 'send_password_recovery_email'),
     ('release_notes', 'release_notifications', 'send_release_email'),
+    ('update_subscription', 'website_notifications', 'notify_update_subscription'),
     ('school_registration', 'website_notifications', 'notify_school_registration'),
     ('account_signup', 'signup_notifications', 'notify_school_signup'),
     ('invite_signup', 'signup_notifications', 'notify_school_signup'),
@@ -135,7 +137,7 @@ def test_sends_only_to_entered_recipient_and_persists_each_timestamp(email_tool,
     monkeypatch.setenv('MAP_APPROVAL_NOTIFY_EMAILS', 'reviewers@example.com')
     response = submit(client)
     assert response.status_code == 303
-    assert len(email_outbox) == 21
+    assert len(email_outbox) == 23
     assert all(message['to'] == [{'email': 'recipient@example.com'}] for message in email_outbox)
     assert all(not message['subject'].startswith('[TEST]') for message in email_outbox)
     assert all('EMAIL TEST' not in message['htmlContent'] for message in email_outbox)
@@ -143,7 +145,7 @@ def test_sends_only_to_entered_recipient_and_persists_each_timestamp(email_tool,
     assert all('example.invalid' not in message['htmlContent'] for message in email_outbox)
     run = latest(database)
     assert run['status'] == 'completed'
-    assert len(run['messages']) == 21
+    assert len(run['messages']) == 23
     for message in run['messages']:
         assert message['status'] == 'accepted'
         assert datetime.fromisoformat(message['sent_at']) >= datetime.fromisoformat(message['attempted_at'])
@@ -155,7 +157,7 @@ def test_sends_only_to_entered_recipient_and_persists_each_timestamp(email_tool,
     assert status.headers['Cache-Control'] == 'no-store'
     assert tool.create_app(database, access_key='new-key')
     assert tool.read_run(database, run['id']) == run
-    assert len(email_outbox) == 21
+    assert len(email_outbox) == 23
 
 
 @pytest.mark.parametrize('fields,code', [
@@ -208,7 +210,7 @@ def test_delivery_failures_are_recorded_and_remaining_emails_continue(email_tool
     monkeypatch.setattr(email_delivery.http_requests, 'post', send)
     assert submit(client).status_code == 303
     run = latest(database)
-    assert calls == 21 and len(email_outbox) == 19
+    assert calls == 23 and len(email_outbox) == 21
     assert run['status'] == 'completed_with_errors'
     failed = [row for row in run['messages'] if row['status'] == 'failed']
     assert len(failed) == 2
@@ -224,7 +226,7 @@ def test_respects_disabled_notification_types(email_tool, email_outbox):
     run = latest(database)
     message = next(row for row in run['messages'] if row['kind'] == 'release_notes')
     assert message['status'] == 'skipped' and message['sent_at'] is None
-    assert len(email_outbox) == 20
+    assert len(email_outbox) == 22
     assert db_session.get(EmailNotificationPreference, 'recipient@example.com').disabled_types == '["server_startup"]'
 
 
@@ -233,7 +235,7 @@ def test_completed_batch_can_be_repeated_immediately_after_restart(email_tool, e
     assert submit(client).status_code == 303
     other = tool.create_app(database, access_key='server-test-key').test_client()
     assert submit(other, email='another@example.com').status_code == 303
-    assert len(email_outbox) == 42
+    assert len(email_outbox) == 46
 
 
 def test_other_browser_cannot_read_results(email_tool):
@@ -312,7 +314,7 @@ def test_history_prints_saved_results_without_delivery(tmp_path, monkeypatch, ca
     monkeypatch.setattr(sys, 'argv', ['test_emails.py', '--history', '--database', str(database)])
     assert test_emails.main() == 0
     saved = json.loads(capsys.readouterr().out)
-    assert saved[0]['id'] == run_id and len(saved[0]['messages']) == 21
+    assert saved[0]['id'] == run_id and len(saved[0]['messages']) == 23
     assert not email_outbox
 
 
@@ -357,14 +359,14 @@ def test_default_terminal_mode_sends_to_prompted_recipient_without_browser(termi
     script, database = terminal_tool
     answer_prompts(monkeypatch, 'Reader@Example.com', 'SEND reader@example.com')
     assert script.main() == 0
-    assert len(email_outbox) == 21
+    assert len(email_outbox) == 23
     assert all(message['to'] == [{'email': 'reader@example.com'}] for message in email_outbox)
     run = latest(database)
     assert run['status'] == 'completed'
     assert all(message['sent_at'] for message in run['messages'])
     output = capsys.readouterr().out
-    assert '[1/21]' in output and '[21/21]' in output
-    assert '21 accepted, 0 skipped, 0 failed' in output
+    assert '[1/23]' in output and '[23/23]' in output
+    assert '23 accepted, 0 skipped, 0 failed' in output
     assert run['messages'][0]['sent_at'] in output
 
 
@@ -383,7 +385,7 @@ def test_terminal_email_argument_sends_after_confirmation(terminal_tool, monkeyp
     monkeypatch.setattr(sys, 'argv', ['test_emails.py', '--database', str(database), '--email', 'reader@example.com'])
     answer_prompts(monkeypatch, 'SEND reader@example.com')
     assert script.main() == 0
-    assert len(email_outbox) == 21
+    assert len(email_outbox) == 23
 
 
 @pytest.mark.parametrize('recipient', ['one@example.com,two@example.com', 'invalid', 'reader@example.com\nBcc: other@example.com'])
@@ -409,11 +411,11 @@ def test_terminal_failure_preserves_results_and_returns_nonzero(terminal_tool, m
     monkeypatch.setattr(email_delivery.http_requests, 'post', send)
     answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
     assert script.main() == 1
-    assert attempts == 21 and len(email_outbox) == 20
+    assert attempts == 23 and len(email_outbox) == 22
     run = latest(database)
     assert run['status'] == 'completed_with_errors'
     assert run['messages'][1]['status'] == 'failed' and run['messages'][1]['sent_at'] is None
-    assert '20 accepted, 0 skipped, 1 failed' in capsys.readouterr().out
+    assert '22 accepted, 0 skipped, 1 failed' in capsys.readouterr().out
 
 
 def test_terminal_can_run_again_immediately(terminal_tool, monkeypatch, email_outbox):
@@ -421,7 +423,7 @@ def test_terminal_can_run_again_immediately(terminal_tool, monkeypatch, email_ou
     for _ in range(2):
         answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
         assert script.main() == 0
-    assert len(email_outbox) == 42
+    assert len(email_outbox) == 46
 
 
 @pytest.mark.parametrize('status', ['completed', 'completed_with_errors', 'interrupted'])
@@ -471,6 +473,6 @@ def test_terminal_respects_notification_preferences(terminal_tool, monkeypatch, 
     db_session.commit()
     answer_prompts(monkeypatch, 'reader@example.com', 'SEND reader@example.com')
     assert script.main() == 0
-    assert len(email_outbox) == 20
+    assert len(email_outbox) == 22
     skipped = next(row for row in latest(database)['messages'] if row['kind'] == 'release_notes')
     assert skipped['status'] == 'skipped' and skipped['sent_at'] is None

@@ -28,6 +28,15 @@ def notify_website_update(title, summary, details=(), *, url=None, notification_
                              recipients=get_website_update_recipients(), notification_type=notification_type)
 
 
+def notify_update_subscription(email, *, recipients=None):
+    sender = notify_website_update if recipients is None else partial(send_notification, recipients=recipients)
+    return sender(
+        'New website update subscriber',
+        'Someone verified their email and subscribed to Golden Plate website release emails.',
+        [('Subscriber email', email)], notification_type='update_subscription',
+    )
+
+
 def notify_school_registration(registration_request, *, recipients=None):
     """Send the standard new-school request email using the saved request fields."""
     sender = notify_website_update if recipients is None else partial(send_notification, recipients=recipients)

@@ -11,7 +11,7 @@ from flask import Flask
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.routes.golden_plate_recorder_db.db import Base, ReleaseEmailBatch, ReleaseEmailDelivery, School, User
+from src.routes.golden_plate_recorder_db.db import Base, ReleaseEmailBatch, ReleaseEmailDelivery, School, User, WebsiteUpdateSubscriber
 from src.services import release_notes, release_notifications
 
 
@@ -20,6 +20,7 @@ def releases(tmp_path, monkeypatch):
     engine = create_engine(f'sqlite:///{tmp_path / "releases.db"}')
     Base.metadata.create_all(engine, tables=[
         School.__table__, User.__table__, ReleaseEmailBatch.__table__, ReleaseEmailDelivery.__table__,
+        WebsiteUpdateSubscriber.__table__,
     ])
     store = sessionmaker(bind=engine)
     monkeypatch.setattr(release_notifications, 'SessionFactory', store)
@@ -30,6 +31,26 @@ def releases(tmp_path, monkeypatch):
     notes.write_text('## 1.2.1.1\n\n- Previously published\n')
     yield store, notes
     engine.dispose()
+
+
+def test_verified_subscribers_receive_only_future_releases_and_are_deduplicated(releases, email_outbox):
+    store, notes = releases
+    notes.write_text('## 1.2.1.2\n\n- Earlier update\n')
+    release_notifications.notify_new_releases()
+    email_outbox.clear()
+    with store.begin() as session:
+        session.add_all([WebsiteUpdateSubscriber(email='reader@example.com'),
+                         WebsiteUpdateSubscriber(email='shared@example.com')])
+    release_notifications.notify_new_releases()
+    assert email_outbox == []
+    notes.write_text('## 1.2.1.3\n\n- Next update\n\n## 1.2.1.2\n\n- Earlier update\n')
+    release_notifications.notify_new_releases()
+    release_notifications.notify_new_releases()
+    assert sorted(mail['to'][0]['email'] for mail in email_outbox) == [
+        'env@example.com', 'reader@example.com', 'shared@example.com',
+    ]
+    assert all('Next update' in mail['htmlContent'] and 'Earlier update' not in mail['htmlContent']
+               for mail in email_outbox)
 
 
 def test_release_digests_deduplicate_roles_and_environment_and_link_to_first_omitted(releases, email_outbox):

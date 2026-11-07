@@ -366,7 +366,7 @@
 .gp-footer-top nav { display: flex; flex-wrap: wrap; gap: 13px 25px; font-size: 13px; }
 .gp-footer-top nav a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .gp-footer-bottom { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 34px; font-size: 11px; color: var(--site-muted); }
-.gp-footer-bottom > div { display: flex; gap: 24px; }
+.gp-footer-bottom > div { display: flex; flex-wrap: wrap; gap: 24px; }
 .gp-footer-bottom a { font-size: 11px; border: 0; }
 .golden-public .gp-release-history h1 { font: 600 clamp(38px, 5vw, 58px)/1.08 Georgia, serif; letter-spacing: -.045em; }
 .golden-public .gp-release-history h2 { font-size: clamp(26px, 4vw, 34px); }
