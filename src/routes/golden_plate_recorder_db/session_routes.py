@@ -1149,6 +1149,10 @@ def _record_student(category):
         return jsonify({'error': 'Choose a valid plate category.', 'error_code': 'RECORD_INVALID_CATEGORY'}), 400
 
     data = request.get_json(silent=True) or {}
+    school = db_session.query(School).filter_by(id=school_id).one()
+    if category == 'dirty' and not school.dirty_plate_name_input_enabled:
+        # Enforce count-only mode even for an older recorder tab with name input.
+        data = {}
     input_value = str(data.get('input_value', '') or '').strip()
     provided_student_id = normalize_name(data.get('student_id'))
     provided_teacher_id = normalize_name(data.get('teacher_id'))

@@ -2159,6 +2159,10 @@ export function usePlateApp() {
   const handleCategoryClick = (category) => {
     setPopupInputValue('')
     setPopupSelectedEntry(null)
+    if (category === 'dirty' && user?.school?.dirty_plate_name_input_enabled === false) {
+      void recordEntry('dirty')
+      return
+    }
     if (category === 'clean') setShowCleanDialog(true)
     else if (category === 'dirty') setShowDirtyDialog(true)
     else if (category === 'red') setShowRedDialog(true)

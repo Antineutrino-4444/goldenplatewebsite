@@ -150,12 +150,33 @@ def _student_ticket_balances(records, sessions, school_id, since):
     return balances
 
 
+def _historical_student_ticket_totals(plates, sessions, school_id, roster):
+    # Every valid roster clean plate earned one ticket, including legacy plates
+    # recorded before the ticket ledger existed. Resets never subtract earnings.
+    totals = Counter({key: counts['clean'] for key, counts in plates.items()})
+    # Independent grants have no plate record; count them once, without adding
+    # the normal linked earn events a second time or counting negative actions.
+    grants = db_session.query(
+        SessionTicketEvent.student_id, func.sum(SessionTicketEvent.tickets_delta),
+    ).filter(
+        SessionTicketEvent.school_id == school_id,
+        SessionTicketEvent.student_id.in_(roster),
+        SessionTicketEvent.session_id.in_(sessions.with_entities(Session.id)),
+        SessionTicketEvent.session_record_id.is_(None),
+        SessionTicketEvent.event_type.in_(['earn', 'manual_adjust']),
+        SessionTicketEvent.tickets_delta > 0,
+    ).group_by(SessionTicketEvent.student_id)
+    totals.update(dict(grants.all()))
+    return totals
+
+
 def school_individual_rankings(school_id, *, public_only=False):
     school = db_session.get(School, school_id)
     sessions = db_session.query(Session).filter(Session.school_id == school_id, Session.status != 'discarded')
     if public_only:
         sessions = sessions.filter(Session.is_public == 1)
-    rankings = {'clean': {}, 'red': {}, 'tickets': None if public_only else {}}
+    rankings = {'clean': {}, 'red': {}, 'tickets': None if public_only else {},
+                'historical_tickets': None if public_only else {}}
     groups = (
         # Membership comes from today's roster; a returning student's permanent
         # identity keeps their totals from earlier rosters as well.
@@ -179,6 +200,15 @@ def school_individual_rankings(school_id, *, public_only=False):
         if not public_only:
             balances = (faculty_roster_ticket_totals(school_id, since=since) if is_faculty else
                         _student_ticket_balances(records, sessions, school_id, since))
+            if is_faculty:
+                lifetime_records = _roster_records(
+                    sessions, school_id, roster_query.with_entities(model.id), person_id, None,
+                ).filter(SessionRecord.category == 'faculty',
+                         SessionRecord.faculty_roster_entry.is_distinct_from(0))
+                historical = {key: counts['clean'] for key, counts in
+                              _plate_totals(lifetime_records, person_id).items()}
+            else:
+                historical = _historical_student_ticket_totals(plates, sessions, school_id, roster)
             names = Counter(' '.join(row['display_name'].casefold().split()) for row in rows.values())
 
         for key, row in rows.items():
@@ -189,6 +219,7 @@ def school_individual_rankings(school_id, *, public_only=False):
             row['stats'] = stats
             if not public_only:
                 stats['tickets'] = balances.get(key, 0)
+                stats['historical_tickets'] = historical.get(key, 0)
                 if names[' '.join(row['display_name'].casefold().split())] > 1:
                     person = roster[key]
                     if is_faculty and person.faculty_identifier:
@@ -200,7 +231,7 @@ def school_individual_rankings(school_id, *, public_only=False):
 
         metrics = ['clean'] if is_faculty else ['clean', 'red']
         if not public_only:
-            metrics.append('tickets')
+            metrics.extend(['tickets', 'historical_tickets'])
         for metric in metrics:
             rankings[metric][group] = _sort_rows(
                 {**row, 'count': row['stats'][metric]} for row in rows.values()

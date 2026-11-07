@@ -9,6 +9,7 @@ import HouseRanking from '@/components/HouseRanking.jsx'
 import IndividualRankings from '@/components/IndividualRankings.jsx'
 import DrawColumn, { DrawOptions, FacultyOverride } from '@/components/DrawColumn.jsx'
 import HouseScoreSettings from '@/components/HouseScoreSettings.jsx'
+import RecordingSettings from '@/components/RecordingSettings.jsx'
 import GuestPrivacySettings from '@/components/GuestPrivacySettings.jsx'
 import PortalHeader from '@/components/PortalHeader.jsx'
 import RequestCountBadge from '@/components/RequestCountBadge.jsx'
@@ -1376,6 +1377,7 @@ function MainPortal({ app }) {
               )}
             </div>
 
+            {user.role === 'superadmin' && showAdminPanel && <RecordingSettings app={app} />}
             {user.role === 'superadmin' && showAdminPanel && <HouseScoreSettings app={app} />}
             {['admin', 'superadmin'].includes(user.role) && showAdminPanel && <GuestPrivacySettings app={app} />}
 

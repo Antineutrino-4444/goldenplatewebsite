@@ -79,6 +79,7 @@ class School(Base):
     contact_email = Column(String(320), nullable=True)
     signup_email_policy = Column(Text)
     guest_privacy_enabled = Column(Integer, nullable=False, default=1, server_default='1')
+    dirty_plate_name_input_enabled = Column(Integer, nullable=False, default=1, server_default='1')
     house_clean_points = Column(Integer, nullable=False, default=2, server_default='2')
     house_dirty_penalty = Column(Integer, nullable=False, default=2, server_default='2')
     house_very_dirty_penalty = Column(Integer, nullable=False, default=10, server_default='10')
@@ -878,6 +879,7 @@ def _migrate_schema() -> None:
         _ensure_column(inspector, 'schools', 'contact_email', 'VARCHAR(320)')
         _ensure_column(inspector, 'schools', 'signup_email_policy', 'TEXT')
         _ensure_column(inspector, 'schools', 'guest_privacy_enabled', 'INTEGER NOT NULL DEFAULT 1')
+        _ensure_column(inspector, 'schools', 'dirty_plate_name_input_enabled', 'INTEGER NOT NULL DEFAULT 1')
         _ensure_column(inspector, 'schools', 'live_counter_settings', 'TEXT')
         for column_name, default in [
             ('house_clean_points', 2), ('house_dirty_penalty', 2),

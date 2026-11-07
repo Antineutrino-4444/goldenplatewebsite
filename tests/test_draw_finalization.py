@@ -227,10 +227,10 @@ def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(c
         assert client.post('/api/record/faculty', json={'teacher_id': teacher_id}).status_code == 200
 
     results = standings()
-    assert set(results) == {'clean', 'red', 'tickets'}
+    assert set(results) == {'clean', 'red', 'tickets', 'historical_tickets'}
     for metric in results.values():
         for rows in metric.values():
-            assert all(set(row['stats']) == {'clean', 'red', 'wins', 'clean_rate', 'tickets'} for row in rows)
+            assert all(set(row['stats']) == {'clean', 'red', 'wins', 'clean_rate', 'tickets', 'historical_tickets'} for row in rows)
     teachers = results['clean']['faculty']
     assert [row['faculty_identifier'] for row in teachers] == ['rank-faculty-1', 'rank-faculty-2']
     assert all(row['stats']['red'] is None for row in teachers)
@@ -243,11 +243,13 @@ def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(c
     results = standings()
     winner, other = results['clean']['students']
     assert (winner['stats']['wins'], winner['stats']['tickets']) == (1, 0)
+    assert winner['stats']['historical_tickets'] == 2
     assert (other['stats']['wins'], other['stats']['tickets']) == (0, 1)
 
     assert client.post(f'/api/session/{current}/faculty/pick').status_code == 200
     assert client.post(f'/api/session/{current}/faculty/finalize').status_code == 200
     finalized_results = standings()
+    assert [row['count'] for row in finalized_results['historical_tickets']['faculty']] == [2, 1]
     next_meal = make_meal('Next')
     assert next_meal != prior
     assert standings() == finalized_results
@@ -259,6 +261,7 @@ def test_leaderboard_is_global_without_draw_estimates_and_keeps_finalized_wins(c
     for group in ('students', 'faculty'):
         winner, other = results['clean'][group]
         assert (winner['stats']['wins'], winner['stats']['tickets']) == (1, 1)
+        assert winner['stats']['historical_tickets'] == 3
         assert (other['stats']['wins'], other['stats']['tickets']) == (0, 1)
 
 
@@ -296,6 +299,12 @@ def test_leaderboard_preserves_student_history_and_keeps_faculty_upload_window(c
     ]
     assert [(row['display_name'], row['count']) for row in standings['tickets']['faculty']] == [
         ('Alex Retained', 0), ('Taylor New', 0),
+    ]
+    assert [(row['display_name'], row['count']) for row in standings['historical_tickets']['students']] == [
+        ('Name9601 Student', 2), ('Name9603 Student', 0),
+    ]
+    assert [(row['display_name'], row['count']) for row in standings['historical_tickets']['faculty']] == [
+        ('Alex Retained', 2), ('Taylor New', 0),
     ]
     assert [(row['display_name'], row['count']) for row in standings['clean']['students']] == [
         ('Name9601 Student', 2), ('Name9603 Student', 0),

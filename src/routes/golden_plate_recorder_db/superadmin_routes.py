@@ -8,6 +8,28 @@ from .security import get_current_user, require_superadmin
 from .users import create_user_record, get_user_by_username, serialize_school, update_user_credentials
 
 
+@recorder_bp.route('/superadmin/recording-settings', methods=['PUT'])
+def update_recording_settings():
+    current = get_current_user()
+    if not current:
+        return jsonify({'error': 'Authentication required'}), 401
+    if current['role'] != 'superadmin':
+        return jsonify({'error': 'Superadmin access required'}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or type(data.get('dirty_plate_name_input_enabled')) is not bool:
+        return jsonify({'error': 'Choose whether dirty plate name input is enabled.'}), 400
+    # School settings always belong to the authenticated superadmin's school.
+    school = db_session.query(School).filter_by(id=current['school_id']).one()
+    school.dirty_plate_name_input_enabled = int(data['dirty_plate_name_input_enabled'])
+    school.updated_at = _now_utc()
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return jsonify({'error': 'Unable to save recording settings. Please try again.'}), 500
+    return jsonify({'status': 'success', 'dirty_plate_name_input_enabled': bool(school.dirty_plate_name_input_enabled)}), 200
+
+
 @recorder_bp.route('/superadmin/house-score-settings', methods=['GET', 'PUT'])
 def manage_house_score_settings():
     current = get_current_user()

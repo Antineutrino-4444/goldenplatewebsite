@@ -13,7 +13,8 @@ const groups = [
 ]
 
 const views = [
-  { key: 'tickets', label: 'Tickets', unit: 'tickets', singular: 'ticket', tone: 'teal' },
+  { key: 'tickets', label: 'Current Tickets', unit: 'current tickets', singular: 'current ticket', tone: 'teal' },
+  { key: 'historical_tickets', label: 'Historical Tickets', unit: 'historical tickets', singular: 'historical ticket', tone: 'teal' },
   { key: 'clean', label: 'Clean Plates', unit: 'clean plates', singular: 'clean plate', tone: 'emerald' },
   { key: 'red', label: 'Very Dirty Plates', unit: 'very dirty plates', singular: 'very dirty plate', tone: 'red' },
 ]
@@ -30,7 +31,8 @@ const formatPercent = (value) => {
 
 function PersonStats({ stats, view }) {
   const metrics = [
-    ...(stats.tickets != null ? [['tickets', 'Tickets']] : []),
+    ...(stats.tickets != null ? [['tickets', 'Current tickets']] : []),
+    ...(stats.historical_tickets != null ? [['historical_tickets', 'Historical tickets']] : []),
     ['clean', 'Clean plates'],
     ['red', 'Red plates'],
     ['wins', 'Wins'],
@@ -220,7 +222,7 @@ export default function IndividualRankings({ isGuest }) {
         <CardDescription>Standings across sessions for the current student and teacher rosters.</CardDescription>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <RankingTabs label="Individual ranking view" options={views} value={view}
-            className="w-full grid-cols-3 sm:w-auto" onChange={setView} />
+            className="w-full grid-cols-2 sm:w-auto" onChange={setView} />
           {standings && (
             <div className="relative w-full sm:w-60">
               <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />

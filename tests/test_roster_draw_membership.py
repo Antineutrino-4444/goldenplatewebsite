@@ -5,9 +5,9 @@ import pytest
 
 from src.routes.golden_plate_recorder_db import storage
 from src.routes.golden_plate_recorder_db.db import (
-    DEFAULT_SCHOOL_ID, RosterSnapshot, School, Student, SessionRecord, _now_utc, db_session,
+    DEFAULT_SCHOOL_ID, RosterSnapshot, School, Session, Student, SessionRecord, _now_utc, db_session,
 )
-from src.routes.golden_plate_recorder_db.draw_db import get_student_ticket_balance
+from src.routes.golden_plate_recorder_db.draw_db import get_student_ticket_balance, record_ticket_event
 
 
 def upload_roster(client, identifiers):
@@ -127,7 +127,7 @@ def test_rankings_require_current_snapshot_membership_even_for_active_historical
         response = client.get(url)
         assert response.status_code == 200
         standings = response.get_json()
-        for metric in ('tickets', 'clean'):
+        for metric in ('tickets', 'historical_tickets', 'clean'):
             assert {row['student_id'] for row in standings[metric]['students']} == current_ids
             assert all(row['count'] == 1 and row['stats']['tickets'] == 1
                        for row in standings[metric]['students'])
@@ -168,7 +168,7 @@ def test_rankings_do_not_fall_back_to_student_history_without_a_current_roster(c
     response = client.get('/api/leaderboards')
     assert response.status_code == 200
     standings = response.get_json()
-    assert all(standings[metric]['students'] == [] for metric in ('clean', 'red', 'tickets'))
+    assert all(standings[metric]['students'] == [] for metric in ('clean', 'red', 'tickets', 'historical_tickets'))
     assert db_session.query(Student).filter_by(school_id=DEFAULT_SCHOOL_ID, is_active=1).count() == 1
 
 
@@ -236,7 +236,80 @@ def test_clean_rankings_keep_five_plus_three_plates_across_roster_uploads(client
         ]
         assert standings['clean']['students'][0]['stats']['clean'] == 8
         assert standings['clean']['students'][0]['stats']['tickets'] == 8
+        assert standings['clean']['students'][0]['stats']['historical_tickets'] == 8
 
     school_slug = db_session.get(School, DEFAULT_SCHOOL_ID).slug
     assert client.post('/api/auth/guest', json={'school_slug': school_slug}).status_code == 200
     assert [row['count'] for row in client.get('/api/leaderboards').get_json()['clean']['students']] == [8, 0]
+
+
+def test_ticket_rankings_separate_current_balances_from_lifetime_earnings(client, login):
+    login()
+    assert upload_roster(client, ['830', '831', '832']).status_code == 200
+
+    def meal(*entries):
+        session_id = client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).get_json()['session_id']
+        for category, identifier in entries:
+            assert client.post(f'/api/record/{category}', json={'input_value': identifier}).status_code == 200
+        return session_id
+
+    def tickets(metric):
+        return [(row['display_name'], row['count']) for row in
+                client.get('/api/leaderboards').get_json()[metric]['students']]
+
+    meal(('clean', '830'), ('clean', '831'))
+    meal(('clean', '830'), ('clean', '831'))
+    meal(('red', '830'))
+    assert tickets('tickets') == [('Name831 Student', 2), ('Name830 Student', 0), ('Name832 Student', 0)]
+    assert tickets('historical_tickets') == [('Name830 Student', 2), ('Name831 Student', 2), ('Name832 Student', 0)]
+
+    winning_meal = meal(('clean', '830'))
+    assert client.post(f'/api/session/{winning_meal}/draw/override', json={'student_key': 'id:830'}).status_code == 200
+    assert client.post(f'/api/session/{winning_meal}/draw/finalize', json={}).status_code == 200
+    assert tickets('tickets')[1] == ('Name830 Student', 0)
+    assert tickets('historical_tickets')[0] == ('Name830 Student', 3)
+    meal(('clean', '830'))
+    meal(('dirty', '830'))
+
+    for url in ('/api/leaderboards', '/api/session/individual-rankings'):
+        standings = client.get(url).get_json()
+        assert [row['count'] for row in standings['tickets']['students']] == [2, 1, 0]
+        assert [row['count'] for row in standings['historical_tickets']['students']] == [4, 2, 0]
+        assert standings['historical_tickets']['students'][0]['stats']['tickets'] == 1
+        assert standings['tickets']['students'][1]['stats']['historical_tickets'] == 4
+
+    # Replacing membership retains the returning student's lifetime total.
+    assert upload_roster(client, ['830', '832']).status_code == 200
+    assert tickets('historical_tickets') == [('Name830 Student', 4), ('Name832 Student', 0)]
+
+
+def test_historical_tickets_follow_valid_plates_and_independent_grants(client, login):
+    login()
+    assert upload_roster(client, ['833']).status_code == 200
+    student_id = db_session.query(Student).filter_by(
+        school_id=DEFAULT_SCHOOL_ID, student_identifier='833',
+    ).one().id
+    sessions = []
+    for _ in range(3):
+        session_id = client.post('/api/session/create', json={'session_name': uuid.uuid4().hex}).get_json()['session_id']
+        sessions.append(session_id)
+        assert client.post('/api/record/clean', json={'input_value': '833'}).status_code == 200
+    record_id = db_session.query(SessionRecord).filter_by(session_id=sessions[0], student_id=student_id).one().id
+    assert client.post(f'/api/session/{sessions[0]}/records/{record_id}/exclusion',
+                       json={'excluded': True, 'reason': 'Incorrect scan'}).status_code == 200
+    db_session.get(Session, sessions[1]).status = 'discarded'
+    # A clean plate from before the ledger still counts. Normal earn events
+    # linked to plates must not double-count; independent positive grants do.
+    db_session.add(SessionRecord(school_id=DEFAULT_SCHOOL_ID, session_id=sessions[2],
+                                 student_id=student_id, category='clean', dedupe_key='legacy-clean',
+                                 recorded_by=db_session.query(SessionRecord.recorded_by).filter_by(id=record_id).scalar()))
+    for event_type, delta in [('manual_adjust', 3), ('manual_adjust', -2), ('reset', -1), ('earn', 2)]:
+        record_ticket_event(sessions[2], student_id, event_type, delta, 0)
+    db_session.commit()
+    current_balance = get_student_ticket_balance(student_id)
+    assert client.get('/api/leaderboards').get_json()['historical_tickets']['students'][0]['count'] == 7
+    assert get_student_ticket_balance(student_id) == current_balance
+
+    assert client.post(f'/api/session/{sessions[0]}/records/{record_id}/exclusion',
+                       json={'excluded': False}).status_code == 200
+    assert client.get('/api/leaderboards').get_json()['historical_tickets']['students'][0]['count'] == 8
