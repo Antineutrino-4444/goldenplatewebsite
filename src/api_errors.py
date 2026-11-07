@@ -41,6 +41,24 @@ def start_api_request():
         g.api_initial_actor = _request_actor()
 
 
+def _sqlite_unique_columns(error):
+    """Retain only known schema names, never SQL parameters or arbitrary text."""
+    if not isinstance(error, sqlite3.IntegrityError):
+        return ''
+    prefix = 'UNIQUE constraint failed: '
+    message = str(error)
+    if not message.startswith(prefix):
+        return ''
+    from src.routes.golden_plate_recorder_db.db import Base
+
+    known_columns = {f'{table.name}.{column.name}'
+                     for table in Base.metadata.tables.values() for column in table.columns}
+    columns = message[len(prefix):].split(', ')
+    if columns and all(column in known_columns for column in columns):
+        return prefix + ', '.join(columns)
+    return ''
+
+
 def note_api_exception(error):
     """Keep a diagnostic summary without exception text or request data."""
     if not _is_api_request():
@@ -52,7 +70,7 @@ def note_api_exception(error):
     locations = [(frame.f_globals.get('__name__', ''), line) for frame, line in walk_tb(error.__traceback__)]
     source = next((f'{module.rsplit(".", 1)[-1]}.py:{line}'
                    for module, line in reversed(locations) if module.startswith('src.')), '')
-    g.api_error_detail = ' · '.join(filter(None, (reason, source)))
+    g.api_error_detail = ' · '.join(filter(None, (reason, source, _sqlite_unique_columns(original))))
 
 
 def _initialize_log(db):

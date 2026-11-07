@@ -159,7 +159,7 @@ def sync_students_table_from_csv_rows(rows, *, school_id=None, filename=None, up
                 school.roster_uploaded_at = _now_utc()
                 school.roster_uploaded_by = uploaded_by
             db_session.flush()
-            snapshot = current_roster_snapshot(school_id, refresh=True)
+            snapshot = current_roster_snapshot(school_id, refresh=True, replace_membership=True)
             bind_empty_sessions(school_id, snapshot)
             db_session.commit()
             update_student_lookup()

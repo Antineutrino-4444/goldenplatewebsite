@@ -1,10 +1,11 @@
 """School-wide standings and the relevant draw odds for each person."""
 
+import json
 from collections import Counter, defaultdict
 
 from sqlalchemy import func, literal
 
-from .db import School, Session, SessionDrawEvent, SessionRecord, SessionTicketEvent, Student, Teacher, db_session
+from .db import RosterSnapshot, School, Session, SessionDrawEvent, SessionRecord, SessionTicketEvent, Student, Teacher, db_session
 from .draw_db import calculate_ticket_balances, get_session_ids_for_draw
 from .faculty_draw import faculty_roster_ticket_totals
 from .manual_draw import public_student_identifier
@@ -12,12 +13,24 @@ from .person_identity import teacher_names
 from .utils import normalize_house
 
 
+def _current_students(school_id):
+    school = db_session.get(School, school_id)
+    snapshot = db_session.query(RosterSnapshot).filter_by(
+        id=school.current_roster_snapshot_id, school_id=school_id,
+    ).first()
+    # Historical identities can still be marked active in legacy databases.
+    # Require membership in the saved current roster; never rebuild it from
+    # those identities or fall back to them when no roster is available.
+    members = json.loads(snapshot.data)['members'] if snapshot else {}
+    return db_session.query(Student).filter(
+        Student.school_id == school_id, Student.is_active == 1, Student.id.in_(members),
+    )
+
+
 def house_ticket_rankings(school_id):
     balances = calculate_ticket_balances(school_id)
     houses = defaultdict(lambda: {'tickets': 0, 'roster_count': 0})
-    for student_id, house_name in db_session.query(Student.id, Student.house).filter_by(
-        school_id=school_id, is_active=1,
-    ):
+    for student_id, house_name in _current_students(school_id).with_entities(Student.id, Student.house):
         house = normalize_house(house_name)
         if house:
             houses[house]['tickets'] += balances.get(student_id, 0)
@@ -166,7 +179,8 @@ def school_individual_rankings(school_id, *, public_only=False):
     )
     for group, model, person_id, since, make_row in groups:
         is_faculty = group == 'faculty'
-        roster_query = db_session.query(model).filter_by(school_id=school_id, is_active=1)
+        roster_query = (db_session.query(model).filter_by(school_id=school_id, is_active=1)
+                        if is_faculty else _current_students(school_id))
         roster = {person.id: person for person in roster_query}
         records = _roster_records(sessions, school_id, roster_query.with_entities(model.id), person_id, since)
         if is_faculty:

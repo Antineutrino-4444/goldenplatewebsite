@@ -5,7 +5,8 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy.exc import SQLAlchemyError
+import pytest
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.routes.golden_plate_recorder_db import session_routes
 
@@ -54,6 +55,41 @@ def test_server_error_reference_can_be_found_only_by_interschool_users(client, l
     assert entry['status'] == 503
     assert entry['route'] == '/api/record/clean'
     assert 'SQLAlchemyError' in entry['detail']
+
+
+@pytest.mark.parametrize('columns,visible', [
+    ('school_id, student_id', True),
+    ('private_payload', False),
+])
+def test_unique_error_logs_known_columns_without_values(client, login, monkeypatch, caplog, columns, visible):
+    # Use a real SQLite diagnostic, wrapped as SQLAlchemy would report it.
+    with closing(sqlite3.connect(':memory:')) as db:
+        db.execute(f'CREATE TABLE draft_pool (school_id TEXT, student_id TEXT, private_payload TEXT, UNIQUE ({columns}))')
+        db.execute("INSERT INTO draft_pool VALUES ('private-school', 'private-student', 'private-value')")
+        try:
+            db.execute("INSERT INTO draft_pool VALUES ('private-school', 'private-student', 'private-value')")
+        except sqlite3.IntegrityError as error:
+            failure = IntegrityError('private SQL contents', {'secret': 'private-parameter'}, error)
+
+    assert login().status_code == 200
+
+    def fail_to_save(category):
+        raise failure
+
+    with monkeypatch.context() as patch:
+        patch.setattr(session_routes, '_record_student', fail_to_save)
+        response = client.post('/api/record/clean', json={'input_value': 'private-input'})
+    assert response.status_code == 503
+    assert 'UNIQUE constraint failed' not in response.get_data(as_text=True)
+    assert 'private' not in caplog.text
+    assert login('inter-school-admin').status_code == 200
+    entries = client.get('/api/interschool/server-log?failures=1&poll=1').json['entries']
+    entry, = [entry for entry in entries if entry['reference'] == response.json['error_reference']]
+    assert 'SQLITE_CONSTRAINT_UNIQUE' in entry['detail']
+    assert 'private' not in entry['detail']
+    diagnostic = 'UNIQUE constraint failed: draft_pool.school_id, draft_pool.student_id'
+    assert (diagnostic in entry['detail']) is visible
+    assert (diagnostic in caplog.text) is visible
 
 
 def test_live_server_log_records_actions_across_accounts_and_exports_matching_history(client, login):

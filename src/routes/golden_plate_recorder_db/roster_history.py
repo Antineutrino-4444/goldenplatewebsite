@@ -7,14 +7,19 @@ from .db import DEFAULT_SCHOOL_ID, RosterSnapshot, School, Session, SessionRecor
 from .utils import normalize_house
 
 
-def current_roster_snapshot(school_id, *, refresh=False):
+def current_roster_snapshot(school_id, *, refresh=False, replace_membership=False):
     school = db_session.get(School, school_id)
     previous = db_session.query(RosterSnapshot).filter_by(
         id=school.current_roster_snapshot_id, school_id=school_id,
     ).first() if school.current_roster_snapshot_id else None
     if previous and not refresh:
         return previous
-    students = db_session.query(Student).filter_by(school_id=school_id, is_active=1).all()
+    students_query = db_session.query(Student).filter_by(school_id=school_id, is_active=1)
+    if previous and not replace_membership:
+        # Session creation may refresh grades/houses, but only a roster upload
+        # may add members. Legacy active rows must not rejoin the saved roster.
+        students_query = students_query.filter(Student.id.in_(json.loads(previous.data)['members']))
+    students = students_query.all()
     members = {student.id: normalize_house(student.house) for student in students}
     if not members:
         school.current_roster_snapshot_id = None
