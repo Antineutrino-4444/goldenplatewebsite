@@ -67,7 +67,7 @@ export default function LiveCounterPage() {
     finally { setBusy(false) }
   }
 
-  return <div ref={root} tabIndex={-1} className={fullscreen ? 'fixed inset-0 z-40 h-dvh overflow-y-auto bg-emerald-950 text-white outline-none' : 'min-h-screen bg-[var(--site-paper)] text-slate-900'}>
+  return <div ref={root} tabIndex={-1} className={fullscreen ? 'fixed inset-0 z-40 h-dvh overflow-y-auto bg-[var(--site-paper)] text-[var(--site-ink)] outline-none' : 'min-h-screen bg-[var(--site-paper)] text-slate-900'}>
     {fullscreen && currentRange ? <main>
       <Button ref={exitButton} variant="ghost" data-edge-visible={exitVisible}
         className={`counter-fullscreen-exit fixed right-4 top-4 z-10 bg-white/10 text-white hover:bg-white/20 hover:text-white ${exitVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
@@ -78,14 +78,13 @@ export default function LiveCounterPage() {
         <LiveCounterProgress range={currentRange} displayedCount={displayedCount} displayedTotal={displayedTotal}
           displayedPercentage={displayedPercentage} milestone={milestone} metric={metric} fullscreen
           context={`${snapshot.school.name} · ${rangeLabel(currentRange)}`} />
-        {!connected && <p role="status" className="absolute bottom-2 left-0 w-full bg-emerald-950/90 text-center text-sm text-amber-200">Reconnecting… Showing the last successful update.</p>}
+        {!connected && <p role="status" className="absolute bottom-2 left-0 w-full bg-[var(--site-paper)] text-center text-sm text-[var(--site-ink)]">Reconnecting… Showing the last successful update.</p>}
       </div>
     </main> : <>
     <main id="main-content" className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
       <div className="mb-6 flex flex-wrap gap-6"><SiteLink className="gp-text-link" to="/live-counter/community">All schools’ counter</SiteLink><SiteLink className="gp-text-link" to="/portal">School portal</SiteLink></div>
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Every plate counts</p>
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Live clean plates</h1>
           <p className="mt-4 text-slate-600">{snapshot?.school.name || user?.school?.name || 'Clean plates recorded by your school’s students and faculty.'}</p>
         </div>

@@ -1,8 +1,11 @@
 import VideoHelp from '@/components/VideoHelp.jsx'
+import InitiativeVideo, { introductionUrl } from '@/components/InitiativeVideo.jsx'
+import SchoolCaseStudyNote from '@/components/SchoolCaseStudyNote.jsx'
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { Navigate, useLocation } from 'react-router-dom'
 import Link from '@/components/SiteLink.jsx'
 import CommunityCounter from '@/components/CommunityCounter.jsx'
-import { ArrowRight, ArrowUpRight, ChevronRight, Pause, Play } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, ChevronRight, Mail, Play } from 'lucide-react'
 import { PlateMark } from '@/components/PublicHeader.jsx'
 import PublicSessionDashboard from '@/components/PublicSessionDashboard.jsx'
 import { usePublicSession } from '@/hooks/usePublicSession.js'
@@ -26,30 +29,64 @@ function ExternalLink({ href, children, className = 'gp-text-link' }) {
 }
 
 function Hero() {
-  return <section className="gp-hero gp-container" aria-labelledby="home-title">
-    <div className="gp-hero-heading">
-      <h1 id="home-title">Students take on<br />school food waste.</h1>
-      <div className="gp-hero-summary">
-        <p>Golden Plate is a student-led initiative from St. Andrew’s College in Aurora, Ontario. It connects food-waste reduction with school traditions, shared responsibility, and recognition for thoughtful choices at lunch.</p>
-        <Link className="gp-button" to="/register">Register your school <ArrowRight size={17} /></Link>
-      </div>
-    </div>
-    <UpdateSubscription />
-    <div className="gp-field-report">
-      <figure className="gp-hero-photo">
-        <img src="/images/initiative/compost-coaches.webp" alt="Student Compost Coaches recording plates at the dining hall waste station at St. Andrew’s College" width="1600" height="1280" fetchPriority="high" />
-        <figcaption>At the dish return: Compost Coaches record plates after lunch. St. Andrew’s College, Aurora.</figcaption>
-      </figure>
-      <aside className="gp-hero-notes">
-        <p className="gp-section-label">Inside the dining hall</p>
-        <h2>Winners help choose Friday’s menu.</h2>
-        <p>A clean plate can earn students a Golden Plate award, a week of skipping the cafeteria line, and a chance to choose a menu item.</p>
-        <p>It’s a weekly school tradition, supported by student volunteers, a staff mentor, and food services.</p>
-        <div className="gp-hero-actions">
-          <Link className="gp-text-link" to="/login">Already taking part? Log in <ArrowRight size={16} /></Link>
-          <a className="gp-text-link" href="#watch">Watch the introduction <ArrowRight size={16} /></a>
+  return <section className="gp-home-opening gp-container" aria-labelledby="home-title">
+    <div className="gp-home-spread">
+      <div className="gp-home-lead">
+        <h1 id="home-title">Students take on school food waste.</h1>
+        <p>At St. Andrew’s College, students count clean plates at the dish return. Each week, a winner helps choose Friday’s lunch.</p>
+        <div className="gp-home-actions">
+          <Link className="gp-button" to="/register">Register your school</Link>
+          <Link className="gp-text-link" to="/getting-started">Getting started</Link>
         </div>
-      </aside>
+      </div>
+      <figure className="gp-home-photo">
+        <img src="/images/initiative/compost-coaches.webp" alt="Two student Compost Coaches at the dish return as a classmate brings back a plate" width="1600" height="1280" fetchPriority="high" />
+        <figcaption>Student Compost Coaches at the dish return in Aurora, Ontario.</figcaption>
+      </figure>
+    </div>
+    <div className="gp-home-byline">
+      <Link to="/stories#watch"><Play size={15} aria-hidden="true" />Watch the introduction</Link>
+      <a href="#website-updates"><Mail size={16} aria-hidden="true" />Get website updates</a>
+    </div>
+  </section>
+}
+
+const schoolMaterials = [
+  {
+    to: '/resources#assembly',
+    title: 'Assembly slides',
+    image: '/images/initiative/student-developers.webp',
+    artwork: 'photo',
+  },
+  {
+    to: '/resources#instagram',
+    title: 'Winner announcements',
+    image: '/images/initiative/golden-plate-winner.webp',
+    artwork: 'photo',
+  },
+  {
+    to: '/resources#handouts',
+    title: 'One-page school overview',
+    image: '/resources/golden-plate-school-overview.webp',
+    artwork: 'handout',
+  },
+]
+
+function SchoolMaterials() {
+  return <section className="gp-home-materials gp-container" aria-labelledby="school-materials-title">
+    <div className="gp-home-section-heading">
+      <h2 id="school-materials-title">Resources for schools</h2>
+      <Link className="gp-text-link" to="/resources">Browse all resources</Link>
+    </div>
+    <div className="gp-home-materials-list">
+      {schoolMaterials.map(({ to, title, image, artwork }) => (
+        <Link key={to} to={to} className="gp-home-material">
+          <div className={`gp-material-image gp-material-${artwork}`}>
+            <img src={image} alt="" loading="lazy" />
+          </div>
+          <div className="gp-material-caption"><h3>{title}</h3></div>
+        </Link>
+      ))}
     </div>
   </section>
 }
@@ -58,7 +95,7 @@ function Story({ standalone = false }) {
   const Heading = standalone ? 'h1' : 'h2'
   return <section id="initiative" className={`gp-story gp-container ${standalone ? 'gp-page-intro' : ''}`}>
     <div className="gp-story-copy">
-      <p className="gp-section-label">The students behind Golden Plate</p>
+      <p className="gp-section-label">The Students Behind Golden Plate</p>
       <Heading>The award came first.<br />The website followed.</Heading>
       <p>Golden Plate began with a concern familiar to many school communities: food left on plates after lunch. St. Andrew’s Environmental Council, known as the Green Guys, made reducing that waste a shared activity that students could organize and take pride in.</p>
       <p>A clean plate became an entry into a school-wide award draw. Recognition at assembly, a chance to suggest a menu item, and a week of skipping the cafeteria line connected a daily choice with an established school tradition.</p>
@@ -82,6 +119,7 @@ function Impact() {
       <h2 id="impact-title">What changed at St. Andrew’s?</h2>
       <p>The case study describes more awareness of portions, closer relationships with kitchen staff, and a rise in clean-plate rates.</p>
       <ExternalLink href={CASE_STUDY}>Read the case study</ExternalLink>
+      <SchoolCaseStudyNote />
     </div>
     <div className="gp-impact-data">
       <dl>
@@ -105,7 +143,7 @@ function HowItWorks({ standalone = false }) {
       <li><h2>Recognize participation</h2><div><p>At St. Andrew’s, students with a clean plate can enter a draw for the Golden Plate award. Winners are recognized at assembly, can skip the cafeteria line for a week, and can propose a menu item.</p><p>Each school can agree on an appropriate routine and reward with its student team, staff mentor, and food services. The tradition should reflect the community taking part.</p></div></li>
       <li><h2>Learn from the record</h2><div><p>PLATE supports the initiative with a consistent record of lunch sessions, student participation, and plate categories. Dashboards, house rankings, and live counters help schools share their progress.</p><p>Students can use the results and feedback from their peers to refine the program.</p></div></li>
     </ol>
-    <VideoHelp videos={[3, 7, 32]} label="Watch the school routine" /><div className="gp-how-guide"><h2>Ready to use the website?</h2><p>The getting-started guide explains school registration, accounts, roster uploads, sessions, and recording a plate, step by step.</p><Link className="gp-text-link" to="/getting-started">Open the website guide <ArrowRight size={16} /></Link></div>
+    <VideoHelp videos={[3, 7, 32]} label="Watch the school routine" /><div className="gp-how-guide"><h2>Ready to use the website?</h2><p>Find out how to register, gather a student team, and plan your first lunch.</p><Link className="gp-text-link" to="/getting-started">Get started at your school <ArrowRight size={16} /></Link></div>
   </section>
 }
 
@@ -113,7 +151,7 @@ function Platform() {
   const result = usePublicSession()
   return <section className="gp-platform gp-container" aria-labelledby="platform-title">
     <div className="gp-platform-intro">
-      <p className="gp-section-label">PLATE · The recording website</p>
+      <p className="gp-section-label">PLATE · The Recording Website</p>
       <h2 id="platform-title">Schools are using PLATE.</h2>
       <p>Record plates, review lunch totals, and run your school’s Golden Plate draws. Explore a session below to see PLATE in use.</p>
     </div>
@@ -136,12 +174,10 @@ function Platform() {
 function LiveCounterFeature() {
   return <section id="live-counter" className="gp-counter" aria-labelledby="counter-title">
     <div className="gp-container">
-      <p className="gp-section-label">PLATE · Live counter</p>
-      <div className="gp-counter-intro"><h2 id="counter-title">Every school’s effort,<br />in one live total.</h2>
+      <div className="gp-counter-intro"><h2 id="counter-title">Community live counter</h2>
         <p>Clean plates recorded by students and faculty across all schools using PLATE.</p>
       </div>
       <div className="gp-counter-live"><p>Across all schools · All time</p><CommunityCounter compact /></div>
-      <p className="gp-counter-footnote">Open the full counter for your dining hall or assembly, or view your school’s total.</p>
     </div>
   </section>
 }
@@ -149,7 +185,6 @@ function LiveCounterFeature() {
 function Community() {
   const [schools, setSchools] = useState([])
   const [status, setStatus] = useState('loading')
-  const [paused, setPaused] = useState(false)
   const [selected, setSelected] = useState(null)
   useEffect(() => {
     const controller = new AbortController()
@@ -163,15 +198,14 @@ function Community() {
   return <section className="gp-community gp-container" aria-labelledby="community-title">
     <div>
       <h2 id="community-title">Find another school.</h2>
-      <p>Explore the globe or open the school map to find participating schools and their public sessions.</p>
+      <p>Drag the globe to explore. Select a school pin to see its public sessions.</p>
       <div className="gp-community-status" aria-live="polite">
         {selected ? <Link className="gp-community-school-link" to={schoolGuestPath(selected)}><strong>{selected.name}</strong><span>{selected.code} · {selected.address || selected.location_name}</span><span className="gp-text-link">Open guest view <ArrowRight size={15} /></span></Link> : <strong>{status === 'ready' ? `${schools.length} participating ${schools.length === 1 ? 'school' : 'schools'}` : status === 'error' ? 'School list unavailable here. Try the full map.' : 'Loading schools…'}</strong>}
       </div>
       <Link className="gp-text-link" to="/map">Open the school map <ArrowRight size={16} /></Link>
     </div>
     <div className="gp-community-globe">
-      <Suspense fallback={<p className="gp-globe-placeholder">Loading globe…</p>}><SchoolGlobe schools={schools} paused={paused} onSelect={(s) => { setSelected(s); setPaused(true) }} /></Suspense>
-      <button className="gp-globe-pause" aria-label={paused ? 'Rotate globe' : 'Pause globe rotation'} onClick={() => setPaused(!paused)}>{paused ? <Play size={13} /> : <Pause size={13} />}{paused ? 'Rotate' : 'Pause'}</button>
+      <Suspense fallback={<p className="gp-globe-placeholder">Loading globe…</p>}><SchoolGlobe schools={schools} onSelect={setSelected} /></Suspense>
       <p className="gp-globe-caption">Public school locations · Natural Earth</p>
     </div>
   </section>
@@ -179,20 +213,19 @@ function Community() {
 
 function Media({ standalone = false }) {
   const Heading = standalone ? 'h1' : 'h2'
-  const [video, setVideo] = useState(false)
   const [instagram, setInstagram] = useState(false)
   return <section id="watch" className={`gp-media gp-container ${standalone ? 'gp-page-intro' : ''}`}>
     <div className="gp-media-heading"><Heading>From the dining hall.</Heading><p>Watch the introduction, hear from the students, or catch up with the Environmental Council.</p></div>
     <div className="gp-media-grid">
       <article className="gp-video-feature">
-        <div className="gp-video-player">{video ? <iframe src="https://www.youtube-nocookie.com/embed/vQN0X-7xXVo?autoplay=1" title="Golden Plate introduction video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /> : <button onClick={() => setVideo(true)} aria-label="Play the Golden Plate introduction video"><img src="/images/initiative/golden-plate-team.webp" alt="Golden Plate students with their teacher and food services staff" loading="lazy" width="1123" height="702" /><span className="gp-video-play"><Play size={22} fill="currentColor" /> Play the introduction</span></button>}</div>
-        <div className="gp-media-title"><h3>How the Golden Plate works</h3><ExternalLink href="https://www.youtube.com/watch?v=vQN0X-7xXVo">YouTube</ExternalLink></div>
+        <InitiativeVideo />
+        <div className="gp-media-title"><h3>How the Golden Plate works</h3><ExternalLink href={introductionUrl}>YouTube</ExternalLink></div>
       </article>
       <article id="podcast" className="gp-podcast">
         <p className="gp-section-label">Podcast · Second Harvest National Youth Council</p>
         <h3>Spoiler Alert:<br />The Golden Plate</h3>
         <p>Jiajun (Leo) Li, Shuoyou (Nick) Wang, and Michael Casey trace Golden Plate from paper tallies to card scans, student-led assemblies, and a website other schools can use.</p>
-        <iframe title="Spoiler Alert podcast — S2 E02 The Golden Plate" src="https://open.spotify.com/embed/episode/0e3Fu2pkadTsyrRyeFraXe?utm_source=generator&theme=0" height="232" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
+        <div className="gp-spotify-player"><iframe title="Spoiler Alert podcast — S2 E02 The Golden Plate" src="https://open.spotify.com/embed/episode/0e3Fu2pkadTsyrRyeFraXe?utm_source=generator&theme=0" height="232" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" /></div>
         <div className="gp-podcast-links"><ExternalLink href={PODCAST}>Listen on Spotify</ExternalLink><Link className="gp-text-link" to={PODCAST_TRANSCRIPT}>Read the edited transcript <ArrowRight size={16} /></Link></div>
       </article>
     </div>
@@ -216,22 +249,29 @@ function Media({ standalone = false }) {
 
 function StudentVoice() {
   return <section id="student-perspective" className="gp-student-voice gp-container" aria-label="A student perspective">
-    <div><p className="gp-section-label">A student perspective</p><blockquote>“{TRADITION_QUOTE}”</blockquote><p>Jiajun (Leo) Li<span>From his writing on sustainability and school community.</span></p><p className="gp-student-reflection">Golden Plate gave students a practical way to shape school culture together. In Jiajun’s account, recognition and shared responsibility helped turn an environmental concern into a tradition their peers wanted to take part in.</p></div>
+    <div><p className="gp-section-label">A Student Perspective</p><blockquote>“{TRADITION_QUOTE}”</blockquote><p>Jiajun (Leo) Li<span>From his writing on sustainability and school community.</span></p><p className="gp-student-reflection">Golden Plate gave students a practical way to shape school culture together. In Jiajun’s account, recognition and shared responsibility helped turn an environmental concern into a tradition their peers wanted to take part in.</p></div>
     <figure><img src="/images/initiative/middle-school-green-team.webp" alt="The Middle School Green Team learning from senior student leaders and celebrating the Golden Plate" width="800" height="600" loading="lazy" /><figcaption>Senior students help the Middle School Green Team become Compost Coaches.</figcaption></figure>
   </section>
 }
 
 function Join() {
   return <section className="gp-join gp-container">
-    <div><h2>Bring it to your school.</h2><p>Build a student team, involve a staff mentor and food services, and agree on a routine that fits your school. The website guide explains how to set up and use PLATE.</p><Link className="gp-text-link" to="/getting-started">Read the getting-started guide <ArrowRight size={16} /></Link></div>
+    <div><h2>Bring it to your school.</h2><p>Plan your first lunch with student volunteers, a staff mentor, and your food services team.</p><Link className="gp-text-link" to="/getting-started">Plan your first lunch <ArrowRight size={16} /></Link></div>
     <div className="gp-join-actions"><Link className="gp-button" to="/register">Register your school <ArrowRight size={17} /></Link><Link className="gp-text-link" to="/login">School login <ArrowRight size={16} /></Link></div>
   </section>
 }
 
 export function PublicFooter() {
   return <footer className="gp-footer"><div className="gp-container">
-    <div className="gp-footer-top"><Link to="/" className="public-brand"><PlateMark /><span>golden plate<span className="brand-caption">Student-led food waste prevention</span></span></Link><nav aria-label="Footer navigation"><Link to="/about">Our story</Link><Link to="/how-it-works">How it works</Link><Link to="/getting-started">Get started</Link><Link to="/getting-started#video-library">Video guides</Link><Link to="/stories">Watch & listen</Link><Link to="/map">School map</Link><Link to="/release-notes">Release history</Link><Link to="/how-it-works#contact">Contact</Link><Link to="/login">School login</Link></nav></div>
-    <div className="gp-footer-bottom"><span>PLATE — Prevention, Logging & Assessment of Tossed Edibles</span><div><Link to="/#website-updates">Get website updates</Link><ExternalLink href={CASE_STUDY}>Case study & photo source</ExternalLink><ExternalLink href={REPO}>GitHub</ExternalLink></div></div>
+    <div className="gp-footer-top">
+      <Link to="/" className="public-brand"><PlateMark /><span>golden plate<span className="brand-caption">Student-Led Food Waste Prevention</span></span></Link>
+      <nav aria-label="Footer navigation">
+        <div><strong>For schools</strong><Link to="/getting-started">Getting started</Link><Link to="/resources">School resources</Link><Link to="/register">School registration</Link><Link to="/login">School login</Link></div>
+        <div><strong>The initiative</strong><Link to="/about">Our story</Link><Link to="/how-it-works">How it works</Link><Link to="/stories">Watch &amp; listen</Link><Link to="/how-it-works#contact">Contact</Link></div>
+        <div><strong>Website tools</strong><Link to="/map">School map</Link><Link to="/live-counter/community">Live counter</Link><Link to="/website-guide">Full website guide</Link><Link to="/website-guide#video-library">Video guides</Link><Link to="/release-notes">Release history</Link></div>
+      </nav>
+    </div>
+    <div className="gp-footer-bottom"><span>PLATE — Prevention, Logging & Assessment of Tossed Edibles</span><div><a href="/privacy">Privacy policy</a><a href="/terms">Terms of service</a><Link to="/#website-updates">Get website updates</Link><Link to="/resources#handouts">Case study &amp; photo source</Link><ExternalLink href={REPO}>GitHub</ExternalLink></div></div>
   </div></footer>
 }
 
@@ -244,17 +284,19 @@ function Questions() {
   </section>
 }
 
-const titles = { home: 'Golden Plate — Student-led food waste prevention', about: 'Our story · Golden Plate', how: 'How it works · Golden Plate', stories: 'Watch & listen · Golden Plate' }
+const titles = { home: 'Golden Plate — Student-Led Food Waste Prevention', about: 'Our story · Golden Plate', how: 'How it works · Golden Plate', stories: 'Watch & listen · Golden Plate' }
+const movedHomeSections = { '#initiative': '/about', '#watch': '/stories', '#podcast': '/stories' }
+
 export default function LandingPage({ page = 'home' }) {
+  const location = useLocation()
+  const movedSection = page === 'home' && movedHomeSections[location.hash]
   useEffect(() => { document.title = titles[page] }, [page])
-  const revealLoadedImage = (event) => {
-    if (event.target.tagName === 'IMG') event.target.classList.add('gp-image-arrived')
-  }
-  return <div key={page} className="golden-public" onLoadCapture={revealLoadedImage}><main id="main-content" tabIndex={-1}>
-    {page === 'home' && <><Hero /><Impact /><Story /><Platform /><LiveCounterFeature /><Media /><Community /></>}
+  if (movedSection) return <Navigate to={movedSection + location.search + location.hash} replace state={location.state} />
+  return <div key={page} className="golden-public"><main id="main-content" tabIndex={-1}>
+    {page === 'home' && <><Hero /><SchoolMaterials /><LiveCounterFeature /><Community /><div className="gp-container"><UpdateSubscription /></div></>}
     {page === 'about' && <><Story standalone /><Impact /><StudentVoice /><Community /></>}
-    {page === 'how' && <><HowItWorks standalone /><StudentVoice /><InitiativeContact /><Questions /></>}
+    {page === 'how' && <><HowItWorks standalone /><Platform /><StudentVoice /><InitiativeContact /><Questions /></>}
     {page === 'stories' && <><Media standalone /><StudentVoice /></>}
-    <Join />
+    {page !== 'home' && <Join />}
   </main><PublicFooter /></div>
 }

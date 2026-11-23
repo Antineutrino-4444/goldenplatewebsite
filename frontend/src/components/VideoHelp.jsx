@@ -29,7 +29,7 @@ export default function VideoHelp({ videos, label = 'Watch a video guide' }) {
   const guides = videos.map((number) => VIDEO_GUIDES.find((guide) => guide.number === number)).filter(Boolean)
   return <details className="gp-video-help" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>{label}<span className="gp-video-help-count">{guides.length === 1 ? guides[0].duration : `${guides.length} videos`}</span></summary>
-    {open && <div className="gp-video-help-body"><GuideList guides={guides} /><Link className="gp-guide-all-videos" to="/getting-started#video-library">Browse all 32 video guides →</Link></div>}
+    {open && <div className="gp-video-help-body"><GuideList guides={guides} /><Link className="gp-guide-all-videos" to="/website-guide#video-library">Browse all 32 video guides →</Link></div>}
   </details>
 }
 

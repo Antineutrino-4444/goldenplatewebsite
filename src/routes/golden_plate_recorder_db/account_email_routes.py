@@ -27,6 +27,14 @@ def require_account_email():
         return None
     if request.path.startswith('/api/updates/'):
         return None
+    # Assembly routes check their own access so public exports and disconnect
+    # remain available, and the OAuth callback can return to the resource page.
+    if request.endpoint in {
+        'recorder.download_school_presentation', 'recorder.assembly_live_links',
+        'recorder.connect_assembly_deck', 'recorder.assembly_oauth_callback',
+        'recorder.disconnect_assembly_deck',
+    }:
+        return None
     if request.path in {
         '/api/auth/login', '/api/auth/logout', '/api/auth/status',
         '/api/auth/account-email/send-verification-code', '/api/auth/account-email',

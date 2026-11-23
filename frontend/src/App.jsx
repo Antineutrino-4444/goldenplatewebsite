@@ -15,6 +15,8 @@ const LandingPage = lazy(() => import('@/components/LandingPage.jsx'))
 const ReleaseHistoryPage = lazy(() => import('@/components/ReleaseHistoryPage.jsx'))
 const PodcastTranscriptPage = lazy(() => import('@/components/PodcastTranscriptPage.jsx'))
 const GettingStartedPage = lazy(() => import('@/components/GettingStartedPage.jsx'))
+const WebsiteGuidePage = lazy(() => import('@/components/WebsiteGuidePage.jsx'))
+const SchoolResourcesPage = lazy(() => import('@/components/SchoolResourcesPage.jsx'))
 const SignupAccessNotice = lazy(() => import('@/components/SignupAccessNotice.jsx'))
 const GuestSessionPage = lazy(() => import('@/components/GuestSessionPage.jsx'))
 const SchoolGuestEntry = lazy(() => import('@/components/SchoolGuestEntry.jsx'))
@@ -99,7 +101,7 @@ function Workspace() {
   if (!app.authReady) return <LoadingPage />
   if (guestEntry) return <AppFrame app={app} showReleaseNotes={false}><Suspense fallback={<LoadingPage />}><SchoolGuestEntry key={schoolId} schoolId={schoolId} guestLogin={app.guestLogin} /><OverlayElements app={app} /></Suspense></AppFrame>
   if ((signup || registration) && app.isAuthenticated) return <AppFrame app={app} showReleaseNotes={false}><SignupAccessNotice app={app} /><Suspense fallback={null}><OverlayElements app={app} /></Suspense></AppFrame>
-  if (authentication && app.isAuthenticated && !registration && !signup) {
+  if (authentication && app.isAuthenticated && !app.user?.email_required && !registration && !signup) {
     if (!showFlight) return <Navigate to={target} replace />
   }
   if (!authentication && !app.isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />
@@ -130,6 +132,8 @@ function SiteRoutes() {
     <Route path="/about" element={<LandingPage page="about" />} />
     <Route path="/how-it-works" element={<LandingPage page="how" />} />
     <Route path="/getting-started" element={<GettingStartedPage />} />
+    <Route path="/website-guide" element={<WebsiteGuidePage />} />
+    <Route path="/resources" element={<SchoolResourcesPage />} />
     <Route path="/release-notes" element={<ReleaseHistoryPage />} />
     <Route path="/stories" element={<LandingPage page="stories" />} />
     <Route path="/stories/transcript" element={<PodcastTranscriptPage />} />

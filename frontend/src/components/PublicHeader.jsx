@@ -45,17 +45,15 @@ export default function PublicHeader() {
   return <header className="public-header">
     <a className="public-skip" href="#main-content">Skip to content</a>
     <div className="public-header-inner">
-      <SiteLink className="public-brand" to="/" onClick={close}><PlateMark /><span>golden plate<span className="brand-caption">Student-led food waste prevention</span></span></SiteLink>
+      <SiteLink className="public-brand" to="/" onClick={close}><PlateMark /><span>golden plate<span className="brand-caption">Student-Led Food Waste Prevention</span></span></SiteLink>
       <div className="public-header-actions"><ThemeToggle /><button ref={menuButton} className="public-menu-toggle" aria-label={open ? 'Close navigation' : 'Open navigation'} aria-expanded={open} aria-controls="public-navigation" onClick={() => setOpen(!open)}><span className="public-menu-icon" aria-hidden="true"><span /><span /><span /></span></button></div>
       <nav id="public-navigation" className={open ? 'public-nav is-open' : 'public-nav'} aria-label="Main navigation" inert={compact && !open ? true : undefined}>
-        <NavLink to={siteDestination('/about')} state={navState} onClick={close}>Our story</NavLink>
         <NavLink to={siteDestination('/how-it-works')} state={navState} onClick={close}>How it works</NavLink>
         <NavLink to={siteDestination('/getting-started')} state={navState} onClick={close}>Get started</NavLink>
-        <NavLink to={siteDestination('/stories')} state={navState} onClick={close}>Watch & listen</NavLink>
+        <NavLink to={siteDestination('/resources')} state={navState} onClick={close}>Resources</NavLink>
         <NavLink to={siteDestination('/map')} state={navState} onClick={close}>School map</NavLink>
-        <NavLink to={siteDestination('/live-counter/community')} state={navState} onClick={close}>Live counter</NavLink>
         <NavLink className="public-login-link" to={siteDestination('/login')} state={navState} onClick={close}>Log in <ArrowUpRight size={15} /></NavLink>
-        <SiteLink className="gp-button gp-button-small" to="/register" onClick={close}>Register a school <ArrowUpRight size={15} /></SiteLink>
+        <SiteLink className="gp-button gp-button-small" to="/register" onClick={close}>Register a school</SiteLink>
       </nav>
     </div>
     {(location.pathname !== '/' || isMapHost(window.location.hostname)) && <div className="public-return-row"><Link to={siteDestination(returnTo)} state={{ restoreKey: location.state?.returnKey }} onClick={returnToSource}>← Back to {sitePageLabel(returnTo)}</Link></div>}

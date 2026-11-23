@@ -8,6 +8,11 @@
   --site-muted: #555f55;
   --site-rule: #cccfc2;
   --site-gold-ink: #776746;
+  --site-action: #234c38;
+  --site-action-hover: #173b2b;
+  --site-on-action: #fff;
+  --site-meter-track: #d4dbcd;
+  --site-meter-fill: #396749;
 }
 :root.dark {
   --site-paper: #101a16;
@@ -17,6 +22,11 @@
   --site-muted: #b6c4b9;
   --site-rule: #3c5042;
   --site-gold-ink: #ddc38a;
+  --site-action: #e8c780;
+  --site-action-hover: #f5dba4;
+  --site-on-action: #19372b;
+  --site-meter-track: #344b3d;
+  --site-meter-fill: #c6d396;
   --background: #101a16;
   --foreground: #edf0e6;
   --card: #19261f;
@@ -59,7 +69,6 @@ html, body { background: var(--site-paper); }
 }
 @media (min-width: 951px) and (max-width: 1370px) {
   .public-nav { gap: 16px; }
-  .public-nav > .gp-button { display: none; }
 }
 
 /* Compatibility for recorder color utilities that predate the shared palette.
@@ -117,13 +126,8 @@ html, body { background: var(--site-paper); }
   }
 }
 
-:root.dark .gp-button { background: #36674c; border-color: #689675; }
-:root.dark .gp-button:hover { background: #407b5a; }
 :root.dark .gp-section-label { color: #bac9aa !important; }
 :root.dark .gp-text-link:hover { color: #edd18a; border-color: #edd18a; }
-:root.dark .gp-community-counter .gp-community-bar-track { background: #344b3d; }
-:root.dark .gp-community-counter .gp-community-bar-fill { background: #c6d396; }
-:root.dark .gp-community-counter .gp-counter-connection { color: var(--site-muted) !important; }
 :root.dark :is(.gp-feature-list > div:first-child, .gp-podcast, .gp-contact-details > section, .gp-guide-contents, .gp-guide-troubleshooting) { border-top-color: #6c896b; }
 :root.dark .public-skip { background: var(--site-surface); }
 :root.dark .gp-guide-step pre { background: var(--site-surface); }

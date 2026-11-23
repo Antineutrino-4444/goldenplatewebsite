@@ -17,7 +17,7 @@
 .gp-guide-player { margin-block: 10px 14px; padding: 12px; background: var(--site-raised, #edf2ed); }
 .gp-guide-player-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
 .gp-guide-player-heading button, .gp-guide-reset { min-height: 44px; background: transparent; border: 0; padding: 6px; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
-.gp-guide-player iframe { display: block; width: 100%; aspect-ratio: 16/9; border: 0; background: #15261e; }
+.gp-guide-player iframe { display: block; width: 100%; aspect-ratio: 16/9; border: 0; background: var(--site-raised); }
 .gp-guide-player p { font-size: 12px !important; margin: 10px 0 0 !important; }
 .gp-video-library { scroll-margin-top: 100px; padding-block: 30px; border-top: 1px solid var(--site-rule, #d7ded8); }
 .gp-video-library h2 { margin: 0 0 12px; }

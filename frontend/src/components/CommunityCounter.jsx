@@ -1,11 +1,11 @@
 import { Maximize, Minimize } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { PlateMark } from '@/components/PublicHeader.jsx'
 import SiteLink from '@/components/SiteLink.jsx'
 import usePublicCounter from '@/hooks/usePublicCounter.js'
 import useCounterFullscreen from '@/hooks/useCounterFullscreen.js'
 import useAnimatedCounter from '@/hooks/useAnimatedCounter.js'
-import { communityBarLayout, communityRulerLabels } from '@/lib/counter-animation.js'
+import { communityBarLayout, communityRulerHeight, communityRulerLabels } from '@/lib/counter-animation.js'
 import { observeCounterVisibility } from '@/lib/counter-visibility.js'
 
 export default function CommunityCounter({ compact = false }) {
@@ -41,11 +41,15 @@ export default function CommunityCounter({ compact = false }) {
     resetKey: snapshot && seen ? 'community' : 'loading' })
   const bar = communityBarLayout(displayedCount)
   const ruler = communityRulerLabels(bar.ticks, rulerWidth)
+  const savedCount = snapshot?.clean_count || 0
+  const previousSavedCount = useRef(0)
+  const reservedHeight = useMemo(() => communityRulerHeight(Math.max(previousSavedCount.current, savedCount), rulerWidth), [savedCount, rulerWidth])
+  useEffect(() => { previousSavedCount.current = savedCount }, [savedCount])
   useEffect(() => {
     if (!compact) document.title = 'Community live counter · Golden Plate'
   }, [compact])
   return <div ref={root} tabIndex={-1} className={`${compact ? 'gp-mini-counter' : 'gp-community-counter'}${fullscreen ? ' gp-community-counter-fullscreen' : ''}`}>
-    {!compact && !fullscreen && <div className="gp-counter-page-heading"><p className="gp-section-label">PLATE · Community live counter</p><h1>Every clean plate adds up.</h1><p>All-time clean plates recorded by students and faculty across participating schools.</p></div>}
+    {!compact && !fullscreen && <div className="gp-counter-page-heading"><p className="gp-section-label">PLATE · Community Live Counter</p><h1>Every clean plate adds up.</h1><p>All-time clean plates recorded by students and faculty across participating schools.</p></div>}
     {fullscreen && <button ref={exitButton} className="gp-counter-exit" data-edge-visible={exitVisible} onClick={exit}><Minimize size={18} />Exit full screen</button>}
     <div className="gp-counter-numbers" aria-label="Community totals">
       <div><span className="gp-counter-value"><span aria-hidden="true">{snapshot ? displayedCount.toLocaleString() : '—'}</span><span className="sr-only">{snapshot ? snapshot.clean_count.toLocaleString() : 'Loading'}</span></span><span className="gp-counter-unit">clean plates</span></div>
@@ -59,9 +63,9 @@ export default function CommunityCounter({ compact = false }) {
         {compact && <span className={`gp-community-bar-tip${tipVisible ? ' is-visible' : ''}`} aria-hidden="true"
           style={{ left: `clamp(16px, ${bar.width}%, calc(100% - 16px))` }}><PlateMark /></span>}
       </div>
-      <div className="gp-community-bar-ticks" style={{ height: ruler.height }} aria-hidden="true">{ruler.ticks.map((tick) => <span key={tick.endpoint ? 'limit' : tick.value}
+      <div className="gp-community-bar-ticks" style={{ height: Math.max(ruler.height, reservedHeight) }} aria-hidden="true">{ruler.ticks.map((tick) => <span key={tick.endpoint ? 'limit' : tick.value}
         data-scale-mark={tick.value} title={tick.value.toLocaleString()}
-        style={{ left: `${tick.position}%` }}><span style={{ left: tick.offset }}>{tick.text}</span></span>)}</div>
+        style={{ left: `${tick.position}%` }}><span style={{ left: tick.offset, top: tick.top }}>{tick.text}</span></span>)}</div>
     </div>}
     <p className="gp-counter-connection" role="status">{connected ? 'Live' : snapshot ? 'Reconnecting… Showing the last successful totals.' : error ? 'Unable to load totals. Retrying automatically…' : 'Loading live totals…'}</p>
     {!fullscreen && <div className="gp-counter-controls">{compact

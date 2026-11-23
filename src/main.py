@@ -24,6 +24,7 @@ from src.routes.golden_plate_recorder_db.map_db import map_db_session
 from src.services.release_notifications import start_release_notifications
 from src.services.account_lifecycle import start_account_lifecycle
 from src.routes.golden_plate_recorder_db.ticket_combos import initialize_ticket_combos
+from src.routes.golden_plate_recorder_db.assembly_sync import start_assembly_sync
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -50,16 +51,20 @@ def serve(path):
         return {'error': 'This API endpoint could not be found.'}, 404
     static_folder_path = app.static_folder
     if static_folder_path is None:
-            return "Static folder not configured", 404
+        return "Static folder not configured", 404
 
-    if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
+    page = path.rstrip('/')
+    if page in ('privacy', 'terms'):
+        return send_from_directory(static_folder_path, page + '.html')
+
+    # The Resources page and its downloadable files share the same URL prefix.
+    if page == 'resources':
+        path = ''
+    if path and (path.startswith('resources/') or os.path.exists(os.path.join(static_folder_path, path))):
         return send_from_directory(static_folder_path, path)
-    else:
-        index_path = os.path.join(static_folder_path, 'index.html')
-        if os.path.exists(index_path):
-            return send_from_directory(static_folder_path, 'index.html')
-        else:
-            return "index.html not found", 404
+    if os.path.isfile(os.path.join(static_folder_path, 'index.html')):
+        return send_from_directory(static_folder_path, 'index.html')
+    return "index.html not found", 404
 
 
 @app.teardown_appcontext
@@ -77,6 +82,7 @@ reloader_parent = (
 )
 start_release_notifications(app, reloader_parent=reloader_parent)
 start_account_lifecycle(app, reloader_parent=reloader_parent)
+start_assembly_sync(app, reloader_parent=reloader_parent)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', '59237')), debug=True)

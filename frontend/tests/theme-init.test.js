@@ -5,12 +5,20 @@ import { runInNewContext } from 'node:vm'
 
 const bootstrap = await readFile(new URL('../public/theme-init.js', import.meta.url), 'utf8')
 function initialTheme(preference, deviceDark, storageBlocked = false) {
-  const root = { classList: { toggle(name, active) { root[name] = active } }, style: {} }
+  const root = { classList: { toggle(name, active) { root[name] = active }, contains(name) { return root[name] } }, style: {} }
+  const browserColor = { content: '#f8f7f0', dataset: { dark: '#101a16' } }
+  let observeTheme
   runInNewContext(bootstrap, {
     localStorage: { getItem: () => { if (storageBlocked) throw new Error('Storage unavailable'); return preference }, removeItem: () => {} },
     matchMedia: () => ({ matches: deviceDark }),
-    document: { documentElement: root },
+    document: { documentElement: root, querySelector: () => browserColor },
+    MutationObserver: class { constructor(callback) { observeTheme = callback } observe() {} },
   })
+  assert.equal(browserColor.content, root.dark ? browserColor.dataset.dark : '#f8f7f0')
+  root.classList.toggle('dark', !root.dark)
+  observeTheme()
+  assert.equal(browserColor.content, root.dark ? browserColor.dataset.dark : '#f8f7f0')
+  root.classList.toggle('dark', !root.dark)
   return { dark: root.dark, colorScheme: root.style.colorScheme }
 }
 test('first paint follows the device when no theme is saved', () => {

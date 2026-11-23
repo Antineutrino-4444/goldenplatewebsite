@@ -14,7 +14,7 @@ from sqlalchemy import or_
 
 from src.routes.golden_plate_recorder_db.db import (
     AccountCreationRequest, AccountDeletionGrant, AccountLifecycleControl,
-    AccountLifecycleNotice, Base, EmailVerification, PasswordRecovery, SessionFactory,
+    AccountLifecycleNotice, AssemblyDeck, Base, EmailVerification, PasswordRecovery, SessionFactory,
     SchoolInviteCode, User, UserInviteCode, _now_utc,
 )
 from .email_delivery import send_email_via_brevo
@@ -141,6 +141,8 @@ def permanently_delete_account(store, user, now, *, explicit=False):
     store.query(SchoolInviteCode).filter_by(issued_by=user.id, status='unused').update(
         {SchoolInviteCode.status: 'revoked'}, synchronize_session=False,
     )
+    # Cloud grants belong to the login and must never transfer to its historical actor.
+    store.query(AssemblyDeck).filter_by(owner_id=user.id).delete(synchronize_session=False)
     # Every User FK, including non-null historical record authors, stays valid.
     for table in Base.metadata.sorted_tables:
         for column in table.columns:

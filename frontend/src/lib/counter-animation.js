@@ -26,17 +26,55 @@ export function communityBarLayout(value) {
 }
 
 const compactScaleNumber = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+const rulerRowHeight = 12
 export function communityRulerLabels(ticks, width) {
   const labels = ticks.map((tick) => {
     const text = tick.value < 1000 ? String(tick.value) : compactScaleNumber.format(tick.value)
-    const size = text.length * 6.5 + 4
+    const size = text.length * 7 + 2
     const x = tick.position / 100 * width
     const left = Math.max(0, Math.min(width - size, x - size / 2))
     return { ...tick, text, size, x, left, offset: left - x, row: 0, showLabel: true }
   })
-  // Accumulated marks intentionally crowd together, on one fixed baseline.
-  // Never add rows or hide earlier labels as the counter animates/resets.
-  return { ticks: labels, height: 30 }
+  // As the scale grows its moving endpoint can sit directly beside the last
+  // fixed mark. Keep both on the first line if the inner label can slide left.
+  const endpoint = labels.at(-1)
+  const neighbour = labels.at(-2)
+  const previous = labels.at(-3)
+  if (endpoint?.endpoint && neighbour && previous) {
+    const adjusted = Math.min(neighbour.left, endpoint.left - neighbour.size - 3)
+    if (adjusted >= previous.left + previous.size + 3) {
+      neighbour.left = adjusted
+      neighbour.offset = adjusted - neighbour.x
+    }
+  }
+  const rowEnds = []
+  for (const tick of [...labels].sort((a, b) => a.left - b.left)) {
+    const freeRow = rowEnds.findIndex(end => tick.left >= end + 3)
+    tick.row = freeRow < 0 ? rowEnds.length : freeRow
+    tick.top = 6 + tick.row * rulerRowHeight
+    rowEnds[tick.row] = tick.left + tick.size
+  }
+  return { ticks: labels, height: Math.max(30, 6 + rowEnds.length * rulerRowHeight) }
+}
+
+export function communityRulerHeight(count, width) {
+  const layout = communityBarLayout(count)
+  // Marks are closest at the largest saved count. At either edge a label
+  // can extend its full width in one direction instead of half its width.
+  // Reserve for those overlaps plus the moving endpoint throughout the animation.
+  const fixed = layout.ticks.filter(tick => !tick.endpoint)
+  const labels = communityRulerLabels(fixed, width).ticks
+  let rows = 1
+  for (const leading of [.5, 1]) {
+    const intervals = labels.map(({ x, size }) => ({
+      start: x - leading * size, end: x + (1.5 - leading) * size + 3,
+    }))
+    for (const { start } of intervals) {
+      const overlaps = intervals.filter(other => other.start <= start && other.end > start)
+      rows = Math.max(rows, overlaps.length)
+    }
+  }
+  return count ? Math.max(30, 6 + (rows + 1) * rulerRowHeight) : 30
 }
 
 export function crossedMilestone(previous, next, milestone) {

@@ -296,6 +296,22 @@
   background: radial-gradient(ellipse at 25% 40%, var(--counter-panel-highlight, #145c43), var(--counter-panel-shadow, #062e23) 80%);
 }
 
+:root:not(.dark) .school-counter-panel {
+  --counter-surface-lightness: 96%;
+  --counter-accent-lightness: 27%;
+  background: var(--counter-panel-color, var(--site-surface));
+  border: 1px solid var(--site-rule);
+  color: var(--site-ink);
+}
+:root:not(.dark) .school-counter-panel .text-white { color: var(--site-ink); }
+:root:not(.dark) .school-counter-panel :is(.text-emerald-100, .text-emerald-200) { color: var(--site-muted); }
+:root:not(.dark) .school-counter-panel :is(.text-amber-200, .text-amber-300) { color: var(--site-gold-ink); }
+:root:not(.dark) .school-counter-fill,
+:root:not(.dark) .school-counter-panel .bg-emerald-200 { background: var(--counter-goal-accent, var(--site-meter-fill)); }
+:root:not(.dark) .school-counter-panel .bg-amber-300 { background: #9b711e; }
+:root:not(.dark) .school-counter-panel [role="progressbar"] { background: var(--site-meter-track); }
+:root:not(.dark) .counter-fullscreen-exit { background: var(--site-surface); color: var(--site-ink); }
+
 .counter-fullscreen-content {
   display: flex;
   flex: 1;

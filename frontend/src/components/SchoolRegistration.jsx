@@ -82,9 +82,10 @@ function SchoolRegistration({ app }) {
               <button
                 type="button"
                 onClick={() => setSchoolSignupMode('request')}
+                aria-pressed={!isInviteMode}
                 className={`px-3 py-1.5 text-sm flex-1 transition-colors ${
                   schoolSignupMode === 'request'
-                    ? 'bg-amber-600 text-white'
+                    ? 'bg-[var(--site-action)] text-[var(--site-on-action)]'
                     : 'bg-white text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -93,9 +94,10 @@ function SchoolRegistration({ app }) {
               <button
                 type="button"
                 onClick={() => setSchoolSignupMode('invite')}
+                aria-pressed={isInviteMode}
                 className={`px-3 py-1.5 text-sm flex-1 transition-colors ${
                   schoolSignupMode === 'invite'
-                    ? 'bg-amber-600 text-white'
+                    ? 'bg-[var(--site-action)] text-[var(--site-on-action)]'
                     : 'bg-white text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -168,7 +170,7 @@ function SchoolRegistration({ app }) {
                       <Button
                         onClick={handleSendVerificationCode}
                         disabled={verificationLoading || !schoolEmail.trim()}
-                        className="bg-amber-600 hover:bg-amber-700 whitespace-nowrap w-full sm:w-auto"
+                        className="gp-button whitespace-nowrap w-full sm:w-auto"
                       >
                         {verificationLoading ? 'Sending...' : verificationSent ? 'Resend Code' : 'Send Code'}
                       </Button>
@@ -198,7 +200,7 @@ function SchoolRegistration({ app }) {
                       <Button
                         onClick={handleVerifyCode}
                         disabled={verificationLoading || emailVerificationCode.length !== 6}
-                        className="bg-green-600 hover:bg-green-700 px-8"
+                        className="gp-button px-8"
                       >
                         {verificationLoading ? 'Verifying...' : 'Verify Code'}
                       </Button>
@@ -299,6 +301,11 @@ function SchoolRegistration({ app }) {
           )}
 
           <CaptchaVerification actions="school_email_code school_register" />
+          <p className="text-sm">
+            <a className="underline" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+            {' · '}
+            <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">Terms of service</a>
+          </p>
 
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
             <Button variant="ghost" onClick={handleBackToLogin} className="sm:w-auto w-full">
@@ -307,7 +314,7 @@ function SchoolRegistration({ app }) {
             {(emailVerified || isInviteMode) && (
               <Button
                 onClick={handleSubmit}
-                className="bg-amber-600 hover:bg-amber-700 sm:w-auto w-full"
+                className="gp-button sm:w-auto w-full"
                 disabled={isLoading}
               >
                 {isLoading ? 'Submitting...' : isInviteMode ? 'Register School' : 'Submit Registration Request'}

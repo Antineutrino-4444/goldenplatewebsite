@@ -128,6 +128,31 @@ class User(Base):
     school = relationship('School', lazy='joined')
 
 
+class AssemblyDeck(Base):
+    __tablename__ = 'assembly_decks'
+    __table_args__ = (
+        UniqueConstraint('school_id', 'owner_id', 'provider', 'theme', name='uq_assembly_deck_owner'),
+        Index('idx_assembly_deck_due', 'provider', 'next_check_at'),
+    )
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    school_id = Column(String, ForeignKey('schools.id', ondelete='CASCADE'), nullable=False)
+    owner_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    provider = Column(String, nullable=False)
+    theme = Column(String, nullable=False)
+    file_id = Column(String)
+    web_url = Column(Text)
+    encrypted_refresh_token = Column(Text)
+    snapshot_hash = Column(String(64))
+    status = Column(String, nullable=False, default='pending')
+    message = Column(Text)
+    last_synced_at = Column(DateTime(timezone=True))
+    next_check_at = Column(DateTime(timezone=True))
+    attempts = Column(Integer, nullable=False, default=0)
+    generation = Column(Integer, nullable=False, default=0)
+    lease_owner = Column(String)
+    lease_until = Column(DateTime(timezone=True))
+
+
 class AccountLifecycleControl(Base):
     __tablename__ = 'account_lifecycle_control'
     id = Column(String, primary_key=True)

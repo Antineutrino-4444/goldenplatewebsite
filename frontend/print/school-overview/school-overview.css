@@ -1,0 +1,99 @@
+@page { size: letter portrait; margin: 0; }
+
+html, body {
+  margin: 0;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.school-handout {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 8.5in;
+  min-height: 11in;
+  margin-inline: auto;
+  padding: .42in .5in .4in;
+  font-size: 12pt;
+  line-height: 1.44;
+}
+
+.handout-masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--site-rule);
+}
+
+.handout-edition {
+  font-size: 10pt;
+  color: var(--site-muted);
+}
+
+.handout-intro { margin: 25px 0 24px; }
+.school-handout .handout-intro h1 {
+  font: 400 37pt/1.06 Georgia, 'Times New Roman', serif;
+  letter-spacing: -.043em;
+}
+.school-handout .handout-intro p {
+  max-width: 68ch;
+  margin-top: 12px;
+  font-size: 13pt;
+  line-height: 1.45;
+  color: var(--site-ink);
+}
+
+.handout-lunch {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 24px;
+}
+.handout-lunch figure img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.school-handout figcaption { margin-top: 6px; font-size: 9pt; }
+.school-handout h2 { font-size: 23pt; line-height: 1.13; }
+.school-handout .handout-lunch-copy h2 { margin: 3px 0 12px; }
+.school-handout .handout-lunch-copy p + p { margin-top: 14px; }
+
+.handout-plan {
+  margin: 21px 0 22px;
+  padding-top: 17px;
+  border-top: 1px solid var(--site-rule);
+}
+.handout-plan-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 30px;
+  margin-top: 13px;
+}
+.school-handout .handout-plan h3 {
+  margin: 0 0 4px;
+  font-size: 12pt;
+  line-height: 1.35;
+}
+
+.handout-registration {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-top: auto;
+  padding: 17px 20px;
+  border-top: 2px solid var(--site-gold-ink);
+  background: var(--site-raised);
+}
+.school-handout .handout-registration p { margin: 6px 0 8px; }
+.school-handout .handout-url {
+  font-weight: 600;
+  color: var(--site-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.handout-qr { display: block; background: white; }
+.handout-qr img { display: block; width: 100%; height: auto; }

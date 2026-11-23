@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { counterAnimationValue, crossedMilestone, counterBarLayout, communityBarLayout, communityRulerLabels } from '../src/lib/counter-animation.js'
+import { counterAnimationValue, crossedMilestone, counterBarLayout, communityBarLayout, communityRulerHeight, communityRulerLabels } from '../src/lib/counter-animation.js'
 
 test('count starts slowly, accelerates through the middle, and finishes slowly at the exact total', () => {
   const values = [0, 0.25, 0.5, 0.75, 1].map((progress) => counterAnimationValue(0, 10000, progress))
@@ -56,18 +56,26 @@ test('logarithmic fill uses the same coordinates as the ruler', () => {
   assert.ok(hundredTo1000 > zeroTo100, 'larger ranges have space without losing the original scale')
 })
 
-test('crowded phone labels overlap on one baseline without changing ruler height', () => {
+test('every tick stays visible and colliding numbers fit below the fixed tick baseline', () => {
   for (const width of [280, 350, 728, 1344]) {
     for (const count of [0, 1, 2800, 1000000, 1000000000]) {
       const ruler = communityRulerLabels(communityBarLayout(count).ticks, width)
-      assert.equal(ruler.height, 30)
-      assert.ok(ruler.ticks.every(tick => tick.showLabel && tick.row === 0))
+      assert.ok(ruler.ticks.every(tick => tick.showLabel))
       assert.ok(ruler.ticks.every(tick => tick.left >= 0 && tick.left + tick.size <= width))
+      const rowEnds = new Map()
+      for (const tick of ruler.ticks) {
+        assert.ok(tick.left >= (rowEnds.get(tick.row) ?? 0))
+        rowEnds.set(tick.row, tick.left + tick.size)
+      }
+      const reservedHeight = communityRulerHeight(count, width)
+      for (const fraction of [0, .001, .01, .1, .5, .99, 1]) {
+        const frame = communityBarLayout(Math.round(count * fraction))
+        assert.ok(communityRulerLabels(frame.ticks, width).height <= reservedHeight)
+      }
     }
   }
-  const labels = communityRulerLabels(communityBarLayout(1000000).ticks, 350).ticks
-  assert.ok(labels.some((tick, index) => index > 0 && tick.left < labels[index - 1].left + labels[index - 1].size),
-    'crowding is intentionally retained rather than staggered or hidden')
+  assert.equal(communityRulerHeight(2800, 1344), 30)
+  assert.ok(communityRulerLabels(communityBarLayout(2800).ticks, 1344).ticks.every(tick => tick.row === 0))
 })
 
 test('scale marks accumulate with gentler growth than adjacent-term Fibonacci', () => {

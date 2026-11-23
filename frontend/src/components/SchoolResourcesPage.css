@@ -1,0 +1,50 @@
+.gp-resource-header { padding-block: clamp(32px, 5vw, 72px) clamp(24px, 3vw, 42px); }
+.gp-resource-header h1 { font: 400 clamp(44px, 5.4vw, 78px)/1.02 Georgia, 'Times New Roman', serif; letter-spacing: -.055em; }
+.gp-school-resources main > section { scroll-margin-top: 24px; }
+
+.gp-decks, .gp-school-handouts { border-block: 1px solid var(--site-rule); padding-block: clamp(28px, 3.5vw, 52px); }
+.gp-decks h2, .gp-school-handouts h2 { font-size: clamp(32px, 3.2vw, 46px); }
+.gp-deck-workspace { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1fr); gap: clamp(28px, 6vw, 110px); margin-top: 24px; }
+.gp-deck-settings { max-width: 510px; }
+.golden-public .gp-deck-settings > p:first-child { font-size: clamp(17px, 1.4vw, 21px); color: var(--site-ink); line-height: 1.55; }
+.gp-deck-fields {
+  display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 14px 20px; padding: 0; border: 0; margin: 20px 0 0;
+}
+.gp-deck-school { grid-column: 1/-1; }
+.gp-deck-fields label, .gp-pdf-theme { display: grid; min-width: 0; gap: 4px; line-height: 1.5; font-size: 14px; font-weight: 600; }
+.gp-deck-fields input, .gp-deck-fields select, .gp-pdf-theme select {
+  width: 100%; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--site-rule);
+  background-color: var(--site-surface); color: var(--site-ink);
+  font-family: inherit; font-size: 16px; line-height: 1.5; font-weight: 400; border-radius: 2px;
+}
+.gp-deck-fields select, .gp-pdf-theme select { appearance: auto; }
+.gp-deck-fields :is(input, select):focus-visible, .gp-pdf-theme select:focus-visible { outline: 2px solid var(--site-gold-ink); outline-offset: 2px; }
+.golden-public .gp-deck-note { margin-top: 12px; font-size: 14px; line-height: 1.6; }
+.gp-deck-submit { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 22px; }
+.gp-deck-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 14px; padding-block: 12px 0; }
+.gp-deck-status span { font-size: 15px; }
+.gp-school-resources button:disabled { opacity: .6; cursor: default; }
+.gp-deck-photo { align-self: start; }
+.gp-deck-photo img { width: 100%; height: auto; max-height: 380px; object-fit: cover; object-position: center 42%; }
+.gp-deck-photo figcaption { margin-top: 8px; }
+.gp-import-dialog { background: var(--site-paper); color: var(--site-ink); font-family: 'Avenir Next', Avenir, 'Segoe UI', sans-serif; }
+.gp-import-dialog ol { list-style: decimal; margin: 0; padding-left: 1.3em; line-height: 1.55; }
+.gp-import-dialog li + li { margin-top: 6px; }
+.gp-import-dialog p { color: var(--site-muted); line-height: 1.55; }
+.gp-import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+.gp-handout-columns { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: clamp(24px, 5vw, 72px); margin-top: 24px; }
+.gp-one-sheet { display: grid; grid-template-columns: minmax(90px, .5fr) minmax(0, 1fr); gap: clamp(16px, 2.4vw, 32px); align-items: start; }
+.gp-handout-thumb img { width: 100%; max-width: 180px; height: auto; border: 1px solid var(--site-rule); }
+.gp-handout-columns h3 { line-height: 1.3; }
+.gp-handout-columns p { margin-top: 8px; line-height: 1.6; }
+.gp-pdf-theme { margin-top: 12px; max-width: 160px; }
+.gp-one-sheet .gp-text-link, .gp-case-study .gp-text-link { margin-top: 10px; }
+.gp-resource-join { padding-block: clamp(28px, 3.8vw, 56px); }
+@media (max-width: 760px) {
+  .gp-deck-workspace, .gp-handout-columns { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .gp-deck-settings { max-width: none; }
+  .gp-deck-photo { max-width: 500px; }
+  .gp-one-sheet { grid-template-columns: minmax(70px, .4fr) minmax(0, 1fr); }
+  .gp-case-study { border-top: 1px solid var(--site-rule); padding-top: 22px; }
+}

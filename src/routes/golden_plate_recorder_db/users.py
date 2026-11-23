@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload
 from .db import (
     DEFAULT_SCHOOL_ID,
     INTERSCHOOL_SCHOOL_ID,
+    AssemblyDeck,
     School,
     SchoolInviteCode,
     User,
@@ -530,6 +531,8 @@ def reset_user_store():
     if default_user:
         protected_usernames.add(default_user.username)
     try:
+        removed_owners = db_session.query(User.id).filter(User.username.notin_(protected_usernames))
+        db_session.query(AssemblyDeck).filter(AssemblyDeck.owner_id.in_(removed_owners)).delete(synchronize_session=False)
         db_session.query(SchoolInviteCode).delete()
         db_session.query(School).filter(School.id.notin_({
             DEFAULT_SCHOOL_ID,

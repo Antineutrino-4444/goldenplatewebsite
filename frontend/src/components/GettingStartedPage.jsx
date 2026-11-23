@@ -1,83 +1,68 @@
 import { useEffect } from 'react'
-import VideoHelp, { VideoLibrary } from '@/components/VideoHelp.jsx'
-import { Link as RouterLink, useLocation } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
+import { BookOpen } from 'lucide-react'
+import InitiativeVideo, { introductionUrl } from '@/components/InitiativeVideo.jsx'
 import Link from '@/components/SiteLink.jsx'
 import { PublicFooter } from '@/components/LandingPage.jsx'
-import InitiativeContact from '@/components/InitiativeContact.jsx'
 import './LandingPage.css'
+import './GettingStartedPage.css'
 
-const chapterVideos = [[1, 3], [19], [2, 22], [5, 6], [4], [7, 8, 9, 32], [10, 11, 12, 13, 14, 15, 16], [23, 24, 25, 26, 27, 28]]
+function SchoolQuickStart() {
+  useEffect(() => { document.title = 'Get started at your school · Golden Plate' }, [])
 
-const chapters = [
-  ['register-school', 'Register a school'], ['join-school', 'Join your school'],
-  ['sign-in', 'Sign in & check access'], ['prepare-rosters', 'Prepare your rosters'],
-  ['create-session', 'Start a lunch session'], ['record-plates', 'Record plates'],
-  ['review-results', 'Review results & draws'], ['share-results', 'Share & display results'],
-]
+  return <div className="golden-public">
+    <main id="main-content" className="gp-container gp-start" tabIndex={-1}>
+      <header className="gp-start-intro">
+        <div className="gp-start-copy">
+          <h1>Bring Golden Plate to your school</h1>
+          <p>Choose one person to register your school. They’ll need the school name and a contact email they can verify.</p>
+          <div className="gp-start-actions">
+            <Link className="gp-button" to="/register">Register your school</Link>
+            <Link className="gp-text-link" to="/website-guide"><BookOpen size={17} aria-hidden="true" />Full website guide</Link>
+          </div>
+        </div>
+        <figure className="gp-start-video">
+          <InitiativeVideo />
+          <figcaption>The Golden Plate team at St. Andrew’s College. <a href={introductionUrl} target="_blank" rel="noopener noreferrer">Watch on YouTube</a></figcaption>
+        </figure>
+      </header>
 
-function ChapterLink({ to, children }) {
-  const location = useLocation()
-  return <RouterLink to={to} state={location.state} replace preventScrollReset>{children}</RouterLink>
-}
+      <section className="gp-start-plan" aria-label="Plan your first lunch">
+        <h2>From sign-up to your first lunch</h2>
+        <ol>
+          <li>
+            <h3>Register your school</h3>
+            <p>One person verifies a contact email, enters the school name, and requests the first administrator account. The Golden Plate team reviews the request.</p>
+          </li>
+          <li>
+            <h3>Gather your team</h3>
+            <p>Bring together a staff mentor, student volunteers, and someone from food services. Choose a lunch date and how you’ll recognize participation.</p>
+            <Link className="gp-text-link" to="/resources">Assembly slides and examples</Link>
+          </li>
+          <li>
+            <h3>Run one lunch</h3>
+            <p>Once your school is approved, sign in and start a lunch session. Have student volunteers record plates at the dish return, then share the result with classmates.</p>
+          </li>
+        </ol>
+      </section>
 
-function GuideStep({ index, children }) {
-  const [id, title] = chapters[index]
-  return <section id={id} className="gp-guide-step" aria-labelledby={`${id}-title`}><h2 id={`${id}-title`}><span>{String(index + 1).padStart(2, '0')}</span>{title}</h2>{children}<VideoHelp videos={chapterVideos[index]} label="Watch this step" /></section>
+      <nav className="gp-start-support" aria-label="Help for registered schools">
+        <h2>Already part of Golden Plate?</h2>
+        <div>
+          <Link className="gp-text-link" to="/login">School login</Link>
+          <Link className="gp-text-link" to="/signup">Join your school</Link>
+        </div>
+      </nav>
+    </main>
+    <PublicFooter />
+  </div>
 }
 
 export default function GettingStartedPage() {
-  useEffect(() => { document.title = 'Getting started with PLATE · Golden Plate' }, [])
-  return <div className="golden-public"><main id="main-content">
-    <header className="gp-guide-intro gp-container"><p className="gp-section-label">The website guide</p><h1>Getting started with PLATE.</h1><p>From registering a school to recording your first lunch session. Follow the steps for your role. If your school already uses PLATE, start with Join your school.</p><div className="gp-platform-links"><Link className="gp-button" to="/register">Register a school →</Link><Link className="gp-text-link" to="/signup">Request a school account →</Link><Link className="gp-text-link" to="/login">School login →</Link></div><p className="gp-guide-overview-link">For the initiative’s purpose, rewards, and school routine, read <Link to="/how-it-works">How Golden Plate works</Link>.</p></header>
-    <div className="gp-guide-layout gp-container">
-      <nav className="gp-guide-contents" aria-label="Guide contents"><h2>In this guide</h2><ol>{chapters.map(([id, title], index) => <li key={id}><ChapterLink to={`#${id}`}><span>{index + 1}.</span>{title}</ChapterLink></li>)}</ol><ChapterLink to="#video-library">Browse all 32 video guides ↓</ChapterLink><ChapterLink to="#contact">Questions? Contact the team ↓</ChapterLink></nav>
-      <div className="gp-guide-body">
-        <GuideStep index={0}>
-          <p>One person should register a new school. If your school already has a PLATE code, go to <ChapterLink to="#join-school">Join your school</ChapterLink> instead.</p>
-          <ol><li>Open <Link to="/register">Register a school</Link> and enter a contact email you can access. Select <strong>Send Code</strong>.</li><li>Enter the six-digit code from your email and select <strong>Verify Code</strong>. If it expires, request another code; check spam or junk if it does not arrive.</li><li>Enter your school name and, optionally, a shareable school code. Leaving the code blank lets the system generate one.</li><li>Complete the primary administrator’s display name, username, and password, then submit the registration request.</li><li>Wait for PLATE administrator approval before trying to use the new school account. Keep the username and password you chose.</li></ol>
-          <p>If you have a <strong>Legacy Invite</strong> for school registration, use that method and follow the invite fields instead of the standard email-verification route.</p>
-        </GuideStep>
-        <GuideStep index={1}>
-          <p>Ask your school administrator for the school code.</p>
-          <ol><li>Open <Link to="/signup">Request a school account</Link> and choose <strong>School Code</strong>.</li><li>Enter your school code, full name, and email address. Select <strong>Send Verification Code</strong> and enter the code from your email. Your email must meet any rules set by your school.</li><li>Choose a username and password and select <strong>Submit Request</strong>. Your school administrator reviews the request before you can sign in.</li></ol>
-          <p><strong>For school superadmins:</strong> open <strong>Admin Panel → Account Requests</strong> to review pending member requests. Only approve people who should have access to your school.</p>
-          <p>If an administrator gave you a one-time account invite, choose <strong>Legacy Invite</strong> and enter that invite code for immediate access.</p>
-        </GuideStep>
-        <GuideStep index={2}>
-          <p>Open <Link to="/login">School login</Link>, enter your approved account’s username and password, and select <strong>Login</strong>. Confirm the school name and code in the portal header before recording.</p>
-          <p>Guest access ends automatically when you leave the school portal. If a sign-up page says you are still signed in, select <strong>Log out and continue</strong>. You can also choose <strong>Account menu → Log out</strong> before switching to your regular account.</p>
-          <dl className="gp-guide-roles"><div><dt>School superadmin</dt><dd>Manages school access and settings, including the school contact email and map-location choice.</dd></div><div><dt>Admin</dt><dd>Can upload student and teacher databases, manage school accounts, and manage draws.</dd></div><div><dt>Member / Compost Coach</dt><dd>Records plates and reviews sessions using the access provided by the school.</dd></div><div><dt>Guest</dt><dd>Views public sessions and results in read-only mode.</dd></div></dl>
-          <p>The Recorder starts with the recording area and Plate Tracking History. Select House rankings, Draw Center, or, for administrators, Student and teacher databases to open that panel below the recording area. Select the same control again to close it. History always stays available. Use Expand all to show every panel and Collapse all to return to the compact view.</p>
-          <p>If a control is unavailable, check whether you are signed in as a guest or ask your school administrator about your account’s role.</p>
-        </GuideStep>
-        <GuideStep index={3}>
-          <p><strong>For admins and superadmins.</strong> Open <strong>Student and teacher databases</strong> on the Recorder page and select <strong>Choose files</strong>. Select several files or use <strong>Add files</strong> to combine them into one roster. Use CSV, TSV, Excel (.xlsx or .xls), Apple Numbers, or delimited TXT. Choose the sheet or table if prompted. Review the preview, adjust the column assignments, and exclude the first row if it contains headings or a title. Select <strong>Import roster</strong> to save or <strong>Replace roster</strong> to update an existing roster. Cancel closes the review without saving.</p>
-          <h3>Student roster</h3><p>Assign columns for first or preferred name and last name. Assign an existing Student ID column or generate IDs in row order. Grade, Advisor, House, and Clan are optional. Use stable student IDs for card scanning and keep those IDs with the same students when replacing a roster.</p><a className="gp-text-link" href="/resources/plate-student-roster-template.csv" download>Download the student CSV template ↓</a>
-          <h3>Teacher roster</h3><p>Assign columns for first or preferred name and last name. A stable Faculty ID keeps records connected when names change. Use <strong>Preview Teacher List</strong> to check the saved roster or edit a name.</p><a className="gp-text-link" href="/resources/plate-teacher-roster-template.csv" download>Download the teacher CSV template ↓</a><p>Use <strong>Preview Database</strong> to check the saved student roster. Students missing from a replacement roster are excluded from ticket draws.</p>
-        </GuideStep>
-        <GuideStep index={4}>
-          <ol><li>Open the <strong>Recorder</strong> page. If no session is selected, choose <strong>Create New Session</strong>; otherwise select <strong>New Session</strong> above the recording area.</li><li>Enter a session name or leave it blank for the default name. Select <strong>Create Session</strong>.</li><li>Check the session shown below the recording buttons. Use <strong>Switch Session</strong> to choose an existing session instead.</li></ol>
-          <p>Have your coaches confirm the intended session before lunch begins. New records are added to the currently selected session.</p>
-        </GuideStep>
-        <GuideStep index={5}>
-          <p>Under <strong>Add a plate record</strong>, select the plate category. Use the same category definitions across your team.</p>
-          <dl className="gp-guide-roles"><div><dt>Clean plate</dt><dd>Use CLEAN PLATE for a student’s clean plate.</dd></div><div><dt>Faculty clean</dt><dd>Use FACULTY CLEAN for a staff member’s clean plate.</dd></div><div><dt>Dirty plate</dt><dd>Use DIRTY PLATE for a plate with leftover food.</dd></div><div><dt>Very dirty plate</dt><dd>Use VERY DIRTY PLATE when it meets your team’s agreed definition for substantial leftovers.</dd></div></dl>
-          <ol><li>In the category dialog, enter the student ID, scan a compatible student-card identifier, or type part of the name and select the correct match. For faculty clean plates, use the faculty-name field.</li><li>Select the dialog’s record button, or press Enter. Wait for the save confirmation.</li><li>Check the totals and <strong>Plate Tracking History</strong> to confirm the category and record before moving on.</li></ol>
-          <p>You can leave the identity field blank to add one plate to the count. This creates a count-only record rather than an identified student entry for a draw. If the connection fails after submission, check history before retrying so the same plate is not recorded twice.</p>
-        </GuideStep>
-        <GuideStep index={6}>
-          <p>Open <strong>Dashboard</strong> or <Link to="/portal/dashboard">Session dashboard</Link> to review the selected session’s totals. Use the Recorder’s history and house rankings to inspect the underlying activity, and <strong>Switch Session</strong> to review another lunch.</p>
-          <h3>Running the award draw</h3><p>Admins and superadmins use <strong>Draw Center</strong>. Review the top three and eligible lists, then choose <strong>Start Draw</strong> in the faculty or student section. Review the selected candidate and choose <strong>Finalize Winner</strong> in that same section.</p><p>Check roster membership and exclusions before the draw. Count-only plates earn no tickets. Each draw history records its selections and finalizations. Open <Link to="/portal/leaderboards">Plate Leaderboards</Link> from the school navigation to compare the current rosters across sessions. Search by name or type a page number and select <strong>Go</strong>.</p>
-          <p>Signed-in members can use the available CSV download controls to review records outside the website. Guests do not have export access. Administrators also have school session export tools in their administration area.</p>
-        </GuideStep>
-        <GuideStep index={7}>
-          <ul><li><strong>School display:</strong> open <Link to="/live-counter">Live counter</Link> from the portal for your school’s display and available time-range settings.</li><li><strong>Initiative-wide display:</strong> the <Link to="/live-counter/community">all-schools counter</Link> shows the combined clean-plate total across PLATE.</li><li><strong>Guest access:</strong> visitors can select a school pin on the <Link to="/map">school map</Link> and open its popup, or use <strong>Continue as Guest</strong> on the login page with a school code. Explore the school’s shared results as a guest. To record again, choose <strong>Account menu → Log out</strong>, then sign in with your regular account.</li><li><strong>School location:</strong> use <strong>Account menu → School location</strong> to review the school’s location. The school superadmin can save a location or choose to remain unmapped. Unmapped schools are listed in Others.</li></ul>
-          <p>Guests see sessions made public by the school, with the school’s guest-privacy settings applied. Use the portal’s top-bar links to return to the map or live counter.</p>
-        </GuideStep>
-        <VideoLibrary />
-        <section className="gp-guide-troubleshooting" aria-labelledby="guide-help"><h2 id="guide-help">If something does not look right</h2><dl><div><dt>Account request still pending?</dt><dd>Ask your school administrator to review it. Registering a school and requesting a member account are separate approvals.</dd></div><div><dt>A student cannot be found?</dt><dd>Ask an admin to check the student database, ID, and Preferred/First name fields. Choose the correct student from the matching results.</dd></div><div><dt>Totals appear in the wrong session?</dt><dd>Check the selected session and Plate Tracking History. Ask a school administrator to review any correction before continuing.</dd></div></dl><p>For initiative or website questions, contact Matthew Jaekel or the SAC office below.</p></section>
-      </div>
-    </div>
-    <InitiativeContact showGuideLink={false} />
-  </main><PublicFooter /></div>
+  const { search, hash, state } = useLocation()
+  // The former handbook lived here. Keep bookmarks to its sections working.
+  if (hash && hash !== '#main-content' && !hash.startsWith('#:~:text=')) {
+    return <Navigate to={{ pathname: '/website-guide', search, hash }} state={state} replace />
+  }
+  return <SchoolQuickStart />
 }

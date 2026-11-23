@@ -114,6 +114,7 @@ _DB_CLEANUP_CALLBACK = _prepare_test_database()
 # the mocked email transport has been installed.
 os.environ['WEBSITE_RELEASE_NOTIFY_ENABLED'] = 'false'
 os.environ['ACCOUNT_LIFECYCLE_WORKER_ENABLED'] = 'false'
+os.environ['ASSEMBLY_SYNC_WORKER_ENABLED'] = 'false'
 
 from src.main import app
 

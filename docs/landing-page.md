@@ -42,8 +42,9 @@ in the existing API routes.
   all-schools aggregate. Loading and connection errors never invent a zero.
   Its goal-free bar has a logarithmic ruler that continuously expands as totals
   grow. Original 0–100 marks remain, with larger ranges accumulating to the right
-  and earlier marks compressing left. Close labels stack on separate rows;
-  intermediate tick marks remain even when their labels cannot fit. The same
+  and earlier marks compressing left. Every mark keeps its numeric label.
+  Labels share a row wherever they fit. The page reserves space for overlapping
+  labels to wrap onto additional rows while the count animates. The same
   ruler is used on the large community display. Animation starts only when at
   least 75% of the bar is inside a viewport inset of 24–96px at the top/bottom.
   Fully leaving the viewport resets it to zero; returning comfortably inside
@@ -138,8 +139,10 @@ The public attribution describes the source simply as Jiajun Li's writing on
 sustainability and school community.
 
 `/how-it-works` explains the initiative's purpose, lunch routine, recognition and
-community ownership. `/getting-started` separately documents actual website
-operations: school email verification/approval, member approval/invites, role
+community ownership. `/getting-started` guides teachers through registration,
+gathering a team and planning a first lunch. `/resources` offers assembly
+slides, social posts and printable handouts. The full guide at `/website-guide`
+covers school email verification and approval, member approval and invites, role
 boundaries, roster uploads, session creation/switching, the four recording
 categories, identity matching/count-only records, save/history checks, results,
 draw finalization, exports, guest access, counters and school location settings.

@@ -23,6 +23,8 @@ from . import admin_routes  # noqa: F401
 from . import session_routes  # noqa: F401
 from . import public_session_routes  # noqa: F401
 from . import session_export_routes  # noqa: F401
+from . import presentation_routes  # noqa: F401
+from . import assembly_live_routes  # noqa: F401
 from . import record_exclusion_routes  # noqa: F401
 from . import csv_routes  # noqa: F401
 from . import teacher_routes  # noqa: F401

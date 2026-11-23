@@ -1,0 +1,19 @@
+.school-globe > svg {
+  cursor: grab;
+  touch-action: pinch-zoom;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.school-globe > svg:focus { outline: none; }
+.school-globe > svg:focus-visible:not([data-dragging]) .globe-ocean { stroke: var(--site-gold-ink); stroke-width: 3; }
+.school-globe > svg[data-dragging], .school-globe > svg[data-dragging] .globe-pin { cursor: grabbing; }
+.gp-globe-controls { display: flex; align-items: center; justify-content: center; gap: 18px; margin-block: 0 8px; }
+.gp-globe-controls button, .gp-globe-controls label, .gp-globe-controls select {
+  display: inline-flex; align-items: center; gap: 8px; color: var(--site-ink); font: inherit; font-size: 14px;
+}
+.gp-globe-controls button, .gp-globe-controls select { min-height: 44px; border: 1px solid var(--site-rule); border-radius: 3px; }
+.gp-globe-controls button { justify-content: center; min-width: 84px; padding: 6px 12px; background: transparent; }
+.gp-globe-controls select { padding: 6px 8px; background-color: var(--site-paper); cursor: pointer; }
+.gp-globe-controls button:hover, .gp-globe-controls select:hover { background-color: var(--site-raised); }
+.gp-globe-controls select:focus-visible { outline: 2px solid var(--site-gold-ink); outline-offset: 3px; }

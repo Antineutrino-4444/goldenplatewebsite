@@ -14,7 +14,7 @@ export default function GuestSessionPage() {
   }, [sessionId])
   return <div className="golden-public">
     <main id="main-content" className="gp-container gp-guest-session">
-      <p className="gp-section-label">PLATE · Guest access</p>
+      <p className="gp-section-label">PLATE · Guest Access</p>
       <h1>A look at lunch.</h1>
       <p className="gp-guest-intro">View this school’s recorded lunch totals without an account.</p>
       <PublicSessionDashboard result={result} />

@@ -320,6 +320,62 @@ Deploy the updated server and frontend together. See the
 coverage, tests, retries and rollback. Actual production verification requires
 the matching secret and a deployment on the widget's configured hostnames.
 
+## Auto-updating school assembly decks
+
+On **School Resources → School assembly slides**, a member of the selected school
+can connect Google Slides or PowerPoint once per theme. Bookmark the native
+presentation in Google Drive or OneDrive. While the website is running, its
+worker checks the school's saved results about once a minute. A changed lunch,
+correction or total updates that same cloud file, even when the teacher has the
+website closed. Opening it through School Resources also checks for changes.
+The provider controls who can open the file. Teachers can share the link using
+the normal Drive or OneDrive sharing controls.
+
+The linked file is dedicated to Golden Plate. Refresh replaces its slides, so
+make a separate copy for personal edits. Previously downloaded presentations
+and Google Slides copies created before connecting are snapshots. **Stop
+automatic updates** disconnects the file and leaves its last contents in the
+teacher's account. If the provider revokes access, the teacher can reconnect
+the original cloud account. The website rechecks school membership and email
+eligibility before sending updates.
+
+### Server setup
+
+Set these values in the hosting environment or the Git-ignored root `.env`.
+The two providers can be enabled independently. Keep a stable, private
+`SECRET_KEY` across restarts. The server encrypts refresh tokens using a key
+derived from it. An optional dedicated Fernet key can be set with
+`ASSEMBLY_SYNC_ENCRYPTION_KEY`. Restart the application after changing settings.
+
+| Provider | Configuration |
+| --- | --- |
+| Google Slides | Enable the **Google Drive API**. On the existing **Web application** OAuth client, register the Google callback below under **Authorized redirect URIs**. Set `GOOGLE_SLIDES_CLIENT_ID` and `GOOGLE_SLIDES_CLIENT_SECRET` on the server. The app requests offline access and `drive.file`. External apps in Google's **Testing** mode have seven-day refresh tokens for this scope. Publish the OAuth app for ongoing use by schools. [Google offline access](https://developers.google.com/identity/protocols/oauth2/web-server#offline) · [Token expiration](https://developers.google.com/identity/protocols/oauth2#expiration) |
+| PowerPoint | Register a **Web** application in Microsoft Entra. To accept different schools and personal OneDrive accounts, allow accounts in any organizational directory and personal Microsoft accounts. Add delegated Microsoft Graph permissions `Files.ReadWrite.AppFolder` and `offline_access`. Register the Microsoft callback below. Set `MICROSOFT_SLIDES_CLIENT_ID` to the application ID and `MICROSOFT_SLIDES_CLIENT_SECRET` to the client secret **value**. Teachers need a provisioned OneDrive. [Microsoft authorization](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow) · [OneDrive app folders](https://learn.microsoft.com/en-us/graph/onedrive-sharepoint-appfolder) |
+
+Register each callback with its corresponding provider:
+
+- Google production `https://goldenplate.ca/api/resources/presentations/live/callback/google`
+- Microsoft production `https://goldenplate.ca/api/resources/presentations/live/callback/microsoft`
+
+For a local preview, use the same path on the origin where the teacher is
+signed in (here, `http://127.0.0.1:59238`). For another host or reverse proxy,
+set `ASSEMBLY_SYNC_BASE_URL` to its exact public origin. Without that override,
+the application uses the current origin for a loopback preview and
+`WEBSITE_PUBLIC_URL` for a hosted site. Register the exact redirect URI with each provider. Microsoft’s
+portal may require using the app manifest for an HTTP `127.0.0.1` loopback URI.
+[Microsoft redirect URI guidance](https://learn.microsoft.com/en-us/entra/identity-platform/reply-url)
+
+The sync worker runs inside the Flask/WSGI application on a host with background
+threads enabled. Multiple workers claim individual decks in the database.
+Transient outages are retried with backoff. `ASSEMBLY_SYNC_WORKER_ENABLED=false`
+turns off background checks for isolated tests.
+
+The existing one-time **Create in Google Slides** option uses the public
+`VITE_GOOGLE_SLIDES_CLIENT_ID` in the frontend build environment (locally,
+`frontend/.env.local`) and the website's **Authorized JavaScript origins**.
+Downloads and manual Slides import are available independently of either cloud
+connection.
+
 ## Passwords and Environment Mode
 Users may sign in with their username or a uniquely matching verified email and
 their password. Email verification codes do not sign users in. **Forgot password?**
@@ -462,19 +518,23 @@ transition’s accessibility and fallback behavior.
 ## Public landing page and navigation
 
 The main domain now opens the public Golden Plate landing page at `/`, including
-case-study photos, initiative information, platform features, public school pins,
-and YouTube, Spotify, and Instagram media. The public pages are `/about`,
-`/how-it-works`, `/getting-started`, and `/stories`. Existing map subdomains keep
-their map at `/`.
+school resources, the community counter and a globe of participating schools.
+The initiative's story, lunch routine and media are at `/about`, `/how-it-works`
+and `/stories`. Existing map subdomains keep their map at `/`.
 
-How it works introduces the initiative, school routine and recognition model.
-Getting started is a separate, detailed website guide covering registration,
-account approval, roles, student/teacher roster formats, lunch sessions, plate
-recording, result review, draws, guest access and displays. It includes fictional
-student and teacher CSV templates. Both pages offer initiative/website help via
-Matthew Jaekel and SAC's published office contacts, with professional profile and
-source links. Promotional student quotations come from owner-supplied formal
-writing; the private writing archive is not published.
+Getting Started (`/getting-started`) covers registration, gathering a team
+and running the first lunch. The full handbook at `/website-guide` includes
+eight chapters, 32 video guides, roster CSV templates and school contacts.
+Existing bookmarks to the handbook's chapters still work.
+How It Works and the handbook list Matthew Jaekel and SAC's published office
+contacts, with professional profile and source links. The student quotations
+come from owner-supplied formal writing. The writing archive remains private.
+
+School Resources (`/resources`) includes a full assembly presentation with
+the school's latest results, social post templates and printable school
+handouts. A school code is sufficient to download the slides when all included
+sessions are public and guest privacy is off. Other schools require a signed-in member
+of that school. Downloaded files show the results at download time. Connected Google Slides and OneDrive assembly decks update in place.
 
 School accounts sign in at `/login`. `/signup` opens the account request form;
 `/register` opens school registration. The school workspace lives at `/portal`,

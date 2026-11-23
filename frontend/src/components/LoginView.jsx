@@ -345,6 +345,11 @@ function LoginView({ app }) {
               />
             </div>
             <CaptchaVerification actions="account_email_code account_signup" />
+            <p className="text-sm">
+              <a className="underline" href="/privacy" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+              {' · '}
+              <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">Terms of service</a>
+            </p>
             <div className="flex gap-2">
               <Button onClick={() => handleSignupDialogChange(false)} variant="outline" className="flex-1">
                 Cancel

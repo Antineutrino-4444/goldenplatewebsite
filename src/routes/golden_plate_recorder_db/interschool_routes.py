@@ -13,6 +13,7 @@ from .captcha import captcha_failure
 from .db import (
     DEFAULT_SCHOOL_ID,
     INTERSCHOOL_SCHOOL_ID,
+    AssemblyDeck,
     School,
     SchoolInviteCode,
     SchoolRegistrationRequest,
@@ -699,6 +700,7 @@ def delete_school(school_id):
     school_name = school.name
 
     try:
+        db_session.query(AssemblyDeck).filter_by(school_id=school_id).delete(synchronize_session=False)
         # Delete all users associated with this school
         db_session.query(User).filter(User.school_id == school_id).delete()
 

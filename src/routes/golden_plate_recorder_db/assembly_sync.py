@@ -1,0 +1,264 @@
+"""Maintain each teacher's dedicated school deck while its cloud grant is active."""
+
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import os
+import threading
+import uuid
+from datetime import timedelta, timezone
+
+from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
+
+from .db import AssemblyDeck, SessionFactory, _now_utc
+
+logger = logging.getLogger(__name__)
+CHECK_INTERVAL = timedelta(seconds=60)
+LEASE_DURATION = timedelta(minutes=10)
+PROVIDERS = ('google', 'microsoft')
+_start_lock = threading.Lock()
+
+
+def _cipher():
+    secret = os.environ.get('SECRET_KEY', '')
+    if secret in ('', 'dev-only-change-me', 'replace-with-a-long-random-secret'):
+        raise ValueError('Configure a private Flask signing key for connected assembly decks.')
+    key = os.environ.get('ASSEMBLY_SYNC_ENCRYPTION_KEY', '').strip()
+    if key:
+        return Fernet(key.encode('ascii'))
+    # Separate the token-encryption key from the Flask cookie-signing key.
+    derived = hmac.digest(secret.encode(), b'Golden Plate assembly refresh tokens v1', 'sha256')
+    return Fernet(base64.urlsafe_b64encode(derived))
+
+
+def credentials_configured():
+    try:
+        _cipher()
+    except (ValueError, UnicodeError):
+        return False
+    return True
+
+
+def _public(row):
+    if row is None or row.status == 'disconnected':
+        return None
+    stamp = row.last_synced_at
+    if stamp and stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return {'id': row.id, 'provider': row.provider, 'theme': row.theme,
+            'url': row.web_url, 'status': row.status, 'message': row.message,
+            'last_synced_at': stamp.isoformat() if stamp else None}
+
+
+def _binding(store, school_id, user_id, provider, theme):
+    return store.query(AssemblyDeck).filter_by(school_id=school_id, owner_id=user_id, provider=provider, theme=theme)
+
+
+def get_deck(school_id, user_id, provider, theme):
+    with SessionFactory() as store:
+        return _public(_binding(store, school_id, user_id, provider, theme).one_or_none())
+
+
+def list_decks(school_id, user_id):
+    with SessionFactory() as store:
+        rows = store.query(AssemblyDeck).filter_by(school_id=school_id, owner_id=user_id).filter(
+            AssemblyDeck.status != 'disconnected').order_by(AssemblyDeck.provider, AssemblyDeck.theme)
+        return [_public(row) for row in rows]
+
+
+def bind_deck(school_id, user_id, provider, theme, refresh_token):
+    if not refresh_token or provider not in PROVIDERS or theme not in ('light', 'dark'):
+        raise ValueError('A valid provider, theme and offline grant are required.')
+    encrypted = _cipher().encrypt(refresh_token.encode()).decode('ascii')
+    with SessionFactory() as store:
+        query = _binding(store, school_id, user_id, provider, theme)
+        if query.first() is None:
+            try:
+                with store.begin_nested():
+                    store.add(AssemblyDeck(school_id=school_id, owner_id=user_id, provider=provider, theme=theme))
+                    store.flush()
+            except IntegrityError:
+                if query.one_or_none() is None:
+                    raise
+        # An in-flight operation can finish, but cannot replace this newer grant.
+        # Preserve file_id on reconnect so the teacher's existing link survives.
+        query.update({'encrypted_refresh_token': encrypted, 'status': 'pending', 'message': None,
+                      'generation': AssemblyDeck.generation + 1, 'snapshot_hash': None,
+                      'attempts': 0, 'next_check_at': _now_utc()}, synchronize_session=False)
+        store.commit()
+        return _public(query.one())
+
+
+def disconnect_deck(school_id, user_id, provider, theme):
+    with SessionFactory() as store:
+        changed = _binding(store, school_id, user_id, provider, theme).filter(
+            AssemblyDeck.status != 'disconnected').update({
+                'status': 'disconnected', 'encrypted_refresh_token': None, 'message': None,
+                'generation': AssemblyDeck.generation + 1, 'next_check_at': None,
+            }, synchronize_session=False)
+        store.commit()
+        return bool(changed)
+
+
+def _update_claim(row, changes):
+    """Fence token rotation, file links and status against a newer owner or grant."""
+    with SessionFactory() as store:
+        updated = store.query(AssemblyDeck).filter_by(
+            id=row.id, lease_owner=row.lease_owner, generation=row.generation,
+        ).update(changes, synchronize_session=False)
+        store.commit()
+        return bool(updated)
+
+
+def _retry(row, message, *, reconnect=False):
+    attempts = row.attempts + 1
+    if reconnect:
+        _update_claim(row, {'status': 'reconnect', 'message': message, 'encrypted_refresh_token': None,
+                            'attempts': attempts, 'next_check_at': None})
+    else:
+        delay = timedelta(seconds=min(3600, 15 * 2 ** min(attempts, 8)))
+        _update_claim(row, {'status': 'retry', 'message': message, 'attempts': attempts,
+                            'next_check_at': _now_utc() + delay})
+
+
+def _sync_claim(row):
+    from src.services import assembly_cloud
+    from .presentation_routes import assembly_snapshot_for_owner
+
+    snapshot = assembly_snapshot_for_owner(row.school_id, row.owner_id)
+    if snapshot is None:
+        _retry(row, 'School access changed. Reconnect with an authorized school account.', reconnect=True)
+        return
+    content = {key: value for key, value in snapshot.items() if key != 'generated_at'}
+    digest = hashlib.sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    success = {'status': 'ready', 'message': None, 'attempts': 0, 'next_check_at': _now_utc() + CHECK_INTERVAL}
+    if row.file_id and row.snapshot_hash == digest:
+        _update_claim(row, success)
+        return
+    try:
+        cipher = _cipher()
+        token = cipher.decrypt(row.encrypted_refresh_token.encode()).decode()
+    except (InvalidToken, ValueError):
+        _retry(row, 'The stored cloud connection could not be opened. Reconnect this deck.', reconnect=True)
+        return
+    try:
+        tokens = assembly_cloud.refresh_access(row.provider, token)
+        # Save a rotated refresh token before uploading. If upload fails, retry
+        # with the new token, including when another process resumes this work.
+        changes = {'lease_until': _now_utc() + LEASE_DURATION}
+        if tokens.get('refresh_token'):
+            changes['encrypted_refresh_token'] = cipher.encrypt(tokens['refresh_token'].encode()).decode('ascii')
+        if not _update_claim(row, changes):
+            return
+        file_id, url = assembly_cloud.upsert_deck(row.provider, tokens['access_token'], row.id,
+                                                 row.file_id, snapshot, row.theme)
+    except assembly_cloud.CloudDeckError as error:
+        _retry(row, str(error), reconnect=error.reconnect)
+        return
+    success.update(file_id=file_id, web_url=url, snapshot_hash=digest, last_synced_at=_now_utc())
+    _update_claim(row, success)
+
+
+def sync_deck(deck_id, *, force=False):
+    """Check a binding now or when due, returning its current public status."""
+    from src.services.assembly_cloud import provider_configured
+
+    owner = str(uuid.uuid4())
+    now = _now_utc()
+    with SessionFactory() as store:
+        row = store.get(AssemblyDeck, deck_id)
+        if not row or not provider_configured(row.provider) or not credentials_configured():
+            return _public(row)
+        query = store.query(AssemblyDeck).filter(
+            AssemblyDeck.id == deck_id, AssemblyDeck.encrypted_refresh_token.is_not(None),
+            or_(AssemblyDeck.lease_until.is_(None), AssemblyDeck.lease_until <= now))
+        if not force:
+            query = query.filter(AssemblyDeck.next_check_at <= now)
+        claimed = query.update({'lease_owner': owner, 'lease_until': now + LEASE_DURATION}, synchronize_session=False)
+        store.commit()
+        row = store.get(AssemblyDeck, deck_id)
+        if not claimed or row is None:
+            info = _public(row)
+            # A simultaneous native-file update owns the lease. Do not signal
+            # that the previously synced URL already contains today's results.
+            if info and force and row.lease_owner and info['status'] == 'ready':
+                info['status'] = 'pending'
+            return info
+        store.refresh(row)
+        if row.lease_owner != owner or not row.encrypted_refresh_token:
+            store.query(AssemblyDeck).filter_by(id=deck_id, lease_owner=owner).update(
+                {'lease_owner': None, 'lease_until': None}, synchronize_session=False)
+            store.commit()
+            return _public(row)
+        store.expunge(row)
+    try:
+        _sync_claim(row)
+    except Exception as error:
+        # Never log arbitrary provider exceptions or database parameters containing tokens.
+        logger.warning('Assembly synchronization failed for %s (%s)', deck_id, type(error).__name__)
+        _retry(row, 'The presentation could not be updated. Golden Plate will retry.', reconnect=False)
+    finally:
+        with SessionFactory() as store:
+            store.query(AssemblyDeck).filter_by(id=deck_id, lease_owner=owner).update(
+                {'lease_owner': None, 'lease_until': None}, synchronize_session=False)
+            store.commit()
+    return get_deck(row.school_id, row.owner_id, row.provider, row.theme)
+
+
+def run_due_decks():
+    from src.services.assembly_cloud import provider_configured
+    providers = [name for name in PROVIDERS if provider_configured(name)]
+    if not providers or not credentials_configured():
+        return
+    now = _now_utc()
+    with SessionFactory() as store:
+        due = store.query(AssemblyDeck.id).filter(
+            AssemblyDeck.provider.in_(providers), AssemblyDeck.next_check_at <= now,
+            or_(AssemblyDeck.lease_until.is_(None), AssemblyDeck.lease_until <= now),
+        ).order_by(AssemblyDeck.next_check_at).limit(100).all()
+    for (deck_id,) in due:
+        sync_deck(deck_id)
+
+
+def start_assembly_sync(app, *, reloader_parent=False):
+    if app.testing or reloader_parent or os.getenv('ASSEMBLY_SYNC_WORKER_ENABLED', 'true').lower() in {'0', 'no', 'false', 'off'}:
+        return
+    from src.services.assembly_cloud import provider_configured
+    if not credentials_configured() or not any(provider_configured(name) for name in PROVIDERS):
+        return
+
+    def ensure_worker():
+        # With a preloaded WSGI app, a forked process needs its own thread.
+        if app.extensions.get('assembly_sync_pid') == os.getpid():
+            return
+        with _start_lock:
+            if app.extensions.get('assembly_sync_pid') == os.getpid():
+                return
+            stop = threading.Event()
+
+            def work():
+                while not stop.is_set():
+                    try:
+                        with app.app_context():
+                            run_due_decks()
+                    except Exception as error:
+                        logger.warning('Assembly maintenance will retry (%s)', type(error).__name__)
+                    stop.wait(15)
+
+            thread = threading.Thread(target=work, name='assembly-sync', daemon=True)
+            try:
+                thread.start()
+            except RuntimeError:
+                logger.error('Assembly updates require a WSGI host with background threads enabled')
+                return
+            app.extensions['assembly_sync_pid'] = os.getpid()
+            app.extensions['assembly_sync_stop'] = stop
+
+    ensure_worker()
+    if not app.extensions.get('assembly_sync_hook'):
+        app.before_request(ensure_worker)
+        app.extensions['assembly_sync_hook'] = True

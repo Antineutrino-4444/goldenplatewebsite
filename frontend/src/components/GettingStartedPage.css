@@ -1,0 +1,91 @@
+.gp-start-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(36px, 5vw, 80px);
+  padding-block: clamp(36px, 5vw, 72px);
+}
+
+.gp-start-copy h1 {
+  max-width: 16ch;
+  font: 400 clamp(44px, 5.4vw, 78px)/1.02 Georgia, 'Times New Roman', serif;
+  letter-spacing: -.055em;
+  text-wrap: balance;
+}
+
+.gp-start-copy p {
+  max-width: 49ch;
+  margin-top: 1.25rem;
+  font-size: clamp(16px, 1.4vw, 19px);
+  line-height: 1.65;
+}
+
+.gp-start-actions,
+.gp-start-support > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.gp-start-actions { margin-top: 26px; }
+.gp-start-video { width: 100%; max-width: 440px; justify-self: end; }
+.gp-start-video .gp-video-player { aspect-ratio: 16/9; }
+.gp-start-video figcaption a { text-decoration: underline; text-underline-offset: 3px; }
+.gp-start-plan .gp-text-link { margin-top: 8px; }
+
+.gp-start-plan {
+  padding-block: clamp(28px, 4.5vw, 60px);
+  border-top: 1px solid var(--site-rule);
+}
+
+.gp-start-plan h2 { font-size: clamp(29px, 3.3vw, 44px); }
+.gp-start-plan ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(24px, 4vw, 64px);
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: decimal inside;
+}
+
+.gp-start-plan li {
+  border-top: 1px solid var(--site-rule);
+  padding-top: 16px;
+}
+
+.gp-start-plan li::marker {
+  color: var(--site-gold-ink);
+  font: italic 22px Georgia, 'Times New Roman', serif;
+}
+
+.gp-start-plan h3 {
+  display: inline;
+  margin-left: 4px;
+  font-size: 19px;
+}
+
+.gp-start-plan li p { margin-top: 8px; font-size: 15px; }
+
+.gp-start-support {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 30px;
+  padding: 24px clamp(16px, 2.5vw, 38px);
+  margin-bottom: clamp(36px, 5vw, 72px);
+  background: var(--site-raised);
+}
+
+.gp-start-support h2 { font-size: clamp(23px, 2.2vw, 30px); }
+
+@media (max-width: 760px) {
+  .gp-start-intro { grid-template-columns: 1fr; gap: 28px; padding-block: 32px; }
+  .gp-start-copy h1 { max-width: 15ch; }
+  .gp-start-video { justify-self: start; }
+  .gp-start-actions { gap: 14px 20px; margin-top: 20px; }
+  .gp-start-plan ol { grid-template-columns: 1fr; gap: 18px; margin-top: 20px; }
+  .gp-start-plan li { padding-top: 14px; }
+  .gp-start-support { flex-direction: column; }
+}

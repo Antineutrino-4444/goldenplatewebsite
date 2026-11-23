@@ -8,9 +8,21 @@ import rootMapboxEnv from './build/root-mapbox-env.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+function serveLegalPages(server) {
+  server.middlewares.use((req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      req.url = req.url.replace(/^\/(privacy|terms)\/?(?=\?|$)/, '/$1.html')
+    }
+    next()
+  })
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(),tailwindcss(),rootMapboxEnv(path.resolve(__dirname, '..')),prebuiltMapbox()],
+  plugins: [
+    react(), tailwindcss(), rootMapboxEnv(path.resolve(__dirname, '..')), prebuiltMapbox(),
+    { name: 'legal-page-urls', configureServer: serveLegalPages, configurePreviewServer: serveLegalPages },
+  ],
   worker: { format: 'es' },
   // Preserve Mapbox's module-relative worker URLs in development. Prebundling
   // moves the entry into .vite/deps without its sibling worker modules.

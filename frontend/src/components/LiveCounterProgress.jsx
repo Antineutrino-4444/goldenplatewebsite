@@ -28,16 +28,16 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
   // Follow the animated progress, clamping the colour once the goal is reached.
   const goalHue = 215 - progress * 0.6
   const goalColours = milestone ? {
-    '--counter-panel-color': `hsl(${goalHue} 60% 16%)`,
+    '--counter-panel-color': `hsl(${goalHue} 60% var(--counter-surface-lightness, 16%))`,
     '--counter-panel-highlight': `hsl(${goalHue} 60% 23%)`,
     '--counter-panel-shadow': `hsl(${goalHue} 60% 10%)`,
-    '--counter-goal-accent': `hsl(${goalHue} 75% 80%)`,
+    '--counter-goal-accent': `hsl(${goalHue} 75% var(--counter-accent-lightness, 80%))`,
     '--counter-goal-soft': `hsl(${goalHue} 65% 90%)`,
   } : undefined
 
   return <div className={fullscreen ? 'counter-fullscreen' : 'space-y-5'}>
     <section style={goalColours} data-testid="live-goal-panel"
-      className={fullscreen ? 'counter-fullscreen-panel text-white' : 'counter-goal-panel overflow-hidden rounded-3xl bg-emerald-900 text-white shadow-sm'}>
+      className={fullscreen ? 'school-counter-panel counter-fullscreen-panel text-white' : 'school-counter-panel counter-goal-panel overflow-hidden rounded-3xl text-white shadow-sm'}>
       <div className={fullscreen ? 'counter-fullscreen-content' : 'p-6 sm:p-9 lg:p-11'}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className={`flex items-center gap-2 font-medium text-emerald-100 ${fullscreen ? 'text-lg sm:text-2xl' : 'text-sm'}`}>
@@ -80,7 +80,7 @@ export default function LiveCounterProgress({ range, displayedCount, displayedTo
             <div className="relative h-full overflow-hidden rounded-full">
               <div className="flex h-full">
                 <div data-testid="live-goal-fill" style={{ width: `${goalWidth}%`, ...(milestone ? { background: 'var(--counter-goal-accent)' } : {}) }}
-                  className={`h-full shrink-0 bg-gradient-to-r from-emerald-300 to-emerald-200 ${beyond ? 'rounded-l-full' : 'rounded-full'}`} />
+                  className={`school-counter-fill h-full shrink-0 bg-gradient-to-r from-emerald-300 to-emerald-200 ${beyond ? 'rounded-l-full' : 'rounded-full'}`} />
                 {beyond > 0 && <div data-testid="live-extra-fill" style={{ width: `${extraWidth}%` }}
                   className="h-full shrink-0 rounded-r-full bg-amber-300" />}
               </div>
