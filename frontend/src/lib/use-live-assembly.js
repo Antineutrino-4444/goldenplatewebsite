@@ -35,7 +35,7 @@ export function useLiveAssembly(schoolCode, theme, provider) {
   }, [revision])
 
   useEffect(() => {
-    if (!initialized || !provider || !code) return
+    if (!initialized || !code) return
     const request = new AbortController()
     let timer
     async function check() {
@@ -43,11 +43,11 @@ export function useLiveAssembly(schoolCode, theme, provider) {
         const data = await readLinks(code, theme, request.signal)
         if (request.signal.aborted) return
         const link = data.links?.[provider]
-        setRecords({ code, theme, provider, revision, link })
+        setRecords({ code, theme, provider, revision, link, schoolName: data.school_name })
         if (enabled && (link?.status === 'pending' || link?.status === 'retry')) timer = setTimeout(check, 10000)
       } catch {
         // Connect checks the signed-in account's current link again when used.
-        if (!request.signal.aborted) setRecords({ code, theme, provider, revision, link: null })
+        if (!request.signal.aborted) setRecords({ code, theme, provider, revision, link: null, failed: true })
       }
     }
     timer = setTimeout(check, 250)
@@ -56,8 +56,10 @@ export function useLiveAssembly(schoolCode, theme, provider) {
 
   const current = records?.code === code && records.theme === theme && records.provider === provider && records.revision === revision
   return {
-    enabled, loading: !providers, unavailable,
+    enabled, loading: !providers || Boolean(provider && code && !current),
+    unavailable: unavailable || Boolean(current && records.failed),
     link: current ? records.link : null,
+    schoolName: current ? records.schoolName : '',
     refresh: () => setRevision(previous => previous + 1),
   }
 }

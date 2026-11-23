@@ -139,6 +139,7 @@ class AssemblyDeck(Base):
     owner_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     provider = Column(String, nullable=False)
     theme = Column(String, nullable=False)
+    school_label = Column(String(200))
     file_id = Column(String)
     web_url = Column(Text)
     encrypted_refresh_token = Column(Text)
@@ -884,6 +885,9 @@ def _ensure_student_identifier_scope(inspector):
 def _migrate_schema() -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
+
+    if 'assembly_decks' in tables:
+        _ensure_column(inspector, 'assembly_decks', 'school_label', 'VARCHAR(200)')
 
     # Existing accounts and requests may predate email collection.
     for table_name in ('users', 'account_creation_requests'):

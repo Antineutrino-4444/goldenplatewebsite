@@ -6,6 +6,7 @@ test('login returns to supported local pages and preserves filters', () => {
   assert.equal(safeReturnPath('/portal/dashboard?session=abc'), '/portal/dashboard?session=abc')
   assert.equal(safeReturnPath('/map?school=SAC#schools'), '/map?school=SAC#schools')
   assert.equal(safeReturnPath('/resources?presentation=assembly&school=SAC#assembly'), '/resources?presentation=assembly&school=SAC#assembly')
+  assert.equal(safeReturnPath('/export?school=SAC&format=pdf'), '/export?school=SAC&format=pdf')
   assert.equal(safeReturnPath(null, '/interschool'), '/interschool')
 })
 test('school arrival includes encoded school portal destinations', () => {
@@ -40,6 +41,8 @@ test('public return links preserve real local destinations and reject external p
   assert.equal(sitePageLabel('/stories/transcript'), 'Podcast transcript')
   assert.equal(sitePageLabel('/getting-started#record-plates'), 'Getting started')
   assert.equal(sitePageLabel('/resources#instagram'), 'School resources')
+  assert.equal(siteReturnPath('/export?format=google-slides'), '/export?format=google-slides')
+  assert.equal(sitePageLabel('/export?format=google-slides'), 'Export assembly slides')
   assert.equal(sitePageLabel('/website-guide#video-library'), 'Website guide')
   assert.equal(sitePageLabel('/guest/schools/default-school'), 'School guest view')
 })

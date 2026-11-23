@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assemblyAction, liveProviders, liveReturnNotice, presentationLoginPath, readPresentationOptions } from '../src/lib/presentation-options.js'
+import { assemblyAction, liveProviders, liveReturnNotice, needsGoogleSlidesNotice, presentationLoginPath, readPresentationOptions, schoolLabelOption } from '../src/lib/presentation-options.js'
 
 test('live assembly actions reuse the connected deck and respect its provider and status', () => {
   assert.deepEqual(liveProviders, { pptx: 'microsoft', 'google-slides': 'google' })
@@ -12,6 +12,7 @@ test('live assembly actions reuse the connected deck and respect its provider an
     for (const status of ['ready', 'retry']) {
       live.link = { status, url: 'https://example.org/existing' }
       assert.equal(assemblyAction(format, live, true).label, 'Open live ' + product + ' deck')
+      assert.equal(assemblyAction(format, live, true, true).label, 'Update live ' + product + ' deck')
     }
     live.link.status = 'reconnect'
     assert.equal(assemblyAction(format, live, true).label, 'Reconnect ' + product)
@@ -24,6 +25,19 @@ test('snapshot-only deployments retain the direct Google flow and the manual dow
   assert.equal(assemblyAction('google-slides', disabled, false).value, 'manual')
   assert.equal(assemblyAction('pptx', disabled, false).value, 'download')
   assert.equal(assemblyAction('pdf', disabled, false).value, 'download')
+})
+
+test('Google format differences are shown for new files and connections, with one-click access to existing decks', () => {
+  for (const action of ['manual', 'google']) {
+    assert.equal(needsGoogleSlidesNotice(action, 'google-slides', { status: 'ready', url: 'existing' }), true)
+  }
+  assert.equal(needsGoogleSlidesNotice('live', 'google-slides', null), true)
+  assert.equal(needsGoogleSlidesNotice('live', 'google-slides', { status: 'reconnect', url: 'existing' }), true)
+  for (const status of ['pending', 'ready', 'retry']) {
+    assert.equal(needsGoogleSlidesNotice('live', 'google-slides', { status }), false)
+  }
+  assert.equal(needsGoogleSlidesNotice('live', 'pptx', null), false)
+  assert.equal(needsGoogleSlidesNotice('download', 'pdf', null), false)
 })
 
 test('a cloud callback gives a safe recovery message and never displays arbitrary return parameters', () => {
@@ -39,30 +53,37 @@ test('saved presentation links open the full school assembly and preserve downlo
     for (const format of ['pptx', 'google-slides', 'pdf']) {
       const query = new URLSearchParams({ presentation: kind, format, theme: 'dark', school: 'SAC' })
       assert.deepEqual(readPresentationOptions(query.toString()), {
-        kind: 'assembly', format, theme: 'dark', schoolCode: 'SAC',
+        kind: 'assembly', format, linkedTheme: 'dark', schoolCode: 'SAC', schoolLabel: null,
       })
     }
   }
 })
 
-test('a new assembly defaults to PowerPoint and uses the current site theme', () => {
+test('new assembly forms default to PowerPoint and do not pin the appearance', () => {
   assert.deepEqual(readPresentationOptions(''), {
-    kind: 'assembly', format: 'pptx', theme: 'light', schoolCode: '',
+    kind: 'assembly', format: 'pptx', linkedTheme: null, schoolCode: '', schoolLabel: null,
   })
-  assert.deepEqual(readPresentationOptions('?format=unknown&theme=unknown', 'dark'), {
-    kind: 'assembly', format: 'pptx', theme: 'dark', schoolCode: '',
+  assert.deepEqual(readPresentationOptions('?format=unknown&theme=unknown'), {
+    kind: 'assembly', format: 'pptx', linkedTheme: null, schoolCode: '', schoolLabel: null,
   })
 })
 
-test('signing in returns to the assembly section with the selected school, format and theme', () => {
+test('signing in returns to the exporter with the selected school, format, theme and label', () => {
   const origin = 'https://goldenplate.test'
-  const options = readPresentationOptions('?presentation=overview&format=google-slides&theme=light')
-  const login = new URL(presentationLoginPath({ ...options, schoolCode: ' A&B ' }), origin)
-  assert.equal(login.pathname, '/login')
-  const destination = new URL(login.searchParams.get('next'), origin)
-  assert.equal(destination.pathname, '/resources')
-  assert.equal(destination.hash, '#assembly')
-  assert.deepEqual(readPresentationOptions(destination.search), {
-    kind: 'assembly', format: 'google-slides', theme: 'light', schoolCode: 'A&B',
-  })
+  for (const [schoolLabel, expected] of [[undefined, null], ['', ''], ['  École  A&B  ', 'École A&B']]) {
+    const login = new URL(presentationLoginPath({ format: 'google-slides', theme: 'light', schoolCode: ' A&B ', schoolLabel }), origin)
+    assert.equal(login.pathname, '/login')
+    const destination = new URL(login.searchParams.get('next'), origin)
+    assert.equal(destination.pathname, '/export')
+    assert.deepEqual(readPresentationOptions(destination.search), {
+      kind: 'assembly', format: 'google-slides', linkedTheme: 'light', schoolCode: 'A&B', schoolLabel: expected,
+    })
+  }
+})
+
+test('an untouched live label, custom label and explicit reset send distinct options', () => {
+  assert.deepEqual(schoolLabelOption(null), {})
+  assert.deepEqual(schoolLabelOption(undefined), {})
+  assert.deepEqual(schoolLabelOption('   '), { school_label: '' })
+  assert.deepEqual(schoolLabelOption('  Upper   School 🦉  '), { school_label: 'Upper School 🦉' })
 })

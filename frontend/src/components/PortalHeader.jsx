@@ -52,6 +52,7 @@ export default function PortalHeader({ app, interschool = false }) {
             {label}
             {to === '/portal/admin' && <RequestCountBadge count={app.adminNotificationsCount} />}
           </NavLink>)}
+          {['user', 'admin', 'superadmin'].includes(app.user?.role) && <Link to={code ? '/export?' + new URLSearchParams({ school: code }) : '/export'} className="inline-flex items-center px-3 py-2 text-slate-500 hover:bg-slate-50">Export assembly slides</Link>}
           <Link to="/website-guide#video-library" className="inline-flex items-center px-3 py-2 text-slate-500 hover:bg-slate-50">Video guides</Link>
         </nav>}
       </div>

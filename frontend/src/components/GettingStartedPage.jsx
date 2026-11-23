@@ -37,7 +37,7 @@ function SchoolQuickStart() {
           <li>
             <h3>Gather your team</h3>
             <p>Bring together a staff mentor, student volunteers, and someone from food services. Choose a lunch date and how you’ll recognize participation.</p>
-            <Link className="gp-text-link" to="/resources">Assembly slides and examples</Link>
+            <Link className="gp-text-link" to="/export">Export assembly slides</Link>
           </li>
           <li>
             <h3>Run one lunch</h3>

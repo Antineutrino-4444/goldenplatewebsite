@@ -12,7 +12,7 @@ from flask import current_app, jsonify, redirect, request, session
 from src.services import assembly_cloud as cloud
 from . import recorder_bp, assembly_sync as sync
 from .db import INTERSCHOOL_SCHOOL_ID
-from .presentation_routes import _error
+from .presentation_routes import _error, public_presentation_school_name, school_label_from
 from .security import get_current_user
 from .users import get_school_by_slug
 
@@ -80,11 +80,13 @@ def _proof(state):
     return base64.urlsafe_b64encode(digest).decode().rstrip('=')
 
 
-def _return_to_resources(flow, provider, error):
+def _return_to_export(flow, provider, error):
     options = {'format': 'pptx' if provider == 'microsoft' else 'google-slides', 'live_error': error}
     if flow:
         options.update(school=flow['school_code'], theme=flow['theme'])
-    return _redirect('/resources?' + urlencode(options) + '#assembly')
+        if 'school_label' in flow:
+            options['school_label'] = flow['school_label']
+    return _redirect('/export?' + urlencode(options))
 
 
 def _redirect(url):
@@ -105,12 +107,21 @@ def assembly_live_links():
         if theme not in ('light', 'dark'):
             return _error('Choose a presentation theme.', 400)
         actor = get_current_user()
-        school = get_school_by_slug(code) if actor else None
-        if school and school.status == 'active' and not _owner_error(actor, school, disconnect=True):
+        school = get_school_by_slug(code)
+        result['school_name'] = None
+        if not school or school.status != 'active' or school.id == INTERSCHOOL_SCHOOL_ID:
+            return _json(result)
+        owns_school = actor and not _owner_error(actor, school, disconnect=True)
+        if owns_school and not actor['email_required']:
+            result['school_name'] = school.name
+        elif school.guest_privacy_enabled == 0:
+            result['school_name'] = public_presentation_school_name(school.id)
+        if owns_school:
             for deck in sync.list_decks(school.id, actor['id']):
                 if deck['theme'] == theme:
                     result['links'][deck['provider']] = {
                         'url': None if actor['email_required'] else deck['url'], 'status': deck['status'],
+                        'school_label': deck['school_label'],
                     }
     return _json(result)
 
@@ -130,19 +141,25 @@ def connect_assembly_deck():
     if not _provider_enabled(provider):
         return _error('Automatic updates for this provider are not configured on this site.', 503)
 
-    deck = sync.get_deck(school.id, actor['id'], provider, theme)
+    data = request.get_json()
+    try:
+        label = school_label_from(data)
+    except ValueError as error:
+        return _error(str(error), 400)
+    key = (school.id, actor['id'], provider, theme)
+    deck = sync.set_school_label(*key, label) if 'school_label' in data else sync.get_deck(*key)
     if deck and deck['status'] != 'reconnect':
         deck = sync.sync_deck(deck['id'], force=True)
         if deck and deck['status'] != 'reconnect':
-            if deck['url'] and deck['status'] == 'ready':
-                return _json({'url': deck['url'], 'status': 'ready'})
-            return _json({'status': deck['status'], 'url': deck['url']}, 202)
+            payload = {field: deck[field] for field in ('status', 'url', 'school_label')}
+            return _json(payload, 200 if deck['url'] and deck['status'] == 'ready' else 202)
 
     state = secrets.token_urlsafe(32)
     callback = _site_origin() + PREFIX + '/callback/' + provider
     session['assembly_connect_' + provider] = {
         'nonce': state, 'started': int(time.time()), 'owner': actor['id'], 'school_id': school.id,
         'school_code': school.slug, 'theme': theme, 'callback': callback,
+        **({'school_label': label or ''} if 'school_label' in data else {}),
     }
     url = cloud.authorization_url(provider, callback, state, _proof(state))
     return _json({'authorization_url': url})
@@ -157,27 +174,28 @@ def assembly_oauth_callback(provider):
     state = request.args.get('state', '')
     if (not flow or not state.isascii() or not secrets.compare_digest(flow['nonce'], state)
             or not 0 <= time.time() - flow['started'] < FLOW_TTL):
-        return _return_to_resources(None, provider, 'authorization')
+        return _return_to_export(None, provider, 'authorization')
     session.pop(key, None)
     actor = get_current_user()
     school = get_school_by_slug(flow['school_code'])
     if (not school or school.id != flow['school_id'] or school.status != 'active' or not actor
             or actor['id'] != flow['owner'] or _owner_error(actor, school)):
-        return _return_to_resources(flow, provider, 'access')
+        return _return_to_export(flow, provider, 'access')
     code = request.args.get('code')
     if request.args.get('error') or not code:
-        return _return_to_resources(flow, provider, 'authorization')
+        return _return_to_export(flow, provider, 'authorization')
     if not _provider_enabled(provider):
-        return _return_to_resources(flow, provider, 'config')
+        return _return_to_export(flow, provider, 'config')
     try:
         tokens = cloud.exchange_code(provider, flow['callback'], code, _proof(state))
     except cloud.CloudDeckError:
-        return _return_to_resources(flow, provider, 'authorization')
-    deck = sync.bind_deck(school.id, actor['id'], provider, flow['theme'], tokens['refresh_token'])
+        return _return_to_export(flow, provider, 'authorization')
+    options = {'school_label': flow['school_label'] or None} if 'school_label' in flow else {}
+    deck = sync.bind_deck(school.id, actor['id'], provider, flow['theme'], tokens['refresh_token'], **options)
     deck = sync.sync_deck(deck['id'], force=True)
     if deck and deck['status'] == 'ready' and deck['url']:
         return _redirect(deck['url'])
-    return _return_to_resources(flow, provider, 'sync')
+    return _return_to_export(flow, provider, 'sync')
 
 
 @recorder_bp.delete('/resources/presentations/live')

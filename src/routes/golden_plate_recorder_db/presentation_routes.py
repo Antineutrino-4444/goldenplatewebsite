@@ -1,6 +1,7 @@
 """On-demand, school-scoped assembly slides built from the saved dashboard counts."""
 
 from datetime import timezone
+import unicodedata
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Response, jsonify, request
@@ -17,6 +18,20 @@ from .email_policy import account_requires_email
 from .users import get_school_by_slug, get_user_by_id
 
 
+_RESULT_STATUSES = ('active', 'archived')
+
+
+def public_presentation_school_name(school_id):
+    private_result = db_session.query(Session.id).filter(
+        Session.school_id == School.id, Session.status.in_(_RESULT_STATUSES),
+        Session.is_public.is_distinct_from(1),
+    ).exists()
+    return db_session.query(School.name).filter(
+        School.id == school_id, School.status == 'active', School.id != INTERSCHOOL_SCHOOL_ID,
+        School.guest_privacy_enabled == 0, ~private_result,
+    ).scalar()
+
+
 def _snapshot_rows(school_id):
     # Read privacy, totals, and the last two results in one database snapshot.
     # Changes to session visibility during a download cannot split the access
@@ -30,7 +45,7 @@ def _snapshot_rows(school_id):
         func.sum(case((has_result, 1), else_=0)).over().label('result_count'),
         func.min(case((Session.id.is_(None), 1), (Session.is_public == 1, 1), else_=0)).over().label('all_public'),
     ).select_from(School).outerjoin(
-        Session, (Session.school_id == School.id) & Session.status.in_(('active', 'archived')),
+        Session, (Session.school_id == School.id) & Session.status.in_(_RESULT_STATUSES),
     ).filter(
         School.id == school_id, School.status == 'active', School.id != INTERSCHOOL_SCHOOL_ID,
     ).order_by(has_result.desc(), Session.created_at.desc().nullslast(), Session.id.desc()).limit(2).all()
@@ -100,6 +115,18 @@ def _error(message, status, code=None):
     return jsonify(payload), status, {'Cache-Control': 'no-store'}
 
 
+def school_label_from(data):
+    value = data.get('school_label')
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError('Enter a school display name as text.')
+    label = ' '.join(value.split())
+    if len(label) > 200 or any(unicodedata.category(c) in ('Cc', 'Cs') or c in '\ufffe\uffff' for c in label):
+        raise ValueError('Enter a school display name of up to 200 characters without control characters.')
+    return label or None
+
+
 def assembly_snapshot_for_owner(school_id, user_id):
     """Recheck a connected teacher's current access before each cloud update."""
     owner = get_user_by_id(user_id)
@@ -123,6 +150,10 @@ def download_school_presentation():
         return _error('Enter a school code.', 400)
     if kind not in ('assembly', 'overview') or theme not in ('light', 'dark') or output not in ('pptx', 'google-slides', 'pdf'):
         return _error('Choose a presentation, theme, and file format.', 400)
+    try:
+        school_label = school_label_from(data)
+    except ValueError as error:
+        return _error(str(error), 400)
 
     school = get_school_by_slug(school_code)
     rows = _snapshot_rows(school.id) if school else []
@@ -139,6 +170,7 @@ def download_school_presentation():
             return _error('Verify your account email to download private school results.', 403, 'ACCOUNT_EMAIL_REQUIRED')
 
     snapshot = _snapshot(rows)
+    snapshot['school_label'] = school_label
     platform = 'powerpoint' if output == 'pptx' else output
     from src.services.presentation_exports import generate_deck
     content = generate_deck(kind, theme, snapshot, platform=platform)

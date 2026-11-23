@@ -129,17 +129,15 @@
 .gp-home-materials { padding-block: clamp(36px, 4.5vw, 68px) clamp(44px, 5vw, 75px); }
 .gp-home-section-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 24px; }
 .gp-home-section-heading h2 { font-size: clamp(32px, 3.2vw, 48px); }
-.gp-home-materials-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(18px, 2vw, 32px); }
+.gp-home-materials-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(18px, 2vw, 32px); }
 .gp-home-material { display: block; }
 .gp-material-image {
-  aspect-ratio: 1.95; display: grid; place-items: center; overflow: hidden; position: relative;
+  aspect-ratio: 16 / 9; display: grid; place-items: center; overflow: hidden; position: relative;
   background: var(--site-raised); border: 1px solid var(--gp-rule);
 }
 .gp-material-image img { display: block; }
 .gp-material-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 35%; }
-.gp-material-handout { background: #ddd6c4; }
-:root.dark .gp-material-handout { background: #3a3a2f; }
-.gp-material-handout img { position: absolute; top: 12%; width: 53%; height: auto; transform: rotate(-5deg); box-shadow: 2px 5px 15px #1a1d1a40; }
+.gp-material-deck img { width: 100%; height: 100%; object-fit: contain; }
 .gp-material-caption { padding-top: 14px; }
 .gp-material-caption h3 { font: 400 clamp(22px, 2vw, 29px)/1.18 Georgia, serif; letter-spacing: -.035em; }
 .gp-home-material:hover h3 { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
@@ -156,7 +154,6 @@
   .gp-home-byline a { gap: 6px; font-size: 13px; }
   .gp-home-materials-list { grid-template-columns: minmax(0, 1fr); gap: 0; border-top: 1px solid var(--gp-rule); }
   .gp-home-material { display: grid; grid-template-columns: clamp(86px, 25vw, 150px) 1fr; align-items: center; gap: 18px; padding-block: 16px; border-bottom: 1px solid var(--gp-rule); }
-  .gp-material-image { aspect-ratio: 1.45; }
   .gp-material-caption { padding: 0; }
   .gp-material-caption h3 { font-size: 22px; }
 }

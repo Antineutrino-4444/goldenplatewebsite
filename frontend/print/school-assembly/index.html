@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Golden Plate school assembly</title>
+  <link rel="stylesheet" href="/src/theme.css">
+  <link rel="stylesheet" href="/src/components/LandingPage.css">
+  <link rel="stylesheet" href="./assembly.css">
+  <script>document.documentElement.classList.toggle('dark', new URLSearchParams(location.search).get('theme') === 'dark')</script>
+</head>
+<body>
+  <!-- The exporter measures data-ppt elements after Chromium lays out the page.
+       Their names also bind the template to the requesting school's results. -->
+  <template id="masthead">
+    <header class="masthead">
+      <div class="wordmark">
+        <img data-ppt="Plate mark" src="/resources/golden-plate-logo-120.png" alt="Golden Plate" width="48" height="48">
+        <span data-ppt="Publisher">golden plate</span>
+      </div>
+      <p data-ppt="school" class="school">Sample school results</p>
+    </header>
+    <div data-ppt="Masthead rule" data-rect class="rule"></div>
+  </template>
+  <template id="dateline">
+    <footer><p data-ppt="stamp">Records as of Nov 20, 2026 at 17:00 UTC</p></footer>
+  </template>
+
+  <section class="slide golden-public overview" aria-label="All-time clean plates">
+    <main>
+      <h1 data-ppt="all_clean" class="hero">135 clean plates</h1>
+      <p data-ppt="share" class="hero-context">84.4% of 160 recorded plates across 2 lunches</p>
+      <div class="goal">
+        <div data-ppt="progress_track" data-rect class="goal-track"><div data-preview class="goal-fill"></div></div>
+        <p data-ppt="goal_label">65 to the 200-plate goal</p>
+      </div>
+      <div data-ppt="Lunch detail rule" data-rect class="rule"></div>
+      <div class="latest-strip">
+        <div>
+          <p data-ppt="latest_heading" class="label">Latest lunch</p>
+          <h2 data-ppt="latest_name" class="strip-value session-title">Friday Lunch</h2>
+          <p data-ppt="latest_date" class="metadata lunch-date detail">Nov 20, 2026</p>
+        </div>
+        <div>
+          <p data-ppt="rate_heading" class="label">Clean-plate rate</p>
+          <p data-ppt="latest_rate" class="strip-value">90%</p>
+          <p data-ppt="latest_counts" class="metadata detail">90 of 100 plates were clean</p>
+        </div>
+        <div>
+          <p data-ppt="change_heading" class="label">Change from previous lunch</p>
+          <p data-ppt="latest_change" class="strip-value delta">+15</p>
+          <p data-ppt="change_units" class="metadata detail">percentage points</p>
+        </div>
+      </div>
+    </main>
+    <aside data-notes hidden>Start with the number of clean plates the school has recorded. The goal and latest lunch put the total in context. Only lunches with recorded plates count.</aside>
+  </section>
+
+  <section class="slide golden-public breakdown" aria-label="Latest lunch">
+    <main>
+      <p data-ppt="title" class="label">Latest lunch</p>
+      <div class="session-lead">
+        <div>
+          <h1 data-ppt="latest_name" class="session-title-main">Friday Lunch</h1>
+          <p data-ppt="latest_date" class="metadata lunch-date">Nov 20, 2026</p>
+        </div>
+        <div class="session-result">
+          <p data-ppt="rate" class="session-metric">90%</p>
+          <p data-ppt="latest_counts" class="metadata">90 of 100 plates were clean</p>
+        </div>
+      </div>
+      <div class="distribution" data-ppt="distribution" data-rect>
+        <i data-preview class="student"></i><i data-preview class="faculty"></i><i data-preview class="dirty"></i><i data-preview class="very-dirty"></i>
+      </div>
+      <div class="category-list">
+        <div><div class="legend"><i data-ppt="Student clean plates key" data-rect class="student"></i><p data-ppt="Student clean plates label" class="label">Student clean plates</p></div><p data-ppt="student_clean" class="category-value">85</p></div>
+        <div><div class="legend"><i data-ppt="Faculty clean plates key" data-rect class="faculty"></i><p data-ppt="Faculty clean plates label" class="label">Faculty clean plates</p></div><p data-ppt="faculty_clean" class="category-value">5</p></div>
+        <div><div class="legend"><i data-ppt="Dirty plates key" data-rect class="dirty"></i><p data-ppt="Dirty plates label" class="label">Dirty plates</p></div><p data-ppt="dirty" class="category-value">8</p></div>
+        <div><div class="legend"><i data-ppt="Very dirty plates key" data-rect class="very-dirty"></i><p data-ppt="Very dirty plates label" class="label">Very dirty plates</p></div><p data-ppt="very_dirty" class="category-value">2</p></div>
+      </div>
+    </main>
+    <aside data-notes hidden>Each segment shows its category’s share of the plates recorded at this lunch. The clean-plate rate includes both students and faculty.</aside>
+  </section>
+
+  <section class="slide golden-public comparison" aria-label="Lunch comparison">
+    <main>
+      <h1 data-ppt="title" class="section-title">Lunch to lunch</h1>
+      <div class="table-head">
+        <div></div>
+        <div><p data-ppt="Previous lunch label" class="label">Previous lunch</p><p data-ppt="prev_name" class="table-name">Monday Lunch</p><p data-ppt="prev_date" class="metadata lunch-date table-date">Nov 16, 2026</p></div>
+        <div><p data-ppt="Latest lunch label" class="label">Latest lunch</p><p data-ppt="curr_name" class="table-name">Friday Lunch</p><p data-ppt="curr_date" class="metadata lunch-date table-date">Nov 20, 2026</p></div>
+        <p data-ppt="Change label" class="label end">Latest − previous</p>
+      </div>
+      <div data-ppt="Clean plates rule" data-rect class="rule"></div>
+      <div class="table-row"><p data-ppt="clean label" class="label">Clean plates</p><p data-ppt="prev_clean">45</p><p data-ppt="curr_clean">90</p><p data-ppt="delta_clean" class="end delta">+45</p></div>
+      <div data-ppt="Plates recorded rule" data-rect class="rule"></div>
+      <div class="table-row"><p data-ppt="total label" class="label">Plates recorded</p><p data-ppt="prev_total">60</p><p data-ppt="curr_total">100</p><p data-ppt="delta_total" class="end delta">+40</p></div>
+      <div data-ppt="Clean-plate rate rule" data-rect class="rule"></div>
+      <div class="table-row"><p data-ppt="rate label" class="label">Clean-plate rate</p><p data-ppt="prev_rate">75%</p><p data-ppt="curr_rate">90%</p><p data-ppt="delta_rate" class="end delta">+15%</p></div>
+      <div data-ppt="Table bottom rule" data-rect class="rule"></div>
+    </main>
+    <aside data-notes hidden>Compare the number of plates alongside the clean-plate rate. The rate helps compare lunches when attendance differs.</aside>
+  </section>
+
+  <section class="slide golden-public rate-chart" aria-label="Clean-plate rate comparison">
+    <main>
+      <h1 data-ppt="title" class="section-title">Clean-plate rate</h1>
+      <p data-ppt="rate_comparison" class="chart-change delta">15 percentage points higher</p>
+      <div class="chart-row">
+        <div><p data-ppt="Previous lunch label" class="label">Previous lunch</p><p data-ppt="prev_name" class="chart-name">Monday Lunch</p></div>
+        <div class="chart-series"><div data-ppt="prev_track" data-rect class="chart-track"><div data-ppt="prev_fill" data-rect class="chart-fill previous"></div></div><p data-ppt="prev_counts" class="metadata">45 of 60 plates were clean</p></div>
+        <p data-ppt="prev_rate" class="chart-rate">75%</p>
+      </div>
+      <div class="chart-row">
+        <div><p data-ppt="Latest lunch label" class="label">Latest lunch</p><p data-ppt="curr_name" class="chart-name">Friday Lunch</p></div>
+        <div class="chart-series"><div data-ppt="curr_track" data-rect class="chart-track"><div data-ppt="curr_fill" data-rect class="chart-fill current"></div></div><p data-ppt="curr_counts" class="metadata">90 of 100 plates were clean</p></div>
+        <p data-ppt="curr_rate" class="chart-rate">90%</p>
+      </div>
+      <div class="chart-axis"><div class="axis-labels"><p data-ppt="Axis minimum" class="metadata">0%</p><p data-ppt="Axis midpoint" class="metadata">50%</p><p data-ppt="Axis maximum" class="metadata">100%</p></div></div>
+    </main>
+    <aside data-notes hidden>Read both clean-plate rates on the same scale. Each bar shows the share of recorded plates that was clean at that lunch.</aside>
+  </section>
+
+  <section class="slide golden-public reminders" aria-label="Quick Reminders">
+    <main>
+      <h1 data-ppt="title" class="section-title">Quick Reminders</h1>
+      <div class="reminder">
+        <div data-ppt="Serving line rule" data-rect class="rule"></div>
+        <p data-ppt="Portion choice" class="instruction">Choose a portion that fits your appetite.</p>
+      </div>
+      <div class="reminder">
+        <div data-ppt="Dish return rule" data-rect class="rule"></div>
+        <p data-ppt="Plate count" class="instruction">At the dish return, show your plate to a Compost Coach before you scrape or stack it.</p>
+      </div>
+    </main>
+    <aside data-notes hidden>Students can stop eating when they feel full. Invite them to suggest one change that would make choosing a portion easier. Remind the group where to find the Compost Coaches at the dish return.</aside>
+  </section>
+  <section class="slide golden-public closing" aria-label="Be Green, Do Good">
+    <h1>
+      <span data-ppt="Be Green">Be Green,</span>
+      <span data-ppt="Do Good">Do Good</span>
+    </h1>
+  </section>
+  <script>
+    for (const slide of document.querySelectorAll('.slide:not(.closing)')) {
+      slide.prepend(document.querySelector('#masthead').content.cloneNode(true));
+      slide.append(document.querySelector('#dateline').content.cloneNode(true));
+    }
+  </script>
+</body>
+</html>

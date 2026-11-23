@@ -18,7 +18,7 @@ export function safeReturnPath(value, fallback = '/portal') {
     const url = new URL(value, 'https://goldenplate.invalid')
     if (url.origin !== 'https://goldenplate.invalid') return fallback
     const path = url.pathname.replace(/\/+$/, '') || '/'
-    if (!isSchoolPortalPath(path) && !['/map', '/live-counter', '/live-counter/community', '/interschool', '/resources'].includes(path)) return fallback
+    if (!isSchoolPortalPath(path) && !['/map', '/live-counter', '/live-counter/community', '/interschool', '/resources', '/export'].includes(path)) return fallback
     return `${url.pathname}${url.search}${url.hash}`
   } catch { return fallback }
 }
@@ -34,7 +34,7 @@ export function siteReturnPath(value) {
   try {
     const url = new URL(value, 'https://goldenplate.invalid')
     const path = url.pathname.replace(/\/+$/, '') || '/'
-    const publicPage = ['/', '/about', '/how-it-works', '/getting-started', '/resources', '/website-guide', '/stories', '/stories/transcript', '/release-notes', '/map', '/login', '/register', '/signup', '/live-counter', '/live-counter/community'].includes(path)
+    const publicPage = ['/', '/about', '/how-it-works', '/getting-started', '/resources', '/export', '/website-guide', '/stories', '/stories/transcript', '/release-notes', '/map', '/login', '/register', '/signup', '/live-counter', '/live-counter/community'].includes(path)
     if (url.origin !== 'https://goldenplate.invalid' || (!publicPage && !/^\/guest\/(sessions|schools)\/[a-zA-Z0-9-]+$/.test(path) && safeReturnPath(value, '') === '')) return '/'
     return url.pathname + url.search + url.hash
   } catch { return '/' }
@@ -42,6 +42,6 @@ export function siteReturnPath(value) {
 
 export function sitePageLabel(path) {
   const page = path.split(/[?#]/)[0].replace(/\/+$/, '') || '/'
-  return ({ '/': 'Home', '/about': 'Our story', '/how-it-works': 'How it works', '/getting-started': 'Getting started', '/resources': 'School resources', '/website-guide': 'Website guide', '/stories': 'Watch & listen', '/release-notes': 'Release history', '/map': 'School map', '/login': 'School login', '/register': 'School registration', '/signup': 'Account signup', '/live-counter': 'School counter', '/live-counter/community': 'Community counter', '/portal/leaderboards': 'Plate Leaderboards' })[page]
+  return ({ '/': 'Home', '/about': 'Our story', '/how-it-works': 'How it works', '/getting-started': 'Getting started', '/resources': 'School resources', '/export': 'Export assembly slides', '/website-guide': 'Website guide', '/stories': 'Watch & listen', '/release-notes': 'Release history', '/map': 'School map', '/login': 'School login', '/register': 'School registration', '/signup': 'Account signup', '/live-counter': 'School counter', '/live-counter/community': 'Community counter', '/portal/leaderboards': 'Plate Leaderboards' })[page]
     || (page === '/stories/transcript' ? 'Podcast transcript' : page.startsWith('/guest/sessions/') ? 'Guest session' : page.startsWith('/guest/schools/') ? 'School guest view' : 'School portal')
 }

@@ -13,9 +13,10 @@ export function liveReturnNotice(search) {
   return { type: 'error', message: Object.hasOwn(messages, code) ? messages[code] : 'The cloud connection could not be completed. Please try again.' }
 }
 
-export function assemblyAction(format, live, directGoogle) {
+export function assemblyAction(format, live, directGoogle, labelChanged = false) {
   if (live.enabled) {
     if (live.link?.status === 'reconnect') return { value: 'live', label: 'Reconnect ' + formats[format] }
+    if (live.link && labelChanged) return { value: 'live', label: 'Update live ' + formats[format] + ' deck' }
     if (live.link?.url) return { value: 'live', label: 'Open live ' + formats[format] + ' deck' }
     return { value: 'live', label: (live.link ? 'Check live ' : 'Create live ') + formats[format] + ' deck' }
   }
@@ -25,21 +26,34 @@ export function assemblyAction(format, live, directGoogle) {
   return { value: 'download', label: 'Download ' + formats[format] }
 }
 
-export function readPresentationOptions(search, defaultTheme = 'light') {
+export function needsGoogleSlidesNotice(action, format, link) {
+  if (format !== 'google-slides') return false
+  if (action === 'live') return !link || link.status === 'reconnect'
+  return action === 'google' || action === 'manual'
+}
+
+export function readPresentationOptions(search) {
   const query = new URLSearchParams(search)
   const format = query.get('format')
   const theme = query.get('theme')
   return {
     kind: 'assembly',
     format: Object.hasOwn(formats, format) ? format : 'pptx',
-    theme: ['light', 'dark'].includes(theme) ? theme : defaultTheme,
+    linkedTheme: ['light', 'dark'].includes(theme) ? theme : null,
     schoolCode: query.get('school') || '',
+    schoolLabel: query.get('school_label'),
   }
 }
 
-export function presentationLoginPath({ format, theme, schoolCode }) {
+// Missing leaves an existing live deck's choice alone. A blank value resets it.
+export function schoolLabelOption(value) {
+  return value == null ? {} : { school_label: value.trim().replace(/\s+/gu, ' ') }
+}
+
+export function presentationLoginPath({ format, theme, schoolCode, schoolLabel }) {
   const options = new URLSearchParams({ presentation: 'assembly', theme, format, school: schoolCode.trim() })
-  const next = '/resources?' + options.toString() + '#assembly'
+  if (schoolLabel != null) options.set('school_label', schoolLabelOption(schoolLabel).school_label)
+  const next = '/export?' + options.toString()
   return '/login?' + new URLSearchParams({ next }).toString()
 }
 

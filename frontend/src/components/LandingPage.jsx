@@ -3,6 +3,7 @@ import InitiativeVideo, { introductionUrl } from '@/components/InitiativeVideo.j
 import SchoolCaseStudyNote from '@/components/SchoolCaseStudyNote.jsx'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { useTheme } from 'next-themes'
 import Link from '@/components/SiteLink.jsx'
 import CommunityCounter from '@/components/CommunityCounter.jsx'
 import { ArrowRight, ArrowUpRight, ChevronRight, Mail, Play } from 'lucide-react'
@@ -51,42 +52,27 @@ function Hero() {
   </section>
 }
 
-const schoolMaterials = [
-  {
-    to: '/resources#assembly',
-    title: 'Assembly slides',
-    image: '/images/initiative/student-developers.webp',
-    artwork: 'photo',
-  },
-  {
-    to: '/resources#instagram',
-    title: 'Winner announcements',
-    image: '/images/initiative/golden-plate-winner.webp',
-    artwork: 'photo',
-  },
-  {
-    to: '/resources#handouts',
-    title: 'One-page school overview',
-    image: '/resources/golden-plate-school-overview.webp',
-    artwork: 'handout',
-  },
-]
-
 function SchoolMaterials() {
+  const { resolvedTheme } = useTheme()
+  const deckPreview = resolvedTheme === 'dark' ? 'school-results-dark.webp' : 'school-results-light.webp'
   return <section className="gp-home-materials gp-container" aria-labelledby="school-materials-title">
     <div className="gp-home-section-heading">
       <h2 id="school-materials-title">Resources for schools</h2>
       <Link className="gp-text-link" to="/resources">Browse all resources</Link>
     </div>
     <div className="gp-home-materials-list">
-      {schoolMaterials.map(({ to, title, image, artwork }) => (
-        <Link key={to} to={to} className="gp-home-material">
-          <div className={`gp-material-image gp-material-${artwork}`}>
-            <img src={image} alt="" loading="lazy" />
-          </div>
-          <div className="gp-material-caption"><h3>{title}</h3></div>
-        </Link>
-      ))}
+      <Link to="/export?format=pptx" className="gp-home-material">
+        <div className="gp-material-image gp-material-deck">
+          <img src={'/resources/' + deckPreview} alt="" loading="lazy" width="960" height="540" />
+        </div>
+        <div className="gp-material-caption"><h3>School assembly PowerPoint</h3></div>
+      </Link>
+      <Link to="/resources#instagram" className="gp-home-material">
+        <div className="gp-material-image gp-material-photo">
+          <img src="/images/initiative/golden-plate-winner.webp" alt="" loading="lazy" width="707" height="631" />
+        </div>
+        <div className="gp-material-caption"><h3>Winner announcements</h3></div>
+      </Link>
     </div>
   </section>
 }

@@ -53,6 +53,30 @@ def exports(monkeypatch):
     return captured
 
 
+def test_download_school_label_is_optional_and_preserves_school_identity(client, school_data, exports):
+    for options, expected in [({}, None), ({'school_label': '   '}, None),
+                              ({'school_label': '  École\n  ABC  '}, 'École ABC')]:
+        response = download(client, school_data['code'], **options)
+        assert response.status_code == 200
+        snapshot = exports[-1][2]
+        assert snapshot['school_name'] == 'Slides School' and snapshot['school_label'] == expected
+        assert school_data['code'] in response.headers['Content-Disposition']
+    for invalid in [[], 7, 'School\0name', 'z' * 201]:
+        assert download(client, school_data['code'], school_label=invalid).status_code == 400
+    assert len(exports) == 3
+
+
+def test_download_uses_custom_label_in_slides_and_registered_name_in_notes(client, school_data):
+    from pptx import Presentation
+
+    response = download(client, school_data['code'], school_label='SAC')
+    assert response.status_code == 200
+    deck = Presentation(BytesIO(response.data))
+    headers = [shape.text for slide in deck.slides for shape in slide.shapes if shape.name == 'school']
+    assert headers == ['SAC'] * (len(deck.slides) - 1)
+    assert all('Slides School' in slide.notes_slide.notes_text_frame.text for slide in deck.slides)
+
+
 def test_public_export_uses_latest_nonempty_results_and_school_totals(client, school_data, exports):
     add = school_data['session']
     add('Earlier lunch', 1, (0, 0, 3, 1))

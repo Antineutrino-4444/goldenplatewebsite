@@ -17,6 +17,7 @@ const PodcastTranscriptPage = lazy(() => import('@/components/PodcastTranscriptP
 const GettingStartedPage = lazy(() => import('@/components/GettingStartedPage.jsx'))
 const WebsiteGuidePage = lazy(() => import('@/components/WebsiteGuidePage.jsx'))
 const SchoolResourcesPage = lazy(() => import('@/components/SchoolResourcesPage.jsx'))
+const AssemblyExportPage = lazy(() => import('@/components/AssemblyExportPage.jsx'))
 const SignupAccessNotice = lazy(() => import('@/components/SignupAccessNotice.jsx'))
 const GuestSessionPage = lazy(() => import('@/components/GuestSessionPage.jsx'))
 const SchoolGuestEntry = lazy(() => import('@/components/SchoolGuestEntry.jsx'))
@@ -134,6 +135,7 @@ function SiteRoutes() {
     <Route path="/getting-started" element={<GettingStartedPage />} />
     <Route path="/website-guide" element={<WebsiteGuidePage />} />
     <Route path="/resources" element={<SchoolResourcesPage />} />
+    <Route path="/export" element={<AssemblyExportPage />} />
     <Route path="/release-notes" element={<ReleaseHistoryPage />} />
     <Route path="/stories" element={<LandingPage page="stories" />} />
     <Route path="/stories/transcript" element={<PodcastTranscriptPage />} />

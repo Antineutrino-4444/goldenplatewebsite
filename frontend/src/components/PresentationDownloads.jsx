@@ -1,33 +1,51 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useTheme } from 'next-themes'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
-import { assemblyAction, formats, liveProviders, liveReturnNotice, presentationFileName, presentationLoginPath, readPresentationOptions } from '@/lib/presentation-options.js'
+import { assemblyAction, formats, liveProviders, liveReturnNotice, needsGoogleSlidesNotice, presentationFileName, presentationLoginPath, readPresentationOptions, schoolLabelOption } from '@/lib/presentation-options.js'
 import { useLiveAssembly } from '@/lib/use-live-assembly.js'
 import { authorizeGoogleSlides, createGoogleSlidesFile, loadGoogleSlidesAuth } from '@/lib/google-slides.js'
 
 const googleSlidesUrl = 'https://slides.google.com/create'
 const googleClientId = import.meta.env.VITE_GOOGLE_SLIDES_CLIENT_ID?.trim()
 
-function GoogleSlidesDialog({ open, onClose, onDownload, trigger }) {
-  return <Dialog open={open} onOpenChange={onClose}>
+const googleDialogCopy = {
+  manual: {
+    title: 'Import into Google Slides',
+    description: 'Download the PowerPoint file, then import it into a new or existing Google Slides presentation. Download and import again for newer results.',
+    button: 'Download for Google Slides',
+  },
+  google: {
+    title: 'Create a Google Slides copy',
+    description: 'This saves the current school results in your Google Drive. Create another copy when you want newer results.',
+    button: 'Create in Google Slides',
+  },
+  live: {
+    title: 'Connect a live Google Slides deck',
+    description: 'Golden Plate updates the same Google Drive file after lunch results change. Updates replace its contents. Make a separate copy for edits you want to keep.',
+    button: 'Continue to Google Slides',
+  },
+}
+
+function GoogleSlidesDialog({ selection, onClose, onConfirm, trigger }) {
+  if (!selection) return null
+  const copy = googleDialogCopy[selection.action]
+  return <Dialog open onOpenChange={open => { if (!open) onClose() }}>
     <DialogContent className="gp-import-dialog" onCloseAutoFocus={(event) => {
       event.preventDefault()
       trigger.current?.focus()
     }}>
       <DialogHeader>
-        <DialogTitle>Import into Google Slides</DialogTitle>
-        <DialogDescription>Download the PowerPoint file, then import it into a new or existing Google Slides presentation.</DialogDescription>
+        <DialogTitle>{copy.title}</DialogTitle>
+        <DialogDescription>{copy.description}</DialogDescription>
       </DialogHeader>
-      <ol>
+      {selection.action === 'manual' && <ol>
         <li>In Google Slides, choose <strong>File → Import slides → Upload</strong> and select the downloaded file.</li>
         <li>Choose the slides you want, keep <strong>Keep original theme</strong> selected, then choose <strong>Import slides</strong>.</li>
-      </ol>
-      <p>Google Slides may substitute fonts and change line breaks.</p>
-      <p>This edition shows the final results without PowerPoint’s slide transitions or animated reveals. To update the figures after a lunch, download and import the slides again.</p>
+      </ol>}
+      <p>Google Slides may substitute fonts and change line breaks. Results appear without PowerPoint’s transitions or animated reveals.</p>
       <div className="gp-import-actions">
-        <button type="button" className="gp-button" onClick={onDownload}>Download for Google Slides</button>
-        <button type="button" className="gp-text-link" onClick={() => onClose(false)}>Cancel</button>
+        <button type="button" className="gp-button" onClick={onConfirm}>{copy.button}</button>
+        <button type="button" className="gp-text-link" onClick={onClose}>Cancel</button>
       </div>
     </DialogContent>
   </Dialog>
@@ -42,24 +60,34 @@ function saveFile(url, filename) {
   link.remove()
 }
 
-export default function PresentationDownloads() {
-  const location = useLocation()
+export default function PresentationDownloads({ theme }) {
+  const { search } = useLocation()
+  return <PresentationForm key={search} search={search} theme={theme} />
+}
+
+function PresentationForm({ search, theme }) {
   const navigate = useNavigate()
-  const { resolvedTheme } = useTheme()
-  const [options, setOptions] = useState(() => readPresentationOptions(location.search, resolvedTheme === 'dark' ? 'dark' : 'light'))
-  const [notice, setNotice] = useState(() => liveReturnNotice(location.search))
+  const [options, setOptions] = useState(() => readPresentationOptions(search))
+  const [notice, setNotice] = useState(() => liveReturnNotice(search))
   const [busy, setBusy] = useState(false)
-  const [confirmGoogle, setConfirmGoogle] = useState(false)
+  const [googleSelection, setGoogleSelection] = useState(null)
   const [googleAuth, setGoogleAuth] = useState('loading')
   const [authAttempt, setAuthAttempt] = useState(0)
   const pending = useRef(null)
   const trigger = useRef(null)
   const schoolField = useRef(null)
-  const { kind, theme, format, schoolCode } = options
+  const labelField = useRef(null)
+  const { kind, format, schoolCode, schoolLabel, linkedTheme } = options
+  // A bookmarked cloud deck or an OAuth return can identify an existing themed file.
+  const liveTheme = linkedTheme || theme
+  const loginPath = presentationLoginPath({ format, schoolCode, schoolLabel, theme: liveTheme })
   const provider = liveProviders[format]
-  const live = useLiveAssembly(schoolCode, theme, provider)
+  const live = useLiveAssembly(schoolCode, liveTheme, provider)
+  const savedLabel = live.link?.school_label || ''
+  const displayLabel = schoolLabel ?? savedLabel
+  const labelChanged = schoolLabel != null && schoolLabelOption(schoolLabel).school_label !== savedLabel
   const directSlides = format === 'google-slides' && !live.loading && !live.enabled && Boolean(googleClientId)
-  const primary = assemblyAction(format, live, directSlides)
+  const primary = assemblyAction(format, live, directSlides, labelChanged)
   useEffect(() => () => pending.current?.abort(), [])
   useEffect(() => {
     if (!directSlides) return
@@ -72,7 +100,11 @@ export default function PresentationDownloads() {
   }, [directSlides, authAttempt])
 
   function choose(key, value) {
-    setOptions((previous) => ({ ...previous, [key]: value }))
+    setOptions((previous) => ({
+      ...previous, [key]: value,
+      ...(key === 'schoolCode' && value.trim() !== previous.schoolCode.trim() ? { schoolLabel: null } : {}),
+      ...(key === 'schoolLabel' ? {} : { linkedTheme: null }),
+    }))
     setNotice(null)
   }
 
@@ -110,7 +142,6 @@ export default function PresentationDownloads() {
   }
 
   function exportPresentation(createInDrive = false) {
-    setConfirmGoogle(false)
     return runAction(async signal => {
       const extension = format === 'pdf' ? 'pdf' : 'pptx'
       // Start Google's account chooser in the click gesture. The website still
@@ -120,7 +151,8 @@ export default function PresentationDownloads() {
       const response = await fetch('/api/resources/presentations/download', {
         method: 'POST', credentials: 'same-origin', signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, theme, format, school_code: schoolCode.trim() }),
+        body: JSON.stringify({ kind, theme, format, school_code: schoolCode.trim(),
+          ...schoolLabelOption(schoolLabel ?? live.link?.school_label) }),
       })
       if (!response.ok) return reportProblem(response)
       const file = await response.blob()
@@ -142,13 +174,14 @@ export default function PresentationDownloads() {
     })
   }
 
-  function changeLiveDeck(disconnect = false) {
+  function changeLiveDeck({ disconnect = false, googleConfirmed = false } = {}) {
     return runAction(async signal => {
       const path = '/api/resources/presentations/live' + (disconnect ? '' : '/connect')
       const response = await fetch(path, {
         method: disconnect ? 'DELETE' : 'POST', credentials: 'same-origin', signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ school_code: schoolCode.trim(), theme, provider }),
+        body: JSON.stringify({ school_code: schoolCode.trim(), theme: liveTheme, provider,
+          ...schoolLabelOption(disconnect ? null : schoolLabel) }),
       })
       if (!response.ok) return reportProblem(response)
       if (disconnect) {
@@ -166,11 +199,24 @@ export default function PresentationDownloads() {
       }
       const url = connection.authorization_url || connection.url
       if (url && new URL(url).protocol === 'https:') {
-        window.location.assign(url)
+        // A saved connection may have expired since the page checked its status.
+        if (provider === 'google' && connection.authorization_url && !googleConfirmed) {
+          setGoogleSelection({ action: 'live', authorizationUrl: url })
+        } else {
+          window.location.assign(url)
+        }
       } else {
         throw new Error('The cloud service did not return a presentation link. Please try again.')
       }
     })
+  }
+
+  function confirmGoogleSelection() {
+    const { action, authorizationUrl } = googleSelection
+    setGoogleSelection(null)
+    if (authorizationUrl) return window.location.assign(authorizationUrl)
+    if (action === 'live') return changeLiveDeck({ googleConfirmed: true })
+    return exportPresentation(action === 'google')
   }
 
   function submit(event) {
@@ -180,15 +226,21 @@ export default function PresentationDownloads() {
       setNotice({ type: 'error', message: 'Enter your school code.' })
       return
     }
-    const action = event.nativeEvent.submitter?.value || primary.value
-    if (action === 'manual') {
-      trigger.current = event.nativeEvent.submitter
-      setConfirmGoogle(true)
+    if ([...schoolLabelOption(displayLabel).school_label].length > 200) {
+      labelField.current.focus()
+      setNotice({ type: 'error', message: 'Use 200 characters or fewer for the school name on slides.' })
+      return
+    }
+    const submitter = event.nativeEvent.submitter
+    const action = submitter?.value || primary.value
+    if (action === 'google' && googleAuth !== 'ready') return
+    trigger.current = submitter || document.activeElement
+    if (needsGoogleSlidesNotice(action, format, live.link)) {
+      setGoogleSelection({ action })
       return
     }
     if (action === 'live') return changeLiveDeck()
-    if (action === 'google' && googleAuth !== 'ready') return
-    exportPresentation(action === 'google')
+    exportPresentation()
   }
 
   async function copyLiveLink() {
@@ -208,7 +260,7 @@ export default function PresentationDownloads() {
     try {
       const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', signal: request.signal })
       if (!response.ok) throw new Error()
-      navigate(presentationLoginPath(options))
+      navigate(loginPath)
     } catch {
       if (!request.signal.aborted) setNotice({ type: 'switch', message: 'Couldn’t switch accounts. Try again.' })
     } finally {
@@ -218,14 +270,14 @@ export default function PresentationDownloads() {
   }
 
   return <section id="assembly" className="gp-decks gp-container" aria-labelledby="assembly-title">
-    <h2 id="assembly-title">School assembly slides</h2>
+    <h1 id="assembly-title">School assembly slides</h1>
     <form onSubmit={submit} aria-busy={busy}>
       <div className="gp-deck-workspace">
         <div className="gp-deck-settings">
           <p>Present your school’s clean-plate total, latest lunch and change since the previous session.</p>
           <fieldset disabled={busy} className="gp-deck-fields">
             <legend className="sr-only">Presentation options</legend>
-            <label className="gp-deck-school">
+            <label>
               School code
               <input ref={schoolField} name="school_code" value={schoolCode} required maxLength={64} autoCapitalize="none" spellCheck={false} onChange={(event) => choose('schoolCode', event.target.value)} />
             </label>
@@ -234,23 +286,26 @@ export default function PresentationDownloads() {
                 {Object.entries(formats).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <label>Theme
-              <select value={theme} onChange={(event) => choose('theme', event.target.value)}>
-                <option value="light">Light</option><option value="dark">Dark</option>
-              </select>
+            <label className="gp-deck-label-override">
+              School name on slides (optional)
+              <input ref={labelField} name="school_label" value={displayLabel} placeholder={live.schoolName || ''}
+                aria-describedby="gp-deck-label-hint" onChange={event => choose('schoolLabel', event.target.value)} />
             </label>
           </fieldset>
+          <p className="gp-deck-field-hint" id="gp-deck-label-hint">
+            {displayLabel && live.schoolName ? `Clear this field to use ${live.schoolName}.` : 'Leave blank to use your school’s registered name.'}
+          </p>
           {live.enabled ? <p className="gp-deck-note">
             Golden Plate updates the same deck in your {provider === 'google' ? 'Google Drive' : 'OneDrive'} when lunch results change.
             {' '}Bookmark its link for your next assembly. Make a separate copy for edits you want to keep.
           </p> : <p className="gp-deck-note">{directSlides
-            ? 'This creates a one-time copy of your school’s results in Google Drive. PowerPoint animations are omitted, and some fonts may change.'
+            ? 'This creates a one-time copy of your school’s results in Google Drive.'
             : 'Results are current at download. Download again after your next lunch to update the figures.'}</p>}
           <div className="gp-deck-submit">
             <button type="submit" value={primary.value} disabled={busy || (provider && live.loading) || (directSlides && googleAuth !== 'ready')} className="gp-button">
               {busy ? 'Please wait…' : primary.label}
             </button>
-            {live.enabled && <button type="submit" value={format === 'google-slides' ? 'manual' : 'download'} disabled={busy} className="gp-text-link">Download a snapshot</button>}
+            {live.enabled && <button type="submit" value={format === 'google-slides' ? 'manual' : 'download'} disabled={busy || live.loading} className="gp-text-link">Download a snapshot</button>}
             {directSlides && <button type="submit" value="manual" disabled={busy} className="gp-text-link">Download for manual import</button>}
           </div>
           {live.link && <div className="gp-deck-status">
@@ -259,7 +314,7 @@ export default function PresentationDownloads() {
             {live.link.status === 'retry' && <span>Golden Plate will retry the latest update.</span>}
             {live.link.status === 'pending' && <span>Your deck is waiting for its first update.</span>}
             {live.link.url && <button type="button" className="gp-text-link" disabled={busy} onClick={copyLiveLink}>Copy deck link</button>}
-            <button type="button" className="gp-text-link" disabled={busy} onClick={() => changeLiveDeck(true)}>Stop automatic updates</button>
+            <button type="button" className="gp-text-link" disabled={busy} onClick={() => changeLiveDeck({ disconnect: true })}>Stop automatic updates</button>
           </div>}
           {provider && live.unavailable && <div className="gp-deck-status" role="status">
             <span>Couldn’t check for live decks.</span>
@@ -274,8 +329,8 @@ export default function PresentationDownloads() {
           </div>}
           {notice && !(notice.type === 'queued' && live.link?.status === 'ready') && <div className="gp-deck-status" role={notice.type === 'error' ? 'alert' : 'status'}>
             <span>{notice.message}</span>
-            {notice.type === 'login' && <Link className="gp-text-link" to={presentationLoginPath(options)}>Sign in to this school</Link>}
-            {notice.type === 'verify' && <Link className="gp-text-link" to={presentationLoginPath(options)}>Verify account email</Link>}
+            {notice.type === 'login' && <Link className="gp-text-link" to={loginPath}>Sign in to this school</Link>}
+            {notice.type === 'verify' && <Link className="gp-text-link" to={loginPath}>Verify account email</Link>}
             {notice.type === 'switch' && <button type="button" className="gp-text-link" onClick={switchAccount} disabled={busy}>Sign out and switch accounts</button>}
             {notice.type === 'done' && format === 'google-slides' && <a className="gp-text-link" href={googleSlidesUrl} target="_blank" rel="noopener noreferrer">Open Google Slides</a>}
             {notice.type === 'created' && <a className="gp-text-link" href={notice.url}>Open your presentation</a>}
@@ -289,6 +344,6 @@ export default function PresentationDownloads() {
         </figure>
       </div>
     </form>
-    <GoogleSlidesDialog open={confirmGoogle} onClose={setConfirmGoogle} onDownload={() => exportPresentation()} trigger={trigger} />
+    <GoogleSlidesDialog selection={googleSelection} onClose={() => setGoogleSelection(null)} onConfirm={confirmGoogleSelection} trigger={trigger} />
   </section>
 }

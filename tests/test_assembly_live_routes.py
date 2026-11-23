@@ -53,11 +53,11 @@ def test_same_native_link_updates_after_a_lunch_without_reopening_site(client, m
     details = {'school_code': slug, 'provider': provider, 'theme': 'dark'}
     assert client.post(BASE + '/connect', json=details).status_code == 401
     sign_in(client, classroom)
-    args = begin(client, details)
+    args = begin(client, {**details, 'school_label': '  Student\n Council  '})
     callback = BASE + '/callback/' + provider
     assert args['redirect_uri'] == ['http://localhost' + callback]
     refresh = secrets.token_urlsafe()
-    writes = []
+    writes, labels = [], []
     def exchange(received_provider, uri, code, verifier):
         assert received_provider == provider and uri == 'http://localhost' + callback and code == 'from-provider'
         assert base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=') == args['code_challenge'][0]
@@ -66,6 +66,7 @@ def test_same_native_link_updates_after_a_lunch_without_reopening_site(client, m
     def update(received_provider, token, binding, file_id, data, theme):
         assert received_provider == provider and token == 'fresh-access' and theme == 'dark'
         writes.append((binding, file_id, data['totals']['clean']))
+        labels.append((data['school_name'], data['school_label']))
         return 'dedicated-id', 'https://example.test/assembly/dedicated-id'
 
     monkeypatch.setattr(cloud, 'exchange_code', exchange)
@@ -76,7 +77,8 @@ def test_same_native_link_updates_after_a_lunch_without_reopening_site(client, m
     assert response.status_code == 303 and response.location == 'https://example.test/assembly/dedicated-id'
     assert 'authorization' in client.get(callback, query_string=params).location  # consumed
     assert writes[0][1:] == (None, 0)
-    assert client.post(BASE + '/connect', json=details).json['url'] == response.location
+    unchanged = client.post(BASE + '/connect', json=details).json
+    assert unchanged['url'] == response.location and unchanged['school_label'] == 'Student Council'
     assert len(writes) == 1
     with SessionFactory.begin() as store:
         row = store.query(AssemblyDeck).filter_by(owner_id=owner, provider=provider).one()
@@ -86,12 +88,20 @@ def test_same_native_link_updates_after_a_lunch_without_reopening_site(client, m
         row.next_check_at = _now_utc() - timedelta(seconds=1)
     sync.run_due_decks()
     assert writes == [(writes[0][0], None, 0), (writes[0][0], 'dedicated-id', 34)]
-    link = client.get(BASE, query_string=details).json['links'][provider]
-    assert link == {'url': response.location, 'status': 'ready'}
+    listing = client.get(BASE, query_string=details).json
+    assert listing['links'][provider] == {'url': response.location, 'status': 'ready', 'school_label': 'Student Council'}
+    registered = listing['school_name']
+    assert registered and labels == [(registered, 'Student Council')] * 2
+    renamed = client.post(BASE + '/connect', json={**details, 'school_label': 'Campus North'}).json
+    assert renamed == {'url': response.location, 'status': 'ready', 'school_label': 'Campus North'}
+    assert client.post(BASE + '/connect', json={**details, 'school_label': ' '}).json['school_label'] is None
+    assert client.post(BASE + '/connect', json=details).json['url'] == response.location
+    assert labels[-2:] == [(registered, 'Campus North'), (registered, None)]
+    assert all(binding == writes[0][0] and file_id == 'dedicated-id' for binding, file_id, _ in writes[1:])
     assert client.delete(BASE, json=details).status_code == 200
     assert client.get(BASE, query_string=details).json['links'] == {}
     sync.run_due_decks()
-    assert len(writes) == 2
+    assert len(writes) == 4
 
 
 def test_consent_stays_with_initiating_teacher_school_and_origin(client, classroom, monkeypatch):
@@ -108,9 +118,16 @@ def test_consent_stays_with_initiating_teacher_school_and_origin(client, classro
     monkeypatch.setattr(cloud, 'exchange_code', lambda *a: pytest.fail('unexpected token exchange'))
     for provider, state in [('google', 'wrong'), ('microsoft', args['state'][0])]:
         response = client.get(BASE + '/callback/' + provider, query_string={'state': state, 'code': 'example'})
-        assert response.status_code == 303 and 'live_error=authorization' in response.location
+        location = urlsplit(response.location)
+        assert response.status_code == 303 and location.path == '/export'
+        assert parse_qs(location.query) == {
+            'format': ['pptx' if provider == 'microsoft' else 'google-slides'], 'live_error': ['authorization'],
+        }
     response = client.get(BASE + '/callback/google', query_string={'state': args['state'][0], 'error': 'access_denied'})
-    assert 'live_error=authorization' in response.location
+    location = urlsplit(response.location)
+    assert location.path == '/export' and not location.fragment
+    assert parse_qs(location.query) == {'format': ['google-slides'], 'live_error': ['authorization'],
+                                        'school': [slug], 'theme': ['light']}
     args = begin(client, body)
     client.post('/api/auth/logout')
     assert 'live_error=' in client.get(BASE + '/callback/google', query_string={'state': args['state'][0], 'code': 'example'}).location
@@ -122,6 +139,27 @@ def test_missing_configuration_only_disables_that_provider(client, monkeypatch, 
     assert client.get(BASE).json == {'providers': {'google': True, 'microsoft': False}, 'links': {}}
     sign_in(client, classroom)
     assert client.post(BASE + '/connect', json={'school_code': classroom[3], 'theme': 'light', 'provider': 'microsoft'}).status_code == 503
+
+
+def test_registered_name_lookup_respects_school_result_privacy(client, classroom):
+    owner, _, school, slug = classroom
+    options = {'school_code': slug, 'theme': 'dark'}
+    assert client.get(BASE, query_string=options).json['school_name'] is None
+    with SessionFactory.begin() as store:
+        row = store.get(School, school)
+        registered = row.name
+        row.guest_privacy_enabled = 0
+    assert client.get(BASE, query_string=options).json['school_name'] == registered
+    with SessionFactory.begin() as store:
+        store.add(Session(school_id=school, session_name='Private lunch', created_by=owner,
+                          clean_number=7, status='active', is_public=0))
+    assert client.get(BASE, query_string=options).json['school_name'] is None
+    sign_in(client, classroom)
+    assert client.get(BASE, query_string=options).json['school_name'] == registered
+    for label in [4, 'bad\x00name', 'a' * 201]:
+        response = client.post(BASE + '/connect', json={**options, 'provider': 'google', 'school_label': label})
+        assert response.status_code == 400
+    assert client.get(BASE, query_string=options).json['links'] == {}
 
 
 def test_grants_require_a_private_signing_key_even_with_separate_encryption(client, monkeypatch, classroom):

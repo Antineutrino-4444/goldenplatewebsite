@@ -5,7 +5,7 @@ def test_direct_school_resource_links(client, monkeypatch, tmp_path):
     resources.mkdir()
     (resources / 'assembly.pdf').write_bytes(b'%PDF-1.7')
 
-    for path in ('/resources', '/resources/', '/getting-started', '/website-guide'):
+    for path in ('/resources', '/resources/', '/export', '/export/', '/export?format=pdf&school=school-1', '/getting-started', '/website-guide'):
         response = client.get(path)
         assert response.status_code == 200
         assert response.mimetype == 'text/html'

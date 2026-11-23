@@ -11,7 +11,7 @@ import uuid
 from datetime import timedelta, timezone
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import or_
+from sqlalchemy import case, or_
 from sqlalchemy.exc import IntegrityError
 
 from .db import AssemblyDeck, SessionFactory, _now_utc
@@ -20,7 +20,10 @@ logger = logging.getLogger(__name__)
 CHECK_INTERVAL = timedelta(seconds=60)
 LEASE_DURATION = timedelta(minutes=10)
 PROVIDERS = ('google', 'microsoft')
+# Bump when a new slide design should refresh existing connected decks.
+ASSEMBLY_DESIGN_REVISION = 12
 _start_lock = threading.Lock()
+_UNSET = object()
 
 
 def _cipher():
@@ -49,7 +52,7 @@ def _public(row):
     stamp = row.last_synced_at
     if stamp and stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    return {'id': row.id, 'provider': row.provider, 'theme': row.theme,
+    return {'id': row.id, 'provider': row.provider, 'theme': row.theme, 'school_label': row.school_label,
             'url': row.web_url, 'status': row.status, 'message': row.message,
             'last_synced_at': stamp.isoformat() if stamp else None}
 
@@ -70,7 +73,18 @@ def list_decks(school_id, user_id):
         return [_public(row) for row in rows]
 
 
-def bind_deck(school_id, user_id, provider, theme, refresh_token):
+def set_school_label(school_id, user_id, provider, theme, label):
+    with SessionFactory() as store:
+        query = _binding(store, school_id, user_id, provider, theme)
+        query.filter(AssemblyDeck.status.notin_(('disconnected', 'reconnect')),
+                     AssemblyDeck.school_label.is_distinct_from(label)).update(
+            {'school_label': label, 'status': 'pending', 'message': None, 'next_check_at': _now_utc()},
+            synchronize_session=False)
+        store.commit()
+        return _public(query.one_or_none())
+
+
+def bind_deck(school_id, user_id, provider, theme, refresh_token, *, school_label=_UNSET):
     if not refresh_token or provider not in PROVIDERS or theme not in ('light', 'dark'):
         raise ValueError('A valid provider, theme and offline grant are required.')
     encrypted = _cipher().encrypt(refresh_token.encode()).decode('ascii')
@@ -86,9 +100,12 @@ def bind_deck(school_id, user_id, provider, theme, refresh_token):
                     raise
         # An in-flight operation can finish, but cannot replace this newer grant.
         # Preserve file_id on reconnect so the teacher's existing link survives.
-        query.update({'encrypted_refresh_token': encrypted, 'status': 'pending', 'message': None,
-                      'generation': AssemblyDeck.generation + 1, 'snapshot_hash': None,
-                      'attempts': 0, 'next_check_at': _now_utc()}, synchronize_session=False)
+        changes = {'encrypted_refresh_token': encrypted, 'status': 'pending', 'message': None,
+                   'generation': AssemblyDeck.generation + 1, 'snapshot_hash': None,
+                   'attempts': 0, 'next_check_at': _now_utc()}
+        if school_label is not _UNSET:
+            changes['school_label'] = school_label
+        query.update(changes, synchronize_session=False)
         store.commit()
         return _public(query.one())
 
@@ -97,7 +114,7 @@ def disconnect_deck(school_id, user_id, provider, theme):
     with SessionFactory() as store:
         changed = _binding(store, school_id, user_id, provider, theme).filter(
             AssemblyDeck.status != 'disconnected').update({
-                'status': 'disconnected', 'encrypted_refresh_token': None, 'message': None,
+                'status': 'disconnected', 'encrypted_refresh_token': None, 'message': None, 'school_label': None,
                 'generation': AssemblyDeck.generation + 1, 'next_check_at': None,
             }, synchronize_session=False)
         store.commit()
@@ -133,9 +150,16 @@ def _sync_claim(row):
     if snapshot is None:
         _retry(row, 'School access changed. Reconnect with an authorized school account.', reconnect=True)
         return
+    snapshot['school_label'] = row.school_label
     content = {key: value for key, value in snapshot.items() if key != 'generated_at'}
+    content['design_revision'] = ASSEMBLY_DESIGN_REVISION
     digest = hashlib.sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    success = {'status': 'ready', 'message': None, 'attempts': 0, 'next_check_at': _now_utc() + CHECK_INTERVAL}
+    # An owner can edit the label while the worker is uploading. Keep the
+    # resulting file ID and rotated token, then refresh its content immediately.
+    same_label = AssemblyDeck.school_label.is_not_distinct_from(row.school_label)
+    now = _now_utc()
+    success = {'status': case((same_label, 'ready'), else_='pending'), 'message': None, 'attempts': 0,
+               'next_check_at': case((same_label, now + CHECK_INTERVAL), else_=now)}
     if row.file_id and row.snapshot_hash == digest:
         _update_claim(row, success)
         return

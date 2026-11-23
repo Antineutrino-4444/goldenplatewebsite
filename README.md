@@ -322,12 +322,15 @@ the matching secret and a deployment on the widget's configured hostnames.
 
 ## Auto-updating school assembly decks
 
-On **School Resources → School assembly slides**, a member of the selected school
-can connect Google Slides or PowerPoint once per theme. Bookmark the native
-presentation in Google Drive or OneDrive. While the website is running, its
+On the export page at `/export`, a member of the selected school can connect
+Google Slides or PowerPoint once per theme. The slides display the school's full
+registered name by default. Enter a custom label to change the visible name
+or clear it to use the registered name again. A connected deck remembers its
+label across updates. Bookmark the native presentation in Google Drive or
+OneDrive. While the website is running, its
 worker checks the school's saved results about once a minute. A changed lunch,
 correction or total updates that same cloud file, even when the teacher has the
-website closed. Opening it through School Resources also checks for changes.
+website closed. Opening it through the export page also checks for changes.
 The provider controls who can open the file. Teachers can share the link using
 the normal Drive or OneDrive sharing controls.
 
@@ -338,6 +341,34 @@ automatic updates** disconnects the file and leaves its last contents in the
 teacher's account. If the provider revokes access, the teacher can reconnect
 the original cloud account. The website rechecks school membership and email
 eligibility before sending updates.
+
+The six assembly slides are authored in `frontend/print/school-assembly/index.html`
+and `assembly.css`. They use the website's shared light and dark theme. Each
+`data-ppt` name identifies an editable text box, shape, or picture in PowerPoint.
+The results exporter fills those objects with the requesting school's figures.
+Schools with two recorded lunches get a comparison table and a clean-plate
+rate chart. Both bars use the same scale from 0% to 100%. The assembly closes
+with “Be Green, Do Good” after Quick Reminders.
+
+After changing the HTML or CSS, run `node scripts/resources/build_school_assembly.mjs`
+from the repository root with `@oai/artifact-tool`, `sharp`, `jszip`, `playwright`, and
+Playwright's Chromium available. Set `CHROMIUM_PATH` to use an existing Chromium
+installation. The compiler measures each element in the browser and builds both
+theme templates in `src/services/templates`. The running website uses those
+templates for PowerPoint, Google Slides, and PDF downloads. To inspect the
+browser screenshots and object coordinates, pass an output PPTX path and a
+preview directory as the first and second arguments.
+Increment `ASSEMBLY_DESIGN_REVISION` in `assembly_sync.py` when publishing a
+design change so connected presentations pick it up at their next check.
+
+Assembly slides use Newsreader for headings and figures and Georgia for
+subtitles, labels, and instructions. Lunch dates are italic. The goal caption
+and the change in clean-plate rate above the graph are bold. Each generated deck sets the font on
+the editable text itself, so the same formatting is applied when a connected
+school deck refreshes. PowerPoint embeds Newsreader. The PDF
+exporter uses a local Georgia installation when available and falls back to
+Gelasio. Source information and licenses for the bundled fonts live in
+[`src/services/templates/fonts`](src/services/templates/fonts/SOURCES.md).
 
 ### Server setup
 
@@ -530,9 +561,9 @@ How It Works and the handbook list Matthew Jaekel and SAC's published office
 contacts, with professional profile and source links. The student quotations
 come from owner-supplied formal writing. The writing archive remains private.
 
-School Resources (`/resources`) includes a full assembly presentation with
-the school's latest results, social post templates and printable school
-handouts. A school code is sufficient to download the slides when all included
+School Resources (`/resources`) links to assembly slide exports at `/export`
+alongside social post templates and printable school handouts.
+A school code is sufficient to download the slides when all included
 sessions are public and guest privacy is off. Other schools require a signed-in member
 of that school. Downloaded files show the results at download time. Connected Google Slides and OneDrive assembly decks update in place.
 
