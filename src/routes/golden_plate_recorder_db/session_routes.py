@@ -278,13 +278,13 @@ def create_session():
         session_name = custom_name
     else:
         now = datetime.now()
-        base_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
+        base_name = f"{now.strftime('%B')} {now.day}, {now.year}"
         session_name = base_name
         while db_session.query(SessionModel).filter_by(
             session_name=session_name,
             school_id=school_id
         ).first():
-            session_name = f"{base_name}_{counter}"
+            session_name = f"{base_name} {counter}"
             counter += 1
 
     def _make_session(name: str) -> SessionModel:
@@ -315,7 +315,7 @@ def create_session():
         if base_name is None:
             return jsonify({'error': 'Session name already exists'}), 400
         while True:
-            candidate = f"{base_name}_{counter}"
+            candidate = f"{base_name} {counter}"
             counter += 1
             if not db_session.query(SessionModel.id).filter_by(session_name=candidate, school_id=school_id).first():
                 session_name = candidate

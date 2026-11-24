@@ -1,4 +1,9 @@
 import uuid
+from datetime import datetime
+
+import pytest
+
+from src.routes.golden_plate_recorder_db import session_routes
 
 from src.routes.golden_plate_recorder_db.db import (
     DEFAULT_SCHOOL_SLUG,
@@ -28,14 +33,23 @@ def test_guest_cannot_create_session(client):
     assert resp.status_code == 401
 
 
-def test_default_session_name_suffix(client, login):
+@pytest.mark.parametrize('today, base_name', [
+    (datetime(2026, 9, 24), 'September 24, 2026'),
+    (datetime(2026, 11, 24), 'November 24, 2026'),
+    (datetime(2027, 1, 4), 'January 4, 2027'),
+])
+def test_default_session_name_suffix(client, login, monkeypatch, today, base_name):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls):
+            return today
+
+    monkeypatch.setattr(session_routes, 'datetime', FixedDatetime)
     login()
-    first = client.post('/api/session/create', json={})
-    assert first.status_code == 200
-    base_name = first.get_json()['session_name']
-    second = client.post('/api/session/create', json={})
-    assert second.status_code == 200
-    assert second.get_json()['session_name'] == f"{base_name}_1"
+    for suffix in ('', ' 1', ' 2', ' 3'):
+        response = client.post('/api/session/create', json={})
+        assert response.status_code == 200
+        assert response.get_json()['session_name'] == f'{base_name}{suffix}'
 
 
 def test_custom_name_duplicate_rejected(client, login):

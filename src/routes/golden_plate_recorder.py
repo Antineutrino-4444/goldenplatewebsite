@@ -868,11 +868,11 @@ def create_session():
         session_name = custom_name
     else:
         now = datetime.now()
-        base_name = f"Golden_Plate_{now.strftime('%B_%d_%Y')}"
+        base_name = f"{now.strftime('%B')} {now.day}, {now.year}"
         session_name = base_name
         counter = 1
         while session_name in existing_names:
-            session_name = f"{base_name}_{counter}"
+            session_name = f"{base_name} {counter}"
             counter += 1
     
     # Create session data with owner information
