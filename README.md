@@ -328,27 +328,82 @@ registered name by default. Enter a custom label to change the visible name
 or clear it to use the registered name again. A connected deck remembers its
 label across updates. Bookmark the native presentation in Google Drive or
 OneDrive. While the website is running, its
-worker checks the school's saved results about once a minute. A changed lunch,
+worker checks the school's saved results about once a minute. A changed session,
 correction or total updates that same cloud file, even when the teacher has the
 website closed. Opening it through the export page also checks for changes.
 The provider controls who can open the file. Teachers can share the link using
 the normal Drive or OneDrive sharing controls.
 
-The linked file is dedicated to Golden Plate. Refresh replaces its slides, so
-make a separate copy for personal edits. Previously downloaded presentations
-and Google Slides copies created before connecting are snapshots. **Stop
+In a connected PowerPoint, school figures update in the existing slides.
+Teachers can add their own slides and paste photos into the winner announcement.
+When a pictured winner changes, the previous announcement stays in the file
+as a hidden slide. The new announcement has an empty frame for the new winner.
+Google Slides refreshes replace the linked deck’s content, so make a separate
+Google Slides copy for personal edits. Downloaded presentations are snapshots. **Stop
 automatic updates** disconnects the file and leaves its last contents in the
 teacher's account. If the provider revokes access, the teacher can reconnect
 the original cloud account. The website rechecks school membership and email
 eligibility before sending updates.
 
-The six assembly slides are authored in `frontend/print/school-assembly/index.html`
-and `assembly.css`. They use the website's shared light and dark theme. Each
+The six base slides are authored in `frontend/print/school-assembly/index.html`
+and `assembly.css`. The PowerPoint exporter adds the animated Golden Plate logo at
+both ends and places the winner announcement just before Quick Reminders.
+Schools with two sessions receive nine slides. Both themes use the website’s colors. Each
 `data-ppt` name identifies an editable text box, shape, or picture in PowerPoint.
 The results exporter fills those objects with the requesting school's figures.
-Schools with two recorded lunches get a comparison table and a clean-plate
+Schools with two recorded sessions get a comparison table and a clean-plate
 rate chart. Both bars use the same scale from 0% to 100%. The assembly closes
-with “Be Green, Do Good” after Quick Reminders.
+with “Be Green, Do Good” after Quick Reminders. Click once from that message
+to play the logo ending. It advances automatically to the next visible slide
+in the PowerPoint show, including a slide added by the presenter. If it comes
+last, the show ends normally. Leave slide timings enabled for this handoff.
+
+PowerPoint shows finalized student and faculty winners together for the latest
+recorded session. Under each name, it shows the tickets, percentage and eligible
+pool recorded at selection, plus the selection method when available. A separate
+line shows how many tickets the winner’s next clean plate earns, using the
+same current reward calculation as the Draw Center. For a
+manual selection the percentage is the winner’s share of the ticket pool.
+Student grade, house and clan appear when available and space allows. These
+details are available to signed-in members of the selected school. Public
+downloads include the announcement layout with empty name fields.
+In PowerPoint’s editing view, select the edge of an empty portrait frame and
+paste a copied picture with **Ctrl+V** (**⌘V** on Mac). PowerPoint crops the
+picture to fill the frame. To replace a photo already in a frame, right-click
+it and choose **Change Picture → From Clipboard**. Empty frames are invisible
+in Slide Show. To skip the announcement for an assembly, choose **Hide Slide**.
+
+The presenter controls when to leave each content slide. The slides build
+automatically on entry. The session breakdown also has four presenter-controlled
+reveals. Object fades take 0.25 seconds.
+
+The opening and closing use the 4K, 60 fps “quicker-start” logo reveal. A gold
+line enters from the left and curls into the rim. The editable wordmark rises
+as the inner ring and leaf appear.
+The motion is embedded in the file for offline use. With **Use Timings** enabled,
+the intro advances at 1.50 seconds, just after the wordmark settles. PowerPoint
+moves the logo into the upper left of the results slide with a 0.85-second Morph. The school name
+stays at the upper right. The results build, then wait for the presenter.
+The school’s clean-plate total appears first, followed by its share and progress
+toward the goal. The bar eases into its rounded track from the left. The latest
+session, its clean-plate rate and the change from the previous session appear
+from left to right, with 170 ms between sections. In each section the value
+starts 100 ms after the heading, and the supporting line starts 190 ms after
+the value. Increases and decreases float in from the left with the same fade
+and easing as the session name. A zero change fades in place. The records
+timestamp uses the school's reporting time zone, which defaults to Eastern
+time and follows daylight saving time.
+
+On the PowerPoint session breakdown, each click rolls one count and reveals its
+rectangular share inside a rounded track. Its straight leading edge stops at
+the category boundary. Both clean-rate comparison bars use the results overview’s
+eased Fly In behind fixed rounded masks. Each row shows its measured percentage.
+The category order on the breakdown is student clean, faculty clean, dirty,
+then very dirty. A recorded zero in either dirty category settles in the
+ordinary number color before turning gold and pulsing. A gold pulse marks its position
+on the bar without adding width to the recorded share. The next click advances
+to the following slide. Quick Reminders emphasizes the portion and dish-return
+instructions in large type.
 
 After changing the HTML or CSS, run `node scripts/resources/build_school_assembly.mjs`
 from the repository root with `@oai/artifact-tool`, `sharp`, `jszip`, `playwright`, and
@@ -358,11 +413,16 @@ theme templates in `src/services/templates`. The running website uses those
 templates for PowerPoint, Google Slides, and PDF downloads. To inspect the
 browser screenshots and object coordinates, pass an output PPTX path and a
 preview directory as the first and second arguments.
-Increment `ASSEMBLY_DESIGN_REVISION` in `assembly_sync.py` when publishing a
-design change so connected presentations pick it up at their next check.
+The dark PowerPoint embeds the supplied 4K MP4 directly. To rebuild the light
+version and both transparent logo images, run
+`node scripts/resources/build_tutorial_signature.mjs` with Playwright, Chromium
+and ffmpeg installed. Normal exports use the files in `src/services/templates`.
+Increment the affected provider’s entry in `ASSEMBLY_DESIGN_REVISIONS` in
+`assembly_sync.py` when publishing a design change so its connected
+presentations pick it up at their next check.
 
 Assembly slides use Newsreader for headings and figures and Georgia for
-subtitles, labels, and instructions. Lunch dates are italic. The goal caption
+subtitles, labels, and instructions. Session dates are italic. The goal caption
 and the change in clean-plate rate above the graph are bold. Each generated deck sets the font on
 the editable text itself, so the same formatting is applied when a connected
 school deck refreshes. PowerPoint embeds Newsreader. The PDF

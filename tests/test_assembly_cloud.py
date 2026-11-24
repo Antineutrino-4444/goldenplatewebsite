@@ -19,7 +19,7 @@ def api(monkeypatch):
         status, body = replies.pop(0)
         response = requests.Response()
         response.status_code = status
-        response._content = json.dumps(body).encode()
+        response._content = body if isinstance(body, bytes) else json.dumps(body).encode()
         return response
 
     monkeypatch.setattr(cloud.requests, 'request', send)
@@ -84,6 +84,8 @@ def upload(monkeypatch):
         return f"{platform} lunch {snapshot['count']}".encode()
 
     monkeypatch.setattr(cloud, 'generate_deck', generate)
+    monkeypatch.setattr(cloud, 'mark_new_deck', lambda blob, snapshot: b'marked ' + blob)
+    monkeypatch.setattr(cloud, 'merge_deck', lambda saved, fresh, snapshot: saved + b' + ' + fresh)
 
     def sync(provider, file_id=None, count=120):
         return cloud.upsert_deck(provider, 'test-access', 'stable-key', file_id,
@@ -117,19 +119,58 @@ def test_recovery_patches_discovered_native_file_without_creating_duplicate(api,
     assert binding in calls[0][2]['params']['q']
 
 
-def test_onedrive_retains_presentation_item_and_path_on_retry(api, upload):
+REMOTE = {'id': 'root!school', 'webUrl': 'https://example.sharepoint.com/personal/school/assembly.pptx',
+          'eTag': '"file,7"', '@microsoft.graph.downloadUrl': 'https://files.example/download'}
+SESSION = {'uploadUrl': 'https://files.example/session'}
+
+
+def test_onedrive_retains_presentation_item_and_merges_recovered_and_known_files(api, upload):
     calls, replies = api
     folder = {'id': 'root!folder'}
-    remote = {'id': 'root!school', 'webUrl': 'https://example.sharepoint.com/personal/school/assembly.pptx'}
-    replies.extend([(200, folder), (201, remote), (200, folder), (200, remote), (200, remote)])
+    replies.extend([(200, folder), (404, {}), (201, REMOTE)])
     file_id, link = upload('microsoft')
-    assert upload('microsoft') == (file_id, link)
-    assert upload('microsoft', file_id, 178) == (file_id, link)
-    assert file_id == remote['id'] and link == remote['webUrl']
-    assert calls[0][1] == cloud.ONEDRIVE + '/special/approot'
-    assert calls[1][1] == calls[3][1] and calls[1][1].endswith('.pptx:/content')
-    assert calls[4][:2] == ('PUT', cloud.ONEDRIVE + '/items/root%21school/content')
-    assert calls[1][2]['data'] == b'powerpoint lunch 120' and calls[4][2]['data'] == b'powerpoint lunch 178'
+    assert file_id == REMOTE['id'] and link == REMOTE['webUrl']
+    assert calls[2][2]['params'] == {'@microsoft.graph.conflictBehavior': 'fail'}
+    assert calls[2][2]['headers']['If-None-Match'] == '*'
+    assert calls[2][2]['data'] == b'marked powerpoint lunch 120'
+    for prior_id in (None, file_id):
+        if not prior_id:
+            replies.append((200, folder))
+        replies.extend([(200, REMOTE), (200, b'edited by teacher'), (200, SESSION), (200, REMOTE), (200, REMOTE)])
+        assert upload('microsoft', prior_id, 178) == (file_id, link)
+        download, session, check, write = calls[-4:]
+        assert 'Authorization' not in download[2].get('headers', {})
+        assert session[:2] == ('POST', cloud.ONEDRIVE + '/items/root%21school/createUploadSession')
+        assert session[2]['headers']['If-Match'] == REMOTE['eTag']
+        assert check[1].endswith('/items/root%21school')
+        assert write[2]['data'] == b'edited by teacher + powerpoint lunch 178'
+        assert write[1] == SESSION['uploadUrl']
+        assert 'Authorization' not in write[2]['headers']
+        assert write[2]['headers']['If-Match'] == REMOTE['eTag']
+
+
+@pytest.mark.parametrize('phase', ['metadata', 'merge', 'session', 'recheck', 'upload'])
+def test_onedrive_never_replaces_on_bad_file_or_concurrent_edit(api, upload, monkeypatch, phase):
+    calls, replies = api
+    replies.append((200, REMOTE if phase != 'metadata' else dict(REMOTE, eTag='*')))
+    if phase != 'metadata':
+        replies.append((200, b'saved'))
+    if phase == 'merge':
+        def reject(*args):
+            raise cloud.MergeError('The saved PowerPoint could not be safely updated.')
+        monkeypatch.setattr(cloud, 'merge_deck', reject)
+    if phase in ('session', 'recheck', 'upload'):
+        replies.append((412, {}) if phase == 'session' else (200, SESSION))
+    if phase in ('recheck', 'upload'):
+        replies.append((200, dict(REMOTE, eTag='"file,8"') if phase == 'recheck' else REMOTE))
+    if phase == 'upload':
+        replies.append((409, {}))
+    with pytest.raises(cloud.CloudDeckError) as error:
+        upload('microsoft', REMOTE['id'])
+    assert not error.value.reconnect
+    assert all(not url.endswith('/content') for _, url, _ in calls)
+    assert sum(method == 'PUT' for method, _, _ in calls) == (phase == 'upload')
+    assert not replies
 
 
 @pytest.mark.parametrize('provider', ['google', 'microsoft'])
@@ -145,7 +186,6 @@ def test_lost_access_to_known_file_does_not_create_a_new_presentation(api, uploa
 def test_onedrive_reads_browser_url_if_upload_did_not_return_it(api, upload):
     calls, replies = api
     url = 'https://tenant.sharepoint.com/personal/school/assembly.pptx'
-    replies.extend([(200, {'id': 'original'}), (200, {'webUrl': url})])
-    assert upload('microsoft', 'original') == ('original', url)
-    assert [call[0] for call in calls] == ['PUT', 'GET']
-    assert calls[1][1].endswith('/items/original')
+    replies.extend([(200, {'id': 'folder'}), (404, {}), (201, {'id': 'original'}), (200, {'webUrl': url})])
+    assert upload('microsoft') == ('original', url)
+    assert calls[-1][:2] == ('GET', cloud.ONEDRIVE + '/items/original')

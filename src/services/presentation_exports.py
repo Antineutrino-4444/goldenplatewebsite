@@ -2,19 +2,20 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from io import BytesIO
+from math import cos, pi, sqrt
 from pathlib import Path
 import re
 import unicodedata
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
-from pptx.oxml import parse_xml
-from pptx.oxml.ns import nsdecls
 from pptx.util import Length, Pt
 from reportlab.lib.colors import HexColor
 from reportlab.lib.utils import ImageReader
@@ -24,6 +25,11 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from src.services.presentation_fonts import FONT_FILES, apply_presentation_fonts, font_ttf, supporting_pdf_font
+from src.services.presentation_intro import (
+    INTRO_TEMPLATE_INDEX, OUTRO_MARKER, OUTRO_TEMPLATE_INDEX, SignatureFilm, opening_pair,
+)
+from src.services.presentation_motion import DISTRIBUTION_WINDOW_NAME, PROGRESS_WINDOW_NAME, RATE_WINDOW_NAMES, add_slide_motion
+from src.services.presentation_winner import WINNER_MARKER, WINNER_TEMPLATE_INDEX, add_winner_slide
 
 
 WIDTH, HEIGHT = 960, 540
@@ -70,6 +76,9 @@ class Rect:
     height: float
     color: str
     effect: str = ''
+    radius: float = 0
+    # A segment of one continuous rounded meter, identified by (offset, full width).
+    meter_slice: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +155,7 @@ def _fit(text, width, size, face, bold, max_lines, italic=False, tracking=0):
 
 @dataclass
 class Slide:
+    template_index: int
     background: str
     title: str
     notes: str = ''
@@ -171,7 +181,8 @@ def _template_item(shape):
         name = shape.name or 'Photograph'
         return Photo(name, props.get('descr') or name, blob, x, y, width, height)
     if not shape.text:
-        return Rect(shape.name, x, y, width, height, str(shape.fill.fore_color.rgb))
+        radius = min(width, height) * shape.adjustments[0] if shape.auto_shape_type == MSO_SHAPE.ROUNDED_RECTANGLE else 0
+        return Rect(shape.name, x, y, width, height, str(shape.fill.fore_color.rgb), radius=radius)
     frame = shape.text_frame
     paragraph = frame.paragraphs[0]
     font = paragraph.runs[0].font
@@ -189,14 +200,14 @@ def _template_item(shape):
 @lru_cache(maxsize=2)
 def _template_pages(theme):
     deck = Presentation(TEMPLATE_DIR / TEMPLATE_FILES[theme])
-    titles = ('School Results', 'Latest Lunch', 'Lunch to Lunch', 'Clean-Plate Rates', 'Quick Reminders',
+    titles = ('School Results', 'Latest session', 'Session comparison', 'Clean-Plate Rates', 'Quick Reminders',
               'Be Green, Do Good')
     pages = []
-    for page, fallback in zip(deck.slides, titles, strict=True):
+    for index, (page, fallback) in enumerate(zip(deck.slides, titles, strict=True)):
         items = [_template_item(shape) for shape in page.shapes]
         heading = next((' '.join(item.lines) for item in items if isinstance(item, Text)
                         and item.name.lower() in ('title', 'slide title', 'slide_title')), fallback)
-        pages.append(Slide(str(page.background.fill.fore_color.rgb), page._element.cSld.get('name') or heading,
+        pages.append(Slide(index, str(page.background.fill.fore_color.rgb), page._element.cSld.get('name') or heading,
                            page.notes_slide.notes_text_frame.text, items))
     return tuple(pages)
 
@@ -228,9 +239,16 @@ def _date(value):
     return f'{stamp:%b} {stamp.day}, {stamp.year}'
 
 
-def _stamp(value):
-    stamp = datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone.utc)
-    return f'{stamp:%b} {stamp.day}, {stamp.year} at {stamp:%H:%M} UTC'
+def _stamp(value, zone_name):
+    stamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    try:
+        zone = ZoneInfo(zone_name)
+    except (TypeError, ValueError, ZoneInfoNotFoundError):
+        zone = ZoneInfo('America/New_York')
+    local = stamp.astimezone(zone)
+    return f'Records as of {local:%b} {local.day}, {local.year} at {local:%H:%M %Z}'
 
 
 def _pct(value):
@@ -287,16 +305,16 @@ def _rate_difference(data):
 
 def _overview_values(data):
     totals, latest = data['totals'], data['latest']
-    clean, total, lunches = totals['clean'], totals['total'], totals['session_count']
+    clean, total, sessions = totals['clean'], totals['total'], totals['session_count']
     milestone = data.get('milestone')
     share = (f"{_pct(_clean_rate(totals))} of {total:,} recorded {'plate' if total == 1 else 'plates'} "
-             f"across {lunches:,} {'lunch' if lunches == 1 else 'lunches'}")
+             f"across {sessions:,} {'session' if sessions == 1 else 'sessions'}")
     values = {
         'all_clean': f"{clean:,} clean {'plate' if clean == 1 else 'plates'}",
         'share': share if total else 'No plates recorded yet',
         'goal_label': _goal_label(clean, milestone) if total or milestone else '',
-        'latest_heading': 'Latest lunch', 'rate_heading': '', 'change_heading': '',
-        'latest_name': 'No lunch results yet', 'latest_date': '', 'latest_counts': '',
+        'latest_heading': 'Latest session', 'rate_heading': '', 'change_heading': '',
+        'latest_name': 'No session results yet', 'latest_date': '', 'latest_counts': '',
         'latest_rate': '', 'latest_change': '', 'change_units': '',
     }
     if latest:
@@ -304,11 +322,11 @@ def _overview_values(data):
             latest_name=latest['name'], latest_date=_date(latest['date']),
             latest_counts=_clean_plate_count(latest),
             rate_heading='Clean-plate rate', latest_rate=_pct(_clean_rate(latest)),
-            change_heading='' if data['previous'] else 'First recorded lunch',
+            change_heading='' if data['previous'] else 'First recorded session',
         )
         delta = _rate_difference(data)
         if delta is not None:
-            values.update(change_heading='Change from previous lunch', latest_change=_signed(delta, 1),
+            values.update(change_heading='Change from previous session', latest_change=_signed(delta, 1),
                           change_units='percentage point' if abs(delta) == 1 else 'percentage points')
     return values
 
@@ -353,14 +371,49 @@ def _progress_bar(track, data, palette):
     if not scale:
         return
     yield track
-    if clean:
-        share = min(goal, clean) if goal else clean
-        width = track.width * share / scale
+    if clean <= 0:
+        return
+    share = min(goal, clean) if goal else clean
+    # Snap the shared boundary once to Office's native coordinate unit. A
+    # mathematically positive fraction can be smaller than a drawable shape.
+    full_width = round(track.width * Pt(1))
+    boundary = min(full_width, round(full_width * share / scale))
+    width = boundary / Pt(1)
+    above_goal = goal and clean > goal and boundary < full_width
+    if boundary:
+        # Split a completed meter at a straight color boundary. Tiny fills also
+        # need the physical left corner of the track to constrain their ink.
+        crop = (0, track.width) if above_goal or width < 2 * track.radius else None
         yield replace(track, name='Clean plates toward milestone' if goal else 'All-time clean plate share',
-                      width=width, color=palette.fill, effect='wipe')
-        if goal and clean > goal:
-            yield replace(track, name='Clean plates above milestone', x=track.x + width,
-                          width=track.width - width, color=palette.accent, effect='wipe')
+                      width=width, color=palette.fill, effect='fly', meter_slice=crop)
+    if above_goal:
+        yield replace(track, name='Clean plates above milestone', x=track.x + width,
+                      width=track.width - width, color=palette.accent, effect='excess' if boundary else 'fly',
+                      meter_slice=(width, track.width) if boundary else None)
+
+
+def _meter_outline(track, offset=0, end=None):
+    """Trace a full rounded window or its exact horizontal interval in slide points."""
+    end = track.width if end is None else end
+    radius = track.radius
+    xs = {offset, end}
+    # Twelve segments per quarter circle keep chord error below .01 pt at the
+    # authored radius. Both renderers use the same outline at a color boundary.
+    for step in range(13):
+        x = radius * (1 - cos(step * pi / 24))
+        xs.update(value for value in (x, track.width - x) if offset < value < end)
+    top = []
+    for x in sorted(xs):
+        distance = max(0, radius - x, x - (track.width - radius))
+        y = radius - sqrt(max(0, radius ** 2 - distance ** 2))
+        top.append((track.x + x, track.y + y))
+    return top + [(x, 2 * track.y + track.height - y) for x, y in reversed(top)]
+
+
+def _meter_segment_outline(item):
+    offset, full_width = item.meter_slice
+    track = replace(item, x=item.x - offset, width=full_width)
+    return _meter_outline(track, offset, offset + item.width)
 
 
 def _distribution_bar(track, latest, layout):
@@ -374,11 +427,11 @@ def _distribution_bar(track, latest, layout):
             offset += count
             end = track.x + track.width * offset / latest['total']
             yield replace(track, name=label + ' share', x=x, width=end - x,
-                          color=swatches[label + ' key'], effect='wipe')
+                          color=swatches[label + ' key'])
 
 
 def _fit_frame(item, lines, *, allow_ellipsis):
-    # A slightly longer lunch name can still fit in full at presentation size.
+    # A slightly longer session name can still fit in full at presentation size.
     # Retain the full spelling in notes if an unusually long name needs ellipsis.
     size = item.size
     minimum = min(size, max(12, size * .8) if allow_ellipsis else 12)
@@ -419,9 +472,9 @@ def _fit_school_label(item, text, masthead_bottom):
 def _bind_page(index, data, theme, values, notes):
     template = _template_pages(theme)[index]
     values.update(school=data.get('school_label') or data['school_name'],
-                  stamp='Records as of ' + _stamp(data['generated_at']))
+                  stamp=data['records_stamp'])
     title = _clean_text(values['latest_name']) if index == 1 else template.title
-    page = Slide(template.background, title, '\n'.join((template.notes, data['school_name'], notes)).strip())
+    page = Slide(index, template.background, title, '\n'.join((template.notes, data['school_name'], notes)).strip())
     for item in template.items:
         if isinstance(item, Text):
             if item.name not in values:
@@ -440,8 +493,9 @@ def _bind_page(index, data, theme, values, notes):
                 item.name == 'latest_name' and data['latest'] is not None)
             fitted = item if text == ' '.join(item.lines) else _fit_frame(
                 item, (text,), allow_ellipsis=school_owned_name)
-            effect = 'fade' if item.name.startswith('delta_') or item.name == 'latest_change' else ''
-            page.items.append(replace(fitted, effect=effect))
+            if item.name == 'latest_change' and text.startswith(('+', '−', '-')):
+                fitted = replace(fitted, effect='signed_change')
+            page.items.append(fitted)
         elif item.name == 'progress_track':
             page.items.extend(_progress_bar(item, data, PALETTES[theme]))
         elif item.name == 'distribution':
@@ -461,63 +515,262 @@ def _session_note(session):
     return f"{session['name']}, {_date(session['date'])}. {_clean_plate_count(session, recorded=True)}."
 
 
-def _animate(slide, effects):
-    # python-pptx has no animation API. Keep motion in the standard presentation
-    # timing tree. All objects in a data series reveal together on one click.
-    slide._element.append(parse_xml(f'<p:transition {nsdecls("p")} spd="med"><p:fade/></p:transition>'))
-    if not effects:
-        return
-    from lxml import etree
-    from pptx.oxml.ns import qn
+def _latest_session_page(snapshot, theme, platform):
+    latest = snapshot['latest']
+    page = _bind_page(1, snapshot, theme, _latest_values(latest), _session_note(latest))
+    if platform == 'powerpoint' and latest['total'] > 0:
+        zero_counts = set()
+        for key, label in CATEGORIES:
+            if key in ('dirty', 'very_dirty') and latest[key] == 0:
+                zero_counts.update((key, label + ' label'))
+        gold = next(item.color for item in _template_pages(theme)[-1].items if item.name == 'Be Green')
+        page.items = [replace(item, color=gold) if item.name in zero_counts else item for item in page.items]
+    return page
 
-    def node(parent, tag, **attributes):
-        return etree.SubElement(parent, qn('p:' + tag), attributes)
 
-    timing = node(slide._element, 'timing')
-    root = node(node(node(timing, 'tnLst'), 'par'), 'cTn', id='1', dur='indefinite',
-                restart='never', nodeType='tmRoot')
-    sequence = node(node(root, 'childTnLst'), 'seq', concurrent='1', nextAc='seek')
-    main = node(sequence, 'cTn', id='2', dur='indefinite', nodeType='mainSeq')
-    click = node(node(node(main, 'childTnLst'), 'par'), 'cTn', id='3', fill='hold')
-    node(node(click, 'stCondLst'), 'cond', delay='indefinite')
-    group = node(node(node(click, 'childTnLst'), 'par'), 'cTn', id='4', fill='hold')
-    node(node(group, 'stCondLst'), 'cond', delay='0')
-    items = node(group, 'childTnLst')
-    for i, (identifier, effect) in enumerate(effects):
-        key = 5 + 3 * i
-        entry = node(node(items, 'par'), 'cTn', id=str(key), presetClass='entr',
-                     presetID='22' if effect == 'wipe' else '10', fill='hold',
-                     nodeType='clickEffect' if i == 0 else 'withEffect')
-        node(node(entry, 'stCondLst'), 'cond', delay='0')
-        actions = node(entry, 'childTnLst')
-        visibility = node(actions, 'set')
-        behavior = node(visibility, 'cBhvr')
-        time = node(behavior, 'cTn', id=str(key + 1), dur='1', fill='hold')
-        node(node(time, 'stCondLst'), 'cond', delay='0')
-        node(node(behavior, 'tgtEl'), 'spTgt', spid=str(identifier))
-        node(node(behavior, 'attrNameLst'), 'attrName').text = 'style.visibility'
-        node(node(visibility, 'to'), 'strVal', val='visible')
-        animation = node(actions, 'animEffect', transition='in', filter='wipe(right)' if effect == 'wipe' else 'fade')
-        behavior = node(animation, 'cBhvr')
-        node(behavior, 'cTn', id=str(key + 2), dur='450')
-        node(node(behavior, 'tgtEl'), 'spTgt', spid=str(identifier))
-    for name, event in [('prevCondLst', 'onPrev'), ('nextCondLst', 'onNext')]:
-        condition = node(node(sequence, name), 'cond', evt=event, delay='0')
-        node(node(condition, 'tgtEl'), 'sldTgt')
+def _winner_detail_lines(role, details, width):
+    def number(key):
+        try:
+            value = Decimal(str(details.get(key)))
+        except InvalidOperation:
+            return None
+        return value if value.is_finite() and value >= 0 else None
+
+    def fits(words):
+        return pdfmetrics.stringWidth(words, _pdf_face(words, 'Georgia', False), 14) <= width * .93
+
+    def ticket_count(value):
+        quantity = format(abs(value) if value == 0 else value, ',f')
+        if '.' in quantity:
+            quantity = quantity.rstrip('0').rstrip('.')
+        return f"{quantity} {'ticket' if value == 1 else 'tickets'}"
+
+    tickets, probability, pool = (number(key) for key in ('tickets', 'probability', 'pool_size'))
+    next_gain = number('next_ticket_gain')
+    method = details.get('method')
+    lines = [ticket_count(tickets) + ' at draw'] if tickets is not None else []
+    remaining_odds = None
+    if probability is not None and probability <= 100:
+        qualifier = 'pool share' if method == 'manual' else 'chance'
+        odds = f'{probability:.2f}% {qualifier}'
+        if not lines:
+            lines.append(odds)
+        elif fits(lines[0] + ' · ' + odds):
+            lines[0] += ' · ' + odds
+        else:
+            remaining_odds = odds
+    if next_gain is not None:
+        lines.append('Next clean plate: +' + ticket_count(next_gain))
+    if remaining_odds:
+        lines.append(remaining_odds)
+    selection = {'manual': 'Manual selection', 'random': 'Random draw'}.get(method)
+    context = []
+    if pool is not None and pool == pool.to_integral_value():
+        group = ('student' if pool == 1 else 'students') if role == 'student' else (
+            'faculty member' if pool == 1 else 'faculty')
+        context.append(f'{pool:,.0f} eligible {group}')
+    if selection:
+        context.append(selection)
+    if context:
+        lines.append(' · '.join(context))
+
+    school = []
+    for key in ('grade', 'house', 'clan'):
+        raw = details.get(key)
+        if not isinstance(raw, (str, int)) or isinstance(raw, bool):
+            continue
+        value = _clean_text(raw)
+        if not value:
+            continue
+        if key not in value.casefold().split():
+            value = 'Grade ' + value if key == 'grade' else value + ' ' + key.title()
+        if fits(' · '.join([*school, value])):
+            school.append(value)
+    if school:
+        lines.append(' · '.join(school))
+    return lines
+
+
+def _winner_page(overview, snapshot, theme):
+    source = {item.name: item for item in overview.items}
+    masthead = [source[name] for name in ('Plate mark', 'Publisher', 'school', 'Masthead rule', 'stamp')]
+    page = Slide(WINNER_TEMPLATE_INDEX, overview.background, WINNER_MARKER, snapshot['school_name'], masthead)
+    display, supporting = source['all_clean'], source['share']
+    gold = next(item.color for item in _template_pages(theme)[-1].items if item.name == 'Be Green')
+
+    def text(style, name, words, x, y, width, height, size, color, *, bold=False):
+        lines = (words,) if isinstance(words, str) else tuple(words) or ('',)
+        item = replace(style, name=name, lines=lines, x=x, y=y, width=width, height=height, size=size,
+                       align='center', color=color, bold=bold, italic=False, anchor='top', leading=1.13,
+                       tracking=0, effect='')
+        fitted = _fit_frame(item, lines, allow_ellipsis=False) if words else item
+        page.items.append(fitted)
+        return fitted
+
+    raw_names = snapshot.get('winner_names') or {}
+    names = {role: _clean_text(raw_names.get(role) or '') for role in ('student', 'faculty')}
+    heading = 'Golden Plate winners' if all(names.values()) else 'Golden Plate winner'
+    text(supporting, 'winner_title', heading, 216, 155, 528, 36, 21, display.color, bold=True)
+    text(display, 'winner_detail', 'Congratulations!', 214, 198, 532, 80, 56, gold)
+    single = sum(bool(name) for name in names.values()) == 1
+    details = snapshot.get('winner_details') or {}
+    for role, x in [('student', 221), ('faculty', 495)]:
+        name = names[role]
+        width = 244
+        if name and single:
+            width = 440
+            x = (WIDTH - width) / 2
+        text(supporting, 'winner_role_' + role, role.title() + ' winner' if name else '',
+             x, 291, width, 24, 15, supporting.color, bold=True)
+        stats = _winner_detail_lines(role, details.get(role) or {}, width) if name else []
+        # Reserve real line height for the draw details before fitting a long
+        # recipient name, so the two blocks and dateline remain separate.
+        name_height = min(112, 493 - 321 - 12 - len(stats) * 14 * 1.13)
+        recipient = text(display, 'winner_name_' + role, name, x, 321, width, name_height, 37, display.color)
+        top = max(372, recipient.y + len(recipient.lines) * recipient.size * recipient.leading + 8)
+        text(supporting, 'winner_stats_' + role, stats, x, top, width, 493 - top, 14, supporting.color)
+    return page
+
+
+def _powerpoint_polygon(slide, contours, *, unit=Pt):
+    points = [[(unit(x), unit(y)) for x, y in contour] for contour in contours]
+    builder = slide.shapes.build_freeform(*points[0][0])
+    builder.add_line_segments(points[0][1:])
+    for contour in points[1:]:
+        builder.move_to(*contour[0])
+        builder.add_line_segments(contour[1:])
+    return builder.convert_to_shape()
+
+
+def _paint_shape(shape, color):
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor.from_string(color)
+    shape.line.fill.background()
+    shape.shadow.inherit = False
+    # LibreOffice also considers the theme's default shadow on a preset shape.
+    for effect_ref in shape._element.xpath('p:style/a:effectRef'):
+        effect_ref.set('idx', '0')
+
+
+def _powerpoint_rect(slide, item):
+    if item.meter_slice:
+        shape = _powerpoint_polygon(slide, [_meter_segment_outline(item)])
+    else:
+        preset = MSO_SHAPE.ROUNDED_RECTANGLE if item.radius else MSO_SHAPE.RECTANGLE
+        shape = slide.shapes.add_shape(preset, Pt(item.x), Pt(item.y), Pt(item.width), Pt(item.height))
+        if item.radius:
+            shape.adjustments[0] = item.radius / min(item.width, item.height)
+    _paint_shape(shape, item.color)
+    return shape
+
+
+_CHART_CORNER_FRACTION = .4  # Same proportion as the opening meter.
+
+
+def _powerpoint_chart_bar(slide, item, tracks):
+    if item.name.endswith(' share'):
+        track = tracks.get('distribution')
+    elif item.name in ('prev_fill', 'curr_fill'):
+        track = tracks.get(item.name.replace('_fill', '_track'))
+    else:
+        track = tracks.get(item.name)
+    if track is None:
+        return _powerpoint_rect(slide, item)
+
+    # Snap each boundary once in native units. Adjacent distribution colors
+    # therefore meet exactly, even when a share is less than a pixel wide.
+    unit = Pt(1)
+    full = round(track.width * unit)
+    start = round((item.x - track.x) * unit)
+    end = round((item.x + item.width - track.x) * unit)
+    width = (end - start) / unit
+    curved = item.name == track.name or track.name != 'distribution'
+    radius = track.height * _CHART_CORNER_FRACTION if width and curved else 0
+    crop = None
+    if radius and item.name != track.name and end - start < full and width < 2 * radius:
+        # A tiny rate on the comparison slide fits the curved start of its track.
+        crop = (0, full / unit)
+    bar = replace(item, x=track.x + start / unit, width=width, radius=radius, meter_slice=crop)
+    shape = _powerpoint_rect(slide, bar)
+    shape.left, shape.width = round(track.x * unit) + start, end - start
+    return shape
+
+
+def _chart_window(slide, track, paper, name, right):
+    # Build in native coordinates: the hole follows the stored track outline.
+    # The left wing hides a fixed-width shape for the portion of its flight
+    # before it enters the track. The two-point rim covers exterior bleed.
+    top, bottom = track.top - Pt(2), track.top + track.height + Pt(2)
+    outer = [(0, top), (right, top), (right, bottom), (0, bottom)]
+    outline = Rect(track.name, track.left, track.top, track.width, track.height, paper,
+                   radius=min(track.width, track.height) * track.adjustments[0])
+    aperture = list(reversed(_meter_outline(outline)))
+    window = _powerpoint_polygon(slide, [outer, aperture], unit=round)
+    _paint_shape(window, paper)
+    window.name = name
+    return window
+
+
+def _add_distribution_window(slide, paper):
+    shapes = {shape.name: shape for shape in slide.shapes}
+    track = shapes['distribution']
+    # Newly revealed colors travel underneath their predecessors, so the
+    # straight advancing face starts at the previously recorded boundary.
+    shares = [shapes[label + ' share'] for _, label in CATEGORIES if label + ' share' in shapes]
+    for share in shares:
+        track._element.addnext(share._element)
+    window = _chart_window(slide, track, paper, DISTRIBUTION_WINDOW_NAME, Pt(WIDTH))
+    (shares[0] if shares else track)._element.addnext(window._element)
+
+
+def _prepare_rate_chart(slide, paper):
+    shapes = {shape.name: shape for shape in slide.shapes}
+    for name in shapes.keys() & {'Axis minimum', 'Axis midpoint', 'Axis maximum'}:
+        shape = shapes[name]._element
+        shape.getparent().remove(shape)
+
+    layers = []
+    for prefix, name in RATE_WINDOW_NAMES.items():
+        track = shapes[prefix + '_track']
+        layers.append(track)
+        if prefix + '_fill' in shapes:
+            layers.append(shapes[prefix + '_fill'])
+        layers.append(_chart_window(slide, track, paper, name, track.left + track.width + Pt(2)))
+    # Place both complete bar assemblies beneath every text object, including
+    # the school-owned names crossing the stationary masks' left wings.
+    for position, shape in enumerate(layers, 2):
+        slide.shapes._spTree.insert(position, shape._element)
+
+
+def _add_meter_window(slide, track, paper):
+    # The fly-in starts outside the slide. A paper-colored rim with a real
+    # cutout hides its travel until it reaches the track's rounded left edge.
+    right = min(WIDTH, track.x + track.width + 1)
+    top, bottom = track.y - 1, track.y + track.height + 1
+    outside = [(0, top), (right, top), (right, bottom), (0, bottom)]
+    shape = _powerpoint_polygon(slide, [outside, list(reversed(_meter_outline(track)))])
+    _paint_shape(shape, paper)
+    shape.name = PROGRESS_WINDOW_NAME
 
 
 def _powerpoint(pages, *, animated):
     presentation = Presentation()
     presentation.slide_width, presentation.slide_height = Pt(WIDTH), Pt(HEIGHT)
-    presentation.core_properties.title = pages[0].title
+    has_intro = pages[0].template_index == INTRO_TEMPLATE_INDEX
+    presentation.core_properties.title = pages[1 if has_intro else 0].title
     presentation.core_properties.author = 'Golden Plate'
     presentation.core_properties.comments = ''
     for page in pages:
-        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        slide = (add_winner_slide(presentation) if page.template_index == WINNER_TEMPLATE_INDEX
+                 else presentation.slides.add_slide(presentation.slide_layouts[6]))
         slide._element.cSld.set('name', page.title)
         slide.background.fill.solid()
         slide.background.fill.fore_color.rgb = RGBColor.from_string(page.background)
-        effects = []
+        role_overrides = {}
+        meter_track = None
+        meter_fill = None
+        chart_tracks = {item.name: item for item in page.items
+                        if animated and item.name in ('distribution', 'prev_track', 'curr_track')}
         for item in page.items:
             if isinstance(item, Text):
                 shape = slide.shapes.add_textbox(Pt(item.x), Pt(item.y), Pt(item.width), Pt(item.height))
@@ -543,25 +796,43 @@ def _powerpoint(pages, *, animated):
                     if item.tracking:
                         run.font._rPr.set('spc', str(round(item.tracking * 100)))
             elif isinstance(item, Rect):
-                shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Pt(item.x), Pt(item.y),
-                                               Pt(item.width), Pt(item.height))
-                shape.fill.solid()
-                shape.fill.fore_color.rgb = RGBColor.from_string(item.color)
-                shape.line.fill.background()
-                shape.shadow.inherit = False
-                # LibreOffice also applies the shape style's default shadow
-                # unless its theme-effect reference is explicitly disabled.
-                shape._element.xpath('p:style/a:effectRef')[0].set('idx', '0')
+                shape = _powerpoint_chart_bar(slide, item, chart_tracks)
+                if item.name == 'progress_track':
+                    meter_track = item
+            elif isinstance(item, SignatureFilm):
+                shape = item.add_to(slide)
             else:
                 shape = slide.shapes.add_picture(BytesIO(item.data), Pt(item.x), Pt(item.y),
                                                  Pt(item.width), Pt(item.height))
                 shape._element.nvPicPr.cNvPr.set('descr', item.description)
             shape.name = item.name
-            if getattr(item, 'effect', ''):
-                effects.append((shape.shape_id, item.effect))
+            if animated:
+                effect = getattr(item, 'effect', '')
+                if effect:
+                    role_overrides[shape.shape_id] = effect
+                if effect == 'fly':
+                    meter_fill = shape
+                elif effect == 'excess' and meter_fill is not None:
+                    # The completed green fill masks the gold segment until its
+                    # leading edge crosses the goal. Both segments can fly in.
+                    meter_fill._element.addprevious(shape._element)
+                elif effect == 'signed_change':
+                    slide.shapes._spTree.insert(2, shape._element)
         slide.notes_slide.notes_text_frame.text = '\n'.join(_clean_text(line) for line in page.notes.splitlines())
         if animated:
-            _animate(slide, effects)
+            if 'distribution' in chart_tracks:
+                _add_distribution_window(slide, page.background)
+            if page.template_index == 3:
+                _prepare_rate_chart(slide, page.background)
+            if page.template_index == 4:
+                from src.services.presentation_reminders import restyle_powerpoint_reminders
+                closing = next(page for page in pages if page.template_index == 5)
+                gold = next(item.color for item in closing.items if item.name == 'Be Green')
+                restyle_powerpoint_reminders(slide, gold)
+            if meter_track and meter_fill is not None:
+                _add_meter_window(slide, meter_track, page.background)
+            add_slide_motion(slide, page.template_index, role_overrides,
+                             morph_from_intro=has_intro and page.template_index == 0)
     apply_presentation_fonts(presentation)
     with BytesIO() as file:
         presentation.save(file)
@@ -582,7 +853,19 @@ def _pdf(pages):
                                   item.width, item.height, mask='auto')
                 elif isinstance(item, Rect):
                     pdf.setFillColor(HexColor('#' + item.color))
-                    pdf.rect(item.x, HEIGHT - item.y - item.height, item.width, item.height, stroke=0, fill=1)
+                    bottom = HEIGHT - item.y - item.height
+                    if item.meter_slice:
+                        points = _meter_segment_outline(item)
+                        path = pdf.beginPath()
+                        path.moveTo(points[0][0], HEIGHT - points[0][1])
+                        for x, y in points[1:]:
+                            path.lineTo(x, HEIGHT - y)
+                        path.close()
+                        pdf.drawPath(path, stroke=0, fill=1)
+                    elif item.radius:
+                        pdf.roundRect(item.x, bottom, item.width, item.height, item.radius, stroke=0, fill=1)
+                    else:
+                        pdf.rect(item.x, bottom, item.width, item.height, stroke=0, fill=1)
                 else:
                     pdf.setFillColor(HexColor('#' + item.color))
                     pdf.setFont(_pdf_face(' '.join(item.lines), item.face, item.bold, item.italic), item.size)
@@ -610,6 +893,8 @@ def generate_deck(kind, theme, snapshot, platform='powerpoint'):
     """
     if kind not in ('assembly', 'overview') or theme not in TEMPLATE_FILES or platform not in ('powerpoint', 'google-slides', 'pdf'):
         raise ValueError('Unknown presentation format')
+    zone = snapshot.get('reporting_timezone', 'America/New_York') if platform == 'powerpoint' else 'UTC'
+    snapshot = {**snapshot, 'records_stamp': _stamp(snapshot['generated_at'], zone)}
     latest, previous = snapshot['latest'], snapshot['previous']
     milestone = snapshot.get('milestone')
     overview = _overview_values(snapshot)
@@ -617,23 +902,28 @@ def generate_deck(kind, theme, snapshot, platform='powerpoint'):
     if milestone:
         overview_note += f" {overview['goal_label']}."
     if latest:
-        overview_note += (f" The latest lunch was {latest['name']} ({overview['latest_date']}). "
+        overview_note += (f" The latest session was {latest['name']} ({overview['latest_date']}). "
                           f"{overview['latest_counts']}. The clean-plate rate was {overview['latest_rate']}.")
     if overview['latest_change']:
         overview_note += f" The rate changed by {overview['latest_change']} {overview['change_units']}."
     pages = [_bind_page(0, snapshot, theme, overview, overview_note)]
     if kind == 'assembly':
         if latest:
-            pages.append(_bind_page(1, snapshot, theme, _latest_values(latest), _session_note(latest)))
+            pages.append(_latest_session_page(snapshot, theme, platform))
             if previous:
-                notes = 'Previous lunch: ' + _session_note(previous) + ' Latest lunch: ' + _session_note(latest)
+                notes = 'Previous session: ' + _session_note(previous) + ' Latest session: ' + _session_note(latest)
                 comparison = _comparison_values(snapshot)
                 notes += (f" Clean-plate rates: {comparison['prev_rate']} previously and {comparison['curr_rate']} "
-                          f"at the latest lunch. {comparison['rate_comparison']}.")
+                          f"in the latest session. {comparison['rate_comparison']}.")
                 pages.append(_bind_page(2, snapshot, theme, comparison, notes))
                 pages.append(_bind_page(3, snapshot, theme, comparison, notes))
+        if platform == 'powerpoint':
+            pages.append(_winner_page(pages[0], snapshot, theme))
+            pages[0:1] = opening_pair(pages[0], snapshot['school_name'], theme)
         pages.append(_bind_page(4, snapshot, theme, {}, ''))
         pages.append(_bind_page(5, snapshot, theme, {}, ''))
+        if platform == 'powerpoint':
+            pages.append(replace(pages[0], template_index=OUTRO_TEMPLATE_INDEX, title=OUTRO_MARKER))
     if platform == 'pdf':
         return _pdf(pages)
     return _powerpoint(pages, animated=platform == 'powerpoint')

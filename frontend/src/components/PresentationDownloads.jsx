@@ -21,7 +21,7 @@ const googleDialogCopy = {
   },
   live: {
     title: 'Connect a live Google Slides deck',
-    description: 'Golden Plate updates the same Google Drive file after lunch results change. Updates replace its contents. Make a separate copy for edits you want to keep.',
+    description: 'Golden Plate updates the same Google Drive file after session results change. Updates replace its contents. Make a separate copy for edits you want to keep.',
     button: 'Continue to Google Slides',
   },
 }
@@ -274,7 +274,7 @@ function PresentationForm({ search, theme }) {
     <form onSubmit={submit} aria-busy={busy}>
       <div className="gp-deck-workspace">
         <div className="gp-deck-settings">
-          <p>Present your school’s clean-plate total, latest lunch and change since the previous session.</p>
+          <p>Present your school’s clean-plate total and compare the latest session with the previous one.</p>
           <fieldset disabled={busy} className="gp-deck-fields">
             <legend className="sr-only">Presentation options</legend>
             <label>
@@ -296,11 +296,13 @@ function PresentationForm({ search, theme }) {
             {displayLabel && live.schoolName ? `Clear this field to use ${live.schoolName}.` : 'Leave blank to use your school’s registered name.'}
           </p>
           {live.enabled ? <p className="gp-deck-note">
-            Golden Plate updates the same deck in your {provider === 'google' ? 'Google Drive' : 'OneDrive'} when lunch results change.
-            {' '}Bookmark its link for your next assembly. Make a separate copy for edits you want to keep.
+            Golden Plate updates the same deck in your {provider === 'google' ? 'Google Drive' : 'OneDrive'} when session results change.
+            {' '}{provider === 'google'
+              ? 'Bookmark its link for your next assembly. Make a separate copy for edits you want to keep.'
+              : 'You can add winner photos in PowerPoint. They stay with their winners when the deck updates.'}
           </p> : <p className="gp-deck-note">{directSlides
             ? 'This creates a one-time copy of your school’s results in Google Drive.'
-            : 'Results are current at download. Download again after your next lunch to update the figures.'}</p>}
+            : 'Results are current at download. Download again after your next session to update the figures.'}</p>}
           <div className="gp-deck-submit">
             <button type="submit" value={primary.value} disabled={busy || (provider && live.loading) || (directSlides && googleAuth !== 'ready')} className="gp-button">
               {busy ? 'Please wait…' : primary.label}

@@ -5,6 +5,7 @@ import sys
 import uuid
 
 import pytest
+from pptx import Presentation
 
 from src.routes.golden_plate_recorder_db.db import (
     DraftPool, School, Session, SessionDrawEvent, SessionRecord, SessionTicketEvent,
@@ -118,6 +119,16 @@ def test_wins_store_rounding_and_reset_tickets_without_erasing_earned_history(cl
     for group in ('students', 'faculty'):
         current = stats(client, group)
         assert (current['tickets'], current['historical_tickets'], current['next_ticket_gain']) == (0, 10, expected_gain)
+    download = client.post('/api/resources/presentations/download', json={
+        'school_code': combo_school, 'kind': 'assembly', 'theme': 'dark', 'format': 'pptx',
+    })
+    assert download.status_code == 200
+    deck = Presentation(io.BytesIO(download.data))
+    announcement = next(slide for slide in deck.slides if slide._element.cSld.get('name') == 'gp.winner')
+    for role in ('student', 'faculty'):
+        details = next(shape.text for shape in announcement.shapes if shape.name == 'winner_stats_' + role)
+        assert '10 tickets at draw' in details
+        assert f'+{expected_gain} tickets' in details
     assert [event.combo_round_up for event in db_session.query(SessionDrawEvent).filter_by(
         school_id=combo_school, event_type='finalize',
     )] == [round_up, round_up]

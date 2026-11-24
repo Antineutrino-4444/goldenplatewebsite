@@ -71,7 +71,8 @@ function measureSlide(section) {
     if (el instanceof HTMLImageElement) {
       slots.push({ name, position, kind: 'image', url: el.currentSrc, alt: el.alt, fit: style.objectFit });
     } else if (el.hasAttribute('data-rect')) {
-      slots.push({ name, position, kind: 'rect', fill: color(style.backgroundColor) });
+      const radius = parseFloat(style.borderTopLeftRadius);
+      slots.push({ name, position, kind: 'rect', fill: color(style.backgroundColor), ...(radius ? { radius } : {}) });
     } else {
       const fontSize = parseFloat(style.fontSize);
       // Measure natural browser line breaks while keeping all lines in one editable text box.
@@ -135,7 +136,8 @@ async function build(pages, file, browserPage) {
       if (slot.kind === 'image') {
         await addImage(slide, slot);
       } else if (slot.kind === 'rect') {
-        slide.shapes.add({ name: slot.name, position: slot.position, geometry: 'rect', fill: slot.fill, line: noLine });
+        slide.shapes.add({ name: slot.name, position: slot.position, geometry: slot.radius ? 'roundRect' : 'rect',
+          ...(slot.radius ? { borderRadius: slot.radius } : {}), fill: slot.fill, line: noLine });
       } else {
         const text = slide.shapes.add({ name: slot.name, position: slot.position, geometry: 'textbox', fill: 'none', line: noLine });
         // CSS line height is absolute here. A percentage in PowerPoint instead
