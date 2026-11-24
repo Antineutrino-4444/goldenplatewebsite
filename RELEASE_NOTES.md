@@ -1,8 +1,16 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.4.1.0 ac9ba8d9847c9d24b224b7fd48b5b54b18062695 -->
+<!-- golden-plate-release-baseline: 1.4.1.1 7dae569cb7be23ad6e9d0bb2e73b7b0a4bab64cf -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.4.1.1
+
+November 24, 2026 · More reliable OneDrive presentation updates
+
+Author: Jiajun (Leo) Li
+
+- Fixed live PowerPoint updates failing when OneDrive omitted the saved presentation's download link from its file details. Golden Plate now tries an alternative OneDrive download method so the existing deck can continue updating at the same link while preserving your added slides and photos.
 
 ## 1.4.1.0
 
