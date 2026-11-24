@@ -21,7 +21,7 @@ CHECK_INTERVAL = timedelta(seconds=60)
 LEASE_DURATION = timedelta(minutes=10)
 PROVIDERS = ('google', 'microsoft')
 # Only refresh files for the provider whose export changed.
-ASSEMBLY_DESIGN_REVISIONS = {'google': 13, 'microsoft': 33}
+ASSEMBLY_DESIGN_REVISIONS = {'google': 15, 'microsoft': 33}
 _start_lock = threading.Lock()
 _UNSET = object()
 
@@ -146,14 +146,12 @@ def _sync_claim(row):
     from src.services import assembly_cloud
     from .presentation_routes import assembly_snapshot_for_owner
 
-    snapshot = assembly_snapshot_for_owner(row.school_id, row.owner_id, with_winners=row.provider == 'microsoft')
+    snapshot = assembly_snapshot_for_owner(row.school_id, row.owner_id, with_winners=True)
     if snapshot is None:
         _retry(row, 'School access changed. Reconnect with an authorized school account.', reconnect=True)
         return
     snapshot['school_label'] = row.school_label
     content = {key: value for key, value in snapshot.items() if key != 'generated_at'}
-    if row.provider == 'google':
-        content.pop('reporting_timezone', None)  # Google exports use a UTC footer.
     content['design_revision'] = ASSEMBLY_DESIGN_REVISIONS[row.provider]
     digest = hashlib.sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     # An owner can edit the label while the worker is uploading. Keep the

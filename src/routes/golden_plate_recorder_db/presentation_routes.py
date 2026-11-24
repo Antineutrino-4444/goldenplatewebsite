@@ -308,8 +308,8 @@ def download_school_presentation():
         return _error('No active school matches this code.', 404)
     access = rows[0]
     is_private = access.guest_privacy_enabled != 0 or access.all_public != 1
-    is_powerpoint_assembly = kind == 'assembly' and output == 'pptx'
-    actor = get_current_user() if is_private or is_powerpoint_assembly else None
+    includes_announcement = kind == 'assembly' and output in ('pptx', 'google-slides')
+    actor = get_current_user() if is_private or includes_announcement else None
     is_school_member = bool(actor and actor['school_id'] == school.id
                             and actor['role'] in ('user', 'admin', 'superadmin'))
     if is_private:
@@ -321,7 +321,7 @@ def download_school_presentation():
             return _error('Verify your account email to download private school results.', 403, 'ACCOUNT_EMAIL_REQUIRED')
 
     snapshot = _snapshot(rows)
-    if is_powerpoint_assembly and is_school_member and not actor['email_required']:
+    if includes_announcement and is_school_member and not actor['email_required']:
         _attach_finalized_winners(snapshot, school.id, access)
     snapshot['school_label'] = school_label
     platform = 'powerpoint' if output == 'pptx' else output

@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import requests
 
+from assembly_google_fixtures import native_deck, registered
 from src.services import assembly_cloud as cloud
 
 
@@ -93,30 +94,73 @@ def upload(monkeypatch):
     return sync
 
 
+def _google_file(ident='existing'):
+    return {'id': ident, 'mimeType': cloud.SLIDES_MIME,
+            'appProperties': {'gpAssembly': sha256(b'stable-key').hexdigest()}}
+
+
 def test_google_creates_native_then_updates_original_file_and_link(api, upload):
     calls, replies = api
-    remote = {'id': 'abc-def_G42', 'mimeType': cloud.SLIDES_MIME}
-    replies.extend([(200, {'files': []}), (200, remote), (200, remote)])
+    original = _google_file()
+    url = cloud.GOOGLE_SLIDES + 'existing'
+    replies.extend([(200, {'files': []}), (200, original), (200, native_deck()), (200, {}),
+                    (200, original), (200, registered(native_deck())), (200, {'files': []}),
+                    (200, _google_file('scratch')), (200, native_deck('178')),
+                    (200, {}), (204, b'')])
     file_id, link = upload('google')
-    assert link == 'https://docs.google.com/presentation/d/abc-def_G42/edit'
+    assert link == 'https://docs.google.com/presentation/d/existing/edit'
     assert upload('google', file_id, 178) == (file_id, link)
-    assert [method for method, _, _ in calls] == ['GET', 'POST', 'PATCH']
-    first = calls[1][2]['data']
-    assert b'"appProperties"' in first and b'google-slides lunch 120' in first
-    assert cloud.SLIDES_MIME.encode() in first and cloud.PPTX_MIME.encode() in first
-    assert calls[2][1] == cloud.UPLOAD + '/' + file_id
-    assert b'google-slides lunch 178' in calls[2][2]['data']
+    assert [method for method, _, _ in calls] == ['GET', 'POST', 'GET', 'POST', 'GET', 'GET', 'GET', 'POST', 'GET', 'POST', 'DELETE']
+    assert b'google-slides lunch 120' in calls[1][2]['data']
+    assert calls[7][2]['params']['ignoreDefaultVisibility'] == 'true'
+    assert b'gpAssemblyScratch' in calls[7][2]['data'] and b'google-slides lunch 178' in calls[7][2]['data']
+    assert calls[9][:2] == ('POST', url + ':batchUpdate')
+    batch = calls[9][2]['json']
+    assert batch['writeControl'] == {'requiredRevisionId': 'revision-1'}
+    assert any(op.get('insertText', {}).get('text') == '178' for op in batch['requests'])
+    assert calls[-1][1] == cloud.DRIVE + '/scratch'
     assert all(args['headers']['Authorization'] == 'Bearer test-access' for _, _, args in calls)
 
 
-def test_recovery_patches_discovered_native_file_without_creating_duplicate(api, upload):
+def test_recovers_existing_binding_and_cleans_only_abandoned_private_scratch(api, upload):
     calls, replies = api
-    remote = {'id': 'existing', 'mimeType': cloud.SLIDES_MIME}
-    replies.extend([(200, {'files': [{'id': 'existing'}]}), (200, remote)])
+    replies.extend([(200, {'files': [{'id': 'existing'}]}), (200, _google_file()),
+                    (200, registered(native_deck())), (200, {'files': [{'id': 'old-temp'}]}), (204, b''),
+                    (200, _google_file('scratch')), (200, native_deck()), (204, b'')])
     assert upload('google')[0] == 'existing'
-    assert [call[0] for call in calls] == ['GET', 'PATCH']
-    binding = sha256(b'stable-key').hexdigest()
-    assert binding in calls[0][2]['params']['q']
+    assert 'gpAssemblyScratch' not in calls[0][2]['params']['q']
+    assert 'gpAssemblyScratch' in calls[3][2]['params']['q'] and 'createdTime <' in calls[3][2]['params']['q']
+    assert [url for method, url, _ in calls if method == 'DELETE'] == [cloud.DRIVE + '/old-temp', cloud.DRIVE + '/scratch']
+    assert not any(url.endswith(':batchUpdate') for _, url, _ in calls)
+
+
+@pytest.mark.parametrize('fail', ['revision', 'unmarked', 'wrong binding', 'trashed', 'disabled'])
+def test_google_keeps_original_on_concurrent_edit_or_unrecognized_layout(api, upload, fail):
+    calls, replies = api
+    original = _google_file()
+    if fail == 'wrong binding':
+        original['appProperties'] = {'gpAssembly': 'another-school'}
+    if fail == 'trashed':
+        original['trashed'] = True
+    replies.append((200, original))
+    if fail == 'disabled':
+        replies.append((403, {'error': {'details': [{'reason': 'SERVICE_DISABLED'}]}}))
+    elif fail in ('revision', 'unmarked'):
+        replies.extend([(200, native_deck()), (200, {'files': []}), (200, _google_file('scratch')),
+                        (200, native_deck('179') if fail == 'revision' else {})])
+        if fail == 'revision':
+            replies.append((400, {'error': {'message': 'The required revision does not match private revision'}}))
+        replies.append((204, b''))
+    with pytest.raises(cloud.CloudDeckError) as caught:
+        upload('google', 'existing')
+    assert not any(method == 'PATCH' for method, _, _ in calls)
+    assert all(url != cloud.DRIVE + '/existing' for method, url, _ in calls if method == 'DELETE')
+    if fail in ('unmarked', 'revision'):
+        assert calls[-1][:2] == ('DELETE', cloud.DRIVE + '/scratch')
+    if fail == 'revision':
+        assert 'changed' in str(caught.value) and 'private revision' not in str(caught.value)
+    if fail == 'disabled':
+        assert 'Enable the Google Drive API and Google Slides API' in str(caught.value)
 
 
 REMOTE = {'id': 'root!school', 'webUrl': 'https://example.sharepoint.com/personal/school/assembly.pptx',

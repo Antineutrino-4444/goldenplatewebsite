@@ -10,6 +10,7 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 
 from src.services import presentation_fonts
 from src.services.presentation_exports import PALETTES, generate_deck
+from src.services.presentation_google import SLIDE_ROLES
 
 
 NS = {'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
@@ -36,13 +37,26 @@ def results():
     ('2026-11-01T06:30:00', 'America/Los_Angeles', 'Oct 31, 2026 at 23:30 PDT'),
     ('2026-11-01T06:30:00Z', 'invalid', 'Nov 1, 2026 at 01:30 EST'),
 ])
-def test_powerpoint_footer_uses_the_school_clock(results, instant, zone, expected):
+@pytest.mark.parametrize('platform', ('powerpoint', 'google-slides'))
+def test_editable_footer_uses_the_school_clock(results, instant, zone, expected, platform):
     results['generated_at'] = instant
     if zone:
         results['reporting_timezone'] = zone
-    deck = Presentation(BytesIO(generate_deck('overview', 'dark', results)))
+    deck = Presentation(BytesIO(generate_deck('overview', 'dark', results, platform)))
     footer = next(shape for shape in deck.slides[0].shapes if shape.name == 'stamp')
     assert footer.text == 'Records as of ' + expected
+
+
+def test_google_display_text_preserves_powerpoint_ink_alignment(results):
+    decks = [Presentation(BytesIO(generate_deck('assembly', 'dark', results, platform)))
+             for platform in ('powerpoint', 'google-slides')]
+    for name in ('all_clean', 'share', 'Be Green', 'Do Good'):
+        native, google = [next(s for page in deck.slides for s in page.shapes if s.name == name) for deck in decks]
+        size = native.text_frame.paragraphs[0].runs[0].font.size.pt
+        assert google.text_frame.paragraphs[0].runs[0].font.size.pt == size
+        assert google.left == native.left and google.width == native.width
+        offset = 0 if name == 'share' else .16 * size
+        assert google.top.pt == pytest.approx(native.top.pt - offset, abs=.001)
 
 
 @pytest.mark.parametrize('theme', ('light', 'dark'))
@@ -51,16 +65,14 @@ def test_assembly_exports_editable_dated_results_with_expected_motion(results, t
     doc = generate_deck('assembly', theme, results, platform)
     opened = Presentation(BytesIO(doc))
     native = platform == 'powerpoint'
-    expected_count = 9 if native else 6
-    closing_index = expected_count - (2 if native else 1)
-    overview_index = 1 if native else 0
+    expected_count, closing_index, overview_index = 9, 7, 1
     assert len(opened.slides) == expected_count
     assert str(opened.slides[0].background.fill.fore_color.rgb) == PALETTES[theme].paper
     with ZipFile(BytesIO(doc)) as archive:
         roots = [etree.fromstring(archive.read(f'ppt/slides/slide{i}.xml')) for i in range(1, expected_count + 1)]
     for index, root in enumerate(roots):
         transitions = root.xpath('p:transition | mc:AlternateContent/mc:Choice/p:transition', namespaces=NS)
-        assert bool(transitions) == (platform == 'powerpoint')
+        assert transitions
         valid_ids = set(root.xpath('//p:cNvPr/@id', namespaces=NS))
         assert set(root.xpath('//p:spTgt/@spid', namespaces=NS)) <= valid_ids
         if native:
@@ -68,21 +80,26 @@ def test_assembly_exports_editable_dated_results_with_expected_motion(results, t
                 _slide_effects(opened.slides[index])
             assert root.find('.//p:cTn[@presetClass="entr"][@presetID="17"]', NS) is None  # Stretch
         else:
-            assert root.find('p:timing', NS) is None
+            assert (root.find('p:timing', NS) is None) == (index == 0)
+            assert not root.xpath('//p:animMotion | //p:animClr | //p:animScale | //a:custGeom', namespaces=NS)
+            has_fades = index not in (0, expected_count - 1)
+            assert bool(root.xpath('//p:animEffect/@filter', namespaces=NS)) == has_fades
+            assert set(root.xpath('//p:animEffect/p:cBhvr/p:cTn/@dur', namespaces=NS)) == (
+                {'250'} if has_fades else set())
         if overview_index <= index < closing_index:
-            expected_time = '08:00 EST' if platform == 'powerpoint' else '13:00 UTC'
-            assert f'Records as of Nov 20, 2026 at {expected_time}' in root.xpath('//a:t/text()', namespaces=NS)
+            assert 'Records as of Nov 20, 2026 at 08:00 EST' in root.xpath('//a:t/text()', namespaces=NS)
     for text in ('Community Lunch', 'Autumn Lunch', '+45', '+15%', 'Latest − previous'):
         assert text in roots[overview_index + 2].xpath('//a:t/text()', namespaces=NS)
     assert opened.slides[overview_index + 1]._element.cSld.get('name') == 'Community Lunch'
     ticks = {'Axis minimum', 'Axis midpoint', 'Axis maximum'}
     chart_names = {shape.name for shape in opened.slides[overview_index + 3].shapes}
-    assert chart_names.isdisjoint(ticks) if platform == 'powerpoint' else ticks <= chart_names
+    assert chart_names.isdisjoint(ticks)
     last_texts = roots[closing_index - 1].xpath('//a:t/text()', namespaces=NS)
     assert any('portion' in text.lower() for text in last_texts)
     assert any('plate' in text.lower() for text in last_texts)
     assert len(roots[closing_index - 1].xpath('//p:pic', namespaces=NS)) == 1  # Logo only.
-    first, second = opened.slides[closing_index].shapes
+    closing_shapes = {shape.name: shape for shape in opened.slides[closing_index].shapes}
+    first, second = closing_shapes['Be Green'], closing_shapes['Do Good']
     assert (first.text, second.text) == ('Be Green,', 'Do Good')
     # The authored 192px indent and 30px gap convert to PowerPoint points.
     assert second.left.pt - first.left.pt == pytest.approx(144, abs=.01)
@@ -94,12 +111,9 @@ def test_assembly_exports_editable_dated_results_with_expected_motion(results, t
     overview = generate_deck('overview', theme, results, platform)
     assert len(Presentation(BytesIO(overview)).slides) == 1
     with ZipFile(BytesIO(overview)) as archive:
-        if native:
-            standalone = etree.fromstring(archive.read('ppt/slides/slide1.xml'))
-            assert standalone.find('.//{http://schemas.microsoft.com/office/powerpoint/2015/09/main}morph') is None
-            assert standalone.xpath('//a:t/text()', namespaces=NS) == roots[overview_index].xpath('//a:t/text()', namespaces=NS)
-        else:
-            assert archive.read('ppt/slides/slide1.xml') == etree.tostring(roots[0], encoding='UTF-8', xml_declaration=True, standalone=True)
+        standalone = etree.fromstring(archive.read('ppt/slides/slide1.xml'))
+        assert standalone.find('.//{http://schemas.microsoft.com/office/powerpoint/2015/09/main}morph') is None
+        assert sorted(standalone.xpath('//a:t/text()', namespaces=NS)) == sorted(roots[overview_index].xpath('//a:t/text()', namespaces=NS))
 
 
 @pytest.mark.parametrize('theme', ('light', 'dark'))
@@ -119,6 +133,237 @@ def test_session_wording_preserves_school_names_in_slides_and_notes(results, the
         words.extend(shape.text for shape in slide.shapes if shape.has_text_frame)
         boilerplate = ' '.join(' '.join(words).split()).replace('Friday Lunch', '').replace('Saturday Breakfast', '')
         assert not re.search(r'\b(?:breakfast|lunch(?:es)?|dinner)\b', boilerplate, re.I)
+
+
+@pytest.mark.parametrize('theme', ('light', 'dark'))
+def test_google_signature_uses_native_frames_and_hands_off_on_the_results_page(results, theme):
+    blob = generate_deck('assembly', theme, results, 'google-slides')
+    deck = Presentation(BytesIO(blob))
+    with ZipFile(BytesIO(blob)) as package:
+        assert not any(name.endswith(('.mp4', '.gif')) for name in package.namelist())
+    overview, cover, outro = deck.slides[0], deck.slides[1], deck.slides[-1]
+    assert cover._element.get('show') == '0' and overview._element.get('show') is None
+    for bookend in (cover, outro):
+        shapes = {shape.name: shape for shape in bookend.shapes}
+        assert shapes['gp.signature.film'].image.content_type == 'image/png'
+        assert shapes['!!Golden Plate wordmark'].text == 'golden plate'
+    for page, end in ((overview, 2350), (outro, 1500)):
+        object_names = {str(shape.shape_id): shape.name for shape in page.shapes}
+        effects = {}
+        for effect in page._element.xpath('.//p:cTn[@presetClass]'):
+            target = effect.find('.//p:spTgt', NS)
+            effects.setdefault(object_names[target.get('spid')], {})[effect.get('presetClass')] = effect
+        helpers = [sh for sh in page.shapes if sh.name.startswith('gp.signature.frame.')]
+        times = [int(sh.name.rsplit('.', 1)[1]) for sh in helpers]
+        assert len(times) >= 40 and times == sorted(times) and times[-1] < end
+        assert not page._element.xpath('.//p:cTn[@nodeType="clickEffect"]')
+        for sh, start, stop in zip(helpers, times, [*times[1:], end], strict=True):
+            assert sh.image.content_type == 'image/png' and '[gp-motion-only]' in sh._element.nvPicPr.cNvPr.get('descr')
+            assert sh.image.size == (round(sh.width.pt * 3), round(sh.height.pt * 3))
+            assert _effect_start(effects[sh.name]['entr']) == start
+            assert _effect_start(effects[sh.name]['exit']) == stop
+        assert _effect_start(effects['gp.signature.frame-cover']['exit']) == 0
+        assert _effect_start(effects['!!Golden Plate wordmark']['entr']) == end
+        if page is overview:
+            assert _effect_start(effects['all_clean']['entr']) >= 2350
+
+
+@pytest.mark.parametrize('sessions', (0, 1, 2))
+def test_google_connected_decks_retain_future_click_targets_without_presenting_absent_data(results, sessions):
+    if sessions < 2:
+        results['previous'] = None
+    if sessions == 0:
+        results.update(latest=None, totals=dict(clean=0, total=0, session_count=0))
+    ordinary = Presentation(BytesIO(generate_deck('assembly', 'light', results, 'google-slides')))
+    assert len(ordinary.slides) == (6, 7, 9)[sessions]
+    live = Presentation(BytesIO(generate_deck('assembly', 'light', {**results, 'seed_google_session_slides': True},
+                                             'google-slides')))
+    assert len(live.slides) == 9
+    expected_hidden = {1, 2, 3, 4} if not sessions else {1, 3, 4} if sessions == 1 else {1}
+    assert {i for i, page in enumerate(live.slides) if page._element.get('show') == '0'} == expected_hidden
+    roles = ['overview', 'intro', 'breakdown', 'comparison', 'rates', 'winner', 'reminders', 'signoff', 'outro']
+    assert set(roles) == set(SLIDE_ROLES)
+    for index, (slide, role) in enumerate(zip(live.slides, roles, strict=True)):
+        props = [shape._element.xpath('./*/p:cNvPr')[0] for shape in slide.shapes]
+        assert all(p.get('title') == f'gp.{role}.' + p.get('name') for p in props)
+        assert len(set(p.get('title') for p in props)) == len(props)
+        assert all(re.search(r'\[gp-template:[0-9a-f]{16}\]$', p.get('descr')) for p in props)
+        assert any('[gp-session-slide-inactive]' in p.get('descr') for p in props) == (role != 'intro' and index in expected_hidden)
+        assert slide.notes_slide.notes_text_frame.text.startswith('[Golden Plate results]\n')
+        assert slide.notes_slide.notes_text_frame.text.endswith('\n[/Golden Plate results]')
+    frame = live.slides[2]
+    groups = frame._element.xpath('.//p:cTn[@nodeType="mainSeq"]/p:childTnLst/p:par')
+    assert len(groups) == 5
+    assert len(frame._element.xpath('.//p:cTn[@nodeType="clickEffect"]')) == 4
+    objects = {shape.name: shape for shape in frame.shapes}
+    for group, key, label in zip(groups[1:], ('student_clean', 'faculty_clean', 'dirty', 'very_dirty'),
+                                 ('Student clean plates', 'Faculty clean plates', 'Dirty plates', 'Very dirty plates'),
+                                 strict=True):
+        targets = {int(value) for value in group.xpath('.//p:spTgt/@spid', namespaces=NS)}
+        final = objects[key]
+        landing = objects[key + ' landing']
+        assert final.text == landing.text
+        assert final.fill.fore_color.rgb == frame.background.fill.fore_color.rgb
+        assert final.shape_id in targets and landing.shape_id in targets
+        assert objects[label + ' share'].shape_id in targets
+        for i in range(1, 5):
+            digit = objects[f'{key} roll {i}']
+            assert digit.shape_id in targets and digit.text != final.text
+            assert digit.text_frame.paragraphs[0].runs[0].font.color.rgb != frame.background.fill.fore_color.rgb
+            assert list(objects).index(digit.name) < list(objects).index(final.name)
+        if not sessions:
+            assert objects[label + ' share']._element.xpath('p:spPr/a:noFill')
+
+
+def test_google_live_object_types_and_timing_targets_survive_changes_in_data(results):
+    empty = {**results, 'latest': None, 'previous': None, 'totals': dict(clean=0, total=0, session_count=0)}
+    zero_dirty = {**results, 'latest': {**results['latest'], 'dirty': 0, 'very_dirty': 0, 'student_clean': 95,
+                                       'clean': 100, 'clean_percentage': 100},
+                  'winner_names': {'student': 'Example Student'}}
+    snapshots = (empty, results, {**results, 'milestone': 200}, {**zero_dirty, 'milestone': 100})
+    reference = None
+    for data in snapshots:
+        deck = Presentation(BytesIO(generate_deck('assembly', 'dark', {**data, 'seed_google_session_slides': True},
+                                                 'google-slides')))
+        inventory = {}
+        for page in deck.slides:
+            cues = {}
+            groups = page._element.xpath('.//p:cTn[@nodeType="mainSeq"]/p:childTnLst/p:par')
+            for click, group in enumerate(groups):
+                for effect in group.xpath('.//p:cTn[@presetClass]', namespaces=NS):
+                    target = effect.xpath('.//p:spTgt/@spid', namespaces=NS)[0]
+                    cue = (click, effect.get('presetClass'), effect.get('presetID'), _effect_start(effect),
+                           tuple(effect.xpath('.//p:cTn/@dur', namespaces=NS)))
+                    cues.setdefault(target, []).append(cue)
+            for shape in page.shapes:
+                title = shape._element.xpath('./*/p:cNvPr/@title')[0]
+                geometry = shape._element.xpath('./p:spPr/a:prstGeom/@prst')
+                inventory[title] = (shape.shape_type, tuple(geometry), cues.get(str(shape.shape_id), []))
+        if reference is None:
+            reference = inventory
+        else:
+            assert inventory == reference
+        zero_marker = next(shape for shape in deck.slides[2].shapes if shape.name == 'Dirty plates zero marker')
+        assert bool(zero_marker._element.xpath('./p:spPr/a:solidFill')) == (data is snapshots[-1])
+    assert reference['gp.overview.Clean plates toward milestone'][-1]
+    assert reference['gp.overview.Clean plates above milestone'][-1]
+    assert reference['gp.breakdown.Dirty plates zero marker'][-1]
+
+
+def test_google_refresh_updates_segment_and_reel_frames_on_their_imported_ids(results):
+    from assembly_google_fixtures import from_powerpoint, registered
+    from src.services.assembly_google_merge import _text, plan_update
+
+    def connected(latest, session_count):
+        snapshot = {**results, 'seed_google_session_slides': True, 'latest': latest,
+                    'totals': dict(clean=45 + latest['clean'], total=60 + latest['total'], session_count=session_count)}
+        deck = Presentation(BytesIO(generate_deck('assembly', 'dark', snapshot, 'google-slides')))
+        return from_powerpoint(deck)
+
+    zero = connected(dict(results['latest'], student_clean=1145, faculty_clean=1, clean=1146,
+                          dirty=0, very_dirty=0, total=1146, clean_percentage=100), 3)
+    positive = connected(dict(results['latest'], student_clean=7, faculty_clean=0, clean=7,
+                              dirty=101, very_dirty=1123, total=1231, clean_percentage=.6), 4)
+    for old, new in ((positive, zero), (zero, positive)):
+        old, new = registered(deepcopy(old)), deepcopy(new)
+        saved = {obj['title']: obj for page in old['slides'] for obj in page['pageElements']}
+        fresh = {obj['title']: obj for page in new['slides'] for obj in page['pageElements']}
+        for obj in fresh.values():
+            obj['objectId'] = 'scratch_' + obj['objectId']
+        updates, pending_notes = plan_update(old, new)
+        assert not pending_notes
+        assert not any(next(iter(op)).startswith(('create', 'deleteObject', 'updatePageElementsZOrder')) for op in updates)
+        by_id = {}
+        for op in updates:
+            name, arg = next(iter(op.items()))
+            assert not arg.get('objectId', '').startswith('scratch_')
+            by_id.setdefault(arg.get('objectId'), {})[name] = arg
+
+        for title, source in fresh.items():
+            previous = saved[title]
+            writes = by_id.get(previous['objectId'], {})
+            if _text(source) != _text(previous) and _text(source):
+                # Includes the current rate, this session's count, all four
+                # sets of rolling digits, and both lines in each moving row.
+                assert writes['insertText']['text'] == _text(source)
+            if not title.startswith('gp.breakdown.'):
+                continue
+            if 'plates share' in title or 'plates zero marker' in title:
+                old_fill = previous['shape']['shapeProperties']['shapeBackgroundFill']
+                new_fill = source['shape']['shapeProperties']['shapeBackgroundFill']
+                if old_fill != new_fill:
+                    assert writes['updateShapeProperties']['shapeProperties']['shapeBackgroundFill'] == new_fill
+                if previous['transform'] != source['transform']:
+                    assert 'updatePageElementTransform' in writes
+            if title in ('gp.breakdown.dirty', 'gp.breakdown.very_dirty', 'gp.breakdown.dirty emphasis',
+                         'gp.breakdown.very_dirty emphasis'):
+                expected = source['shape']['text']['textElements'][1]['textRun']['style']
+                assert writes['updateTextStyle']['style'] == expected
+
+    # An older import may never have received these effects. Creating the
+    # helpers now would leave gold dots or intermediate digits on the screen.
+    legacy = registered(deepcopy(positive))
+    breakdown = next(page for page in legacy['slides'] if page['objectId'] == 'slide_breakdown')
+    absent = {'dirty landing', 'dirty roll 1', 'dirty emphasis', 'Dirty plates neutral label', 'Dirty plates zero marker'}
+    old_count = len(breakdown['pageElements'])
+    breakdown['pageElements'] = [obj for obj in breakdown['pageElements']
+                                 if obj['title'].removeprefix('gp.breakdown.') not in absent]
+    assert old_count - len(breakdown['pageElements']) == len(absent)
+    updates, _ = plan_update(legacy, zero)
+    assert not any('createShape' in op for op in updates)
+
+
+def test_google_breakdown_fills_locally_and_scrolls_two_rows_in_each_click(results):
+    slide = Presentation(BytesIO(generate_deck('assembly', 'dark', results, 'google-slides'))).slides[2]
+    shapes = {shape.name: shape for shape in slide.shapes}
+    steps = slide._element.xpath('.//p:cTn[@nodeType="mainSeq"]/p:childTnLst/p:par')[1:]
+    for (key, label), step in zip((('student_clean', 'Student clean plates'), ('faculty_clean', 'Faculty clean plates'),
+                                   ('dirty', 'Dirty plates'), ('very_dirty', 'Very dirty plates')), steps, strict=True):
+        entries = {}
+        for effect in step.xpath('.//p:cTn[@presetClass="entr"]', namespaces=NS):
+            shape_id = int(effect.xpath('.//p:spTgt/@spid', namespaces=NS)[0])
+            entries[shape_id] = int(effect.find('p:stCondLst/p:cond', NS).get('delay'))
+        share = shapes[label + ' share']
+        frames = [shape for name, shape in shapes.items() if name.startswith(share.name + ' motion frame')]
+        assert len(frames) == 15 and all(frame.left == share.left for frame in frames)
+        assert all(a.width < b.width for a, b in zip(frames, frames[1:]))
+        assert frames[3].width == pytest.approx(share.width / 8, abs=1)
+        assert frames[11].width == pytest.approx(share.width * 7 / 8, abs=1)
+        assert [entries[f.shape_id] for f in frames] == [20 + round(i * 540 / 16) for i in range(1, 16)]
+        assert entries[share.shape_id] == 560
+        first, second = shapes[key + ' roll 1'], shapes[key + ' roll 2']
+        moving = shapes[key + ' roll 1 motion frame 01']
+        assert moving.text.splitlines() == [first.text, second.text]
+        assert entries[first.shape_id] < entries[moving.shape_id] < entries[second.shape_id]
+        assert moving.top < first.top < moving.top + first.height
+        for side in ('top', 'bottom'):
+            mask = shapes[key + ' landing reel ' + side + ' mask']
+            assert mask.shape_id not in entries
+            assert mask.fill.fore_color.rgb == slide.background.fill.fore_color.rgb
+            assert list(shapes).index(moving.name) < list(shapes).index(mask.name) < list(shapes).index('distribution')
+
+
+def test_google_headings_move_short_distances_and_retain_their_stagger(results):
+    slide = Presentation(BytesIO(generate_deck('overview', 'dark', results, 'google-slides'))).slides[0]
+    shapes = {s.name: s for s in slide.shapes}
+    for name, direction, distance, start, duration in (
+        ('all_clean', 'top', 9.72, 80, 500),
+        ('latest_name', 'left', 11.52, 1030, 410),
+        ('latest_rate', 'left', 8.64, 1200, 390),
+        ('latest_change', 'left', 11.52, 1370, 410),
+    ):
+        target = shapes[name]
+        frames = [s for s in slide.shapes if s.name.startswith(name + ' motion frame')]
+        positions = [getattr(s, direction).pt for s in frames]
+        assert positions == sorted(positions)
+        assert positions[0] == pytest.approx(getattr(target, direction).pt - distance, abs=.3)
+        assert positions[-1] == getattr(target, direction).pt
+        assert frames[0].text == target.text == frames[-1].text
+        assert frames[0].text_frame.paragraphs[0].runs[0].font.color.rgb != target.text_frame.paragraphs[0].runs[0].font.color.rgb
+        assert frames[-1].text_frame.paragraphs[0].runs[0].font.color.rgb == target.text_frame.paragraphs[0].runs[0].font.color.rgb
+        clock = slide._element.xpath(f'.//p:cTn[@presetClass="entr"][.//p:spTgt[@spid="{target.shape_id}"]]')
+        assert len(clock) == 1 and _effect_start(clock[0]) == start + duration
+        assert _effect_duration(clock[0]) == 250
 
 
 def test_empty_and_first_result_are_distinguished(results):
@@ -614,7 +859,7 @@ def test_latest_lunch_chart_and_legend_follow_the_school_snapshot(results, theme
     latest.update(student_clean=6, faculty_clean=0, dirty=3, very_dirty=1,
                   total=10, clean=6, clean_percentage=60)
     deck = Presentation(BytesIO(generate_deck('assembly', theme, results, platform)))
-    lunch = deck.slides[2 if platform == 'powerpoint' else 1]
+    lunch = deck.slides[2]
     shapes = {shape.name: shape for shape in lunch.shapes}
     assert shapes['latest_counts'].text == '6 of 10 plates were clean'
     assert shapes['rate'].text == '60%'
@@ -789,26 +1034,40 @@ def _assert_zero_lands_then_pulses(step_effects, number, marker, number_effects,
 
 @pytest.mark.parametrize('theme', ('light', 'dark'))
 @pytest.mark.parametrize(('dirty', 'very_dirty', 'clean'), [(0, 3, 7), (2, 0, 8), (0, 0, 10), (0, 0, 0)])
-def test_powerpoint_highlights_each_recorded_zero_dirty_count(results, theme, dirty, very_dirty, clean):
+def test_editable_exports_highlight_each_recorded_zero_dirty_count(results, theme, dirty, very_dirty, clean):
     total = clean + dirty + very_dirty
     results['latest'].update(dirty=dirty, very_dirty=very_dirty, student_clean=clean, faculty_clean=0,
                              clean=clean, total=total, clean_percentage=100 * clean / total if total else None)
     for platform in ('google-slides', 'powerpoint'):
         deck = Presentation(BytesIO(generate_deck('assembly', theme, results, platform)))
-        lunch = deck.slides[2 if platform == 'powerpoint' else 1]
+        lunch = deck.slides[2]
         shapes = {shape.name: shape for shape in lunch.shapes}
         colors = {name: shape.text_frame.paragraphs[0].runs[0].font.color.rgb for name, shape in shapes.items()
                   if shape.has_text_frame and shape.text}
-        closing = deck.slides[-2 if platform == 'powerpoint' else -1]
-        gold = closing.shapes[0].text_frame.paragraphs[0].runs[0].font.color.rgb
+        closing = deck.slides[-2]
+        signoff = next(shape for shape in closing.shapes if shape.name == 'Be Green')
+        gold = signoff.text_frame.paragraphs[0].runs[0].font.color.rgb
         assert colors['faculty_clean'] == colors['student_clean'] != gold
         assert colors['Faculty clean plates label'] != gold
         for key, label, count in [('dirty', 'Dirty plates', dirty), ('very_dirty', 'Very dirty plates', very_dirty)]:
-            highlighted = platform == 'powerpoint' and total > 0 and count == 0
+            highlighted = total > 0 and count == 0
             assert shapes[key].text == str(count)
             assert colors[key] == (gold if highlighted else colors['student_clean'])
             assert colors[label + ' label'] == (gold if highlighted else colors['Faculty clean plates label'])
             assert shapes[label + ' key'].fill.fore_color.rgb != gold
+            if platform == 'google-slides' and highlighted:
+                emphasis = shapes[key + ' emphasis']
+                neutral = shapes[label + ' neutral label']
+                assert neutral.text == shapes[label + ' label'].text
+                assert neutral.text_frame.paragraphs[0].runs[0].font.color.rgb == colors['Student clean plates label']
+                assert emphasis.text == shapes[key].text == shapes[key + ' landing'].text
+                assert colors[key + ' landing'] != gold == colors[emphasis.name]
+                assert emphasis.text_frame.paragraphs[0].runs[0].font.size.pt == pytest.approx(
+                    1.08 * shapes[key].text_frame.paragraphs[0].runs[0].font.size.pt, abs=.01)
+                for obj, start in [(neutral, '0'), (shapes[label + ' label'], '920'), (emphasis, '920'),
+                                   (shapes[key], '1170'), (shapes[label + ' zero marker'], '920')]:
+                    timing = lunch._element.xpath(f'.//p:cTn[@presetClass="entr"][.//p:spTgt[@spid="{obj.shape_id}"]]')
+                    assert len(timing) == 1 and timing[0].find('p:stCondLst/p:cond', NS).get('delay') == start
 
 
 @pytest.mark.parametrize('theme', ('light', 'dark'))
@@ -886,7 +1145,7 @@ def test_editable_exports_use_native_georgia_and_embed_the_open_fonts(results, p
             for paragraph in shape.text_frame.paragraphs for run in paragraph.runs]
     assert {run.font.name for run in runs} == {'Newsreader', 'Georgia'}
     assert {run.font.bold for run in runs if run.font.name == 'Georgia'} == {False, True}
-    content_slides = list(deck.slides)[1:] if platform == 'powerpoint' else list(deck.slides)
+    content_slides = [page for page in deck.slides if page._element.cSld.get('name') != 'gp.intro']
     italic = [(page, shape.name, run.font.name, run.font.bold)
               for page, slide in enumerate(content_slides, start=1) for shape in slide.shapes if shape.has_text_frame
               for paragraph in shape.text_frame.paragraphs for run in paragraph.runs if run.font.italic]

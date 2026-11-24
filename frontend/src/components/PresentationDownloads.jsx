@@ -21,7 +21,7 @@ const googleDialogCopy = {
   },
   live: {
     title: 'Connect a live Google Slides deck',
-    description: 'Golden Plate updates the same Google Drive file after session results change. Updates replace its contents. Make a separate copy for edits you want to keep.',
+    description: 'Golden Plate updates the school results in this Google Drive file. Bookmark its link for your next assembly.',
     button: 'Continue to Google Slides',
   },
 }
@@ -42,7 +42,8 @@ function GoogleSlidesDialog({ selection, onClose, onConfirm, trigger }) {
         <li>In Google Slides, choose <strong>File → Import slides → Upload</strong> and select the downloaded file.</li>
         <li>Choose the slides you want, keep <strong>Keep original theme</strong> selected, then choose <strong>Import slides</strong>.</li>
       </ol>}
-      <p>Google Slides may substitute fonts and change line breaks. Results appear without PowerPoint’s transitions or animated reveals.</p>
+      <p>Click <strong>Slideshow</strong> on the first slide. The logo reveal leads straight into the school results.</p>
+      <p>On the session breakdown, click once for each of the four counts. Click again after the closing logo to continue.</p>
       <div className="gp-import-actions">
         <button type="button" className="gp-button" onClick={onConfirm}>{copy.button}</button>
         <button type="button" className="gp-text-link" onClick={onClose}>Cancel</button>
@@ -298,7 +299,7 @@ function PresentationForm({ search, theme }) {
           {live.enabled ? <p className="gp-deck-note">
             Golden Plate updates the same deck in your {provider === 'google' ? 'Google Drive' : 'OneDrive'} when session results change.
             {' '}{provider === 'google'
-              ? 'Bookmark its link for your next assembly. Make a separate copy for edits you want to keep.'
+              ? 'Use Replace image on a winner’s portrait to add a photo. You can add your own slides to the same deck.'
               : 'You can add winner photos in PowerPoint. They stay with their winners when the deck updates.'}
           </p> : <p className="gp-deck-note">{directSlides
             ? 'This creates a one-time copy of your school’s results in Google Drive.'

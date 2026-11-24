@@ -198,7 +198,12 @@ def test_winner_names_follow_the_latest_lunch_and_school_access(client, school_d
     assert live['winner_names'] == data['winner_names'] and live['winner_keys'] == data['winner_keys']
     assert live['winner_details'] == data['winner_details']
     assert 'winner_names' not in assembly_snapshot_for_owner(*owner)
-    assert 'winner_names' not in snapshot(kind='overview') and 'winner_names' not in snapshot(format='google-slides')
+    google = snapshot(format='google-slides')
+    for field in ('winner_names', 'winner_keys', 'winner_details'):
+        assert google[field] == data[field]
+    assert 'winner_names' not in snapshot(kind='overview')
+    assert 'winner_names' not in snapshot(kind='overview', format='google-slides')
+    assert 'winner_names' not in snapshot(format='pdf')
     new_lunch = school_data['session']('Next lunch', 4, (8, 2, 0, 0))
     assert 'winner_names' not in snapshot()
     next_meal = db_session.get(Session, new_lunch)
@@ -336,7 +341,8 @@ def test_current_ticket_gain_uses_the_post_finalization_draw_state(client, schoo
         assert 'next_ticket_gain' not in current['winner_details'].get('faculty', {})
 
 
-def test_public_results_keep_winner_identities_school_scoped(client, login, school_data, exports):
+@pytest.mark.parametrize('output', ['pptx', 'google-slides'])
+def test_public_results_keep_winner_identities_school_scoped(client, login, school_data, exports, output):
     from src.routes.golden_plate_recorder_db.presentation_routes import assembly_snapshot_for_owner
 
     lunch = school_data['session']('Public lunch', 1, (8, 2, 0, 0))
@@ -347,7 +353,7 @@ def test_public_results_keep_winner_identities_school_scoped(client, login, scho
     db_session.commit()
 
     def check_public_results():
-        assert download(client, school_data['code']).status_code == 200
+        assert download(client, school_data['code'], format=output).status_code == 200
         data = exports[-1][2]
         assert data['latest']['name'] == 'Public lunch'
         assert not {'winner_names', 'winner_keys', 'winner_details'}.intersection(data)
@@ -420,7 +426,8 @@ def test_input_validation_and_disabled_schools(client, school_data):
 
 
 @pytest.mark.parametrize(('kind', 'theme', 'output'), [
-    ('overview', 'light', 'pptx'), ('assembly', 'dark', 'google-slides'), ('assembly', 'dark', 'pdf'),
+    ('overview', 'light', 'pptx'), ('overview', 'light', 'google-slides'),
+    ('assembly', 'dark', 'google-slides'), ('assembly', 'dark', 'pdf'),
 ])
 def test_real_export_contains_current_school_results(client, school_data, kind, theme, output):
     school_data['session']('Monday lunch', 3, (12, 2, 5, 1))
@@ -431,9 +438,10 @@ def test_real_export_contains_current_school_results(client, school_data, kind, 
         assert response.data.startswith(b'%PDF-') and response.data.rstrip().endswith(b'%%EOF')
     else:
         with ZipFile(BytesIO(response.data)) as presentation:
-            cover = presentation.read('ppt/slides/slide1.xml')
+            cover = presentation.read('ppt/slides/slide2.xml' if kind == 'assembly' else 'ppt/slides/slide1.xml')
             assert b'Slides School' in cover and b'Tuesday lunch' in cover
             if kind == 'assembly':
-                assert b'Monday lunch' in presentation.read('ppt/slides/slide3.xml')
+                assert b'Monday lunch' in presentation.read('ppt/slides/slide4.xml')
+                assert 'ppt/slides/slide9.xml' in presentation.namelist()
             else:
                 assert 'ppt/slides/slide2.xml' not in presentation.namelist()

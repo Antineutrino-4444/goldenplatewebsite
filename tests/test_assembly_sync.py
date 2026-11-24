@@ -1,5 +1,6 @@
 """Stable provider files, retries, grants and inter-worker fencing for assembly decks."""
 
+import json
 import secrets
 import threading
 import uuid
@@ -18,6 +19,7 @@ from src.routes.golden_plate_recorder_db.db import (
     AssemblyDeck, School, Session, SessionDrawEvent, SessionFactory, User, db_session, _now_utc,
 )
 from src.services import assembly_cloud as cloud
+from assembly_google_fixtures import from_powerpoint, registered
 
 
 @pytest.fixture
@@ -138,12 +140,12 @@ def test_worker_updates_same_remote_file_after_lunch_and_skips_unchanged_results
 
 
 @pytest.mark.parametrize('provider', ['google', 'microsoft'])
-def test_powerpoint_design_refreshes_only_the_connected_powerpoint_once(setup, monkeypatch, provider):
+def test_google_design_refreshes_only_the_connected_google_deck_once(setup, monkeypatch, provider):
     key = (setup.school, setup.owner, provider, 'dark')
     deck_id = sync.bind_deck(*key, setup.token)['id']
     setup.lunch(12)
     with monkeypatch.context() as previous:
-        previous.setitem(sync.ASSEMBLY_DESIGN_REVISIONS, provider, 32 if provider == 'microsoft' else 13)
+        previous.setitem(sync.ASSEMBLY_DESIGN_REVISIONS, provider, 33 if provider == 'microsoft' else 14)
         original = sync.sync_deck(deck_id, force=True)
 
     make_due(deck_id)
@@ -153,14 +155,14 @@ def test_powerpoint_design_refreshes_only_the_connected_powerpoint_once(setup, m
     make_due(deck_id)
     sync.run_due_decks()
     expected = [(deck_id, None, 12)]
-    if provider == 'microsoft':
+    if provider == 'google':
         expected.append((deck_id, 'one-file-' + deck_id, 12))
     assert setup.calls == expected
     assert len(setup.grants) == len(expected)
 
 
-@pytest.mark.parametrize(('provider', 'uploads'), [('microsoft', 2), ('google', 1)])
-def test_school_timezone_refreshes_the_managed_powerpoint_footer(setup, provider, uploads):
+@pytest.mark.parametrize('provider', ['microsoft', 'google'])
+def test_school_timezone_refreshes_the_managed_footer(setup, provider):
     key = (setup.school, setup.owner, provider, 'light')
     deck_id = sync.bind_deck(*key, setup.token)['id']
     before = sync.sync_deck(deck_id, force=True)
@@ -170,10 +172,10 @@ def test_school_timezone_refreshes_the_managed_powerpoint_footer(setup, provider
         store.commit()
     after = sync.sync_deck(deck_id, force=True)
     assert after['status'] == 'ready' and after['url'] == before['url']
-    assert len(setup.calls) == uploads
+    assert len(setup.calls) == 2
 
 
-def test_draw_ticket_correction_refreshes_the_same_powerpoint_without_new_plates(setup, monkeypatch):
+def test_draw_ticket_correction_refreshes_both_decks_without_new_plates(setup, monkeypatch):
     lunch_id = setup.lunch(12, faculty_finalized=1, faculty_pick_display_name='Morgan Ellis')
     with SessionFactory.begin() as store:
         pick = SessionDrawEvent(school_id=setup.school, session_id=lunch_id, draw_target='faculty',
@@ -199,7 +201,8 @@ def test_draw_ticket_correction_refreshes_the_same_powerpoint_without_new_plates
     for deck_id in decks:
         assert sync.sync_deck(deck_id, force=True)['status'] == 'ready'
         assert sync.sync_deck(deck_id, force=True)['status'] == 'ready'
-    assert sent == [('microsoft', None, 4), ('google', None, None), ('microsoft', 'one-file-' + decks[0], 7)]
+    assert sent == [('microsoft', None, 4), ('google', None, 4),
+                    ('microsoft', 'one-file-' + decks[0], 7), ('google', 'one-file-' + decks[1], 7)]
 
 
 @pytest.mark.parametrize(('provider', 'theme'), [('google', 'dark'), ('microsoft', 'light')])
@@ -208,14 +211,43 @@ def test_connected_file_rebuilds_edited_lunch_chart_goal_and_type(setup, monkeyp
     writes = []
 
     stored = None
+    native, metadata, native_batches = {}, {}, []
     remote = {'id': file_id, 'webUrl': 'https://example.test/' + file_id,
               '@microsoft.graph.downloadUrl': 'https://files.example/download'}
 
     def store_file(method, url, *, headers=None, **options):
         nonlocal stored
-        if method == 'GET':
-            if provider == 'google':
+        if provider == 'google':
+            if method == 'GET' and url == cloud.DRIVE:
                 return {'files': []}
+            if method == 'GET' and url.startswith(cloud.GOOGLE_SLIDES):
+                return native[url.rsplit('/', 1)[1]]
+            if method == 'GET':
+                return metadata[file_id]
+            if method == 'DELETE':
+                assert url == cloud.DRIVE + '/scratch'
+                return {}
+            if url.endswith(':batchUpdate'):
+                assert url == cloud.GOOGLE_SLIDES + file_id + ':batchUpdate'
+                body = options['json']
+                assert body['writeControl']['requiredRevisionId'] == native[file_id]['revisionId']
+                if 'scratch' in native:
+                    native_batches.append(body['requests'])
+                    native[file_id] = registered(native['scratch'])
+                else:
+                    native[file_id] = registered(native[file_id])
+                return {}
+            assert (method, url) == ('POST', cloud.UPLOAD)
+            message = BytesParser(policy=policy.default).parsebytes(
+                f"Content-Type: {headers['Content-Type']}\r\n\r\n".encode() + options['data'])
+            meta_part, media_part = message.iter_parts()
+            meta = json.loads(meta_part.get_payload(decode=True))
+            ident = 'scratch' if 'gpAssemblyScratch' in meta['appProperties'] else file_id
+            deck = Presentation(BytesIO(media_part.get_payload(decode=True)))
+            writes.append((method, url, deck))
+            native[ident], metadata[ident] = from_powerpoint(deck), {**meta, 'id': ident}
+            return metadata[ident]
+        if method == 'GET':
             if url.endswith('/special/approot'):
                 return {'id': 'app-folder'}
             if options.get('missing_ok') and stored is None:
@@ -226,15 +258,9 @@ def test_connected_file_rebuilds_edited_lunch_chart_goal_and_type(setup, monkeyp
         if url.endswith('/createUploadSession'):
             assert headers['If-Match'] == f'"version,{len(writes)}"'
             return {'uploadUrl': 'https://files.example/session'}
-        blob = options['data']
-        if provider == 'google':
-            message = BytesParser(policy=policy.default).parsebytes(
-                f"Content-Type: {headers['Content-Type']}\r\n\r\n".encode() + blob)
-            blob, = (part.get_payload(decode=True) for part in message.iter_parts()
-                     if part.get_content_type() == cloud.PPTX_MIME)
-        stored = blob
-        writes.append((method, url, Presentation(BytesIO(blob))))
-        return {**remote, 'mimeType': cloud.SLIDES_MIME}
+        stored = options['data']
+        writes.append((method, url, Presentation(BytesIO(stored))))
+        return remote
 
     monkeypatch.setattr(cloud, 'upsert_deck', setup.original_upload)
     monkeypatch.setattr(cloud, '_request', store_file)
@@ -260,15 +286,18 @@ def test_connected_file_rebuilds_edited_lunch_chart_goal_and_type(setup, monkeyp
     refresh()
     refresh()  # An unchanged snapshot must not cause a fourth upload.
 
-    assert [len(deck.slides) for _, _, deck in writes] == ([4, 6, 6] if provider == 'google' else [7, 9, 9])
-    update = ('PATCH', cloud.UPLOAD + '/' + file_id) if provider == 'google' else (
+    assert [len(deck.slides) for _, _, deck in writes] == ([9, 9, 9] if provider == 'google' else [7, 9, 9])
+    if provider == 'google':
+        assert len(native_batches) == 2
+        assert any(op.get('updateSlideProperties', {}).get('slideProperties') == {'isSkipped': False}
+                   for op in native_batches[0])
+    update = ('POST', cloud.UPLOAD) if provider == 'google' else (
         'PUT', 'https://files.example/session')
     for (method, url, deck), clean, total, rate in zip(writes[1:], [90, 91], [100, 101], [90, 90.1]):
         assert (method, url) == update
-        overview_index = 1 if provider == 'microsoft' else 0
-        overview = deck.slides[overview_index]
+        overview = next(page for page in deck.slides if any(shape.name == 'all_clean' for shape in page.shapes))
         cover = {shape.name: shape for shape in overview.shapes}
-        chart = {shape.name: shape for shape in deck.slides[overview_index + 3].shapes}
+        chart = {shape.name: shape for shape in deck.slides[4].shapes}
         assert cover['all_clean'].text == f'{45 + clean} clean plates'
         assert cover['latest_date'].text == 'Nov 20, 2026'
         assert cover['latest_date'].text_frame.paragraphs[0].runs[0].font.italic
@@ -282,13 +311,11 @@ def test_connected_file_rebuilds_edited_lunch_chart_goal_and_type(setup, monkeyp
         if provider == 'microsoft':
             assert str(cover['latest_change'].shape_id) in motion_targets
             assert str(cover['all_clean'].shape_id) in motion_targets
-        else:
-            assert not motion_targets
         assert chart['curr_counts'].text == f'{clean} of {total} plates were clean'
         assert chart['curr_fill'].width / chart['curr_track'].width == pytest.approx(rate / 100, abs=1e-6)
         assert chart['rate_comparison'].text == f'{rate - 75:g} percentage points higher'
         assert chart['rate_comparison'].text_frame.paragraphs[0].runs[0].font.bold
-        assert f'{clean} of {total} recorded plates' in deck.slides[overview_index + 1].notes_slide.notes_text_frame.text
+        assert f'{clean} of {total} recorded plates' in deck.slides[2].notes_slide.notes_text_frame.text
 
 
 def test_write_failure_reuses_rotated_grant_and_guarded_claim(setup, monkeypatch):

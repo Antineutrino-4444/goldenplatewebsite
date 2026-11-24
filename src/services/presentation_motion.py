@@ -1,4 +1,5 @@
 """Native shape entrances, paths and slide transitions for the school assembly."""
+from dataclasses import replace
 from itertools import count
 
 from lxml import etree
@@ -7,8 +8,10 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls, qn
 
 from src.services.presentation_choreography import Entrance, slide_entrances
+from src.services.presentation_google_motion import bar_positions, float_positions, reel_positions
 from src.services.presentation_intro import (
-    INTRO_TEMPLATE_INDEX, MORPH_MARK, MORPH_NAMES, MORPH_WORDMARK, SIGNATURE_FILM, SIGNATURE_LAYOUTS,
+    GOOGLE_HANDOFF_MS, GOOGLE_OUTRO_SETTLE_MS, INTRO_TEMPLATE_INDEX, MORPH_MARK, MORPH_NAMES,
+    MORPH_WORDMARK, SIGNATURE_FILM, SIGNATURE_FRAME_COVER, SIGNATURE_FRAME_PREFIX, SIGNATURE_LAYOUTS,
 )
 from src.services.presentation_reels import prepare_category_rolls
 
@@ -17,6 +20,7 @@ PROGRESS_WINDOW_NAME = 'Progress meter window'
 DISTRIBUTION_WINDOW_NAME = 'Lunch distribution window'
 RATE_WINDOW_NAMES = {'prev': 'Previous lunch rate window', 'curr': 'Latest lunch rate window'}
 _FIXED_WINDOWS = {PROGRESS_WINDOW_NAME, DISTRIBUTION_WINDOW_NAME, *RATE_WINDOW_NAMES.values()}
+_GOOGLE_MASK_SUFFIXES = (' left corner', ' right corner', ' entrance mask')
 _FADE_MS = 250
 # The paths run in reverse, from their signed offset to the shape's editable
 # design position. The first coordinate is normalized to slide width, the
@@ -196,6 +200,80 @@ def _category_group(group, ids, builds, shapes, roll):
     first_effect.set('nodeType', 'clickEffect')
 
 
+def _appear_at(group, ids, builds, shape, start):
+    actions = _effect(group, ids, 1, 'entr', 0, start, 0)
+    _visibility(actions, ids, shape.shape_id, 'visible')
+    _build(builds, shape, 0)
+
+
+def _google_bar(slide, group, ids, builds, shape, cue):
+    for frame, start in bar_positions(slide, shape, cue):
+        _appear_at(group, ids, builds, frame, start)
+
+
+def _google_float(slide, group, ids, builds, shape, cue):
+    _, _, center, duration = _FLOAT_PATHS.get(cue.movement, _FLOAT_PATHS['lunch'])
+    if cue.movement == 'fade':
+        center = (0, 0)  # A signed change of zero stays on its baseline.
+    frames, cover = float_positions(slide, shape, center, duration, _FADE_MS)
+    end = cue.start + duration
+    for i, (frame, elapsed) in enumerate(frames):
+        _appear_at(group, ids, builds, frame, cue.start + elapsed)
+        stop = cue.start + frames[i + 1][1] if i + 1 < len(frames) else end + _FADE_MS
+        _disappear(group, ids, frame.shape_id, stop, 1)
+        _build(builds, frame, 1)
+    _fade(group, ids, shape.shape_id, end, group_id=0)
+    _build(builds, shape, 0)
+    _appear_at(group, ids, builds, cover, end + _FADE_MS)
+
+
+def _google_category_group(slide, group, ids, builds, shapes, roll):
+    """Use effects that survive Drive conversion, including the real four click groups."""
+    settled_at = 920
+    caption = shapes[roll.label + ' label']
+    for name in (roll.label + ' key', roll.label + (' neutral label' if roll.marker else ' label')):
+        shape = shapes[name]
+        _fade(group, ids, shape.shape_id, 0, group_id=0)
+        _build(builds, shape, 0)
+    group.find(qn('p:par') + '/' + qn('p:cTn')).set('nodeType', 'clickEffect')
+    share = shapes.get(roll.label + ' share')
+    if share is not None:
+        _google_bar(slide, group, ids, builds, share, Entrance(share.name, 20, 'segment', 540))
+    digits = [shapes[name] for name in roll.digits]
+    stops = (25, 100, 195, 315, 470)
+    for shape, start, end in reel_positions(slide, digits, stops):
+        _appear_at(group, ids, builds, shape, start)
+        _disappear(group, ids, shape.shape_id, end, 1)
+        _build(builds, shape, 1)
+    value = shapes[roll.key]
+    landing = digits[-1]
+    _appear_at(group, ids, builds, landing, stops[-1])
+    final_at = settled_at if roll.marker else stops[-1]
+    if roll.marker:
+        neutral = shapes[roll.label + ' neutral label']
+        _disappear(group, ids, neutral.shape_id, settled_at + _FADE_MS, 1)
+        _build(builds, neutral, 1)
+        _fade(group, ids, caption.shape_id, settled_at, group_id=0)
+        _build(builds, caption, 0)
+        enlarged = shapes[roll.key + ' emphasis']
+        _fade(group, ids, enlarged.shape_id, settled_at, group_id=0)
+        _build(builds, enlarged, 0)
+        final_at += _FADE_MS
+        _disappear(group, ids, enlarged.shape_id, final_at + _FADE_MS, 1)
+        _build(builds, enlarged, 1)
+    _fade(group, ids, value.shape_id, final_at, group_id=0)
+    _build(builds, value, 0)
+    _disappear(group, ids, landing.shape_id, final_at + _FADE_MS, 1)
+    _build(builds, landing, 1)
+    if roll.marker:
+        marker = shapes[roll.marker]
+        _fade(group, ids, marker.shape_id, settled_at, group_id=0)
+        leaving = _effect(group, ids, 10, 'exit', 0, final_at, 1)
+        _behavior(_node(leaving, 'animEffect', transition='out', filter='fade'), ids, marker.shape_id, _FADE_MS)
+        _build(builds, marker, 0)
+        _build(builds, marker, 1)
+
+
 def _timing_group(children, ids, *, automatic):
     trigger = _node(_node(children, 'par'), 'cTn', id=next(ids), fill='hold')
     starts = _node(trigger, 'stCondLst')
@@ -240,7 +318,31 @@ def _signature_motion(root_children, group, ids, builds, shapes, *, handoff):
     _build(builds, film, 0)
 
 
-def add_slide_motion(slide, template_index, role_overrides, *, morph_from_intro=False):
+def _google_signature_motion(group, ids, builds, shapes, settled_at):
+    # Slides imports these native visibility effects even when its slideshow
+    # renderer freezes the first image of a GIF or discards an embedded film.
+    def appear(shape, when):
+        action = _effect(group, ids, 1, 'entr', 0, when, 0)
+        _visibility(action, ids, shape.shape_id, 'visible')
+        _build(builds, shape, 0)
+
+    paper = shapes.pop(SIGNATURE_FRAME_COVER)
+    paper._element.nvSpPr.cNvPr.set('descr', '[gp-motion-only]')
+    _disappear(group, ids, paper.shape_id, 0, 0)
+    _build(builds, paper, 0)
+    starts = sorted((int(name.removeprefix(SIGNATURE_FRAME_PREFIX)), name)
+                    for name in shapes if name.startswith(SIGNATURE_FRAME_PREFIX))
+    for (start, name), end in zip(starts, [t for t, _ in starts[1:]] + [settled_at], strict=True):
+        frame = shapes.pop(name)
+        appear(frame, start)
+        _disappear(group, ids, frame.shape_id, end, 1)
+        _build(builds, frame, 1)
+    for name in list(shapes):
+        if name in MORPH_NAMES or name == SIGNATURE_FILM or name.endswith(_GOOGLE_MASK_SUFFIXES):
+            appear(shapes.pop(name), settled_at)
+
+
+def add_slide_motion(slide, template_index, role_overrides, *, morph_from_intro=False, google=False, seed=False):
     # Older PowerPoint readers use the fallback fade and share the timing tree.
     transition = parse_xml(f'''
         <mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" {nsdecls("p")}>
@@ -249,7 +351,10 @@ def add_slide_motion(slide, template_index, role_overrides, *, morph_from_intro=
           </mc:Choice>
           <mc:Fallback><p:transition advClick="1"><p:fade/></p:transition></mc:Fallback>
         </mc:AlternateContent>''')
-    if morph_from_intro:
+    if google:
+        transition = parse_xml(f'<p:transition {nsdecls("p")} xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" '
+                               f'p14:dur="{_FADE_MS}" spd="fast" advClick="1"><p:fade/></p:transition>')
+    elif morph_from_intro:
         transition.insert(0, parse_xml(f'''
             <mc:Choice xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" {nsdecls("p")}
                        xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"
@@ -261,17 +366,20 @@ def add_slide_motion(slide, template_index, role_overrides, *, morph_from_intro=
         # after the word settles at 1450 ms and the native logo takes over.
         advance = '1500' if template_index == INTRO_TEMPLATE_INDEX else '2283'
         for variant in transition.iter(qn('p:transition')):
-            variant.set('advClick', '0')
+            variant.set('advClick', '1' if google else '0')
             variant.set('advTm', advance)
     slide._element.append(transition)
+    if google and template_index == INTRO_TEMPLATE_INDEX:
+        return  # Editable cover; the live opening plays directly on the first results page.
     # Restyling can remove a rule or rebuild paragraphs. Bind to the final
     # editable shapes and animate multi-line reminders together by shape ID.
-    rolls = prepare_category_rolls(slide) if template_index == 1 else []
+    rolls = prepare_category_rolls(slide, google=google, seed=seed) if template_index == 1 else []
     # These two objects arrive already visible from the intro. An entrance or
     # build-list target on the receiving slide would make them disappear.
-    fixed = _FIXED_WINDOWS | MORPH_NAMES if morph_from_intro else _FIXED_WINDOWS
+    fixed = _FIXED_WINDOWS | MORPH_NAMES if morph_from_intro and not google else _FIXED_WINDOWS
     shapes = {role_overrides.get(shape.shape_id, shape.name): shape for shape in slide.shapes
-              if shape.name not in fixed}
+              if shape.name not in fixed and not (google and not morph_from_intro
+                                                  and shape.name.endswith(_GOOGLE_MASK_SUFFIXES))}
     if not shapes:
         return
     timing = _node(slide._element, 'timing')
@@ -287,14 +395,30 @@ def add_slide_motion(slide, template_index, role_overrides, *, morph_from_intro=
         condition = _node(_node(sequence, tag), 'cond', evt=event, delay=0)
         _node(_node(condition, 'tgtEl'), 'sldTgt')
     builds = _node(timing, 'bldLst')
+    if google and (morph_from_intro or template_index in SIGNATURE_LAYOUTS):
+        _google_signature_motion(group, ids, builds, shapes,
+                                 GOOGLE_HANDOFF_MS if morph_from_intro else GOOGLE_OUTRO_SETTLE_MS)
     if template_index in SIGNATURE_LAYOUTS:
+        if google:
+            return
         handoff = 1460 if template_index == INTRO_TEMPLATE_INDEX else 1650
         _signature_motion(root_children, group, ids, builds, shapes, handoff=handoff)
         return
     category_names = {name for roll in rolls for name in roll.object_names()}
     scaffold = {name: shape for name, shape in shapes.items() if name not in category_names}
     for cue in slide_entrances(template_index, scaffold):
+        if google and morph_from_intro:
+            cue = replace(cue, start=cue.start + GOOGLE_HANDOFF_MS)
+        if google and cue.movement in ('fly', 'excess'):
+            _google_bar(slide, group, ids, builds, shapes[cue.name], cue)
+            continue
+        if google and (cue.movement in _FLOAT_PATHS or seed and shapes[cue.name].name == 'latest_change'):
+            _google_float(slide, group, ids, builds, shapes[cue.name], cue)
+            continue
         _entrance(group, ids, builds, shapes[cue.name], cue)
     for roll in rolls:
         click_group = _timing_group(children, ids, automatic=False)
-        _category_group(click_group, ids, builds, shapes, roll)
+        if google:
+            _google_category_group(slide, click_group, ids, builds, shapes, roll)
+        else:
+            _category_group(click_group, ids, builds, shapes, roll)

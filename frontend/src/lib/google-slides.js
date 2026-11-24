@@ -1,7 +1,7 @@
 const driveScope = 'https://www.googleapis.com/auth/drive.file'
 const slidesMime = 'application/vnd.google-apps.presentation'
 const powerpointMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType'
+const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType&ignoreDefaultVisibility=true'
 const connectionError = 'Google sign-in couldn’t load. Check your connection and try again.'
 let loading = null
 

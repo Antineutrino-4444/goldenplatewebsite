@@ -1,9 +1,10 @@
 // Rebuild the companion assets for the selected 4K "quicker start" signature.
 // Usage: node scripts/resources/build_tutorial_signature.mjs [output-directory] [dark-source.mp4]
-// Default exports use the checked-in MP4s and PNGs directly, without a browser.
+// Default exports use the checked-in media directly, without a browser or ffmpeg.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -148,3 +149,12 @@ try {
 } finally {
   await browser.close();
 }
+
+// Keep the Slides layer bundle derived from the same freshly built masters.
+const projectPython = path.resolve(process.platform === 'win32' ? 'venv/Scripts/python.exe' : 'venv/bin/python');
+const sampler = spawn(process.env.PYTHON || (existsSync(projectPython) ? projectPython : 'python3'), [
+  path.resolve('scripts/resources/build_slides_signature.py'), output,
+  ...(process.env.GEORGIA_FONT_PATH ? [process.env.GEORGIA_FONT_PATH] : []),
+], { stdio: 'inherit' });
+const [sampleStatus] = await once(sampler, 'close');
+if (sampleStatus !== 0) throw new Error('Could not build Google Slides signature layers.');

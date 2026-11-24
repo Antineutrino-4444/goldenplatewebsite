@@ -67,7 +67,7 @@ test('sends the original PPTX bytes and target Google Slides MIME type in one Dr
   const bytes = Buffer.from([80, 75, 3, 4, 255, 0, 128])
   const signal = new AbortController().signal
   const upload = t.mock.method(globalThis, 'fetch', async (url, request) => {
-    assert.equal(url, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType')
+    assert.equal(url, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType&ignoreDefaultVisibility=true')
     assert.equal(request.method, 'POST')
     assert.equal(request.credentials, 'omit')
     assert.equal(request.redirect, 'error')

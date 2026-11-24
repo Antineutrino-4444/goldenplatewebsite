@@ -25,10 +25,14 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from src.services.presentation_fonts import FONT_FILES, apply_presentation_fonts, font_ttf, supporting_pdf_font
+from src.services.presentation_google import (
+    add_google_bar_layers, add_google_photo_targets, google_text_top, mark_google_objects,
+)
 from src.services.presentation_intro import (
-    INTRO_TEMPLATE_INDEX, OUTRO_MARKER, OUTRO_TEMPLATE_INDEX, SignatureFilm, opening_pair,
+    INTRO_TEMPLATE_INDEX, OUTRO_MARKER, OUTRO_TEMPLATE_INDEX, SignatureFilm, google_outro, opening_pair,
 )
 from src.services.presentation_motion import DISTRIBUTION_WINDOW_NAME, PROGRESS_WINDOW_NAME, RATE_WINDOW_NAMES, add_slide_motion
+from src.services.presentation_reels import CATEGORIES
 from src.services.presentation_winner import WINNER_MARKER, WINNER_TEMPLATE_INDEX, add_winner_slide
 
 
@@ -79,6 +83,7 @@ class Rect:
     radius: float = 0
     # A segment of one continuous rounded meter, identified by (offset, full width).
     meter_slice: tuple[float, float] | None = None
+    hidden: bool = False
 
 
 @dataclass(frozen=True)
@@ -263,12 +268,6 @@ def _signed(value, digits=0):
     return sign + f'{abs(value):,.{digits}f}'.removesuffix('.0')
 
 
-CATEGORIES = (
-    ('student_clean', 'Student clean plates'), ('faculty_clean', 'Faculty clean plates'),
-    ('dirty', 'Dirty plates'), ('very_dirty', 'Very dirty plates'),
-)
-
-
 def _goal_label(clean, milestone):
     if not milestone:
         return 'Share of plates returned clean'
@@ -392,6 +391,23 @@ def _progress_bar(track, data, palette):
                       meter_slice=(width, track.width) if boundary else None)
 
 
+def _live_google_meter(track, data, palette):
+    # These three managed objects keep their Slides animation targets through
+    # no data → recorded data → a goal → over goal → a changed/removed goal.
+    bars = list(_progress_bar(track, data, palette))
+    yield bars[0] if bars else replace(track, hidden=True)
+    parts = {bar.name: bar for bar in bars[1:]}
+    for name, effect, color in (('Clean plates toward milestone', 'fly', palette.fill),
+                                ('Clean plates above milestone', 'excess', palette.accent)):
+        current = parts.get(name)
+        if effect == 'fly' and current is None:
+            current = parts.get('All-time clean plate share')
+        if current:
+            yield replace(current, name=name, effect=effect)
+        else:
+            yield replace(track, name=name, width=1, color=color, effect=effect, hidden=True, radius=0)
+
+
 def _meter_outline(track, offset=0, end=None):
     """Trace a full rounded window or its exact horizontal interval in slide points."""
     end = track.width if end is None else end
@@ -416,18 +432,23 @@ def _meter_segment_outline(item):
     return _meter_outline(track, offset, offset + item.width)
 
 
-def _distribution_bar(track, latest, layout):
+def _distribution_bar(track, latest, layout, *, seed=False):
     yield track
     swatches = {item.name: item.color for item in layout if isinstance(item, Rect)}
     offset = 0
     for key, label in CATEGORIES:
         count = latest[key]
+        x = track.x + track.width * offset / latest['total'] if latest['total'] else track.x
         if count:
-            x = track.x + track.width * offset / latest['total']
             offset += count
             end = track.x + track.width * offset / latest['total']
             yield replace(track, name=label + ' share', x=x, width=end - x,
                           color=swatches[label + ' key'])
+        elif seed:
+            # A live Google deck keeps its original click target when this
+            # category changes from zero to a positive count next session.
+            yield replace(track, name=label + ' share', x=min(x, track.x + track.width - 1), width=1,
+                          color=swatches[label + ' key'], hidden=True)
 
 
 def _fit_frame(item, lines, *, allow_ellipsis):
@@ -482,6 +503,9 @@ def _bind_page(index, data, theme, values, notes):
                 continue
             text = _clean_text(values[item.name] or '')
             if not text:
+                if index == 0 and data.get('seed_google_session_slides'):
+                    page.items.append(replace(item, lines=('\u200b',),
+                                              effect='signed_change' if item.name == 'latest_change' else ''))
                 continue
             # The browser has already measured and wrapped the template copy.
             # Refit only when a school's value differs from the authored text.
@@ -497,14 +521,18 @@ def _bind_page(index, data, theme, values, notes):
                 fitted = replace(fitted, effect='signed_change')
             page.items.append(fitted)
         elif item.name == 'progress_track':
-            page.items.extend(_progress_bar(item, data, PALETTES[theme]))
+            meter = _live_google_meter if data.get('seed_google_session_slides') else _progress_bar
+            page.items.extend(meter(item, data, PALETTES[theme]))
         elif item.name == 'distribution':
-            page.items.extend(_distribution_bar(item, data['latest'], template.items))
+            page.items.extend(_distribution_bar(item, data['latest'], template.items,
+                                               seed=data.get('seed_google_session_slides', False)))
         elif item.name in ('prev_fill', 'curr_fill'):
             prefix = item.name.split('_')[0]
             track = next(part for part in template.items if part.name == prefix + '_track')
             rate = _clean_rate(data['previous'] if prefix == 'prev' else data['latest'])
-            if rate is not None:
+            if data.get('seed_google_session_slides') and not rate:
+                page.items.append(replace(item, x=track.x, width=1, hidden=True))
+            elif rate is not None:
                 page.items.append(replace(item, x=track.x, width=track.width * rate / 100))
         else:
             page.items.append(item)
@@ -518,7 +546,7 @@ def _session_note(session):
 def _latest_session_page(snapshot, theme, platform):
     latest = snapshot['latest']
     page = _bind_page(1, snapshot, theme, _latest_values(latest), _session_note(latest))
-    if platform == 'powerpoint' and latest['total'] > 0:
+    if platform != 'pdf' and latest['total'] > 0:
         zero_counts = set()
         for key, label in CATEGORIES:
             if key in ('dirty', 'very_dirty') and latest[key] == 0:
@@ -600,6 +628,8 @@ def _winner_page(overview, snapshot, theme):
 
     def text(style, name, words, x, y, width, height, size, color, *, bold=False):
         lines = (words,) if isinstance(words, str) else tuple(words) or ('',)
+        if not words and snapshot.get('seed_google_session_slides'):
+            lines = ('\u200b',)
         item = replace(style, name=name, lines=lines, x=x, y=y, width=width, height=height, size=size,
                        align='center', color=color, bold=bold, italic=False, anchor='top', leading=1.13,
                        tracking=0, effect='')
@@ -667,7 +697,7 @@ def _powerpoint_rect(slide, item):
 _CHART_CORNER_FRACTION = .4  # Same proportion as the opening meter.
 
 
-def _powerpoint_chart_bar(slide, item, tracks):
+def _powerpoint_chart_bar(slide, item, tracks, *, google):
     if item.name.endswith(' share'):
         track = tracks.get('distribution')
     elif item.name in ('prev_fill', 'curr_fill'):
@@ -675,6 +705,8 @@ def _powerpoint_chart_bar(slide, item, tracks):
     else:
         track = tracks.get(item.name)
     if track is None:
+        if google and item.meter_slice:
+            item = replace(item, radius=0, meter_slice=None)
         return _powerpoint_rect(slide, item)
 
     # Snap each boundary once in native units. Adjacent distribution colors
@@ -689,7 +721,10 @@ def _powerpoint_chart_bar(slide, item, tracks):
     crop = None
     if radius and item.name != track.name and end - start < full and width < 2 * radius:
         # A tiny rate on the comparison slide fits the curved start of its track.
-        crop = (0, full / unit)
+        if google:
+            radius = 0  # Clipped by the track's small corner images.
+        else:
+            crop = (0, full / unit)
     bar = replace(item, x=track.x + start / unit, width=width, radius=radius, meter_slice=crop)
     shape = _powerpoint_rect(slide, bar)
     shape.left, shape.width = round(track.x * unit) + start, end - start
@@ -753,27 +788,34 @@ def _add_meter_window(slide, track, paper):
     shape.name = PROGRESS_WINDOW_NAME
 
 
-def _powerpoint(pages, *, animated):
+def _powerpoint(pages, *, google, snapshot):
     presentation = Presentation()
     presentation.slide_width, presentation.slide_height = Pt(WIDTH), Pt(HEIGHT)
     has_intro = pages[0].template_index == INTRO_TEMPLATE_INDEX
     presentation.core_properties.title = pages[1 if has_intro else 0].title
     presentation.core_properties.author = 'Golden Plate'
     presentation.core_properties.comments = ''
+    seed = snapshot.get('seed_google_session_slides', False)
     for page in pages:
-        slide = (add_winner_slide(presentation) if page.template_index == WINNER_TEMPLATE_INDEX
+        slide = (add_winner_slide(presentation) if page.template_index == WINNER_TEMPLATE_INDEX and not google
                  else presentation.slides.add_slide(presentation.slide_layouts[6]))
         slide._element.cSld.set('name', page.title)
         slide.background.fill.solid()
         slide.background.fill.fore_color.rgb = RGBColor.from_string(page.background)
+        if google and page.template_index == WINNER_TEMPLATE_INDEX:
+            add_google_photo_targets(slide, page.background, snapshot)
         role_overrides = {}
         meter_track = None
         meter_fill = None
-        chart_tracks = {item.name: item for item in page.items
-                        if animated and item.name in ('distribution', 'prev_track', 'curr_track')}
+        chart_tracks = {item.name: item for item in page.items if item.name in ('distribution', 'prev_track', 'curr_track')}
         for item in page.items:
+            if page.template_index == 3 and item.name in ('Axis minimum', 'Axis midpoint', 'Axis maximum') and google:
+                continue
+            if google and isinstance(item, Rect) and not item.width:
+                continue
             if isinstance(item, Text):
-                shape = slide.shapes.add_textbox(Pt(item.x), Pt(item.y), Pt(item.width), Pt(item.height))
+                top = google_text_top(item) if google else item.y
+                shape = slide.shapes.add_textbox(Pt(item.x), Pt(top), Pt(item.width), Pt(item.height))
                 frame = shape.text_frame
                 frame.word_wrap = False
                 frame.auto_size = MSO_AUTO_SIZE.NONE
@@ -796,7 +838,12 @@ def _powerpoint(pages, *, animated):
                     if item.tracking:
                         run.font._rPr.set('spc', str(round(item.tracking * 100)))
             elif isinstance(item, Rect):
-                shape = _powerpoint_chart_bar(slide, item, chart_tracks)
+                if seed and (item.name in ('prev_fill', 'curr_fill') or item.effect in ('excess', 'fly')):
+                    shape = _powerpoint_rect(slide, replace(item, radius=0, meter_slice=None))
+                else:
+                    shape = _powerpoint_chart_bar(slide, item, chart_tracks, google=google)
+                if item.hidden:
+                    shape.fill.background()
                 if item.name == 'progress_track':
                     meter_track = item
             elif isinstance(item, SignatureFilm):
@@ -806,33 +853,51 @@ def _powerpoint(pages, *, animated):
                                                  Pt(item.width), Pt(item.height))
                 shape._element.nvPicPr.cNvPr.set('descr', item.description)
             shape.name = item.name
-            if animated:
-                effect = getattr(item, 'effect', '')
-                if effect:
-                    role_overrides[shape.shape_id] = effect
-                if effect == 'fly':
-                    meter_fill = shape
-                elif effect == 'excess' and meter_fill is not None:
-                    # The completed green fill masks the gold segment until its
-                    # leading edge crosses the goal. Both segments can fly in.
-                    meter_fill._element.addprevious(shape._element)
-                elif effect == 'signed_change':
-                    slide.shapes._spTree.insert(2, shape._element)
-        slide.notes_slide.notes_text_frame.text = '\n'.join(_clean_text(line) for line in page.notes.splitlines())
-        if animated:
+            effect = getattr(item, 'effect', '')
+            if effect:
+                role_overrides[shape.shape_id] = effect
+            if effect == 'fly':
+                meter_fill = shape
+            if effect == 'excess' and meter_fill is not None:
+                # The completed green fill masks the gold segment until its
+                # leading edge crosses the goal. Both segments can fly in.
+                meter_fill._element.addprevious(shape._element)
+            elif effect == 'signed_change' and not google:
+                slide.shapes._spTree.insert(2, shape._element)
+        notes = '\n'.join(_clean_text(line) for line in page.notes.splitlines())
+        slide.notes_slide.notes_text_frame.text = f'[Golden Plate results]\n{notes}\n[/Golden Plate results]' if google else notes
+        if page.template_index == 4:
+            from src.services.presentation_reminders import restyle_powerpoint_reminders
+            closing = next(page for page in pages if page.template_index == 5)
+            gold = next(item.color for item in closing.items if item.name == 'Be Green')
+            restyle_powerpoint_reminders(slide, gold)
+        if google:
+            add_google_bar_layers(slide, page, meter_track, meter_fill, seed=seed, corner_fraction=_CHART_CORNER_FRACTION)
+        else:
             if 'distribution' in chart_tracks:
                 _add_distribution_window(slide, page.background)
             if page.template_index == 3:
                 _prepare_rate_chart(slide, page.background)
-            if page.template_index == 4:
-                from src.services.presentation_reminders import restyle_powerpoint_reminders
-                closing = next(page for page in pages if page.template_index == 5)
-                gold = next(item.color for item in closing.items if item.name == 'Be Green')
-                restyle_powerpoint_reminders(slide, gold)
             if meter_track and meter_fill is not None:
                 _add_meter_window(slide, meter_track, page.background)
-            add_slide_motion(slide, page.template_index, role_overrides,
-                             morph_from_intro=has_intro and page.template_index == 0)
+        add_slide_motion(slide, page.template_index, role_overrides, google=google,
+                         seed=seed,
+                         morph_from_intro=has_intro and page.template_index == 0)
+        if google:
+            if page.template_index == INTRO_TEMPLATE_INDEX:
+                slide._element.set('show', '0')
+            if seed and (
+                    page.template_index == 1 and not snapshot['latest'] or
+                    page.template_index in (2, 3) and not snapshot['previous']):
+                slide._element.set('show', '0')
+                anchor = next(shape for shape in slide.shapes if shape.name == 'title')
+                anchor._element.nvSpPr.cNvPr.set('descr', '[gp-session-slide-inactive]')
+            mark_google_objects(slide, page.template_index, snapshot)
+    if google and has_intro:
+        # Keep the slide parts and their timing targets intact. Google opens the
+        # first physical thumbnail even when that thumbnail is marked skipped.
+        order = presentation.slides._sldIdLst
+        order.insert(0, order[1])
     apply_presentation_fonts(presentation)
     with BytesIO() as file:
         presentation.save(file)
@@ -893,8 +958,10 @@ def generate_deck(kind, theme, snapshot, platform='powerpoint'):
     """
     if kind not in ('assembly', 'overview') or theme not in TEMPLATE_FILES or platform not in ('powerpoint', 'google-slides', 'pdf'):
         raise ValueError('Unknown presentation format')
-    zone = snapshot.get('reporting_timezone', 'America/New_York') if platform == 'powerpoint' else 'UTC'
-    snapshot = {**snapshot, 'records_stamp': _stamp(snapshot['generated_at'], zone)}
+    zone = snapshot.get('reporting_timezone', 'America/New_York') if platform != 'pdf' else 'UTC'
+    snapshot = {**snapshot, 'records_stamp': _stamp(snapshot['generated_at'], zone),
+                'seed_google_session_slides': bool(platform == 'google-slides' and kind == 'assembly'
+                                                  and snapshot.get('seed_google_session_slides'))}
     latest, previous = snapshot['latest'], snapshot['previous']
     milestone = snapshot.get('milestone')
     overview = _overview_values(snapshot)
@@ -908,22 +975,38 @@ def generate_deck(kind, theme, snapshot, platform='powerpoint'):
         overview_note += f" The rate changed by {overview['latest_change']} {overview['change_units']}."
     pages = [_bind_page(0, snapshot, theme, overview, overview_note)]
     if kind == 'assembly':
+        sessions = snapshot
+        if platform == 'google-slides' and snapshot.get('seed_google_session_slides'):
+            # Google can't attach animations via its Slides API. Import every
+            # live layout once, skipping incomplete sections until data arrives.
+            empty = dict(date=None, clean=0, total=0, **dict.fromkeys((key for key, _ in CATEGORIES), 0))
+            latest = latest or {**empty, 'name': 'No session results yet'}
+            previous = previous or {**empty, 'name': 'No previous session yet'}
+            sessions = {**snapshot, 'latest': latest, 'previous': previous}
         if latest:
-            pages.append(_latest_session_page(snapshot, theme, platform))
+            pages.append(_latest_session_page(sessions, theme, platform))
             if previous:
                 notes = 'Previous session: ' + _session_note(previous) + ' Latest session: ' + _session_note(latest)
-                comparison = _comparison_values(snapshot)
+                comparison = _comparison_values(sessions)
                 notes += (f" Clean-plate rates: {comparison['prev_rate']} previously and {comparison['curr_rate']} "
                           f"in the latest session. {comparison['rate_comparison']}.")
-                pages.append(_bind_page(2, snapshot, theme, comparison, notes))
-                pages.append(_bind_page(3, snapshot, theme, comparison, notes))
-        if platform == 'powerpoint':
+                pages.append(_bind_page(2, sessions, theme, comparison, notes))
+                pages.append(_bind_page(3, sessions, theme, comparison, notes))
+        if platform != 'pdf':
             pages.append(_winner_page(pages[0], snapshot, theme))
-            pages[0:1] = opening_pair(pages[0], snapshot['school_name'], theme)
+            if platform == 'google-slides':
+                pages[-1].notes += ('\nOptional photos: select the blank image at the left for the student or at '
+                                    'the right for faculty, then choose Replace image.')
+            if platform == 'google-slides':
+                pages[0:1] = opening_pair(pages[0], snapshot['school_name'], theme, google=True)
+            else:
+                pages[0:1] = opening_pair(pages[0], snapshot['school_name'], theme)
         pages.append(_bind_page(4, snapshot, theme, {}, ''))
         pages.append(_bind_page(5, snapshot, theme, {}, ''))
-        if platform == 'powerpoint':
+        if platform == 'google-slides':
+            pages.append(google_outro(pages[0], pages[1], theme))
+        elif platform != 'pdf':
             pages.append(replace(pages[0], template_index=OUTRO_TEMPLATE_INDEX, title=OUTRO_MARKER))
     if platform == 'pdf':
         return _pdf(pages)
-    return _powerpoint(pages, animated=platform == 'powerpoint')
+    return _powerpoint(pages, google=platform == 'google-slides', snapshot=snapshot)

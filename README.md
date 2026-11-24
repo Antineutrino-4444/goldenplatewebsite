@@ -338,16 +338,23 @@ In a connected PowerPoint, school figures update in the existing slides.
 Teachers can add their own slides and paste photos into the winner announcement.
 When a pictured winner changes, the previous announcement stays in the file
 as a hidden slide. The new announcement has an empty frame for the new winner.
-Google Slides refreshes replace the linked deck’s content, so make a separate
-Google Slides copy for personal edits. Downloaded presentations are snapshots. **Stop
+In a connected Google Slides deck, school results update in place. Teacher-added
+slides, objects, and notes outside the marked results section stay in the deck.
+To add a winner portrait, select the empty image to the left of the student
+or to the right of the faculty member and choose **Replace image**. The photo
+stays with that winner for that draw. A new recipient gets an empty frame.
+Keep the original alt titles on managed objects so the website can identify
+them. Add a blank slide for a teacher announcement.
+
+Downloaded presentations and one-time Google Drive copies are snapshots. **Stop
 automatic updates** disconnects the file and leaves its last contents in the
 teacher's account. If the provider revokes access, the teacher can reconnect
 the original cloud account. The website rechecks school membership and email
 eligibility before sending updates.
 
 The six base slides are authored in `frontend/print/school-assembly/index.html`
-and `assembly.css`. The PowerPoint exporter adds the animated Golden Plate logo at
-both ends and places the winner announcement just before Quick Reminders.
+and `assembly.css`. Both presentation formats open and close with the Golden Plate
+logo and place the winner announcement just before Quick Reminders.
 Schools with two sessions receive nine slides. Both themes use the website’s colors. Each
 `data-ppt` name identifies an editable text box, shape, or picture in PowerPoint.
 The results exporter fills those objects with the requesting school's figures.
@@ -358,7 +365,7 @@ to play the logo ending. It advances automatically to the next visible slide
 in the PowerPoint show, including a slide added by the presenter. If it comes
 last, the show ends normally. Leave slide timings enabled for this handoff.
 
-PowerPoint shows finalized student and faculty winners together for the latest
+PowerPoint and Google Slides show finalized student and faculty winners together for the latest
 recorded session. Under each name, it shows the tickets, percentage and eligible
 pool recorded at selection, plus the selection method when available. A separate
 line shows how many tickets the winner’s next clean plate earns, using the
@@ -373,11 +380,11 @@ picture to fill the frame. To replace a photo already in a frame, right-click
 it and choose **Change Picture → From Clipboard**. Empty frames are invisible
 in Slide Show. To skip the announcement for an assembly, choose **Hide Slide**.
 
-The presenter controls when to leave each content slide. The slides build
+In a new assembly deck, the presenter controls when to leave each content slide. The slides build
 automatically on entry. The session breakdown also has four presenter-controlled
 reveals. Object fades take 0.25 seconds.
 
-The opening and closing use the 4K, 60 fps “quicker-start” logo reveal. A gold
+The PowerPoint opening and closing use the 4K, 60 fps “quicker-start” logo reveal. A gold
 line enters from the left and curls into the rim. The editable wordmark rises
 as the inner ring and leaf appear.
 The motion is embedded in the file for offline use. With **Use Timings** enabled,
@@ -405,6 +412,36 @@ on the bar without adding width to the recorded share. The next click advances
 to the following slide. Quick Reminders emphasizes the portion and dish-return
 instructions in large type.
 
+### Presenting in Google Slides
+
+Download the Google Slides version from `/export` and import with **Keep
+original theme**, or use the site's Drive connection to open a native
+presentation. Click **Slideshow** on the first slide to play the opening and
+school results. The editable logo cover is kept as a skipped second slide.
+The tutorial logo draws itself, the wordmark appears, and both travel to the
+upper-left corner. The school results build automatically. Google plays the
+opening and results on the same slide so the presenter can wait until the
+results are on screen before advancing. [Google Slides presentation controls](https://support.google.com/docs/answer/1634140?hl=en)
+
+On the session breakdown, click once for each category. Each click rolls one
+count and fills its share of the bar. A zero in either dirty category lands
+in the normal number color, turns gold, and highlights its position on the
+bar. The Google export uses timed picture frames for the logo, and native
+text and shape frames for the directional entrances and eased bars. Headings,
+counts, and settled bars are editable. Click once from **Be Green, Do Good**
+to play the logo ending. Click again to continue to the next slide.
+
+Connected Google decks include all nine slides from the start. The worker
+skips the breakdown until the school has a recorded session and skips the
+comparisons until it has two. When results arrive, those same slides become
+visible with their original builds. A previously connected Google deck keeps
+its link, teacher-added slides, and the animations already attached to its
+managed objects. New animation sequences arrive with a fresh import. For
+older decks without managed objects, the first refresh skips the original
+assembly slides and adds the current layout with the results already visible.
+The Slides API can update content and preserve existing animations. Animation
+authoring is available in the Slides editor. [Google Slides API requests](https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations/request)
+
 After changing the HTML or CSS, run `node scripts/resources/build_school_assembly.mjs`
 from the repository root with `@oai/artifact-tool`, `sharp`, `jszip`, `playwright`, and
 Playwright's Chromium available. Set `CHROMIUM_PATH` to use an existing Chromium
@@ -414,9 +451,11 @@ templates for PowerPoint, Google Slides, and PDF downloads. To inspect the
 browser screenshots and object coordinates, pass an output PPTX path and a
 preview directory as the first and second arguments.
 The dark PowerPoint embeds the supplied 4K MP4 directly. To rebuild the light
-version and both transparent logo images, run
+version, both transparent logos and Google's timed signature frames, run
 `node scripts/resources/build_tutorial_signature.mjs` with Playwright, Chromium
-and ffmpeg installed. Normal exports use the files in `src/services/templates`.
+and ffmpeg installed. The frame sampler uses the project Python environment
+and Georgia. Set `PYTHON` or `GEORGIA_FONT_PATH` to override those defaults.
+Normal exports use the files in `src/services/templates`.
 Increment the affected provider’s entry in `ASSEMBLY_DESIGN_REVISIONS` in
 `assembly_sync.py` when publishing a design change so its connected
 presentations pick it up at their next check.
@@ -440,7 +479,7 @@ derived from it. An optional dedicated Fernet key can be set with
 
 | Provider | Configuration |
 | --- | --- |
-| Google Slides | Enable the **Google Drive API**. On the existing **Web application** OAuth client, register the Google callback below under **Authorized redirect URIs**. Set `GOOGLE_SLIDES_CLIENT_ID` and `GOOGLE_SLIDES_CLIENT_SECRET` on the server. The app requests offline access and `drive.file`. External apps in Google's **Testing** mode have seven-day refresh tokens for this scope. Publish the OAuth app for ongoing use by schools. [Google offline access](https://developers.google.com/identity/protocols/oauth2/web-server#offline) · [Token expiration](https://developers.google.com/identity/protocols/oauth2#expiration) |
+| Google Slides | Enable the **Google Drive API** and **Google Slides API** in the OAuth project. On the existing **Web application** client, register the Google callback below under **Authorized redirect URIs**. Set `GOOGLE_SLIDES_CLIENT_ID` and `GOOGLE_SLIDES_CLIENT_SECRET` on the server. The app uses offline access and the existing `drive.file` grant. External apps in Google's **Testing** mode have seven-day refresh tokens for this scope. Publish the OAuth app for ongoing use by schools. [Google Slides authorization](https://developers.google.com/workspace/slides/api/scopes) · [Google offline access](https://developers.google.com/identity/protocols/oauth2/web-server#offline) · [Token expiration](https://developers.google.com/identity/protocols/oauth2#expiration) |
 | PowerPoint | Register a **Web** application in Microsoft Entra. To accept different schools and personal OneDrive accounts, allow accounts in any organizational directory and personal Microsoft accounts. Add delegated Microsoft Graph permissions `Files.ReadWrite.AppFolder` and `offline_access`. Register the Microsoft callback below. Set `MICROSOFT_SLIDES_CLIENT_ID` to the application ID and `MICROSOFT_SLIDES_CLIENT_SECRET` to the client secret **value**. Teachers need a provisioned OneDrive. [Microsoft authorization](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow) · [OneDrive app folders](https://learn.microsoft.com/en-us/graph/onedrive-sharepoint-appfolder) |
 
 Register each callback with its corresponding provider:
@@ -460,6 +499,12 @@ The sync worker runs inside the Flask/WSGI application on a host with background
 threads enabled. Multiple workers claim individual decks in the database.
 Transient outages are retried with backoff. `ASSEMBLY_SYNC_WORKER_ENABLED=false`
 turns off background checks for isolated tests.
+
+On a changed Google snapshot, the worker converts a private working copy in
+Drive, reads Google's native layout, then applies the changed fields to the
+linked presentation using its current revision ID. If a teacher edits the file
+during that operation, a later attempt reads the newer version. The worker
+removes the temporary conversion after processing.
 
 The existing one-time **Create in Google Slides** option uses the public
 `VITE_GOOGLE_SLIDES_CLIENT_ID` in the frontend build environment (locally,
