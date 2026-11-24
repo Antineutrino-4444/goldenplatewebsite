@@ -1,8 +1,18 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.4.0.0 5e5e7adea99a084638448766d981554e2b56f3a1 -->
+<!-- golden-plate-release-baseline: 1.4.0.1 31fa870d987e88c9c90c17209c3bb10865c422c6 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.4.0.1
+
+November 24, 2026 · Faster winner updates in live assembly slides
+
+Author: Jiajun (Leo) Li
+
+- Finalizing a Student Ticket Draw or Faculty Ticket Draw in Draw Center now queues the school's connected Google Slides and OneDrive PowerPoint decks for an update and wakes the background worker. Updates can start without waiting for the normal minute-long results check; presentation conversion and transfer still take time.
+- If a winner is finalized while a deck is uploading, another update picks up the new result using the same file link. This prevents the upload already in progress from leaving the presentation marked up to date with an older winner result.
+- Cloud presentation connections now distinguish app credential or permission configuration failures from canceled or expired authorization. The export page reports when the connection is unavailable and still offers a download. Site administrators also have more specific diagnostic logs for connection failures.
 
 ## 1.4.0.0
 
