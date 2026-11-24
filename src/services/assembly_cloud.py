@@ -93,7 +93,7 @@ def authorization_url(provider, redirect_uri, state, verifier):
     return _oauth_endpoint(provider, authorize=True) + '?' + urlencode(params)
 
 
-def _request(method, url, *, missing_ok=False, binary=False, **kwargs):
+def _request(method, url, *, missing_ok=False, binary=False, download_redirect=False, **kwargs):
     token_provider = _token_provider(url)
     try:
         timeout = kwargs.pop('timeout', (5, 15))
@@ -104,6 +104,8 @@ def _request(method, url, *, missing_ok=False, binary=False, **kwargs):
         raise CloudDeckError('The presentation service could not be reached. Try again shortly.') from None
     if response.status_code == 404 and missing_ok:
         return None
+    if response.status_code == 302 and download_redirect:
+        return response.headers.get('Location')
     if 200 <= response.status_code < 300 and binary:
         return response.content
     if response.status_code in (409, 412, 423):
@@ -274,9 +276,12 @@ def _google_deck(headers, binding, file_id, snapshot, blob):
 
 
 def _https_url(value):
-    if not isinstance(value, str):
+    if not isinstance(value, str) or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value):
         return False
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
     return parsed.scheme == 'https' and bool(parsed.hostname) and not parsed.username and not parsed.password
 
 
@@ -288,19 +293,32 @@ def _onedrive_version_tag(value):
         r'"[\x21\x23-\x7e]+"|[A-Za-z0-9][A-Za-z0-9._~!+/=-]*', value))
 
 
+def _download_existing_powerpoint(headers, item, info):
+    url = info.get('@microsoft.graph.downloadUrl')
+    if url is None or url == '':
+        # Some driveItem responses omit the annotation. Graph's /content API
+        # provides the same short-lived URL in a 302 Location header. Read it
+        # explicitly so the OAuth grant never follows the redirect to storage.
+        download = _request('GET', item + '/content', headers=headers,
+                            binary=True, download_redirect=True)
+        if isinstance(download, bytes):
+            return download
+        url = download
+    if not _https_url(url):
+        raise CloudDeckError('OneDrive did not return a secure download link for the saved presentation. The presentation was kept.')
+    return _request('GET', url, binary=True)
+
+
 def _save_existing_powerpoint(headers, info, file_id, blob, snapshot):
     item = f'{ONEDRIVE}/items/{quote(file_id, safe="")}'
     etag = info.get('eTag')
-    url = info.get('@microsoft.graph.downloadUrl')
     if info.get('id') != file_id:
         raise CloudDeckError('OneDrive did not confirm the original presentation identity. The presentation was kept.')
     if not _onedrive_version_tag(etag):
         raise CloudDeckError('OneDrive did not confirm the saved file version. The presentation was kept.')
-    if not _https_url(url):
-        raise CloudDeckError('OneDrive did not return a secure download link for the saved presentation. The presentation was kept.')
     # Graph's short-lived download and upload URLs are already authenticated.
     # Keep the Graph OAuth grant on graph.microsoft.com.
-    saved = _request('GET', url, binary=True)
+    saved = _download_existing_powerpoint(headers, item, info)
     try:
         merged = merge_deck(saved, blob, snapshot)
     except MergeError as error:

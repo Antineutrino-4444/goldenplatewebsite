@@ -535,9 +535,12 @@ connections must be reconnected by their owner before syncing.
 
 OneDrive version checks accept both quoted SharePoint tags and the opaque,
 unquoted tags returned by OneDrive Personal. The original tag is preserved in
-conditional uploads and checked again before the final upload chunk. Missing
-version tags, an unexpected file ID or a missing secure download link stop the
-update and leave the saved presentation untouched.
+conditional uploads and checked again before the final upload chunk. If file
+metadata omits the download URL, the worker uses Microsoft's documented
+[`/content` download endpoint](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0).
+It validates the HTTPS redirect and downloads without forwarding the Graph
+access token. Missing version tags, an unexpected file ID or an unusable download
+response stop the update and leave the saved presentation untouched.
 Use `https://goldenplate.ca` consistently when connecting production decks; the
 callback and the initiating school session must use the same site origin.
 

@@ -17,10 +17,12 @@ def api(monkeypatch):
     def send(method, url, **kwargs):
         calls.append((method, url, kwargs))
         assert kwargs['allow_redirects'] is False
-        status, body = replies.pop(0)
+        status, body, *response_headers = replies.pop(0)
         response = requests.Response()
         response.status_code = status
         response._content = body if isinstance(body, bytes) else json.dumps(body).encode()
+        if response_headers:
+            response.headers.update(response_headers[0])
         return response
 
     monkeypatch.setattr(cloud.requests, 'request', send)
@@ -267,7 +269,7 @@ def test_changed_personal_version_is_not_overwritten(api, upload):
 
 @pytest.mark.parametrize('change,message', [
     ({'id': 'another-file'}, 'original presentation identity'),
-    ({'@microsoft.graph.downloadUrl': None}, 'secure download link'),
+    ({'@microsoft.graph.downloadUrl': 'http://files.example/download'}, 'secure download link'),
 ])
 def test_onedrive_incomplete_metadata_is_distinct_and_never_overwritten(api, upload, change, message):
     calls, replies = api
@@ -275,6 +277,71 @@ def test_onedrive_incomplete_metadata_is_distinct_and_never_overwritten(api, upl
     with pytest.raises(cloud.CloudDeckError, match=message):
         upload('microsoft', REMOTE['id'])
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('annotation', ['absent', None, ''])
+def test_onedrive_missing_download_annotation_uses_content_redirect(api, upload, annotation):
+    calls, replies = api
+    info = {key: value for key, value in REMOTE.items() if key != '@microsoft.graph.downloadUrl'}
+    if annotation != 'absent':
+        info['@microsoft.graph.downloadUrl'] = annotation
+    replies.extend([(200, info), (302, b'', {'Location': REMOTE['@microsoft.graph.downloadUrl']}),
+                    (200, b'teacher edits'), (200, SESSION), (200, REMOTE), (200, REMOTE)])
+    assert upload('microsoft', info['id'], 178) == (info['id'], info['webUrl'])
+    content, download, session, check, write = calls[1:]
+    assert content[:2] == ('GET', cloud.ONEDRIVE + '/items/root%21school/content')
+    assert content[2]['headers']['Authorization'] == 'Bearer test-access'
+    assert 'Authorization' not in download[2].get('headers', {})
+    assert session[2]['headers']['If-Match'] == REMOTE['eTag']
+    assert check[2]['params'] == {'$select': 'id,eTag'}
+    assert write[2]['headers']['If-Match'] == REMOTE['eTag']
+    assert 'Authorization' not in write[2]['headers']
+    assert write[2]['data'] == b'teacher edits + powerpoint lunch 178'
+    assert not replies
+
+
+def test_onedrive_content_endpoint_can_return_the_file_directly(api, upload):
+    calls, replies = api
+    info = dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})
+    replies.extend([(200, info), (200, b'teacher edits'), (200, SESSION), (200, REMOTE), (200, REMOTE)])
+    assert upload('microsoft', info['id']) == (info['id'], info['webUrl'])
+    assert calls[1][1].endswith('/content')
+    assert calls[-1][2]['data'] == b'teacher edits + powerpoint lunch 120'
+
+
+@pytest.mark.parametrize('location', [None, '', 'http://files.example/download',
+                                     'https://secret@files.example/download', 'javascript:secret',
+                                     '/relative', 'https://[invalid', 'https://files.example/\r\nsecret'])
+def test_onedrive_content_redirect_requires_a_secure_url_before_merge_or_upload(api, upload, location):
+    calls, replies = api
+    replies.extend([(200, dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})),
+                    (302, b'', {} if location is None else {'Location': location})])
+    with pytest.raises(cloud.CloudDeckError, match='secure download link') as caught:
+        upload('microsoft', REMOTE['id'])
+    assert len(calls) == 2 and all(method == 'GET' for method, _, _ in calls)
+    assert 'secret' not in str(caught.value)
+
+
+@pytest.mark.parametrize('status,reconnect', [(401, True), (403, True), (404, True), (429, False)])
+def test_onedrive_content_failure_keeps_the_file_and_reports_safe_recovery(api, upload, status, reconnect):
+    calls, replies = api
+    replies.extend([(200, dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})),
+                    (status, {'error': {'code': 'accessDenied', 'message': 'private provider detail'}})])
+    with pytest.raises(cloud.CloudDeckError) as caught:
+        upload('microsoft', REMOTE['id'])
+    assert caught.value.reconnect is reconnect
+    assert 'private provider detail' not in str(caught.value)
+    assert len(calls) == 2 and all(method == 'GET' for method, _, _ in calls)
+
+
+def test_onedrive_content_fallback_still_stops_on_a_concurrent_edit(api, upload):
+    calls, replies = api
+    replies.extend([(200, dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})),
+                    (302, b'', {'Location': REMOTE['@microsoft.graph.downloadUrl']}),
+                    (200, b'teacher edits'), (200, SESSION), (200, dict(REMOTE, eTag='"file,8"'))])
+    with pytest.raises(cloud.CloudDeckError, match='changed while syncing'):
+        upload('microsoft', REMOTE['id'])
+    assert all(method != 'PUT' for method, _, _ in calls)
 
 
 @pytest.mark.parametrize('phase', ['metadata', 'merge', 'session', 'recheck', 'upload'])
