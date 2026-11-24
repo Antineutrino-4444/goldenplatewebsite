@@ -1,8 +1,19 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.4.0.1 31fa870d987e88c9c90c17209c3bb10865c422c6 -->
+<!-- golden-plate-release-baseline: 1.4.1.0 ac9ba8d9847c9d24b224b7fd48b5b54b18062695 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.4.1.0
+
+November 24, 2026 · Live presentation management and OneDrive fixes
+
+Author: Jiajun (Leo) Li
+
+- On the Export assembly slides page, sign in and enter your school code to see Your connected presentations across Google Slides and PowerPoint / OneDrive, in both light and dark themes. Each connection has an Open deck link, its last sync time, and a status showing whether an update is queued, syncing, synced, failed, or requires reconnection. Failed updates show the saved error and, when available, the next retry time. Status refreshes every ten seconds.
+- School admins and superadmins can open Live assembly presentations in Admin Panel to see their school's connected decks, who connected each one, and whether each presentation service is configured. They can open a deck or request an update for another school member's connection.
+- Select Sync now in either view to queue a fresh update to the existing deck, even when the school results have not changed. This bypasses the retry delay after a failed update and keeps the same deck link. Updates run in the background; a connection marked Reconnect required must first be reconnected by its owner from the export page.
+- Fixed automatic PowerPoint updates for OneDrive Personal accounts whose file-version format was previously rejected. OneDrive errors now distinguish an unconfirmed file identity, an unconfirmed saved version, and a missing secure download link; these failures leave the saved presentation intact.
 
 ## 1.4.0.1
 
