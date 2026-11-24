@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import time
@@ -19,6 +20,7 @@ from .users import get_school_by_slug
 PROVIDERS = ('google', 'microsoft')
 FLOW_TTL = 600
 PREFIX = '/api/resources/presentations/live'
+logger = logging.getLogger(__name__)
 
 
 def _site_origin():
@@ -183,13 +185,16 @@ def assembly_oauth_callback(provider):
         return _return_to_export(flow, provider, 'access')
     code = request.args.get('code')
     if request.args.get('error') or not code:
+        provider_error = request.args.get('error')
+        category = provider_error if provider_error in cloud.OAUTH_ERRORS else 'unknown' if provider_error else 'missing_code'
+        logger.warning('Assembly OAuth provider returned no authorization code (provider=%s error=%s)', provider, category)
         return _return_to_export(flow, provider, 'authorization')
     if not _provider_enabled(provider):
         return _return_to_export(flow, provider, 'config')
     try:
         tokens = cloud.exchange_code(provider, flow['callback'], code, _proof(state))
-    except cloud.CloudDeckError:
-        return _return_to_export(flow, provider, 'authorization')
+    except cloud.CloudDeckError as error:
+        return _return_to_export(flow, provider, 'config' if error.configuration else 'authorization')
     options = {'school_label': flow['school_label'] or None} if 'school_label' in flow else {}
     deck = sync.bind_deck(school.id, actor['id'], provider, flow['theme'], tokens['refresh_token'], **options)
     deck = sync.sync_deck(deck['id'], force=True)

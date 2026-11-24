@@ -10,6 +10,7 @@ import threading
 import uuid
 from datetime import timedelta, timezone
 
+from flask import current_app, has_app_context
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import case, or_
 from sqlalchemy.exc import IntegrityError
@@ -71,6 +72,24 @@ def list_decks(school_id, user_id):
         rows = store.query(AssemblyDeck).filter_by(school_id=school_id, owner_id=user_id).filter(
             AssemblyDeck.status != 'disconnected').order_by(AssemblyDeck.provider, AssemblyDeck.theme)
         return [_public(row) for row in rows]
+
+
+def queue_school_decks(store, school_id):
+    """Queue connected decks in the same transaction as a finalized winner."""
+    return store.query(AssemblyDeck).filter(
+        AssemblyDeck.school_id == school_id,
+        AssemblyDeck.status.in_(('ready', 'pending', 'retry')),
+        AssemblyDeck.encrypted_refresh_token.is_not(None),
+    ).update({'status': 'pending', 'message': None, 'next_check_at': _now_utc()},
+             synchronize_session=False)
+
+
+def wake_assembly_sync():
+    """Wake this process's worker after the winner and queue have committed."""
+    if has_app_context():
+        wake = current_app.extensions.get('assembly_sync_wake')
+        if wake is not None:
+            wake.set()
 
 
 def set_school_label(school_id, user_id, provider, theme, label):
@@ -154,12 +173,13 @@ def _sync_claim(row):
     content = {key: value for key, value in snapshot.items() if key != 'generated_at'}
     content['design_revision'] = ASSEMBLY_DESIGN_REVISIONS[row.provider]
     digest = hashlib.sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    # An owner can edit the label while the worker is uploading. Keep the
-    # resulting file ID and rotated token, then refresh its content immediately.
-    same_label = AssemblyDeck.school_label.is_not_distinct_from(row.school_label)
+    # Retain new file IDs and rotated tokens, but do not mark an old upload ready
+    # if a winner or school label changed while it was running.
+    unchanged = (AssemblyDeck.school_label.is_not_distinct_from(row.school_label)
+                 & AssemblyDeck.next_check_at.is_not_distinct_from(row.next_check_at))
     now = _now_utc()
-    success = {'status': case((same_label, 'ready'), else_='pending'), 'message': None, 'attempts': 0,
-               'next_check_at': case((same_label, now + CHECK_INTERVAL), else_=now)}
+    success = {'status': case((unchanged, 'ready'), else_='pending'), 'message': None, 'attempts': 0,
+               'next_check_at': case((unchanged, now + CHECK_INTERVAL), else_=now)}
     if row.file_id and row.snapshot_hash == digest:
         _update_claim(row, success)
         return
@@ -263,15 +283,19 @@ def start_assembly_sync(app, *, reloader_parent=False):
             if app.extensions.get('assembly_sync_pid') == os.getpid():
                 return
             stop = threading.Event()
+            wake = threading.Event()
 
             def work():
                 while not stop.is_set():
+                    # Clear before checking: a finalization during an upload
+                    # must cause another pass without waiting for the timer.
+                    wake.clear()
                     try:
                         with app.app_context():
                             run_due_decks()
                     except Exception as error:
                         logger.warning('Assembly maintenance will retry (%s)', type(error).__name__)
-                    stop.wait(15)
+                    wake.wait(15)
 
             thread = threading.Thread(target=work, name='assembly-sync', daemon=True)
             try:
@@ -281,6 +305,7 @@ def start_assembly_sync(app, *, reloader_parent=False):
                 return
             app.extensions['assembly_sync_pid'] = os.getpid()
             app.extensions['assembly_sync_stop'] = stop
+            app.extensions['assembly_sync_wake'] = wake
 
     ensure_worker()
     if not app.extensions.get('assembly_sync_hook'):

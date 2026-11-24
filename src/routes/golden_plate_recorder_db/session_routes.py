@@ -894,7 +894,10 @@ def finalize_faculty_winner(session_id):
                 # Keep the cumulative reset even if the finalized session is deleted.
                 teacher.faculty_tickets_reset_at = db_sess.faculty_finalized_at
                 teacher.faculty_combo_round_up = event.combo_round_up
+        from .assembly_sync import queue_school_decks, wake_assembly_sync
+        queue_school_decks(db_session, school_id)
         db_session.commit()
+        wake_assembly_sync()
     faculty = _serialize_faculty_pick(db_sess)
     data = get_session_entry(session_id)
     if data is not None:

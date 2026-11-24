@@ -368,7 +368,10 @@ def finalize_draw(draw: SessionModel, user_id: str, comment: Optional[str] = Non
             reason='Winner finalized - tickets reset',
         )
     recalculate_school_tickets(draw.school_id)
+    from .assembly_sync import queue_school_decks, wake_assembly_sync
+    queue_school_decks(db_session, draw.school_id)
     db_session.commit()
+    wake_assembly_sync()
 
 
 def reset_draw(draw: SessionModel, user_id: str, comment: Optional[str] = None) -> None:

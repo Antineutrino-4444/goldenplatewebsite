@@ -78,6 +78,45 @@ def test_revocation_and_missing_offline_grant_are_safe(monkeypatch, api):
         assert err.reconnect and 'sensitive-provider-detail' not in str(err)
 
 
+@pytest.mark.parametrize('category', ['invalid_client', 'unauthorized_client', 'invalid_scope'])
+def test_microsoft_token_configuration_failures_are_distinct_and_safely_logged(api, caplog, category):
+    _, replies = api
+    private = 'private-token-secret-code-and-account'
+    replies.append((400, {'error': category, 'error_description': private,
+                          'error_codes': [7000215, private, True, {'secret': private}],
+                          'access_token': private, 'refresh_token': private}))
+    with pytest.raises(cloud.CloudDeckError) as caught:
+        cloud._request('POST', cloud._oauth_endpoint('microsoft'),
+                       data={'client_secret': private, 'code': private})
+    assert caught.value.configuration and not caught.value.reconnect
+    assert 'site administrator' in str(caught.value)
+    assert 'provider=microsoft status=400' in caplog.text
+    assert f'error={category} codes=[7000215]' in caplog.text
+    assert private not in caplog.text and private not in str(caught.value)
+
+
+@pytest.mark.parametrize('error', ['private-unknown-provider-error', {'code': 'private-unknown-provider-error'}])
+def test_unknown_oauth_errors_do_not_leak_provider_content(api, caplog, error):
+    _, replies = api
+    replies.append((400, {'error': error, 'error_description': 'private-description',
+                          'error_codes': 'private-codes'}))
+    with pytest.raises(cloud.CloudDeckError) as caught:
+        cloud._request('POST', cloud._oauth_endpoint('microsoft'))
+    assert not caught.value.configuration
+    assert 'error=unknown codes=[]' in caplog.text
+    assert 'private-' not in caplog.text
+
+
+def test_token_network_failure_logs_provider_without_request_secrets(monkeypatch, caplog):
+    def unavailable(*args, **kwargs):
+        raise requests.ConnectionError('private-request-url-and-secret')
+    monkeypatch.setattr(cloud.requests, 'request', unavailable)
+    with pytest.raises(cloud.CloudDeckError):
+        cloud._request('POST', cloud._oauth_endpoint('microsoft'))
+    assert 'provider=microsoft status=network' in caplog.text
+    assert 'private-' not in caplog.text
+
+
 @pytest.fixture
 def upload(monkeypatch):
     def generate(kind, theme, snapshot, platform):

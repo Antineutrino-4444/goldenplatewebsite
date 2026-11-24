@@ -331,6 +331,12 @@ OneDrive. While the website is running, its
 worker checks the school's saved results about once a minute. A changed session,
 correction or total updates that same cloud file, even when the teacher has the
 website closed. Opening it through the export page also checks for changes.
+Finalizing a student or faculty winner queues the school's connected decks in
+the same database transaction and wakes the background worker after the save.
+This starts an update without waiting for the normal minute-long check interval;
+Google conversion and file transfer still take time. If a winner is finalized
+during an upload, the worker keeps the file link and queues another pass with
+the new winner. Provider failures continue to use the normal retry backoff.
 The provider controls who can open the file. Teachers can share the link using
 the normal Drive or OneDrive sharing controls.
 
@@ -494,6 +500,24 @@ the application uses the current origin for a loopback preview and
 `WEBSITE_PUBLIC_URL` for a hosted site. Register the exact redirect URI with each provider. Microsoft’s
 portal may require using the app manifest for an HTTP `127.0.0.1` loopback URI.
 [Microsoft redirect URI guidance](https://learn.microsoft.com/en-us/entra/identity-platform/reply-url)
+
+If Microsoft sign-in finishes but returns to `/export` with
+`live_error=authorization`, check the hosting application's logs. OAuth token
+failures log `Assembly OAuth token request failed` with the provider, HTTP status,
+an allowlisted OAuth error category and numeric Microsoft error codes. Provider
+descriptions, request URLs, credentials and tokens are excluded. In particular,
+`7000215` indicates an invalid client secret, `7000222` an expired secret, and
+`7000218` a missing client credential. Compare the hosting configuration with the
+app registration's client ID and the client secret **value**, not its secret ID.
+[Microsoft error-code reference](https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes)
+
+Provider consent errors and missing offline grants have separate log entries.
+Invalid application credentials or scopes return `live_error=config`. The public
+`/api/resources/presentations/live` provider flags check only whether credentials
+are present; they do not validate them with Microsoft. A `live_error=sync` return
+means authorization completed and the subsequent deck synchronization failed.
+Use `https://goldenplate.ca` consistently when connecting production decks; the
+callback and the initiating school session must use the same site origin.
 
 The sync worker runs inside the Flask/WSGI application on a host with background
 threads enabled. Multiple workers claim individual decks in the database.

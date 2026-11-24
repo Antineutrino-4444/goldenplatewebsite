@@ -2,6 +2,8 @@
 import hashlib
 import base64
 import secrets
+import io
+import threading
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -10,7 +12,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from src.routes.golden_plate_recorder_db import assembly_sync as sync
-from src.routes.golden_plate_recorder_db.db import AssemblyDeck, School, Session, SessionFactory, _now_utc, db_session
+from src.routes.golden_plate_recorder_db.db import AssemblyDeck, School, Session, SessionFactory, User, _now_utc, db_session
 from src.routes.golden_plate_recorder_db.users import create_user_record
 from src.services import assembly_cloud as cloud
 
@@ -104,6 +106,45 @@ def test_same_native_link_updates_after_a_lunch_without_reopening_site(client, m
     assert len(writes) == 4
 
 
+@pytest.mark.parametrize('target', ['student', 'faculty'])
+def test_finalizing_winner_queues_both_cloud_decks_and_updates_without_poll_delay(client, monkeypatch, classroom, target):
+    owner, _, school, slug = classroom
+    with SessionFactory.begin() as store:
+        store.get(User, owner).role = 'superadmin'
+    sign_in(client, classroom)
+    session_id = client.post('/api/session/create', json={'session_name': uuid4().hex}).json['session_id']
+    if target == 'student':
+        csv = b'Student ID,Last,Preferred,Grade,Advisor,House,Clan\n123,Winner,Alex,9,Advisor,House,Clan\n'
+        assert client.post('/api/csv/upload', data={'file': (io.BytesIO(csv), 'roster.csv')}).status_code == 200
+        assert client.post('/api/record/clean', json={'input_value': '123'}).status_code == 200
+        assert client.post(f'/api/session/{session_id}/draw/start').status_code == 200
+        finalize = f'/api/session/{session_id}/draw/finalize'
+    else:
+        assert client.post('/api/record/faculty', json={'input_value': 'Alex Winner'}).status_code == 200
+        assert client.post(f'/api/session/{session_id}/faculty/pick').status_code == 200
+        finalize = f'/api/session/{session_id}/faculty/finalize'
+    sent = []
+    def upload(provider, token, binding, file_id, snapshot, theme):
+        sent.append((provider, file_id, snapshot.get('winner_names', {})))
+        return 'file-' + binding, 'https://example.test/' + binding
+    monkeypatch.setattr(cloud, 'refresh_access', lambda *args: {'access_token': 'test-access'})
+    monkeypatch.setattr(cloud, 'upsert_deck', upload)
+    keys = [(school, owner, provider, 'dark') for provider in ('google', 'microsoft')]
+    decks = [sync.bind_deck(*key, 'test-refresh') for key in keys]
+    for deck in decks:
+        assert sync.sync_deck(deck['id'], force=True)['status'] == 'ready'
+    assert all(not winners for _, _, winners in sent)
+    wake = threading.Event()
+    monkeypatch.setitem(client.application.extensions, 'assembly_sync_wake', wake)
+    assert client.post(finalize).status_code == 200
+    assert wake.is_set()
+    assert all(sync.get_deck(*key)['status'] == 'pending' for key in keys)
+    sync.run_due_decks()  # No forced refresh, clock change or make_due call.
+    assert all(sync.get_deck(*key)['status'] == 'ready' for key in keys)
+    assert sent[2:] == [(provider, 'file-' + deck['id'], {target: 'Alex Winner'})
+                        for provider, deck in zip(('google', 'microsoft'), decks)]
+
+
 def test_consent_stays_with_initiating_teacher_school_and_origin(client, classroom, monkeypatch):
     _, _, _, slug = classroom
     sign_in(client, classroom)
@@ -139,6 +180,35 @@ def test_missing_configuration_only_disables_that_provider(client, monkeypatch, 
     assert client.get(BASE).json == {'providers': {'google': True, 'microsoft': False}, 'links': {}}
     sign_in(client, classroom)
     assert client.post(BASE + '/connect', json={'school_code': classroom[3], 'theme': 'light', 'provider': 'microsoft'}).status_code == 503
+
+
+@pytest.mark.parametrize('configuration,expected', [(True, 'config'), (False, 'authorization')])
+def test_microsoft_token_failure_return_identifies_configuration_without_binding_deck(client, monkeypatch, classroom, configuration, expected):
+    sign_in(client, classroom)
+    args = begin(client, {'school_code': classroom[3], 'theme': 'dark', 'provider': 'microsoft'})
+    def reject(*args):
+        raise cloud.CloudDeckError('private-error-message', configuration=configuration)
+    monkeypatch.setattr(cloud, 'exchange_code', reject)
+    response = client.get(BASE + '/callback/microsoft', query_string={'state': args['state'][0], 'code': 'private-code'})
+    query = parse_qs(urlsplit(response.location).query)
+    assert response.status_code == 303 and query['live_error'] == [expected]
+    assert query['school'] == [classroom[3]] and query['format'] == ['pptx']
+    assert 'private-' not in response.location
+    assert client.get(BASE, query_string={'school_code': classroom[3], 'theme': 'dark'}).json['links'] == {}
+
+
+def test_provider_denial_logs_only_known_category(client, monkeypatch, classroom, caplog):
+    sign_in(client, classroom)
+    body = {'school_code': classroom[3], 'theme': 'dark', 'provider': 'microsoft'}
+    monkeypatch.setattr(cloud, 'exchange_code', lambda *args: pytest.fail('Provider denial must not exchange a token'))
+    for provider_error, logged in [('access_denied', 'access_denied'), ('private-unknown-error', 'unknown')]:
+        args = begin(client, body)
+        response = client.get(BASE + '/callback/microsoft', query_string={
+            'state': args['state'][0], 'error': provider_error, 'error_description': 'private-provider-description',
+        })
+        assert parse_qs(urlsplit(response.location).query)['live_error'] == ['authorization']
+        assert f'provider=microsoft error={logged}' in caplog.text
+    assert 'private-' not in caplog.text
 
 
 def test_registered_name_lookup_respects_school_result_privacy(client, classroom):

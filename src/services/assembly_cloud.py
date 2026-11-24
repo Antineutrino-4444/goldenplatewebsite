@@ -3,6 +3,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
+import logging
 import os
 import re
 from urllib.parse import quote, urlencode, urlsplit
@@ -25,14 +26,37 @@ SCOPES = {
     'google': 'https://www.googleapis.com/auth/drive.file',
     'microsoft': 'https://graph.microsoft.com/Files.ReadWrite.AppFolder offline_access',
 }
+logger = logging.getLogger(__name__)
+OAUTH_ERRORS = frozenset(('invalid_client', 'unauthorized_client', 'invalid_scope', 'invalid_request',
+                          'invalid_grant', 'interaction_required', 'consent_required', 'access_denied',
+                          'temporarily_unavailable', 'server_error'))
+
+
+def _token_provider(url):
+    if url == 'https://oauth2.googleapis.com/token':
+        return 'google'
+    if re.fullmatch(r'https://login\.microsoftonline\.com/[a-zA-Z0-9.-]+/oauth2/v2\.0/token', url):
+        return 'microsoft'
+
+
+def _log_token_failure(provider, status, result):
+    # Log machine categories only: provider descriptions can contain credentials,
+    # account details or request URLs. Unknown strings must not reach the log.
+    error = result.get('error')
+    category = error if isinstance(error, str) and error in OAUTH_ERRORS else 'unknown'
+    codes = result.get('error_codes')
+    codes = [n for n in codes if type(n) is int and 0 <= n <= 999999999][:5] if isinstance(codes, list) else []
+    logger.warning('Assembly OAuth token request failed (provider=%s status=%s error=%s codes=%s)',
+                   provider, status, category, codes)
 
 
 class CloudDeckError(Exception):
     """A displayable provider error. Never attach a raw token, URL, or HTTP response."""
 
-    def __init__(self, message, *, reconnect=False):
+    def __init__(self, message, *, reconnect=False, configuration=False):
         super().__init__(message)
         self.reconnect = reconnect
+        self.configuration = configuration
 
 
 def _credentials(provider):
@@ -70,10 +94,13 @@ def authorization_url(provider, redirect_uri, state, verifier):
 
 
 def _request(method, url, *, missing_ok=False, binary=False, **kwargs):
+    token_provider = _token_provider(url)
     try:
         timeout = kwargs.pop('timeout', (5, 15))
         response = requests.request(method, url, timeout=timeout, allow_redirects=False, **kwargs)
     except requests.RequestException:
+        if token_provider:
+            _log_token_failure(token_provider, 'network', {})
         raise CloudDeckError('The presentation service could not be reached. Try again shortly.') from None
     if response.status_code == 404 and missing_ok:
         return None
@@ -89,6 +116,11 @@ def _request(method, url, *, missing_ok=False, binary=False, **kwargs):
         result = {}
     if not 200 <= response.status_code < 300:
         error = result.get('error')
+        if token_provider:
+            _log_token_failure(token_provider, response.status_code, result)
+            if error in ('invalid_client', 'unauthorized_client', 'invalid_scope'):
+                raise CloudDeckError('The cloud presentation app credentials or permissions need to be checked by the site administrator.',
+                                     configuration=True)
         if error in ('invalid_grant', 'interaction_required', 'consent_required', 'access_denied') or response.status_code == 401:
             raise CloudDeckError('Reconnect the cloud account to continue updating this presentation.', reconnect=True)
         if response.status_code == 404:
@@ -115,6 +147,7 @@ def _tokens(provider, form):
     form.update(client_id=client_id, client_secret=secret)
     result = _request('POST', _oauth_endpoint(provider), data=form)
     if not isinstance(result.get('access_token'), str) or not result['access_token']:
+        logger.warning('Assembly OAuth token response did not include an access token (provider=%s)', provider)
         raise CloudDeckError('The cloud account could not authorize presentation updates.', reconnect=True)
     tokens = {'access_token': result['access_token']}
     if isinstance(result.get('refresh_token'), str) and result['refresh_token']:
@@ -126,6 +159,7 @@ def exchange_code(provider, redirect_uri, code, verifier):
     tokens = _tokens(provider, dict(grant_type='authorization_code', code=code, code_verifier=verifier,
                                      redirect_uri=redirect_uri))
     if 'refresh_token' not in tokens:
+        logger.warning('Assembly OAuth connection did not receive an offline grant (provider=%s)', provider)
         raise CloudDeckError('Reconnect the cloud account and allow offline presentation updates.', reconnect=True)
     return tokens
 

@@ -114,6 +114,75 @@ def test_label_edited_during_upload_preserves_cloud_file_and_schedules_latest_la
 
 
 @pytest.mark.parametrize('provider', ['google', 'microsoft'])
+def test_winner_finalized_during_upload_is_not_lost_and_reuses_rotated_token(setup, monkeypatch, provider):
+    lunch_id = setup.lunch(12)
+    key = (setup.school, setup.owner, provider, 'light')
+    deck_id = sync.bind_deck(*key, setup.token)['id']
+    winners = []
+
+    def upload(provider, access, binding, file_id, snapshot, theme):
+        winners.append(snapshot.get('winner_names', {}))
+        if len(winners) == 1:
+            with SessionFactory.begin() as store:
+                meal = store.get(Session, lunch_id)
+                meal.faculty_finalized = 1
+                meal.faculty_pick_display_name = 'Morgan Ellis'
+                sync.queue_school_decks(store, setup.school)
+        return setup.upload(provider, access, binding, file_id, snapshot, theme)
+
+    monkeypatch.setattr(cloud, 'upsert_deck', upload)
+    first = sync.sync_deck(deck_id, force=True)
+    assert first['status'] == 'pending'
+    db_session.remove()  # The worker closes its app context between passes.
+    sync.run_due_decks()
+    final = sync.get_deck(*key)
+    assert final['status'] == 'ready' and final['url'] == first['url']
+    assert winners == [{}, {'faculty': 'Morgan Ellis'}]
+    assert setup.grants == [setup.token, setup.token + '-rotated']
+
+
+def test_winner_queue_respects_school_disconnected_grants_and_transaction_rollback(setup):
+    keys = [(setup.school, setup.owner, p, t) for p, t in
+            [('google', 'light'), ('google', 'dark'), ('microsoft', 'light'), ('microsoft', 'dark')]]
+    decks = [sync.bind_deck(*key, setup.token) for key in keys]
+    later = _now_utc() + timedelta(hours=1)
+    with SessionFactory.begin() as store:
+        for deck, status in zip(decks, ['ready', 'retry', 'reconnect', 'disconnected']):
+            row = store.get(AssemblyDeck, deck['id'])
+            row.status = status
+            row.next_check_at = later
+    with SessionFactory() as store:
+        assert sync.queue_school_decks(store, 'another-school') == 0
+        assert sync.queue_school_decks(store, setup.school) == 2
+        store.rollback()
+    assert sync.get_deck(*keys[0])['status'] == 'ready'
+    with SessionFactory.begin() as store:
+        assert sync.queue_school_decks(store, setup.school) == 2
+    assert [sync.get_deck(*key)['status'] for key in keys[:3]] == ['pending', 'pending', 'reconnect']
+    assert sync.get_deck(*keys[3]) is None
+
+
+def test_finalization_wakes_sleeping_worker_without_waiting_for_poll_timer(setup, monkeypatch):
+    app = Flask(__name__)
+    idle, awakened = threading.Event(), threading.Event()
+    passes = []
+    def check():
+        passes.append(True)
+        (idle if len(passes) == 1 else awakened).set()
+    monkeypatch.setattr(sync, 'run_due_decks', check)
+    monkeypatch.setenv('ASSEMBLY_SYNC_WORKER_ENABLED', 'true')
+    sync.start_assembly_sync(app)
+    try:
+        assert idle.wait(2)
+        with app.app_context():
+            sync.wake_assembly_sync()
+        assert awakened.wait(2)
+    finally:
+        app.extensions['assembly_sync_stop'].set()
+        app.extensions['assembly_sync_wake'].set()
+
+
+@pytest.mark.parametrize('provider', ['google', 'microsoft'])
 def test_worker_updates_same_remote_file_after_lunch_and_skips_unchanged_results(setup, provider):
     key = (setup.school, setup.owner, provider, 'light')
     deck = sync.bind_deck(*key, setup.token)
