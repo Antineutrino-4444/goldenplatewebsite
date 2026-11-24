@@ -1,8 +1,22 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.3.0.0 fffd9db254868fabb1285d7d721a1efba79db2f2 -->
+<!-- golden-plate-release-baseline: 1.4.0.0 5e5e7adea99a084638448766d981554e2b56f3a1 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.4.0.0
+
+November 24, 2026 · School assembly slides and resources for schools
+
+Author: Jiajun (Leo) Li
+
+- Select Export assembly slides in School Resources or the school portal to prepare a PowerPoint, Google Slides presentation, or PDF. Enter your school code and, if needed, change the school name shown on the slides. Downloads use the site's light or dark theme and show results as of download time.
+- The assembly shows the school's all-time clean plates and progress toward its goal, if set. In PowerPoint and Google Slides, an animated opening leads into the results. Click through the latest lunch to reveal student clean, faculty clean, dirty, and very dirty counts. Once two lunches have recorded plates, a table compares their counts and a chart compares their clean-plate rates.
+- Guests can download school totals by code when guest privacy is off and every included session is public. Private results require a school account and any email verification the school requires. For eligible signed-in members, PowerPoint and Google Slides can also announce the latest session's finalized student and faculty winners, with their tickets at selection and next clean-plate reward when available. The PDF omits the winner slide.
+- Where cloud connections are enabled, school members can keep a live Google Slides deck in Google Drive or a live PowerPoint in OneDrive. Bookmark it once. New results and corrections update the same file even after you close the website. You can add your own slides and winner photos. Each new winner gets a fresh portrait frame. Select Stop automatic updates to keep the last version in your account. For a one-time Google Slides presentation, import the download or use Create in Google Slides where available.
+- In School Resources, use School Post Templates to announce a winner, invite students to lunch, or share a clean-plate count. Edit the caption, then download a post image for Instagram or Facebook, or open a prefilled draft on Bluesky or X. School Handouts includes a printable one-page school overview and the St. Andrew’s College case study.
+- Get started now walks school organizers through registration, gathering a team, and running their first lunch. The Full website guide has the roster templates, detailed instructions, and 32 video guides. Existing chapter bookmarks lead to the corresponding section.
+- On the homepage, drag the school globe or use the arrow keys to rotate it, adjust its speed, and select a pin to find public sessions. The community live counter keeps its scale labels readable as totals grow. The public footer and signup forms now link to the Privacy policy and Terms of service.
 
 ## 1.3.0.0
 
