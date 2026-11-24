@@ -1,8 +1,18 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.4.1.1 7dae569cb7be23ad6e9d0bb2e73b7b0a4bab64cf -->
+<!-- golden-plate-release-baseline: 1.4.1.2 7258053d770f0282d3ce2ef15fd0f5ed19185643 -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.4.1.2
+
+November 24, 2026 · Live presentation replacement and clearer sync errors
+
+Author: Jiajun (Leo) Li
+
+- Connected Google Slides and PowerPoint / OneDrive presentations now update at the same file link even when someone edits the deck during synchronization. OneDrive updates also avoid a file-name conflict with the connected presentation itself. Automatic results take precedence, so edits made during an update can be overwritten.
+- Updates preserve added slides and photos when the saved presentation can be merged. If its contents cannot be read or merged, Golden Plate now attempts to replace them with a freshly generated assembly at the same link. Replacement can remove your added slides, photos, and other edits. The Export assembly slides page and connected presentation lists, including Live assembly presentations in Admin Panel, now display this warning.
+- Failed OneDrive updates now distinguish file-name conflicts, changed versions, and editing locks. If a presentation is locked, close its editors and select Sync now after the lock clears. Connections that have lost authorization still require reconnection.
 
 ## 1.4.1.1
 
