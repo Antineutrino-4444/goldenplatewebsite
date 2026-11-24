@@ -533,14 +533,21 @@ even when results have not changed and bypasses retry delays; the background
 worker keeps the same deck and respects an upload already in progress. Expired
 connections must be reconnected by their owner before syncing.
 
-OneDrive version checks accept both quoted SharePoint tags and the opaque,
-unquoted tags returned by OneDrive Personal. The original tag is preserved in
-conditional uploads and checked again before the final upload chunk. If file
-metadata omits the download URL, the worker uses Microsoft's documented
+OneDrive updates overwrite the connected presentation at its saved item ID,
+even if someone edits it during sync. Updates use `replace` without version
+conditions. The worker preserves added slides and photos when it can merge the
+downloaded deck; if the saved deck cannot be downloaded or merged, it uploads a
+fresh generated deck instead. Authorization failures still require reconnection.
+The connected presentation row warns that edits can be overwritten and an
+unusable deck will be replaced. If file metadata omits the download URL, the
+worker uses Microsoft's documented
 [`/content` download endpoint](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0).
 It validates the HTTPS redirect and downloads without forwarding the Graph
-access token. Missing version tags, an unexpected file ID or an unusable download
-response stop the update and leave the saved presentation untouched.
+access token. An unexpected file ID stops the update.
+New files use `fail`. Failed updates distinguish a file-name conflict
+(`409 nameAlreadyExists`), a changed version (`412`), and an editing lock (`423`).
+For an editing lock, close the deck's editors and select **Sync now** after the
+lock clears.
 Use `https://goldenplate.ca` consistently when connecting production decks; the
 callback and the initiating school session must use the same site origin.
 
@@ -550,10 +557,14 @@ Transient outages are retried with backoff. `ASSEMBLY_SYNC_WORKER_ENABLED=false`
 turns off background checks for isolated tests.
 
 On a changed Google snapshot, the worker converts a private working copy in
-Drive, reads Google's native layout, then applies the changed fields to the
-linked presentation using its current revision ID. If a teacher edits the file
-during that operation, a later attempt reads the newer version. The worker
-removes the temporary conversion after processing.
+Drive, reads Google's native layout, then applies the changed fields without
+a revision condition. If the saved layout cannot be merged or a concurrent edit
+invalidates the update, the worker replaces the contents of the original native
+Google Slides file through a Drive conversion update. The presentation keeps
+its file ID and sharing link. Added slides and photos are preserved when the
+merge succeeds, but can be lost during replacement. Both services show the same
+overwrite warning. The worker removes the temporary conversion after processing.
+[Google Drive conversion updates](https://developers.google.com/workspace/drive/api/guides/manage-uploads#import_to_google_docs_types)
 
 The existing one-time **Create in Google Slides** option uses the public
 `VITE_GOOGLE_SLIDES_CLIENT_ID` in the frontend build environment (locally,

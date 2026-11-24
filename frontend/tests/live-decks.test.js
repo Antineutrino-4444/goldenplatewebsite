@@ -51,6 +51,13 @@ test('connection rows show service details and safe recovery controls for both s
     const admin = renderToStaticMarkup(React.createElement(Connections, { ...props, admin: true }))
     assert.match(admin, /Connected by Connection owner/)
     assert.match(admin, /PowerPoint \/ OneDrive: Configured/)
+    const microsoft = { ...props, connections: [{ ...props.connections[0], provider: 'microsoft' }] }
+    for (const admin of [false, true]) {
+      const row = renderToStaticMarkup(React.createElement(Connections, { ...microsoft, admin }))
+      assert.match(row, /Automatic updates can overwrite edits to this file\. If the saved presentation cannot be updated, it will be replaced\./)
+    }
+    assert.match(own, /Automatic updates can overwrite edits/)
+    assert.match(admin, /Automatic updates can overwrite edits/)
     const reconnect = renderToStaticMarkup(React.createElement(Connections, { ...props,
       connections: [{ ...props.connections[0], status: 'reconnect', url: 'javascript:secret' }],
     }))

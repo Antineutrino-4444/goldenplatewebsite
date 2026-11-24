@@ -17,6 +17,7 @@ export default function LiveDeckConnections({ connections, providers, onSync, bu
           <div className="live-deck-details">
             <h4>{deckServices[deck.provider] || 'Presentation'} <span>{deck.theme === 'dark' ? 'Dark' : 'Light'}</span></h4>
             {admin && <p className="live-deck-owner">Connected by {deck.owner_name} <span>@{deck.owner_username}</span></p>}
+            <p className="live-deck-warning">Automatic updates can overwrite edits to this file. If the saved presentation cannot be updated, it will be replaced.</p>
             <p className="live-deck-state" data-state={deck.status} role="status">{deckStatus(deck)}</p>
             <p className="live-deck-updated">Last synced: {deck.last_synced_at
               ? <time dateTime={deck.last_synced_at}>{deckTime(deck.last_synced_at)}</time> : 'Not synced yet'}</p>

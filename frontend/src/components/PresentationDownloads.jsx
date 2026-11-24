@@ -319,7 +319,8 @@ function PresentationForm({ search, theme }) {
             Golden Plate updates the same deck in your {provider === 'google' ? 'Google Drive' : 'OneDrive'} when session results change.
             {' '}{provider === 'google'
               ? 'Use Replace image on a winner’s portrait to add a photo. You can add your own slides to the same deck.'
-              : 'You can add winner photos in PowerPoint. They stay with their winners when the deck updates.'}
+              : 'You can add winner photos in PowerPoint.'}
+            {' '}Automatic updates can overwrite edits to this file. If the saved presentation cannot be updated, it will be replaced.
           </p> : <p className="gp-deck-note">{directSlides
             ? 'This creates a one-time copy of your school’s results in Google Drive.'
             : 'Results are current at download. Download again after your next session to update the figures.'}</p>}

@@ -1,4 +1,4 @@
-"""Plan revision-guarded Google Slides updates from a fresh native conversion.
+"""Plan Google Slides updates from a fresh native conversion.
 
 Google normalizes object sizes and text metrics on import. Work in the native
 coordinate system so editable text and graphics stay aligned with the download.
@@ -383,7 +383,7 @@ def _field_requests(page, page_id, fields, desired, page_width):
 def plan_update(saved, fresh):
     """Return native batchUpdate requests and notes for server-assigned new notes IDs."""
     source, current = _native_pages(fresh, source=True), _native_pages(saved)
-    if not saved.get('slides') or not saved.get('revisionId'):
+    if not saved.get('slides'):
         raise GoogleMergeError('Google did not confirm the current editable version of the presentation.')
     ids = [page['objectId'] for page in saved['slides']]
     page_width = _measure(saved.get('pageSize', {}).get('width', {'unit': 'PT', 'magnitude': 960}))

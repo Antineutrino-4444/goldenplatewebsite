@@ -12,6 +12,7 @@
 .live-deck-updated, .live-deck-owner, .live-deck-empty, .live-deck-services { font-size: 13px; color: var(--site-muted, #475569); line-height: 1.6; }
 .live-deck-owner span { overflow-wrap: anywhere; }
 .live-deck-connections .live-deck-error { font-size: 14px; color: var(--site-ink, #7f1d1d); }
+.live-deck-connections .live-deck-warning { font-size: 13px; color: var(--site-gold-ink, #92400e); }
 .live-deck-actions { display: flex; flex-wrap: wrap; align-content: start; align-items: center; gap: 8px 14px; }
 .live-deck-actions a, .live-deck-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 6px 0; color: inherit; font: inherit; font-size: 14px; font-weight: 600; }
 .live-deck-actions a { text-decoration: underline; text-underline-offset: 4px; }

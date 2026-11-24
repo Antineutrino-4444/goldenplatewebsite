@@ -1,4 +1,5 @@
 import base64
+from copy import deepcopy
 from hashlib import sha256
 import json
 from urllib.parse import parse_qs, urlsplit
@@ -157,7 +158,7 @@ def test_google_creates_native_then_updates_original_file_and_link(api, upload):
     assert b'gpAssemblyScratch' in calls[7][2]['data'] and b'google-slides lunch 178' in calls[7][2]['data']
     assert calls[9][:2] == ('POST', url + ':batchUpdate')
     batch = calls[9][2]['json']
-    assert batch['writeControl'] == {'requiredRevisionId': 'revision-1'}
+    assert 'writeControl' not in batch
     assert any(op.get('insertText', {}).get('text') == '178' for op in batch['requests'])
     assert calls[-1][1] == cloud.DRIVE + '/scratch'
     assert all(args['headers']['Authorization'] == 'Bearer test-access' for _, _, args in calls)
@@ -175,8 +176,8 @@ def test_recovers_existing_binding_and_cleans_only_abandoned_private_scratch(api
     assert not any(url.endswith(':batchUpdate') for _, url, _ in calls)
 
 
-@pytest.mark.parametrize('fail', ['revision', 'unmarked', 'wrong binding', 'trashed', 'disabled'])
-def test_google_keeps_original_on_concurrent_edit_or_unrecognized_layout(api, upload, fail):
+@pytest.mark.parametrize('fail', ['wrong binding', 'trashed', 'disabled'])
+def test_google_does_not_replace_wrong_binding_or_unavailable_account(api, upload, fail):
     calls, replies = api
     original = _google_file()
     if fail == 'wrong binding':
@@ -186,22 +187,77 @@ def test_google_keeps_original_on_concurrent_edit_or_unrecognized_layout(api, up
     replies.append((200, original))
     if fail == 'disabled':
         replies.append((403, {'error': {'details': [{'reason': 'SERVICE_DISABLED'}]}}))
-    elif fail in ('revision', 'unmarked'):
-        replies.extend([(200, native_deck()), (200, {'files': []}), (200, _google_file('scratch')),
-                        (200, native_deck('179') if fail == 'revision' else {})])
-        if fail == 'revision':
-            replies.append((400, {'error': {'message': 'The required revision does not match private revision'}}))
-        replies.append((204, b''))
     with pytest.raises(cloud.CloudDeckError) as caught:
         upload('google', 'existing')
     assert not any(method == 'PATCH' for method, _, _ in calls)
     assert all(url != cloud.DRIVE + '/existing' for method, url, _ in calls if method == 'DELETE')
-    if fail in ('unmarked', 'revision'):
-        assert calls[-1][:2] == ('DELETE', cloud.DRIVE + '/scratch')
-    if fail == 'revision':
-        assert 'changed' in str(caught.value) and 'private revision' not in str(caught.value)
     if fail == 'disabled':
         assert 'Enable the Google Drive API and Google Slides API' in str(caught.value)
+        assert caught.value.configuration
+
+
+def test_google_native_update_overwrites_edits_without_a_revision_condition(api, upload):
+    calls, replies = api
+    saved = registered(native_deck())
+    saved.pop('revisionId')
+    replies.extend([(200, _google_file()), (200, saved), (200, {'files': []}),
+                    (200, _google_file('scratch')), (200, native_deck('178', revision='newer-edit')),
+                    (200, {}), (204, b'')])
+    assert upload('google', 'existing', 178) == ('existing', 'https://docs.google.com/presentation/d/existing/edit')
+    batch = next(args['json'] for _, url, args in calls if url.endswith(':batchUpdate'))
+    assert 'writeControl' not in batch
+    assert any(op.get('insertText', {}).get('text') == '178' for op in batch['requests'])
+    assert not any(method == 'PATCH' for method, _, _ in calls)
+    assert not replies
+
+
+@pytest.mark.parametrize('failure', ['unmarked', 'duplicate', 'concurrent', 'read'])
+def test_google_replaces_unusable_saved_presentation_at_same_id_and_link(api, upload, failure):
+    calls, replies = api
+    saved = native_deck()
+    if failure == 'unmarked':
+        saved = {'slides': [{'objectId': 'teacher_slide', 'pageElements': []}]}
+    elif failure == 'duplicate':
+        saved['slides'].append(deepcopy(saved['slides'][0]))
+    replies.extend([(200, _google_file()), (500, {}) if failure == 'read' else (200, saved)])
+    if failure != 'read':
+        replies.extend([(200, {'files': []}), (200, _google_file('scratch')), (200, native_deck('178'))])
+        if failure == 'concurrent':
+            replies.append((400, {'error': {'message': 'Object deleted during private-account edit'}}))
+    replies.extend([(200, _google_file()), (200, native_deck('178')), (200, {})])
+    if failure != 'read':
+        replies.append((204, b''))
+    assert upload('google', 'existing', 178) == ('existing', 'https://docs.google.com/presentation/d/existing/edit')
+    writes = [(url, args) for method, url, args in calls if method == 'PATCH']
+    assert len(writes) == 1
+    url, args = writes[0]
+    assert url == cloud.UPLOAD + '/existing'
+    assert args['params']['uploadType'] == 'multipart'
+    assert b'google-slides lunch 178' in args['data']
+    assert b'"mimeType": "application/vnd.google-apps.presentation"' in args['data']
+    assert b'"name"' not in args['data'] and b'"appProperties"' not in args['data']
+    assert 'If-Match' not in args['headers']
+    batches = [args['json'] for _, url, args in calls if url.endswith(':batchUpdate')]
+    assert batches and all('writeControl' not in batch for batch in batches)
+    deleted = [url for method, url, _ in calls if method == 'DELETE']
+    assert deleted == ([] if failure == 'read' else [cloud.DRIVE + '/scratch'])
+    assert not replies
+
+
+@pytest.mark.parametrize('replacement', [
+    (403, {'error': {'code': 'accessDenied', 'message': 'private-account'}}),
+    (200, _google_file('unexpected-file')),
+])
+def test_google_replacement_failure_reports_error_and_cleans_only_scratch(api, upload, replacement):
+    calls, replies = api
+    replies.extend([(200, _google_file()), (200, {'slides': []}), (200, {'files': []}),
+                    (200, _google_file('scratch')), (200, native_deck()), replacement, (204, b'')])
+    with pytest.raises(cloud.CloudDeckError) as caught:
+        upload('google', 'existing')
+    assert 'private-account' not in str(caught.value)
+    assert calls[-1][:2] == ('DELETE', cloud.DRIVE + '/scratch')
+    assert [url for method, url, _ in calls if method == 'PATCH'] == [cloud.UPLOAD + '/existing']
+    assert not replies
 
 
 REMOTE = {'id': 'root!school', 'webUrl': 'https://example.sharepoint.com/personal/school/assembly.pptx',
@@ -221,60 +277,114 @@ def test_onedrive_retains_presentation_item_and_merges_recovered_and_known_files
     for prior_id in (None, file_id):
         if not prior_id:
             replies.append((200, folder))
-        replies.extend([(200, REMOTE), (200, b'edited by teacher'), (200, SESSION), (200, REMOTE), (200, REMOTE)])
+        replies.extend([(200, REMOTE), (200, b'edited by teacher'), (200, SESSION), (200, REMOTE)])
         assert upload('microsoft', prior_id, 178) == (file_id, link)
-        download, session, check, write = calls[-4:]
+        download, session, write = calls[-3:]
         assert 'Authorization' not in download[2].get('headers', {})
         assert session[:2] == ('POST', cloud.ONEDRIVE + '/items/root%21school/createUploadSession')
-        assert session[2]['headers']['If-Match'] == REMOTE['eTag']
-        assert check[1].endswith('/items/root%21school')
+        assert 'If-Match' not in session[2]['headers']
         assert write[2]['data'] == b'edited by teacher + powerpoint lunch 178'
         assert write[1] == SESSION['uploadUrl']
         assert 'Authorization' not in write[2]['headers']
-        assert write[2]['headers']['If-Match'] == REMOTE['eTag']
+        assert 'If-Match' not in write[2]['headers']
+        assert not replies
 
 
 def test_onedrive_personal_opaque_version_tag_updates_the_same_file(api, upload):
     calls, replies = api
     personal = dict(REMOTE, eTag='aRDQ2NDhGMDZDOTFEOUQzRCE1NDkyNy4w')
-    replies.extend([(200, personal), (200, b'teacher edits'), (200, SESSION),
-                    (200, personal), (200, personal)])
+    replies.extend([(200, personal), (200, b'teacher edits'), (200, SESSION), (200, personal)])
     assert upload('microsoft', personal['id'], 178) == (personal['id'], personal['webUrl'])
-    assert calls[2][2]['headers']['If-Match'] == personal['eTag']
-    assert calls[4][2]['headers']['If-Match'] == personal['eTag']
-    assert calls[4][2]['data'] == b'teacher edits + powerpoint lunch 178'
+    assert 'If-Match' not in calls[2][2]['headers']
+    assert 'If-Match' not in calls[3][2]['headers']
+    assert calls[3][2]['data'] == b'teacher edits + powerpoint lunch 178'
     assert 'Authorization' not in calls[1][2].get('headers', {})
-    assert 'Authorization' not in calls[4][2]['headers']
+    assert 'Authorization' not in calls[3][2]['headers']
+
+
+@pytest.mark.parametrize('recover', [False, True])
+def test_onedrive_existing_file_does_not_fail_its_own_name_conflict(api, upload, monkeypatch, recover):
+    calls, replies = api
+    if recover:
+        replies.append((200, {'id': 'folder'}))
+    replies.extend([(200, REMOTE), (200, b'teacher slides and photos'), (200, SESSION)])
+    send = cloud.requests.request
+
+    def existing_file(method, url, **kwargs):
+        if method == 'POST' and url.endswith('/createUploadSession'):
+            # Model OneDrive's final name-conflict check for an existing file.
+            behavior = kwargs.get('json', {}).get('item', {}).get('@microsoft.graph.conflictBehavior', 'fail')
+            replies.append((200, REMOTE) if behavior == 'replace' else
+                           (409, {'error': {'code': 'nameAlreadyExists'}}))
+        return send(method, url, **kwargs)
+
+    monkeypatch.setattr(cloud.requests, 'request', existing_file)
+    assert upload('microsoft', None if recover else REMOTE['id'], 178) == (REMOTE['id'], REMOTE['webUrl'])
+    session = next(args for method, url, args in calls if url.endswith('/createUploadSession'))
+    assert 'If-Match' not in session['headers']
+    assert 'If-Match' not in calls[-1][2]['headers']
+    assert calls[-1][2]['data'] == b'teacher slides and photos + powerpoint lunch 178'
+    assert 'Authorization' not in calls[-1][2]['headers']
+    assert not replies
+
+
+@pytest.mark.parametrize('status,code,expected', [
+    (409, 'nameAlreadyExists', 'file-name conflict'),
+    (409, 'resourceModified', 'conflict'),
+    (412, 'preconditionFailed', 'changed'),
+    (423, 'resourceLocked', 'locked'),
+])
+def test_upload_conflict_errors_distinguish_recovery_without_provider_details(api, status, code, expected):
+    _, replies = api
+    replies.append((status, {'error': {'code': code, 'message': 'private-file-url-and-account'}}))
+    with pytest.raises(cloud.CloudDeckError) as caught:
+        cloud._request('PUT', SESSION['uploadUrl'], data=b'updated deck')
+    assert expected in str(caught.value)
+    assert 'private-' not in str(caught.value)
+    assert not caught.value.reconnect
 
 
 @pytest.mark.parametrize('tag', [None, '', '*', 'W/"version"', '"one","two"',
                                  'one,two', 'one two', 'one\r\nIf-Match: *', 'one\x00two', '"one\ttwo"'])
-def test_invalid_onedrive_versions_never_download_or_overwrite(api, upload, tag):
+def test_onedrive_version_tags_do_not_prevent_replacement_or_enter_headers(api, upload, tag):
     calls, replies = api
-    replies.append((200, dict(REMOTE, eTag=tag)))
-    with pytest.raises(cloud.CloudDeckError, match='saved file version'):
-        upload('microsoft', REMOTE['id'])
-    assert len(calls) == 1 and calls[0][0] == 'GET'
+    replies.extend([(200, dict(REMOTE, eTag=tag)), (200, b'teacher edits'), (200, SESSION), (200, REMOTE)])
+    assert upload('microsoft', REMOTE['id'])[0] == REMOTE['id']
+    assert all('If-Match' not in options.get('headers', {}) for _, _, options in calls)
+    assert not replies
 
 
-def test_changed_personal_version_is_not_overwritten(api, upload):
+@pytest.mark.parametrize('large', [False, True])
+def test_onedrive_overwrites_edits_made_during_upload(api, upload, monkeypatch, large):
     calls, replies = api
-    personal = dict(REMOTE, eTag='aPersonalVersion1')
-    replies.extend([(200, personal), (200, b'teacher edits'), (200, SESSION),
-                    (200, dict(personal, eTag='aPersonalVersion2'))])
-    with pytest.raises(cloud.CloudDeckError, match='changed while syncing'):
-        upload('microsoft', personal['id'])
-    assert all(method != 'PUT' for method, _, _ in calls)
+    merged = b'new assembly' if not large else b'x' * (10 * 1024 * 1024 + 17)
+    monkeypatch.setattr(cloud, 'merge_deck', lambda *args: merged)
+    replies.extend([(200, REMOTE), (200, b'earlier edits'), (200, SESSION)])
+    send = cloud.requests.request
+
+    def edit_during_upload(method, url, **kwargs):
+        if method == 'PUT':
+            # The remote version changed after download. Reject stale conditions.
+            assert 'If-Match' not in kwargs['headers']
+            final = kwargs['headers']['Content-Range'].endswith(f'-{len(merged) - 1}/{len(merged)}')
+            replies.append((200, dict(REMOTE, eTag='newer-edited-version')) if final else
+                           (202, {'nextExpectedRanges': ['10485760-']}))
+        return send(method, url, **kwargs)
+
+    monkeypatch.setattr(cloud.requests, 'request', edit_during_upload)
+    assert upload('microsoft', REMOTE['id']) == (REMOTE['id'], REMOTE['webUrl'])
+    writes = [options['data'] for method, _, options in calls if method == 'PUT']
+    assert b''.join(writes) == merged
+    assert len(writes) == (2 if large else 1)
+    assert [url for method, url, _ in calls if method == 'GET'] == [
+        cloud.ONEDRIVE + '/items/root%21school', REMOTE['@microsoft.graph.downloadUrl']]
+    assert not replies
 
 
-@pytest.mark.parametrize('change,message', [
-    ({'id': 'another-file'}, 'original presentation identity'),
-    ({'@microsoft.graph.downloadUrl': 'http://files.example/download'}, 'secure download link'),
-])
-def test_onedrive_incomplete_metadata_is_distinct_and_never_overwritten(api, upload, change, message):
+def test_onedrive_wrong_identity_is_never_overwritten(api, upload):
     calls, replies = api
-    replies.append((200, {**REMOTE, **change}))
-    with pytest.raises(cloud.CloudDeckError, match=message):
+    replies.append((200, dict(REMOTE, id='another-file')))
+    with pytest.raises(cloud.CloudDeckError, match='original presentation identity'):
         upload('microsoft', REMOTE['id'])
     assert len(calls) == 1
 
@@ -286,15 +396,14 @@ def test_onedrive_missing_download_annotation_uses_content_redirect(api, upload,
     if annotation != 'absent':
         info['@microsoft.graph.downloadUrl'] = annotation
     replies.extend([(200, info), (302, b'', {'Location': REMOTE['@microsoft.graph.downloadUrl']}),
-                    (200, b'teacher edits'), (200, SESSION), (200, REMOTE), (200, REMOTE)])
+                    (200, b'teacher edits'), (200, SESSION), (200, REMOTE)])
     assert upload('microsoft', info['id'], 178) == (info['id'], info['webUrl'])
-    content, download, session, check, write = calls[1:]
+    content, download, session, write = calls[1:]
     assert content[:2] == ('GET', cloud.ONEDRIVE + '/items/root%21school/content')
     assert content[2]['headers']['Authorization'] == 'Bearer test-access'
     assert 'Authorization' not in download[2].get('headers', {})
-    assert session[2]['headers']['If-Match'] == REMOTE['eTag']
-    assert check[2]['params'] == {'$select': 'id,eTag'}
-    assert write[2]['headers']['If-Match'] == REMOTE['eTag']
+    assert 'If-Match' not in session[2]['headers']
+    assert 'If-Match' not in write[2]['headers']
     assert 'Authorization' not in write[2]['headers']
     assert write[2]['data'] == b'teacher edits + powerpoint lunch 178'
     assert not replies
@@ -303,7 +412,7 @@ def test_onedrive_missing_download_annotation_uses_content_redirect(api, upload,
 def test_onedrive_content_endpoint_can_return_the_file_directly(api, upload):
     calls, replies = api
     info = dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})
-    replies.extend([(200, info), (200, b'teacher edits'), (200, SESSION), (200, REMOTE), (200, REMOTE)])
+    replies.extend([(200, info), (200, b'teacher edits'), (200, SESSION), (200, REMOTE)])
     assert upload('microsoft', info['id']) == (info['id'], info['webUrl'])
     assert calls[1][1].endswith('/content')
     assert calls[-1][2]['data'] == b'teacher edits + powerpoint lunch 120'
@@ -312,17 +421,18 @@ def test_onedrive_content_endpoint_can_return_the_file_directly(api, upload):
 @pytest.mark.parametrize('location', [None, '', 'http://files.example/download',
                                      'https://secret@files.example/download', 'javascript:secret',
                                      '/relative', 'https://[invalid', 'https://files.example/\r\nsecret'])
-def test_onedrive_content_redirect_requires_a_secure_url_before_merge_or_upload(api, upload, location):
+def test_onedrive_unusable_download_redirect_replaces_with_fresh_deck(api, upload, location):
     calls, replies = api
     replies.extend([(200, dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})),
-                    (302, b'', {} if location is None else {'Location': location})])
-    with pytest.raises(cloud.CloudDeckError, match='secure download link') as caught:
-        upload('microsoft', REMOTE['id'])
-    assert len(calls) == 2 and all(method == 'GET' for method, _, _ in calls)
-    assert 'secret' not in str(caught.value)
+                    (302, b'', {} if location is None else {'Location': location}),
+                    (200, SESSION), (200, REMOTE)])
+    assert upload('microsoft', REMOTE['id'])[0] == REMOTE['id']
+    assert len(calls) == 4  # Never fetch the unsafe redirect.
+    assert calls[-1][2]['data'] == b'marked powerpoint lunch 120'
+    assert not replies
 
 
-@pytest.mark.parametrize('status,reconnect', [(401, True), (403, True), (404, True), (429, False)])
+@pytest.mark.parametrize('status,reconnect', [(401, True), (403, True), (404, True)])
 def test_onedrive_content_failure_keeps_the_file_and_reports_safe_recovery(api, upload, status, reconnect):
     calls, replies = api
     replies.extend([(200, dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})),
@@ -334,32 +444,35 @@ def test_onedrive_content_failure_keeps_the_file_and_reports_safe_recovery(api, 
     assert len(calls) == 2 and all(method == 'GET' for method, _, _ in calls)
 
 
-def test_onedrive_content_fallback_still_stops_on_a_concurrent_edit(api, upload):
+@pytest.mark.parametrize('failure', ['merge', 'download', 'unsafe_url'])
+def test_onedrive_unusable_saved_deck_is_replaced_at_same_link(api, upload, monkeypatch, failure):
     calls, replies = api
-    replies.extend([(200, dict(REMOTE, **{'@microsoft.graph.downloadUrl': None})),
-                    (302, b'', {'Location': REMOTE['@microsoft.graph.downloadUrl']}),
-                    (200, b'teacher edits'), (200, SESSION), (200, dict(REMOTE, eTag='"file,8"'))])
-    with pytest.raises(cloud.CloudDeckError, match='changed while syncing'):
-        upload('microsoft', REMOTE['id'])
-    assert all(method != 'PUT' for method, _, _ in calls)
-
-
-@pytest.mark.parametrize('phase', ['metadata', 'merge', 'session', 'recheck', 'upload'])
-def test_onedrive_never_replaces_on_bad_file_or_concurrent_edit(api, upload, monkeypatch, phase):
-    calls, replies = api
-    replies.append((200, REMOTE if phase != 'metadata' else dict(REMOTE, eTag='*')))
-    if phase != 'metadata':
-        replies.append((200, b'saved'))
-    if phase == 'merge':
+    info = dict(REMOTE)
+    if failure == 'unsafe_url':
+        info['@microsoft.graph.downloadUrl'] = 'http://files.example/unsafe'
+    replies.append((200, info))
+    if failure == 'merge':
+        replies.append((200, b'corrupt or unrecognized presentation'))
         def reject(*args):
-            raise cloud.MergeError('The saved PowerPoint could not be safely updated.')
+            raise cloud.MergeError('Cannot merge this saved file')
         monkeypatch.setattr(cloud, 'merge_deck', reject)
-    if phase in ('session', 'recheck', 'upload'):
-        replies.append((412, {}) if phase == 'session' else (200, SESSION))
-    if phase in ('recheck', 'upload'):
-        replies.append((200, dict(REMOTE, eTag='"file,8"') if phase == 'recheck' else REMOTE))
+    elif failure == 'download':
+        replies.append((500, {}))
+    replies.extend([(200, SESSION), (200, REMOTE)])
+    assert upload('microsoft', REMOTE['id']) == (REMOTE['id'], REMOTE['webUrl'])
+    assert calls[-1][2]['data'] == b'marked powerpoint lunch 120'
+    assert not any(url.startswith('http://') for _, url, _ in calls)
+    assert not replies
+
+
+@pytest.mark.parametrize('phase', ['session', 'upload'])
+@pytest.mark.parametrize('status', [409, 412, 423])
+def test_onedrive_reports_provider_rejection_without_creating_another_file(api, upload, phase, status):
+    calls, replies = api
+    replies.extend([(200, REMOTE), (200, b'saved'),
+                    (status, {}) if phase == 'session' else (200, SESSION)])
     if phase == 'upload':
-        replies.append((409, {}))
+        replies.append((status, {}))
     with pytest.raises(cloud.CloudDeckError) as error:
         upload('microsoft', REMOTE['id'])
     assert not error.value.reconnect

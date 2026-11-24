@@ -315,7 +315,7 @@ def test_connected_file_rebuilds_edited_lunch_chart_goal_and_type(setup, monkeyp
             if url.endswith(':batchUpdate'):
                 assert url == cloud.GOOGLE_SLIDES + file_id + ':batchUpdate'
                 body = options['json']
-                assert body['writeControl']['requiredRevisionId'] == native[file_id]['revisionId']
+                assert 'writeControl' not in body
                 if 'scratch' in native:
                     native_batches.append(body['requests'])
                     native[file_id] = registered(native['scratch'])
@@ -341,7 +341,8 @@ def test_connected_file_rebuilds_edited_lunch_chart_goal_and_type(setup, monkeyp
                 return stored
             return {**remote, 'eTag': f'"version,{len(writes)}"'}
         if url.endswith('/createUploadSession'):
-            assert headers['If-Match'] == f'"version,{len(writes)}"'
+            assert 'If-Match' not in headers
+            assert options['json']['item']['@microsoft.graph.conflictBehavior'] == 'replace'
             return {'uploadUrl': 'https://files.example/session'}
         stored = options['data']
         writes.append((method, url, Presentation(BytesIO(stored))))

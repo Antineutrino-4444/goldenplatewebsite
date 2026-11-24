@@ -108,8 +108,10 @@ def _request(method, url, *, missing_ok=False, binary=False, download_redirect=F
         return response.headers.get('Location')
     if 200 <= response.status_code < 300 and binary:
         return response.content
-    if response.status_code in (409, 412, 423):
-        raise CloudDeckError('The presentation changed or is being edited. The next sync will read the latest saved file.')
+    if response.status_code == 412:
+        raise CloudDeckError('The presentation changed since it was read. The next sync will read the latest saved file.')
+    if response.status_code == 423:
+        raise CloudDeckError('The presentation is locked for editing. Close its editors, then try syncing again.')
     try:
         result = response.json()
     except ValueError:
@@ -118,6 +120,10 @@ def _request(method, url, *, missing_ok=False, binary=False, download_redirect=F
         result = {}
     if not 200 <= response.status_code < 300:
         error = result.get('error')
+        if response.status_code == 409:
+            if isinstance(error, dict) and error.get('code') == 'nameAlreadyExists':
+                raise CloudDeckError('The presentation service reported a file-name conflict. The saved presentation was kept.')
+            raise CloudDeckError('The presentation service reported an update conflict. The next sync will read the latest saved file.')
         if token_provider:
             _log_token_failure(token_provider, response.status_code, result)
             if error in ('invalid_client', 'unauthorized_client', 'invalid_scope'):
@@ -131,7 +137,8 @@ def _request(method, url, *, missing_ok=False, binary=False, download_redirect=F
             reasons = {e.get('reason') for e in error.get('errors', []) if isinstance(e, dict)}
             details = error.get('details', [])
             if 'accessNotConfigured' in reasons or any(d.get('reason') == 'SERVICE_DISABLED' for d in details if isinstance(d, dict)):
-                raise CloudDeckError('Enable the Google Drive API and Google Slides API in the connected OAuth project, then retry.')
+                raise CloudDeckError('Enable the Google Drive API and Google Slides API in the connected OAuth project, then retry.',
+                                     configuration=True)
             if error.get('code') in ('accessDenied', 'Authorization_RequestDenied') or 'insufficientFilePermissions' in reasons:
                 raise CloudDeckError('Reconnect an account with permission to edit this presentation.', reconnect=True)
         if response.status_code == 400 and isinstance(error, dict) and 'revision' in str(error.get('message', '')).lower():
@@ -170,7 +177,7 @@ def refresh_access(provider, refresh_token):
     return _tokens(provider, dict(grant_type='refresh_token', refresh_token=refresh_token))
 
 
-def _import_google(headers, meta, blob):
+def _import_google(headers, meta, blob, *, file_id=None):
     boundary = 'gp-' + uuid4().hex
     body = b''.join([
         f'--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'.encode(),
@@ -178,11 +185,16 @@ def _import_google(headers, meta, blob):
         f'\r\n--{boundary}\r\nContent-Type: {PPTX_MIME}\r\n\r\n'.encode(),
         blob, f'\r\n--{boundary}--\r\n'.encode(),
     ])
-    result = _request('POST', UPLOAD, headers={**headers, 'Content-Type': 'multipart/related; boundary=' + boundary},
-                      params={'uploadType': 'multipart', 'fields': 'id,mimeType,trashed', 'ignoreDefaultVisibility': 'true'},
+    endpoint = UPLOAD + '/' + quote(file_id, safe='') if file_id else UPLOAD
+    params = {'uploadType': 'multipart', 'fields': 'id,mimeType,trashed'}
+    if not file_id:
+        params['ignoreDefaultVisibility'] = 'true'
+    result = _request('PATCH' if file_id else 'POST', endpoint,
+                      headers={**headers, 'Content-Type': 'multipart/related; boundary=' + boundary}, params=params,
                       data=body, timeout=(5, 75))
     ident = result.get('id')
     if (not isinstance(ident, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', ident)
+            or (file_id and ident != file_id)
             or result.get('mimeType') != SLIDES_MIME or result.get('trashed')):
         raise CloudDeckError('Google Drive did not confirm the native presentation import.')
     return ident
@@ -211,15 +223,54 @@ def _delete_scratch(headers, ident):
     _request('DELETE', DRIVE + '/' + quote(ident, safe=''), headers=headers, missing_ok=True)
 
 
-def _google_write(headers, url, saved, operations):
+def _google_write(headers, url, operations):
     if not operations:
         return
-    revision = saved.get('revisionId')
-    if not revision:
-        raise CloudDeckError('Google could not confirm the latest saved version of the presentation.')
-    _request('POST', url + ':batchUpdate', headers=headers, timeout=(5, 75), json={
-        'writeControl': {'requiredRevisionId': revision}, 'requests': operations,
-    })
+    # Automatic results take precedence over edits made since the last read.
+    _request('POST', url + ':batchUpdate', headers=headers, timeout=(5, 75), json={'requests': operations})
+
+
+def _replace_google(headers, file_id, blob):
+    # Drive's conversion update replaces the contents of this native file while
+    # retaining its ID, sharing settings, name and assembly binding metadata.
+    _import_google(headers, {}, blob, file_id=file_id)
+    url = GOOGLE_SLIDES + quote(file_id, safe='')
+    saved = _request('GET', url, headers=headers)
+    try:
+        _google_write(headers, url, initialize_native_pages(saved))
+    except GoogleMergeError as error:
+        raise CloudDeckError(str(error)) from None
+
+
+def _refresh_google(headers, binding, file_id, blob):
+    url = GOOGLE_SLIDES + quote(file_id, safe='')
+    scratch = None
+    try:
+        saved = _request('GET', url, headers=headers)
+        # Reap only abandoned private conversions belonging to this binding.
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        for orphan in _file_matches(headers, 'gpAssemblyScratch', binding, older_than=cutoff):
+            if orphan != file_id:
+                _delete_scratch(headers, orphan)
+        scratch = _import_google(headers, {'name': 'Golden Plate assembly refresh',
+                                           'appProperties': {'gpAssemblyScratch': binding}}, blob)
+        if scratch == file_id:
+            raise CloudDeckError('Google returned an invalid temporary presentation ID.')
+        fresh = _request('GET', GOOGLE_SLIDES + quote(scratch, safe=''), headers=headers)
+        operations, pending_notes = plan_update(saved, fresh)
+        _google_write(headers, url, operations)
+        if pending_notes:
+            saved = _request('GET', url, headers=headers)
+            _google_write(headers, url, notes_after_creation(saved, pending_notes))
+    except GoogleMergeError:
+        _replace_google(headers, file_id, blob)
+    except CloudDeckError as error:
+        if error.reconnect or error.configuration:
+            raise
+        _replace_google(headers, file_id, blob)
+    finally:
+        if scratch and scratch != file_id:
+            _delete_scratch(headers, scratch)
 
 
 def _google_deck(headers, binding, file_id, snapshot, blob):
@@ -236,7 +287,7 @@ def _google_deck(headers, binding, file_id, snapshot, blob):
         url = GOOGLE_SLIDES + quote(file_id, safe='')
         saved = _request('GET', url, headers=headers)
         try:
-            _google_write(headers, url, saved, initialize_native_pages(saved))
+            _google_write(headers, url, initialize_native_pages(saved))
         except GoogleMergeError as error:
             raise CloudDeckError(str(error)) from None
     else:
@@ -248,30 +299,7 @@ def _google_deck(headers, binding, file_id, snapshot, blob):
         if (info.get('id') != file_id or info.get('mimeType') != SLIDES_MIME
                 or info.get('appProperties', {}).get('gpAssembly') != binding):
             raise CloudDeckError('Google did not confirm this assembly connection. The presentation was kept.')
-        saved = _request('GET', url, headers=headers)
-        # A terminated worker might leave an upload without a response ID.
-        # Only reap this binding's scratch files well beyond the worker lease.
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        for orphan in _file_matches(headers, 'gpAssemblyScratch', binding, older_than=cutoff):
-            if orphan != file_id:
-                _delete_scratch(headers, orphan)
-        scratch = _import_google(headers, {'name': 'Golden Plate assembly refresh',
-                                           'appProperties': {'gpAssemblyScratch': binding}}, blob)
-        if scratch == file_id:
-            raise CloudDeckError('Google returned an invalid temporary presentation ID.')
-        try:
-            fresh = _request('GET', GOOGLE_SLIDES + quote(scratch, safe=''), headers=headers)
-            operations, pending_notes = plan_update(saved, fresh)
-            _google_write(headers, url, saved, operations)
-            if pending_notes:
-                # Google assigns each new slide's speaker notes object ID. A
-                # retry after interruption will also find and fill missing notes.
-                saved = _request('GET', url, headers=headers)
-                _google_write(headers, url, saved, notes_after_creation(saved, pending_notes))
-        except GoogleMergeError as error:
-            raise CloudDeckError(str(error)) from None
-        finally:
-            _delete_scratch(headers, scratch)
+        _refresh_google(headers, binding, file_id, blob)
     return file_id, 'https://docs.google.com/presentation/d/' + file_id + '/edit'
 
 
@@ -283,14 +311,6 @@ def _https_url(value):
     except ValueError:
         return False
     return parsed.scheme == 'https' and bool(parsed.hostname) and not parsed.username and not parsed.password
-
-
-def _onedrive_version_tag(value):
-    # Graph returns quoted SharePoint tags and opaque, unquoted OneDrive Personal
-    # tags. Preserve either exactly for If-Match and the final metadata recheck.
-    # Reject wildcards, tag lists, weak validators and header control characters.
-    return isinstance(value, str) and bool(re.fullmatch(
-        r'"[\x21\x23-\x7e]+"|[A-Za-z0-9][A-Za-z0-9._~!+/=-]*', value))
 
 
 def _download_existing_powerpoint(headers, item, info):
@@ -311,23 +331,24 @@ def _download_existing_powerpoint(headers, item, info):
 
 def _save_existing_powerpoint(headers, info, file_id, blob, snapshot):
     item = f'{ONEDRIVE}/items/{quote(file_id, safe="")}'
-    etag = info.get('eTag')
     if info.get('id') != file_id:
         raise CloudDeckError('OneDrive did not confirm the original presentation identity. The presentation was kept.')
-    if not _onedrive_version_tag(etag):
-        raise CloudDeckError('OneDrive did not confirm the saved file version. The presentation was kept.')
     # Graph's short-lived download and upload URLs are already authenticated.
     # Keep the Graph OAuth grant on graph.microsoft.com.
-    saved = _download_existing_powerpoint(headers, item, info)
     try:
+        saved = _download_existing_powerpoint(headers, item, info)
         merged = merge_deck(saved, blob, snapshot)
-    except MergeError as error:
-        raise CloudDeckError(str(error)) from None
-    # Graph documents If-Match on createUploadSession. The explicit conflict
-    # behavior prevents a conflicting final transfer from replacing another file.
-    conditional = {**headers, 'If-Match': etag}
-    session = _request('POST', item + '/createUploadSession', headers=conditional,
-                       json={'item': {'@microsoft.graph.conflictBehavior': 'fail'}})
+    except MergeError:
+        merged = mark_new_deck(blob, snapshot)
+    except CloudDeckError as error:
+        if error.reconnect or error.configuration:
+            raise
+        merged = mark_new_deck(blob, snapshot)
+    # Automatic results take precedence over edits made during this upload.
+    # Preserve additions when merging works, otherwise replace with a fresh deck.
+    # Do not send version conditions or recheck an eTag before committing.
+    session = _request('POST', item + '/createUploadSession', headers=headers,
+                       json={'item': {'@microsoft.graph.conflictBehavior': 'replace'}})
     upload = session.get('uploadUrl')
     if not _https_url(upload):
         raise CloudDeckError('OneDrive did not return a secure upload session.')
@@ -335,17 +356,13 @@ def _save_existing_powerpoint(headers, info, file_id, blob, snapshot):
     total = len(merged)
     for start in range(0, total, chunk_size):
         stop = min(start + chunk_size, total)
-        if stop == total:
-            latest = _request('GET', item, headers=headers, params={'$select': 'id,eTag'})
-            if latest.get('id') != file_id or latest.get('eTag') != etag:
-                raise CloudDeckError('The presentation changed while syncing. The next sync will use the newer copy.')
         result = _request('PUT', upload, headers={'Content-Range': f'bytes {start}-{stop - 1}/{total}',
-                          'Content-Type': 'application/octet-stream', 'If-Match': etag}, data=merged[start:stop])
+                          'Content-Type': 'application/octet-stream'}, data=merged[start:stop])
     return result
 
 
 def _powerpoint_deck(headers, binding, file_id, blob, snapshot):
-    metadata = {'$select': 'id,eTag,webUrl,@microsoft.graph.downloadUrl'}
+    metadata = {'$select': 'id,webUrl,@microsoft.graph.downloadUrl'}
     if file_id:
         item = f'{ONEDRIVE}/items/{quote(file_id, safe="")}'
         info = _request('GET', item, headers=headers, params=metadata)
