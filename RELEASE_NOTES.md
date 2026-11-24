@@ -1,8 +1,16 @@
 # Golden Plate release notes
 
-<!-- golden-plate-release-baseline: 1.4.1.2 7258053d770f0282d3ce2ef15fd0f5ed19185643 -->
+<!-- golden-plate-release-baseline: 1.4.1.3 5059f8a34c03dbf87ecf0fdb990ec81608c18b7f -->
 
 Historical versions were assigned retrospectively from the main branch using their commit dates. New entries use the date they are prepared in Eastern Time.
+
+## 1.4.1.3
+
+November 24, 2026 · Readable default session names
+
+Author: Jiajun (Leo) Li
+
+- Creating a session without a custom name now uses a readable date such as November 24, 2026. If that name is already in use, new sessions add a numbered suffix, such as November 24, 2026 1, then November 24, 2026 2.
 
 ## 1.4.1.2
 
