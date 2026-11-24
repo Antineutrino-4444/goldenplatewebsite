@@ -43,8 +43,8 @@ export function useLiveAssembly(schoolCode, theme, provider) {
         const data = await readLinks(code, theme, request.signal)
         if (request.signal.aborted) return
         const link = data.links?.[provider]
-        setRecords({ code, theme, provider, revision, link, schoolName: data.school_name })
-        if (enabled && (link?.status === 'pending' || link?.status === 'retry')) timer = setTimeout(check, 10000)
+        setRecords({ code, theme, provider, revision, link, connections: data.connections || [], schoolName: data.school_name })
+        timer = setTimeout(check, 10000)
       } catch {
         // Connect checks the signed-in account's current link again when used.
         if (!request.signal.aborted) setRecords({ code, theme, provider, revision, link: null, failed: true })
@@ -54,11 +54,13 @@ export function useLiveAssembly(schoolCode, theme, provider) {
     return () => { request.abort(); clearTimeout(timer) }
   }, [code, theme, initialized, enabled, provider, revision])
 
-  const current = records?.code === code && records.theme === theme && records.provider === provider && records.revision === revision
+  const current = records?.code === code && records.theme === theme && records.provider === provider
   return {
     enabled, loading: !providers || Boolean(provider && code && !current),
     unavailable: unavailable || Boolean(current && records.failed),
     link: current ? records.link : null,
+    connections: current ? records.connections || [] : [],
+    providers: providers || {},
     schoolName: current ? records.schoolName : '',
     refresh: () => setRevision(previous => previous + 1),
   }

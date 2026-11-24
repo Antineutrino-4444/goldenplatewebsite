@@ -15,7 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import case, or_
 from sqlalchemy.exc import IntegrityError
 
-from .db import AssemblyDeck, SessionFactory, _now_utc
+from .db import AssemblyDeck, SessionFactory, User, _now_utc
 
 logger = logging.getLogger(__name__)
 CHECK_INTERVAL = timedelta(seconds=60)
@@ -50,12 +50,14 @@ def credentials_configured():
 def _public(row):
     if row is None or row.status == 'disconnected':
         return None
-    stamp = row.last_synced_at
-    if stamp and stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
+    def timestamp(value):
+        if value and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat() if value else None
     return {'id': row.id, 'provider': row.provider, 'theme': row.theme, 'school_label': row.school_label,
             'url': row.web_url, 'status': row.status, 'message': row.message,
-            'last_synced_at': stamp.isoformat() if stamp else None}
+            'last_synced_at': timestamp(row.last_synced_at), 'next_check_at': timestamp(row.next_check_at),
+            'lease_until': timestamp(row.lease_until), 'attempts': row.attempts}
 
 
 def _binding(store, school_id, user_id, provider, theme):
@@ -72,6 +74,32 @@ def list_decks(school_id, user_id):
         rows = store.query(AssemblyDeck).filter_by(school_id=school_id, owner_id=user_id).filter(
             AssemblyDeck.status != 'disconnected').order_by(AssemblyDeck.provider, AssemblyDeck.theme)
         return [_public(row) for row in rows]
+
+
+def list_school_decks(school_id):
+    with SessionFactory() as store:
+        rows = store.query(AssemblyDeck, User).join(User, User.id == AssemblyDeck.owner_id).filter(
+            AssemblyDeck.school_id == school_id, AssemblyDeck.status != 'disconnected',
+        ).order_by(AssemblyDeck.provider, AssemblyDeck.theme, User.username).all()
+        return [{**_public(deck), 'owner_name': owner.display_name or owner.username,
+                 'owner_username': owner.username} for deck, owner in rows]
+
+
+def request_deck_sync(deck_id, school_id, *, owner_id=None):
+    """Persist a manual refresh without uploading inside the web request."""
+    with SessionFactory() as store:
+        query = store.query(AssemblyDeck).filter_by(id=deck_id, school_id=school_id)
+        if owner_id is not None:
+            query = query.filter_by(owner_id=owner_id)
+        changed = query.filter(AssemblyDeck.status.in_(('ready', 'pending', 'retry')),
+                               AssemblyDeck.encrypted_refresh_token.is_not(None)).update({
+            'status': 'pending', 'message': None, 'snapshot_hash': None, 'next_check_at': _now_utc(),
+        }, synchronize_session=False)
+        store.commit()
+        result = _public(query.one_or_none())
+    if changed:
+        wake_assembly_sync()
+    return result
 
 
 def queue_school_decks(store, school_id):

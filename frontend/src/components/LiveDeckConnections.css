@@ -1,0 +1,33 @@
+.live-deck-connections { min-width: 0; color: inherit; container-type: inline-size; }
+.live-deck-heading, .golden-public .live-deck-heading { margin: 24px 0 8px; font-size: 18px; font-weight: 600; line-height: 1.4; }
+.live-deck-list { list-style: none; margin: 0; padding: 0; }
+.live-deck-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 20px; padding: 18px 0; border-top: 1px solid var(--site-rule, #cbd5e1); }
+.live-deck-details { min-width: 0; overflow-wrap: anywhere; }
+.live-deck-details h4 { margin: 0; font: inherit; font-weight: 600; line-height: 1.5; }
+.live-deck-details h4 span { margin-left: 8px; font-size: 13px; font-weight: 400; color: var(--site-muted, #475569); }
+.live-deck-connections .live-deck-details p { margin: 4px 0 0; line-height: 1.5; }
+.live-deck-state { font-size: 14px; font-weight: 600; }
+.live-deck-state[data-state="ready"] { color: var(--site-ink, #166534); }
+.live-deck-state[data-state="retry"], .live-deck-state[data-state="reconnect"] { color: var(--site-gold-ink, #92400e); }
+.live-deck-updated, .live-deck-owner, .live-deck-empty, .live-deck-services { font-size: 13px; color: var(--site-muted, #475569); line-height: 1.6; }
+.live-deck-owner span { overflow-wrap: anywhere; }
+.live-deck-connections .live-deck-error { font-size: 14px; color: var(--site-ink, #7f1d1d); }
+.live-deck-actions { display: flex; flex-wrap: wrap; align-content: start; align-items: center; gap: 8px 14px; }
+.live-deck-actions a, .live-deck-actions button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 6px 0; color: inherit; font: inherit; font-size: 14px; font-weight: 600; }
+.live-deck-actions a { text-decoration: underline; text-underline-offset: 4px; }
+.live-deck-actions button { padding: 6px 12px; border: 1px solid var(--site-rule, #94a3b8); border-radius: 3px; background: transparent; cursor: pointer; }
+.live-deck-actions button:disabled { cursor: default; opacity: .55; }
+.live-deck-actions :is(a, button):focus-visible { outline: 2px solid var(--site-gold-ink, #166534); outline-offset: 3px; }
+.live-deck-services { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 8px 0 14px; }
+.admin-live-decks { padding: 20px; border: 1px solid var(--site-rule, #cbd5e1); border-radius: 8px; }
+.admin-live-decks header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.admin-live-decks h3 { font-size: 18px; font-weight: 600; }
+.admin-live-decks .live-deck-notice { margin-top: 10px; font-size: 14px; }
+@container (max-width: 420px) {
+  .live-deck-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
+@media (max-width: 600px) {
+  .live-deck-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .live-deck-actions { justify-content: flex-start; }
+  .admin-live-decks { padding: 16px; }
+}

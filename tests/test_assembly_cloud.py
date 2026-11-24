@@ -232,6 +232,51 @@ def test_onedrive_retains_presentation_item_and_merges_recovered_and_known_files
         assert write[2]['headers']['If-Match'] == REMOTE['eTag']
 
 
+def test_onedrive_personal_opaque_version_tag_updates_the_same_file(api, upload):
+    calls, replies = api
+    personal = dict(REMOTE, eTag='aRDQ2NDhGMDZDOTFEOUQzRCE1NDkyNy4w')
+    replies.extend([(200, personal), (200, b'teacher edits'), (200, SESSION),
+                    (200, personal), (200, personal)])
+    assert upload('microsoft', personal['id'], 178) == (personal['id'], personal['webUrl'])
+    assert calls[2][2]['headers']['If-Match'] == personal['eTag']
+    assert calls[4][2]['headers']['If-Match'] == personal['eTag']
+    assert calls[4][2]['data'] == b'teacher edits + powerpoint lunch 178'
+    assert 'Authorization' not in calls[1][2].get('headers', {})
+    assert 'Authorization' not in calls[4][2]['headers']
+
+
+@pytest.mark.parametrize('tag', [None, '', '*', 'W/"version"', '"one","two"',
+                                 'one,two', 'one two', 'one\r\nIf-Match: *', 'one\x00two', '"one\ttwo"'])
+def test_invalid_onedrive_versions_never_download_or_overwrite(api, upload, tag):
+    calls, replies = api
+    replies.append((200, dict(REMOTE, eTag=tag)))
+    with pytest.raises(cloud.CloudDeckError, match='saved file version'):
+        upload('microsoft', REMOTE['id'])
+    assert len(calls) == 1 and calls[0][0] == 'GET'
+
+
+def test_changed_personal_version_is_not_overwritten(api, upload):
+    calls, replies = api
+    personal = dict(REMOTE, eTag='aPersonalVersion1')
+    replies.extend([(200, personal), (200, b'teacher edits'), (200, SESSION),
+                    (200, dict(personal, eTag='aPersonalVersion2'))])
+    with pytest.raises(cloud.CloudDeckError, match='changed while syncing'):
+        upload('microsoft', personal['id'])
+    assert all(method != 'PUT' for method, _, _ in calls)
+
+
+@pytest.mark.parametrize('change,message', [
+    ({'id': 'another-file'}, 'original presentation identity'),
+    ({'@microsoft.graph.downloadUrl': None}, 'secure download link'),
+])
+def test_onedrive_incomplete_metadata_is_distinct_and_never_overwritten(api, upload, change, message):
+    calls, replies = api
+    replies.append((200, {**REMOTE, **change}))
+    with pytest.raises(cloud.CloudDeckError, match=message):
+        upload('microsoft', REMOTE['id'])
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize('phase', ['metadata', 'merge', 'session', 'recheck', 'upload'])
 def test_onedrive_never_replaces_on_bad_file_or_concurrent_edit(api, upload, monkeypatch, phase):
     calls, replies = api

@@ -91,7 +91,11 @@ def test_same_native_link_updates_after_a_lunch_without_reopening_site(client, m
     sync.run_due_decks()
     assert writes == [(writes[0][0], None, 0), (writes[0][0], 'dedicated-id', 34)]
     listing = client.get(BASE, query_string=details).json
-    assert listing['links'][provider] == {'url': response.location, 'status': 'ready', 'school_label': 'Student Council'}
+    link = listing['links'][provider]
+    assert {field: link[field] for field in ('url', 'status', 'school_label')} == {
+        'url': response.location, 'status': 'ready', 'school_label': 'Student Council'}
+    assert link['message'] is None and link['attempts'] == 0 and link['lease_until'] is None
+    assert link['last_synced_at'] and link['next_check_at']
     registered = listing['school_name']
     assert registered and labels == [(registered, 'Student Council')] * 2
     renamed = client.post(BASE + '/connect', json={**details, 'school_label': 'Campus North'}).json
@@ -180,6 +184,112 @@ def test_missing_configuration_only_disables_that_provider(client, monkeypatch, 
     assert client.get(BASE).json == {'providers': {'google': True, 'microsoft': False}, 'links': {}}
     sign_in(client, classroom)
     assert client.post(BASE + '/connect', json={'school_code': classroom[3], 'theme': 'light', 'provider': 'microsoft'}).status_code == 503
+
+
+def test_failed_sync_diagnostics_are_visible_only_with_the_owners_deck(client, monkeypatch, classroom):
+    owner, _, school, slug = classroom
+    sign_in(client, classroom)
+    secret = secrets.token_urlsafe()
+    deck = sync.bind_deck(school, owner, 'microsoft', 'dark', secret)
+    message = 'OneDrive did not confirm the saved file version. The presentation was kept.'
+    def unavailable(*args):
+        raise cloud.CloudDeckError(message)
+    monkeypatch.setattr(cloud, 'refresh_access', unavailable)
+    sync.sync_deck(deck['id'], force=True)
+    response = client.get(BASE, query_string={'school_code': slug, 'theme': 'dark'})
+    details = response.json['links']['microsoft']
+    assert details['status'] == 'retry' and details['message'] == message
+    assert details['attempts'] == 1 and details['next_check_at']
+    assert details['last_synced_at'] is None and details['lease_until'] is None
+    assert secret not in response.get_data(as_text=True)
+    with client.application.test_client() as visitor:
+        public = visitor.get(BASE, query_string={'school_code': slug, 'theme': 'dark'})
+        assert public.json['links'] == {} and message not in public.get_data(as_text=True)
+
+
+def test_school_code_lookup_lists_both_services_and_themes_only_for_the_owner(client, classroom):
+    owner, _, school, slug = classroom
+    sign_in(client, classroom)
+    expected = []
+    for provider, theme in [('google', 'dark'), ('microsoft', 'light')]:
+        expected.append(sync.bind_deck(school, owner, provider, theme, 'private-refresh')['id'])
+    another = create_user_record('other-' + uuid4().hex, 'password', 'Other member', school_id=school)
+    other = sync.bind_deck(school, another.id, 'google', 'dark', 'another-private-refresh')
+    response = client.get(BASE, query_string={'school_code': slug, 'theme': 'dark'})
+    assert {d['id'] for d in response.json['connections']} == set(expected)
+    assert other['id'] not in response.get_data(as_text=True)
+    assert 'private-refresh' not in response.get_data(as_text=True)
+    assert 'microsoft' not in response.json['links']  # The primary form remains theme-specific.
+
+
+def test_manual_sync_queues_existing_deck_without_cloud_calls_or_redirect(client, monkeypatch, classroom):
+    owner, _, school, slug = classroom
+    sign_in(client, classroom)
+    deck = sync.bind_deck(school, owner, 'microsoft', 'dark', 'private-refresh', school_label='Campus')
+    lease = _now_utc() + timedelta(minutes=2)
+    with SessionFactory.begin() as store:
+        row = store.get(AssemblyDeck, deck['id'])
+        row.status = 'retry'
+        row.message = 'Previous failure'
+        row.snapshot_hash = 'old-snapshot'
+        row.next_check_at = _now_utc() + timedelta(hours=1)
+        row.file_id, row.web_url = 'existing-file', 'https://example.test/existing'
+        row.lease_owner, row.lease_until = 'existing-operation', lease
+        original_grant = row.encrypted_refresh_token
+    monkeypatch.setattr(cloud, 'refresh_access', lambda *args: pytest.fail('Sync requests must not contact the provider'))
+    wake = threading.Event()
+    monkeypatch.setitem(client.application.extensions, 'assembly_sync_wake', wake)
+    response = client.post(BASE + '/sync', json={'school_code': slug, 'provider': 'microsoft', 'theme': 'dark'})
+    assert response.status_code == 202 and 'Location' not in response.headers
+    assert response.json['connection']['status'] == 'pending' and wake.is_set()
+    assert response.json['connection']['url'] == 'https://example.test/existing'
+    with SessionFactory() as store:
+        row = store.get(AssemblyDeck, deck['id'])
+        assert row.snapshot_hash is None and row.message is None
+        assert row.next_check_at.replace(tzinfo=lease.tzinfo) <= _now_utc()
+        assert row.lease_owner == 'existing-operation' and row.encrypted_refresh_token == original_grant
+        assert row.file_id == 'existing-file' and row.school_label == 'Campus'
+    assert client.post(BASE + '/sync', json={'school_code': slug, 'provider': 'google', 'theme': 'dark'}).status_code == 404
+    assert client.post(BASE + '/sync', json={'school_code': slug, 'provider': 'microsoft', 'theme': 'dark'},
+                       headers={'Origin': 'https://another.example'}).status_code == 403
+
+
+@pytest.mark.parametrize('role', ['admin', 'superadmin'])
+def test_admin_connections_include_school_owners_and_can_sync_without_crossing_schools(client, monkeypatch, classroom, role):
+    owner, _, school, slug = classroom
+    assert client.get('/api/admin/presentations/live').status_code == 401
+    sign_in(client, classroom)
+    assert client.get('/api/admin/presentations/live').status_code == 403
+    another = create_user_record('other-' + uuid4().hex, 'password', 'Other member', school_id=school)
+    own = sync.bind_deck(school, owner, 'google', 'dark', 'private-owner-refresh')
+    shared = sync.bind_deck(school, another.id, 'microsoft', 'light', 'private-member-refresh')
+    foreign_school = 'foreign-' + uuid4().hex
+    with SessionFactory.begin() as store:
+        store.add(School(id=foreign_school, name='Another school', slug=foreign_school))
+        store.get(User, owner).role = role
+    foreign = sync.bind_deck(foreign_school, another.id, 'google', 'dark', 'private-foreign-refresh')
+    response = client.get('/api/admin/presentations/live', query_string={'school_id': foreign_school})
+    assert {d['id'] for d in response.json['connections']} == {own['id'], shared['id']}
+    assert next(d for d in response.json['connections'] if d['id'] == shared['id'])['owner_name'] == 'Other member'
+    assert 'private-' not in response.get_data(as_text=True) and foreign['id'] not in response.get_data(as_text=True)
+    monkeypatch.setattr(cloud, 'refresh_access', lambda *args: pytest.fail('Admin sync must be queued'))
+    assert client.post('/api/admin/presentations/live/sync', json={'deck_id': shared['id']}).status_code == 202
+    assert client.post('/api/admin/presentations/live/sync', json={'deck_id': foreign['id']}).status_code == 404
+    assert client.post('/api/admin/presentations/live/sync', json={'deck_id': shared['id']},
+                       headers={'Origin': 'https://another.example'}).status_code == 403
+    assert client.get('/api/admin/presentations/live', headers={'Origin': 'https://another.example'}).status_code == 403
+
+
+def test_manual_sync_does_not_reconnect_a_revoked_account(client, classroom):
+    owner, _, school, slug = classroom
+    sign_in(client, classroom)
+    deck = sync.bind_deck(school, owner, 'google', 'dark', 'private-refresh')
+    with SessionFactory.begin() as store:
+        row = store.get(AssemblyDeck, deck['id'])
+        row.status, row.encrypted_refresh_token = 'reconnect', None
+    response = client.post(BASE + '/sync', json={'school_code': slug, 'provider': 'google', 'theme': 'dark'})
+    assert response.status_code == 409 and response.json['code'] == 'RECONNECT_REQUIRED'
+    assert sync.get_deck(school, owner, 'google', 'dark')['status'] == 'reconnect'
 
 
 @pytest.mark.parametrize('configuration,expected', [(True, 'config'), (False, 'authorization')])

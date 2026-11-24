@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx'
 import { assemblyAction, formats, liveProviders, liveReturnNotice, needsGoogleSlidesNotice, presentationFileName, presentationLoginPath, readPresentationOptions, schoolLabelOption } from '@/lib/presentation-options.js'
 import { useLiveAssembly } from '@/lib/use-live-assembly.js'
+import LiveDeckConnections from '@/components/LiveDeckConnections.jsx'
 import { authorizeGoogleSlides, createGoogleSlidesFile, loadGoogleSlidesAuth } from '@/lib/google-slides.js'
 
 const googleSlidesUrl = 'https://slides.google.com/create'
@@ -71,6 +72,7 @@ function PresentationForm({ search, theme }) {
   const [options, setOptions] = useState(() => readPresentationOptions(search))
   const [notice, setNotice] = useState(() => liveReturnNotice(search))
   const [busy, setBusy] = useState(false)
+  const [syncingDeck, setSyncingDeck] = useState(null)
   const [googleSelection, setGoogleSelection] = useState(null)
   const [googleAuth, setGoogleAuth] = useState('loading')
   const [authAttempt, setAuthAttempt] = useState(0)
@@ -212,6 +214,23 @@ function PresentationForm({ search, theme }) {
     })
   }
 
+
+  function syncConnection(deck) {
+    return runAction(async signal => {
+      setSyncingDeck(deck.id)
+      try {
+        const response = await fetch('/api/resources/presentations/live/sync', {
+          method: 'POST', credentials: 'same-origin', signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ school_code: schoolCode.trim(), provider: deck.provider, theme: deck.theme }),
+        })
+        if (!response.ok) return reportProblem(response)
+        live.refresh()
+      } finally {
+        if (!signal.aborted) setSyncingDeck(null)
+      }
+    })
+  }
   function confirmGoogleSelection() {
     const { action, authorizationUrl } = googleSelection
     setGoogleSelection(null)
@@ -314,11 +333,14 @@ function PresentationForm({ search, theme }) {
           {live.link && <div className="gp-deck-status">
             {!live.enabled && <span>Automatic updates for this cloud account are unavailable on this site.</span>}
             {live.enabled && live.link.status === 'reconnect' && <span>Reconnect your cloud account to resume updates.</span>}
-            {live.link.status === 'retry' && <span>Golden Plate will retry the latest update.</span>}
-            {live.link.status === 'pending' && <span>Your deck is waiting for its first update.</span>}
             {live.link.url && <button type="button" className="gp-text-link" disabled={busy} onClick={copyLiveLink}>Copy deck link</button>}
             <button type="button" className="gp-text-link" disabled={busy} onClick={() => changeLiveDeck({ disconnect: true })}>Stop automatic updates</button>
           </div>}
+          {live.connections.length > 0 && <section aria-labelledby="export-connections-title">
+            <h3 id="export-connections-title" className="live-deck-heading">Your connected presentations</h3>
+            <LiveDeckConnections connections={live.connections} providers={live.providers}
+              onSync={syncConnection} busyId={syncingDeck} disabled={busy} schoolCode={schoolCode.trim()} />
+          </section>}
           {provider && live.unavailable && <div className="gp-deck-status" role="status">
             <span>Couldn’t check for live decks.</span>
             <button type="button" className="gp-text-link" onClick={live.refresh}>Try again</button>

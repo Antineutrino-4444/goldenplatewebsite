@@ -208,6 +208,22 @@ def test_worker_updates_same_remote_file_after_lunch_and_skips_unchanged_results
         assert sync._cipher().decrypt(saved.encrypted_refresh_token.encode()).decode() == setup.token + '-rotated-rotated'
 
 
+def test_manual_sync_bypasses_backoff_and_refreshes_unchanged_results_in_original_file(setup):
+    key = (setup.school, setup.owner, 'microsoft', 'dark')
+    deck = sync.bind_deck(*key, setup.token)
+    sync.run_due_decks()
+    ready = sync.get_deck(*key)
+    assert len(setup.calls) == 1
+    assert sync.request_deck_sync(deck['id'], 'another-school') is None
+    assert sync.request_deck_sync(deck['id'], setup.school, owner_id='another-owner') is None
+    requested = sync.request_deck_sync(deck['id'], setup.school, owner_id=setup.owner)
+    assert requested['status'] == 'pending' and requested['url'] == ready['url']
+    assert len(setup.calls) == 1
+    sync.run_due_decks()
+    assert setup.calls == [(deck['id'], None, 0), (deck['id'], 'one-file-' + deck['id'], 0)]
+    assert sync.get_deck(*key)['status'] == 'ready'
+
+
 @pytest.mark.parametrize('provider', ['google', 'microsoft'])
 def test_google_design_refreshes_only_the_connected_google_deck_once(setup, monkeypatch, provider):
     key = (setup.school, setup.owner, provider, 'dark')

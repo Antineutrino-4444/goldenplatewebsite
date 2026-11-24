@@ -516,6 +516,28 @@ Invalid application credentials or scopes return `live_error=config`. The public
 `/api/resources/presentations/live` provider flags check only whether credentials
 are present; they do not validate them with Microsoft. A `live_error=sync` return
 means authorization completed and the subsequent deck synchronization failed.
+While signed in as the connected deck's owner, inspect
+`/api/resources/presentations/live?school_code=YOUR_CODE&theme=dark` (or `light`).
+Each owned link includes its saved safe error `message`, `last_synced_at`,
+`next_check_at`, `lease_until` and failed `attempts` count. These distinguish a
+provider failure from a due update that no worker has claimed. The response
+excludes cloud tokens and never includes another account's deck diagnostics.
+
+On the assembly export page, entering a school code shows the signed-in owner's
+connected decks across both providers and themes. Each row includes an **Open
+deck** link, the last sync time, saved errors and a **Sync now** button. School
+admins and superadmins can see and sync their school's connections, including
+the connection owner, under **Live assembly presentations** in the admin panel.
+Both views refresh status every ten seconds. Manual sync queues a fresh update
+even when results have not changed and bypasses retry delays; the background
+worker keeps the same deck and respects an upload already in progress. Expired
+connections must be reconnected by their owner before syncing.
+
+OneDrive version checks accept both quoted SharePoint tags and the opaque,
+unquoted tags returned by OneDrive Personal. The original tag is preserved in
+conditional uploads and checked again before the final upload chunk. Missing
+version tags, an unexpected file ID or a missing secure download link stop the
+update and leave the saved presentation untouched.
 Use `https://goldenplate.ca` consistently when connecting production decks; the
 callback and the initiating school session must use the same site origin.
 

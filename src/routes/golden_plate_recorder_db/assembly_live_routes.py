@@ -15,7 +15,7 @@ from . import recorder_bp, assembly_sync as sync
 from .db import INTERSCHOOL_SCHOOL_ID
 from .presentation_routes import _error, public_presentation_school_name, school_label_from
 from .security import get_current_user
-from .users import get_school_by_slug
+from .users import get_school_by_slug, get_school_by_id
 
 PROVIDERS = ('google', 'microsoft')
 FLOW_TTL = 600
@@ -114,18 +114,98 @@ def assembly_live_links():
         if not school or school.status != 'active' or school.id == INTERSCHOOL_SCHOOL_ID:
             return _json(result)
         owns_school = actor and not _owner_error(actor, school, disconnect=True)
+        result['connections'] = []
         if owns_school and not actor['email_required']:
             result['school_name'] = school.name
         elif school.guest_privacy_enabled == 0:
             result['school_name'] = public_presentation_school_name(school.id)
         if owns_school:
             for deck in sync.list_decks(school.id, actor['id']):
+                if not actor['email_required']:
+                    result['connections'].append(deck)
                 if deck['theme'] == theme:
                     result['links'][deck['provider']] = {
                         'url': None if actor['email_required'] else deck['url'], 'status': deck['status'],
                         'school_label': deck['school_label'],
+                        **{field: deck[field] for field in ('message', 'last_synced_at', 'next_check_at',
+                                                          'lease_until', 'attempts')},
                     }
     return _json(result)
+
+
+def _sync_response(deck):
+    if not deck:
+        return _error('No connected presentation was found.', 404)
+    if deck['status'] == 'reconnect':
+        return _error('The connection owner needs to reconnect this cloud account.', 409, 'RECONNECT_REQUIRED')
+    if not _provider_enabled(deck['provider']):
+        return _error('Automatic updates for this provider are unavailable.', 503)
+    return None
+
+
+@recorder_bp.post('/resources/presentations/live/sync')
+def request_assembly_sync():
+    denied = _origin_error()
+    if denied:
+        return denied
+    school, provider, theme, error = _selection()
+    if error:
+        return error
+    actor = get_current_user()
+    denied = _owner_error(actor, school)
+    if denied:
+        return denied
+    deck = sync.get_deck(school.id, actor['id'], provider, theme)
+    denied = _sync_response(deck)
+    if denied:
+        return denied
+    deck = sync.request_deck_sync(deck['id'], school.id, owner_id=actor['id'])
+    denied = _sync_response(deck)
+    return denied if denied else _json({'connection': deck}, 202)
+
+
+def _school_admin():
+    actor = get_current_user()
+    if not actor:
+        return None, _error('Sign in to manage connected presentations.', 401)
+    if actor['role'] not in ('admin', 'superadmin'):
+        return None, _error('School admin access required.', 403)
+    school = get_school_by_id(actor['school_id'])
+    if not school or school.status != 'active' or school.id == INTERSCHOOL_SCHOOL_ID:
+        return None, _error('An active school is required.', 403)
+    return actor, None
+
+
+@recorder_bp.get('/admin/presentations/live')
+def admin_assembly_connections():
+    denied = _origin_error()
+    if denied:
+        return denied
+    actor, denied = _school_admin()
+    if denied:
+        return denied
+    return _json({'providers': {p: _provider_enabled(p) for p in PROVIDERS},
+                  'connections': sync.list_school_decks(actor['school_id'])})
+
+
+@recorder_bp.post('/admin/presentations/live/sync')
+def admin_request_assembly_sync():
+    denied = _origin_error()
+    if denied:
+        return denied
+    actor, denied = _school_admin()
+    if denied:
+        return denied
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('deck_id'), str):
+        return _error('Choose a connected presentation.', 400)
+    deck = next((d for d in sync.list_school_decks(actor['school_id']) if d['id'] == data['deck_id']), None)
+    denied = _sync_response(deck)
+    if denied:
+        return denied
+    deck = sync.request_deck_sync(deck['id'], actor['school_id'])
+    denied = _sync_response(deck)
+    return denied if denied else _json({'connection': deck}, 202)
 
 
 @recorder_bp.post('/resources/presentations/live/connect')

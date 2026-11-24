@@ -5,6 +5,7 @@ import RequireAdminEmailButton from '@/components/RequireAdminEmailButton.jsx'
 import DisabledAccounts from '@/components/DisabledAccounts.jsx'
 import React, { useRef, useState } from 'react'
 import AdminSessionExport from '@/components/AdminSessionExport.jsx'
+import AdminLiveDecks from '@/components/AdminLiveDecks.jsx'
 import HouseRanking from '@/components/HouseRanking.jsx'
 import IndividualRankings from '@/components/IndividualRankings.jsx'
 import DrawColumn, { DrawOptions, FacultyOverride } from '@/components/DrawColumn.jsx'
@@ -1380,6 +1381,7 @@ function MainPortal({ app }) {
             {user.role === 'superadmin' && showAdminPanel && <RecordingSettings app={app} />}
             {user.role === 'superadmin' && showAdminPanel && <HouseScoreSettings app={app} />}
             {['admin', 'superadmin'].includes(user.role) && showAdminPanel && <GuestPrivacySettings app={app} />}
+            {['admin', 'superadmin'].includes(user.role) && showAdminPanel && <AdminLiveDecks key={user.id + ':' + user.school_id} accountKey={user.id + ':' + user.school_id} />}
 
             <div>
               <h3 className="text-lg font-semibold mb-3">Users</h3>

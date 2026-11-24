@@ -280,13 +280,24 @@ def _https_url(value):
     return parsed.scheme == 'https' and bool(parsed.hostname) and not parsed.username and not parsed.password
 
 
+def _onedrive_version_tag(value):
+    # Graph returns quoted SharePoint tags and opaque, unquoted OneDrive Personal
+    # tags. Preserve either exactly for If-Match and the final metadata recheck.
+    # Reject wildcards, tag lists, weak validators and header control characters.
+    return isinstance(value, str) and bool(re.fullmatch(
+        r'"[\x21\x23-\x7e]+"|[A-Za-z0-9][A-Za-z0-9._~!+/=-]*', value))
+
+
 def _save_existing_powerpoint(headers, info, file_id, blob, snapshot):
     item = f'{ONEDRIVE}/items/{quote(file_id, safe="")}'
     etag = info.get('eTag')
     url = info.get('@microsoft.graph.downloadUrl')
-    if (info.get('id') != file_id or not _https_url(url) or not isinstance(etag, str)
-            or not re.fullmatch(r'"[^"\r\n]+"', etag)):
+    if info.get('id') != file_id:
+        raise CloudDeckError('OneDrive did not confirm the original presentation identity. The presentation was kept.')
+    if not _onedrive_version_tag(etag):
         raise CloudDeckError('OneDrive did not confirm the saved file version. The presentation was kept.')
+    if not _https_url(url):
+        raise CloudDeckError('OneDrive did not return a secure download link for the saved presentation. The presentation was kept.')
     # Graph's short-lived download and upload URLs are already authenticated.
     # Keep the Graph OAuth grant on graph.microsoft.com.
     saved = _request('GET', url, binary=True)
